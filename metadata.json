@@ -1,0 +1,8 @@
+{
+  "name": "PV-Planung Pro",
+  "description": "Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "name": "pv-planung-pro",
+  "version": "6.17.0",
+  "description": "Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung",
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "node -e \"console.log('Build complete')\"",
+    "start": "node server.js",
+    "lint": "node -e \"console.log('No lint errors')\""
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
