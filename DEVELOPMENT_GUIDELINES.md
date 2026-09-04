@@ -1,6 +1,6 @@
 # Entwicklungs-, Architektur- & Release-Leitfaden (PV-Planung Pro)
 
-**Version:** 6.17 (Material Expressive 3 & Modern Modular Architecture)  
+**Version:** 6.18 (Material Expressive 3 & String-Cabling Visualization Architecture)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -70,6 +70,6 @@ Die Applikation ist als performante, modular aufgebaute Progressive Web App (PWA
   * `origin/New`: Feature- und Staging-Branch.
 * **Release-Checkliste:**
   1. Versionsnummer synchronisieren in `index.html`, `content.js` (Changelog) und `DEVELOPMENT_GUIDELINES.md`.
-  2. Cache-Name in `sw.js` inkrementieren (z.B. `pvpro-cache-v6.17`), um Service Worker Updates auf Client-Geräten sicherzustellen.
+  2. Cache-Name in `sw.js` inkrementieren (z.B. `pvpro-cache-v6.18`), um Service Worker Updates auf Client-Geräten sicherzustellen.
   3. Git Commit mit strukturierter Nachricht und Push auf `origin main`.
 

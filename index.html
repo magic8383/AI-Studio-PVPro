@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 6.17 (Material Expressive 3)</title>
+    <title>PV-Planung Pro 6.18 (Material Expressive 3)</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 6.17 (Material Expressive 3)">
+    <meta property="og:title" content="PV-Planung Pro 6.18 (Material Expressive 3)">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings -->
@@ -113,7 +113,7 @@
                         <span class="material-symbols-rounded text-xl fill-1">solar_power</span>
                     </div>
                     <div>
-                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span class="text-primary font-black">Pro 6.17</span></h1>
+                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span class="text-primary font-black">Pro 6.18</span></h1>
                         <p class="text-slate-400 text-[10px] md:text-xs mt-0.5 font-medium flex items-center gap-1">
                             <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
                             Material Expressive Architecture
@@ -166,6 +166,9 @@
             <div id="navScroller" class="hidden md:flex overflow-x-auto hide-scroll space-x-1.5 bg-slate-800/50 p-1.5 rounded-2xl items-center snap-x snap-mandatory mt-3 border border-slate-700/50">
                 <button onclick="switchTab('system')" id="btn-system" class="m3-segment-btn active snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-bold rounded-xl bg-primary text-white shadow-sm flex items-center gap-1.5 transition-all">
                     <span class="material-symbols-rounded text-base fill-1">solar_power</span> Strings
+                </button>
+                <button onclick="switchTab('verkabelung')" id="btn-verkabelung" class="m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all">
+                    <span class="material-symbols-rounded text-base">cable</span> Verkabelung
                 </button>
                 <button onclick="switchTab('verbrauch')" id="btn-verbrauch" class="m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all">
                     <span class="material-symbols-rounded text-base">bolt</span> Verbrauch
@@ -240,6 +243,11 @@
                 <span class="material-symbols-rounded text-4xl text-slate-400 mb-2">solar_power</span>
                 <p class="text-slate-500 dark:text-slate-400 font-medium text-sm">Noch keine Strings angelegt.</p>
             </div>
+        </div>
+
+        <!-- TAB: VERKABELUNG & STRING-PLAN -->
+        <div id="tab-verkabelung" class="tab-content max-w-7xl mx-auto space-y-6 mt-2">
+            <!-- Dynamisch gerendert über renderWiringTab() in app.js -->
         </div>
 
         <!-- TAB 2: VERBRAUCH -->
@@ -813,6 +821,13 @@
             </button>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-2">
+            <button onclick="switchTab('verkabelung')" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
+                <span class="material-symbols-rounded text-2xl text-emerald-400">cable</span>
+                <div>
+                    <p class="text-xs font-bold text-white">Kabelwege & String-Plan</p>
+                    <p class="text-[10px] text-slate-400">Schaltplan, Leitungsführung & VDE-Verluste</p>
+                </div>
+            </button>
             <button onclick="switchTab('invest')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
                 <span class="material-symbols-rounded text-2xl text-primary">receipt_long</span>
                 <div>
@@ -845,8 +860,8 @@
     </div>
 
     <!-- HIER WERDEN DIE 3 AUSGELAGERTEN DATEIEN GELADEN -->
-    <script src="database.js?v=6.17"></script>
-    <script src="content.js?v=6.17"></script>
-    <script src="app.js?v=6.17"></script>
+    <script src="database.js?v=6.18"></script>
+    <script src="content.js?v=6.18"></script>
+    <script src="app.js?v=6.18"></script>
 </body>
 </html>

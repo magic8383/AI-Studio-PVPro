@@ -22,6 +22,23 @@ const HandbuchHTML = `
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <button onclick="toggleAcc('acc_ht1b')" class="w-full p-5 text-left font-bold text-slate-800 dark:text-slate-100 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <span class="flex items-center gap-2"><span class="material-symbols-rounded text-primary">cable</span> Schritt 1b: Kabelwege & String-Visualisierung</span>
+            <span class="material-symbols-rounded text-slate-400 transform transition-transform acc-icon">expand_more</span>
+        </button>
+        <div id="acc_ht1b" class="acc-content px-5 pb-5 text-sm text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800">
+            <p class="mt-4"><strong>Interaktiver Schaltplan:</strong> Im Tab "Verkabelung" siehst du die exakte Verlege- und Steckreihenfolge aller Solarmodule deines Strings. Jedes Modul zeigt seine Polarität (+ in Rot, - in Schwarz) sowie die MC4-Kupplungen.</p>
+            <p class="mt-2"><strong>Verlegemethoden:</strong> Du kannst zwischen drei bewährten Montageverfahren umschalten:</p>
+            <ul class="list-disc pl-5 mt-2 space-y-1">
+                <li><strong>Reißverschluss (Leap-Frog):</strong> Springt auf dem Hinweg über jedes zweite Modul (1 -> 3 -> 5...) und verbindet auf dem Rückweg die geraden Module. Minimiert Induktionsschleifen ohne langes Rückleiterkabel.</li>
+                <li><strong>Schleifenarme Verlegung:</strong> Verbindet Module fortlaufend (1 -> 2 -> 3...), führt den Rückleiter aber im Tragschienensystem parallel zurück.</li>
+                <li><strong>Standard Daisy-Chain:</strong> Einfache Reihenschaltung mit offenem Rückleiter (nur für kleine Sonderanlagen geeignet).</li>
+            </ul>
+            <p class="mt-2"><strong>Kabelverluste & Querschnitt:</strong> Gib die einfache Distanz zum Wechselrichter ein. Die App berechnet ohmsche Leitungsverluste, Spannungsabfall in Volt und Prozent nach DIN VDE 0100-712.</p>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         <button onclick="toggleAcc('acc_ht2')" class="w-full p-5 text-left font-bold text-slate-800 dark:text-slate-100 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <span class="flex items-center gap-2"><span class="material-symbols-rounded text-primary">bolt</span> Schritt 2: Verbrauch & Smart-Home</span>
             <span class="material-symbols-rounded text-slate-400 transform transition-transform acc-icon">expand_more</span>
@@ -110,13 +127,30 @@ const HandbuchHTML = `
     </div>
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <button onclick="toggleAcc('acc_bg_wiring')" class="w-full p-5 text-left font-bold text-slate-800 dark:text-slate-100 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <span class="flex items-center gap-2"><span class="material-symbols-rounded text-primary">cable</span> Leiterschleifenminimierung & DC-Verkabelung (DIN EN 62305 / VDE 0185)</span>
+            <span class="material-symbols-rounded text-slate-400 transform transition-transform acc-icon">expand_more</span>
+        </button>
+        <div id="acc_bg_wiring" class="acc-content px-5 pb-5 text-sm text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800">
+            <p class="mt-4"><strong>Blitz- und Überspannungsschutz:</strong> Wenn PV-Module in Reihe geschaltet werden und die Rückleitung auf anderem Wege zum Wechselrichter geführt wird, entsteht eine große Leiterschleife. Bei nahen Blitzeinschlägen induziert das elektromagnetische Feld extrem hohe Spannungsspitzen, die Wechselrichter und Moduldioden zerstören können.</p>
+            <p class="mt-2"><strong>Die Lösung nach VDE:</strong></p>
+            <ul class="list-disc pl-5 mt-2 space-y-1">
+                <li><strong>Reißverschluss (Leap-Frog):</strong> Durch das wechselweise Anschließen jedes zweiten Moduls hin und der verbleibenden Module zurück hebt sich die aufgespannte Fläche geometrisch auf (Schleifenfläche &approx; 0 m&sup2;). Das spart teures Rückleiterkabel und bietet höchsten Schutz.</li>
+                <li><strong>Paralleler Rückleiter:</strong> Alternativ muss das Minus-Kabel unmittelbar an den Modulkabeln und Montageprofilen des Hinwegs zurückgeführt werden.</li>
+            </ul>
+            <p class="mt-2"><strong>Spannungsabfall nach VDE 0100-712:</strong> DC-Kabelverluste sollten unter 1,0 % (maximal 1,5 %) gehalten werden. Bei längeren Strecken (> 15-20 m) empfiehlt die Norm den Wechsel von 4 mm&sup2; auf 6 mm&sup2; oder 10 mm&sup2; Solarkabel.</p>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         <button onclick="toggleAcc('acc_bg4')" class="w-full p-5 text-left font-bold text-slate-800 dark:text-slate-100 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <span class="flex items-center gap-2"><span class="material-symbols-rounded text-primary">history</span> Changelog & Versionen</span>
             <span class="material-symbols-rounded text-slate-400 transform transition-transform acc-icon">expand_more</span>
         </button>
         <div id="acc_bg4" class="acc-content px-5 pb-5 text-sm text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800">
             <ul class="space-y-3 mt-4">
-                <li><strong>v6.17 (Current):</strong> Material Expressive 3 (2026) Design-System. Google Material Symbols Rounded Vektor-Iconografie in der gesamten App. Adaptive Dual-Navigation (ergonomische M3 Bottom Navigation Bar auf Mobilgeräten + M3 Segmented Rail auf Desktop + animiertes M3 More Bottom Sheet). Konsistente Tonal Surfaces, zentrale Badge-Steuerung und vollständige Dark/Light-Mode Harmonisierung.</li>
+                <li><strong>v6.18 (Current):</strong> Neuer Tab 'Verkabelung' zur interaktiven Visualisierung von Strings, Solarmodulen und Kabelwegen. Unterstützt Reißverschluss-Verkabelung (Leap-Frog zur Leiterschleifenminimierung nach VDE 0185-305), fortlaufende Reihenschaltung mit parallelem Rückleiter, animierte Flussrichtung, konfigurierbare Dach-Matrix (Portrait/Landscape), normgerechte DC-Kabelberechnung (Spannungsabfall & Verlust in %/W/kWh für 4/6/10 mm&sup2;) sowie Montage-Stückliste für Solarteure.</li>
+                <li><strong>v6.17:</strong> Material Expressive 3 (2026) Design-System. Google Material Symbols Rounded Vektor-Iconografie in der gesamten App. Adaptive Dual-Navigation (ergonomische M3 Bottom Navigation Bar auf Mobilgeräten + M3 Segmented Rail auf Desktop + animiertes M3 More Bottom Sheet). Konsistente Tonal Surfaces, zentrale Badge-Steuerung und vollständige Dark/Light-Mode Harmonisierung.</li>
                 <li><strong>v6.16:</strong> Umstellung auf reale historische 8.760h-Stundenwerte via seriescalc über den Synology Reverse Proxy. Direkte stundengenaue Auswertung mit physikalischer Präzision.</li>
                 <li><strong>v6.15:</strong> Umstellung auf dedizierten Synology PVGIS-Proxy (pvgis.mb10.org). Schnellerer & zuverlässiger Abruf ohne Drittanbieter-Timeouts.</li>
                 <li><strong>v6.14:</strong> Umstellung auf schlanken PVGIS-PVcalc-Endpunkt. Direkte Monats-Kalibrierung der 8.760h-Jahressimulation, Beseitigung aller Proxy-Timeouts & lückenlose Berechnung.</li>

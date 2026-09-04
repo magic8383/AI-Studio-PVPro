@@ -96,6 +96,7 @@ function initDatabase() {
         loadConsumptionSettings(); 
         loadFinanceSettings();
         loadInvestSettings();
+        loadWiringSettings();
         updatePhysicsOnly();
     } catch(e) { console.error("Init Error:", e); }
 }
@@ -111,6 +112,7 @@ function saveConfiguration() {
     localStorage.setItem('pvpro_strings', JSON.stringify(strings)); 
     localStorage.setItem('pvpro_loc', JSON.stringify(LocationData)); 
     saveConsumptionSettings();
+    saveWiringSettings();
     
     let btn = document.getElementById('btnHeaderSave');
     if(btn) {
@@ -123,7 +125,7 @@ function saveConfiguration() {
 // ==========================================
 // 2. UI TAB ROUTING & SWIPE GESTURES
 // ==========================================
-const tabOrder = ['system', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
+const tabOrder = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
 let touchStartX = 0, touchStartY = 0;
 
 document.addEventListener('touchstart', e => { 
@@ -198,7 +200,7 @@ function switchTab(tabId) {
     // Falls ein Tab aus dem "Mehr"-Sheet aktiv ist, den "Mehr"-Button hervorheben
     let moreBtn = document.getElementById('bnav-more');
     if(moreBtn) {
-        let isMoreChild = ['invest', 'uebersicht', 'database', 'faq'].includes(tabId);
+        let isMoreChild = ['verkabelung', 'invest', 'uebersicht', 'database', 'faq'].includes(tabId);
         let pill = moreBtn.querySelector('.m3-bnav-pill');
         let icon = moreBtn.querySelector('.material-symbols-rounded');
         let label = moreBtn.querySelector('.m3-bnav-label');
@@ -223,6 +225,7 @@ function switchTab(tabId) {
         catch(e) { scroller.scrollLeft = btn.offsetLeft - window.innerWidth/2 + 50; }
     }
     if(tabId === 'auswertung' && currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
+    if(tabId === 'verkabelung') renderWiringTab();
 }
 
 function openMoreSheet() {
@@ -315,6 +318,9 @@ function updatePhysicsOnly() {
     if(btn) { btn.classList.remove('bg-blue-600'); btn.classList.add('animate-pulse', 'bg-amber-500'); }
     renderStringsUI(); 
     renderDatabaseUI();
+    if(document.getElementById('tab-verkabelung')?.classList.contains('active')) {
+        renderWiringTab();
+    }
 }
 
 function renderStringsUI() {
@@ -475,6 +481,930 @@ function renderStringsUI() {
             </div>
         </div>`;
     }).join('');
+}
+
+// ==========================================
+// 4. VERKABELUNG & STRING-VISUALISIERUNG
+// ==========================================
+
+let wiringSettings = {
+    selectedStringId: 'all',
+    layoutMode: 'leapfrog',      // 'leapfrog', 'loop_reduced', 'simple'
+    orientation: 'portrait',     // 'portrait', 'landscape'
+    columns: 'auto',             // 'auto', 1, 2, 3, 4, 5, 6, 8
+    cableLengthWr: 15,           // Meter einfacher Weg zum WR
+    cableCrossSection: 6,        // mm² (4, 6, 10)
+    cableTemp: 50,               // °C Betriebstemperatur
+    showCurrentAnimation: true,
+    showWireNumbers: true,
+    showPolarity: true,
+    highlightPanelIdx: null
+};
+
+function loadWiringSettings() {
+    let s = readJsonStorage('pvpro_wiring', null);
+    if(s && typeof s === 'object') {
+        wiringSettings = Object.assign(wiringSettings, s);
+    }
+}
+
+function saveWiringSettings() {
+    localStorage.setItem('pvpro_wiring', JSON.stringify(wiringSettings));
+}
+
+function setWiringString(strId) {
+    wiringSettings.selectedStringId = strId === 'all' ? 'all' : Number(strId);
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function setWiringLayout(mode) {
+    wiringSettings.layoutMode = mode;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function setWiringOrientation(orient) {
+    wiringSettings.orientation = orient;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function setWiringColumns(cols) {
+    wiringSettings.columns = cols;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function setWiringCrossSection(cs) {
+    wiringSettings.cableCrossSection = Number(cs);
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function setWiringCableLength(len) {
+    wiringSettings.cableLengthWr = Math.max(1, Math.min(150, Number(len) || 15));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function setWiringTemp(temp) {
+    wiringSettings.cableTemp = Number(temp);
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function toggleWiringAnimation() {
+    wiringSettings.showCurrentAnimation = !wiringSettings.showCurrentAnimation;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function toggleWiringNumbers() {
+    wiringSettings.showWireNumbers = !wiringSettings.showWireNumbers;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function toggleWiringPolarity() {
+    wiringSettings.showPolarity = !wiringSettings.showPolarity;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function highlightWiringPanel(idx) {
+    wiringSettings.highlightPanelIdx = (wiringSettings.highlightPanelIdx === idx) ? null : idx;
+    renderWiringTab();
+}
+
+function addDemoStringIfEmpty() {
+    if (strings.length === 0) {
+        addString();
+    }
+    switchTab('system');
+}
+
+function printWiringPlan() {
+    window.print();
+}
+
+// Ordnungsmuster für Reißverschluss (Leap-Frog)
+function getLeapfrogOrder(n) {
+    if (n <= 1) return [0];
+    const forward = [];
+    const backward = [];
+    for (let i = 0; i < n; i += 2) {
+        forward.push(i);
+    }
+    const lastEvenOrOdd = (n % 2 === 0 ? n - 1 : n - 2);
+    for (let i = lastEvenOrOdd; i > 0; i -= 2) {
+        backward.push(i);
+    }
+    return [...forward, ...backward];
+}
+
+// Exakte Berechnung der VDE-Leitungsparameter
+function calculateCablePhysics(str, settings) {
+    const totalPanels = (str.fields || []).reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
+    const pModel = (str.fields && str.fields[0]) ? (flatPanels.find(x => x.id === parseInt(str.fields[0].panelId)) || { vmp: 32.5, imp: 13.5, pmax: 440 }) : { vmp: 32.5, imp: 13.5, pmax: 440 };
+    
+    const vmpTotal = (str.fields || []).reduce((acc, f) => {
+        const p = flatPanels.find(x => x.id === parseInt(f.panelId)) || pModel;
+        return acc + (p.vmp * f.count);
+    }, 0) || (totalPanels * 32.5);
+    
+    const imp = pModel.imp || 13.5;
+    const pTotalWp = (str.fields || []).reduce((acc, f) => {
+        const p = flatPanels.find(x => x.id === parseInt(f.panelId)) || pModel;
+        return acc + (p.pmax * f.count);
+    }, 0) || (totalPanels * 440);
+
+    const lengthWrOneWay = parseFloat(settings.cableLengthWr) || 15;
+    const crossSection = parseFloat(settings.cableCrossSection) || 6;
+    const temp = parseFloat(settings.cableTemp) || 50;
+
+    let moduleBridgeLength = 0;
+    if (settings.layoutMode === 'leapfrog') {
+        moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.9;
+    } else if (settings.layoutMode === 'loop_reduced') {
+        moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 1.15);
+    } else {
+        moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 0.9);
+    }
+
+    const rawCableLength = (2 * lengthWrOneWay) + moduleBridgeLength;
+    const totalCableLength = Math.ceil(rawCableLength * 1.1); // 10% Reserve
+
+    // Spezifischer Widerstand rho von Kupfer bei Temperatur
+    const rho = 0.01786 * (1 + 0.00393 * (temp - 20));
+    const loopResistance = (rho * rawCableLength) / crossSection;
+
+    const deltaU = imp * loopResistance;
+    const deltaUPct = vmpTotal > 0 ? (deltaU / vmpTotal) * 100 : 0;
+    const powerLossW = Math.pow(imp, 2) * loopResistance;
+    const annualLossKWh = (powerLossW * 950) / 1000;
+
+    let loopAreaM2 = 0;
+    let loopSafety = 'optimal';
+    if (settings.layoutMode === 'simple') {
+        loopAreaM2 = Math.round(totalPanels * 1.85);
+        loopSafety = 'warning';
+    } else if (settings.layoutMode === 'loop_reduced') {
+        loopAreaM2 = Math.round(totalPanels * 0.15 * 10) / 10;
+        loopSafety = 'acceptable';
+    } else {
+        loopAreaM2 = 0.1;
+        loopSafety = 'optimal';
+    }
+
+    let vdeStatus = 'green';
+    let vdeText = 'Optimal (< 1,0 % nach DIN VDE 0100-712)';
+    let vdeBadgeClass = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30';
+    if (deltaUPct > 1.5) {
+        vdeStatus = 'red';
+        vdeText = 'Unzulässig hoch (> 1,5 % VDE-Grenzwert)! Querschnitt vergrößern.';
+        vdeBadgeClass = 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30';
+    } else if (deltaUPct > 1.0) {
+        vdeStatus = 'yellow';
+        vdeText = 'Zulässig (1,0 - 1,5 %), Querschnittserhöhung empfohlen.';
+        vdeBadgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
+    }
+
+    const mc4Pairs = Math.max(2, totalPanels + 1);
+    const zipTies = Math.ceil(totalPanels * 4 + lengthWrOneWay * 2);
+
+    return {
+        totalPanels,
+        vmpTotal,
+        imp,
+        pTotalWp,
+        lengthWrOneWay,
+        crossSection,
+        temp,
+        totalCableLength,
+        rawCableLength,
+        loopResistance,
+        deltaU,
+        deltaUPct,
+        powerLossW,
+        annualLossKWh,
+        loopAreaM2,
+        loopSafety,
+        vdeStatus,
+        vdeText,
+        vdeBadgeClass,
+        mc4Pairs,
+        zipTies
+    };
+}
+
+// Generierung des interaktiven SVG-Schaltplans
+function generateStringWiringSvg(str, settings) {
+    const panelsList = [];
+    (str.fields || []).forEach((field, fIdx) => {
+        const pModel = flatPanels.find(p => p.id === parseInt(field.panelId)) || { name: 'PV-Modul', pmax: 440, vmp: 32.5, imp: 13.5, voc: 39 };
+        for (let k = 0; k < field.count; k++) {
+            panelsList.push({
+                idx: panelsList.length,
+                labelNum: panelsList.length + 1,
+                fieldIdx: fIdx,
+                model: pModel,
+                tilt: field.tilt
+            });
+        }
+    });
+
+    const n = panelsList.length;
+    if (n === 0) return '';
+
+    const isPortrait = settings.orientation === 'portrait';
+    const pw = isPortrait ? 96 : 144;
+    const ph = isPortrait ? 144 : 96;
+    const gapX = 28;
+    const gapY = 40;
+
+    let cols;
+    if (settings.columns === 'auto') {
+        if (n <= 4) cols = n;
+        else if (n <= 8) cols = Math.ceil(n / 2);
+        else if (n <= 14) cols = Math.ceil(n / 2);
+        else cols = Math.ceil(n / 3);
+    } else {
+        cols = Math.min(n, parseInt(settings.columns) || 4);
+    }
+    cols = Math.max(1, cols);
+    const rows = Math.ceil(n / cols);
+
+    const invWidth = 150;
+    const invHeight = 220;
+    const invX = 30;
+    const invY = 50;
+
+    const gridStartX = invX + invWidth + 60;
+    const gridStartY = 45;
+
+    const gridWidth = cols * (pw + gapX);
+    const gridHeight = rows * (ph + gapY);
+
+    const svgWidth = Math.max(860, gridStartX + gridWidth + 40);
+    const svgHeight = Math.max(340, Math.max(invY + invHeight, gridStartY + gridHeight) + 60);
+
+    const positions = panelsList.map((p, i) => {
+        const c = i % cols;
+        const r = Math.floor(i / cols);
+        const x = gridStartX + c * (pw + gapX);
+        const y = gridStartY + r * (ph + gapY);
+        return {
+            ...p,
+            x,
+            y,
+            w: pw,
+            h: ph,
+            row: r,
+            col: c,
+            plusX: x + (pw * 0.32),
+            plusY: y + 14,
+            minusX: x + (pw * 0.68),
+            minusY: y + 14,
+            centerX: x + pw / 2,
+            centerY: y + ph / 2
+        };
+    });
+
+    const dcPlusTerm = { x: invX + invWidth - 10, y: invY + 70 };
+    const dcMinusTerm = { x: invX + invWidth - 10, y: invY + 115 };
+    const peTerm = { x: invX + invWidth - 10, y: invY + 160 };
+
+    let sequence = [];
+    if (settings.layoutMode === 'leapfrog') {
+        sequence = getLeapfrogOrder(n);
+    } else {
+        sequence = Array.from({ length: n }, (_, i) => i);
+    }
+
+    const inverter = flatInverters.find(i => i.id === parseInt(str.inverterId)) || { name: 'Wechselrichter' };
+    const stringColor = str.color || '#3b82f6';
+    const isAnim = settings.showCurrentAnimation;
+
+    // Kabelpfade konstruieren
+    const wirePaths = [];
+    const stepBadges = [];
+
+    // 1. Zuleitung DC+ (WR -> Erstes Modul Plus)
+    const firstPos = positions[sequence[0]];
+    const dcPlusPath = `M ${dcPlusTerm.x} ${dcPlusTerm.y} C ${dcPlusTerm.x + 35} ${dcPlusTerm.y}, ${firstPos.plusX - 35} ${firstPos.plusY - 20}, ${firstPos.plusX} ${firstPos.plusY}`;
+    wirePaths.push({
+        d: dcPlusPath,
+        type: 'dc-plus',
+        color: '#ef4444',
+        label: 'DC+ Hinleiter (Rot)',
+        step: 0
+    });
+
+    // 2. Modul-zu-Modul Verbindungen
+    for (let k = 0; k < sequence.length - 1; k++) {
+        const fromPos = positions[sequence[k]];
+        const toPos = positions[sequence[k + 1]];
+        const x1 = fromPos.minusX;
+        const y1 = fromPos.minusY;
+        const x2 = toPos.plusX;
+        const y2 = toPos.plusY;
+        const stepNum = k + 1;
+
+        let d = '';
+        let midX = (x1 + x2) / 2;
+        let midY = (y1 + y2) / 2;
+
+        if (fromPos.row === toPos.row) {
+            const arch = -24;
+            d = `M ${x1} ${y1} C ${x1 + 10} ${y1 + arch}, ${x2 - 10} ${y2 + arch}, ${x2} ${y2}`;
+            midY = y1 + arch + 4;
+        } else {
+            const curveOffset = fromPos.col > toPos.col ? -35 : 35;
+            d = `M ${x1} ${y1} C ${x1} ${y1 + 40}, ${x2 + curveOffset} ${y2 - 40}, ${x2} ${y2}`;
+        }
+
+        wirePaths.push({
+            d,
+            type: 'module-wire',
+            color: stringColor,
+            label: `Steckung #${stepNum}`,
+            step: stepNum,
+            from: sequence[k],
+            to: sequence[k + 1]
+        });
+
+        stepBadges.push({
+            x: midX,
+            y: midY,
+            step: stepNum
+        });
+    }
+
+    // 3. Rückleitung DC- (Letztes Modul Minus -> WR DC-)
+    const lastPos = positions[sequence[sequence.length - 1]];
+    let dcMinusPath = '';
+    if (settings.layoutMode === 'leapfrog') {
+        dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${lastPos.minusX - 30} ${lastPos.minusY + 30}, ${dcMinusTerm.x + 35} ${dcMinusTerm.y + 20}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
+    } else if (settings.layoutMode === 'loop_reduced') {
+        const railY = lastPos.y + lastPos.h + 16;
+        dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} L ${lastPos.minusX} ${railY} L ${gridStartX - 25} ${railY} C ${gridStartX - 45} ${railY}, ${dcMinusTerm.x + 30} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
+    } else {
+        dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${(lastPos.minusX + dcMinusTerm.x) / 2} ${(lastPos.minusY + dcMinusTerm.y) / 2 - 40}, ${dcMinusTerm.x + 40} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
+    }
+
+    wirePaths.push({
+        d: dcMinusPath,
+        type: 'dc-minus',
+        color: '#3b82f6',
+        label: 'DC- Rückleiter (Blau)',
+        step: sequence.length
+    });
+
+    // Warnfläche bei einfacher Schleife
+    let loopAreaSvg = '';
+    if (settings.layoutMode === 'simple') {
+        const polyPoints = [
+            `${dcPlusTerm.x},${dcPlusTerm.y}`,
+            `${firstPos.plusX},${firstPos.plusY}`,
+            ...positions.map(p => `${p.minusX},${p.minusY}`),
+            `${lastPos.minusX},${lastPos.minusY}`,
+            `${dcMinusTerm.x},${dcMinusTerm.y}`
+        ].join(' ');
+        loopAreaSvg = `
+            <polygon points="${polyPoints}" fill="rgba(244, 63, 94, 0.08)" stroke="#f43f5e" stroke-width="1.5" stroke-dasharray="6,4" />
+            <g transform="translate(${gridStartX + gridWidth / 2 - 120}, ${gridStartY + gridHeight / 2 - 16})">
+                <rect width="240" height="32" rx="8" fill="#1e1b4b" stroke="#f43f5e" stroke-width="1.5" opacity="0.95" />
+                <text x="120" y="20" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">⚠️ Große Induktionsschleife (~${Math.round(n * 1.85)} m²)</text>
+            </g>
+        `;
+    } else if (settings.layoutMode === 'leapfrog') {
+        loopAreaSvg = `
+            <g transform="translate(${gridStartX + gridWidth / 2 - 130}, ${gridStartY - 28})">
+                <rect width="260" height="24" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="1.2" opacity="0.9" />
+                <text x="130" y="16" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="700">🛡️ VDE 0185-305: Leiterschleife ≈ 0 m² (Optimal)</text>
+            </g>
+        `;
+    }
+
+    return `
+    <svg viewBox="0 0 ${svgWidth} ${svgHeight}" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+            <pattern id="wiringGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+                <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#334155" stroke-width="0.5" opacity="0.25" />
+            </pattern>
+            <linearGradient id="invGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1e293b"/>
+                <stop offset="100%" stop-color="#0f172a"/>
+            </linearGradient>
+            <linearGradient id="panelGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#0f172a"/>
+                <stop offset="50%" stop-color="#1e293b"/>
+                <stop offset="100%" stop-color="#0b1329"/>
+            </linearGradient>
+            <filter id="wireGlow" x="-20%" y="-20%" width="140%" height="140%">
+                <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.6"/>
+            </filter>
+            <style>
+                @keyframes dcFlow {
+                    from { stroke-dashoffset: 40; }
+                    to { stroke-dashoffset: 0; }
+                }
+                .flow-active {
+                    animation: dcFlow 1.2s linear infinite;
+                }
+            </style>
+        </defs>
+
+        <!-- Blueprint Grid Hintergrund -->
+        <rect width="100%" height="100%" fill="url(#wiringGrid)" />
+
+        <!-- Induktionsschleifen-Warnung oder Zertifikat -->
+        ${loopAreaSvg}
+
+        <!-- WECHSELRICHTER (INVERTER) SYMBOL -->
+        <g id="inverter-symbol" transform="translate(${invX}, ${invY})">
+            <!-- WR Chassis -->
+            <rect width="${invWidth}" height="${invHeight}" rx="14" fill="url(#invGrad)" stroke="#475569" stroke-width="2" filter="url(#wireGlow)" />
+            
+            <!-- Header mit Status-LED -->
+            <rect x="0" y="0" width="${invWidth}" height="38" rx="14" fill="#334155" />
+            <rect x="0" y="24" width="${invWidth}" height="14" fill="#334155" />
+            <circle cx="18" cy="19" r="4.5" fill="#10b981" />
+            <circle cx="18" cy="19" r="8" fill="#10b981" opacity="0.3" class="animate-ping" />
+            <text x="32" y="23" fill="#f8fafc" font-size="11" font-weight="800" letter-spacing="0.5">WECHSELRICHTER</text>
+
+            <!-- Display -->
+            <rect x="12" y="48" width="${invWidth - 24}" height="76" rx="8" fill="#020617" stroke="#1e293b" stroke-width="1.5" />
+            <text x="20" y="66" fill="#38bdf8" font-size="9.5" font-weight="700">${inverter.name.slice(0, 16)}</text>
+            <text x="20" y="82" fill="#94a3b8" font-size="9">Eingang: <tspan fill="#f8fafc" font-weight="700">MPPT ${str.mpptId || 1}</tspan></text>
+            <text x="20" y="98" fill="#94a3b8" font-size="9">Spannung: <tspan fill="#34d399" font-weight="700">${Math.round(str._phys?.vmpHot || 380)} V</tspan></text>
+            <text x="20" y="114" fill="#94a3b8" font-size="8.5">Status: <tspan fill="#38bdf8">TRACKING</tspan></text>
+
+            <!-- Klemmenleiste (Terminals) -->
+            <!-- DC+ Klemme -->
+            <g transform="translate(${invWidth - 20}, 70)">
+                <circle cx="0" cy="0" r="10" fill="#ef4444" stroke="#991b1b" stroke-width="1.5" />
+                <text x="0" y="4" fill="#fff" font-size="12" font-weight="900" text-anchor="middle">+</text>
+                <text x="-24" y="3.5" fill="#f87171" font-size="8.5" font-weight="800" text-anchor="end">DC+</text>
+            </g>
+
+            <!-- DC- Klemme -->
+            <g transform="translate(${invWidth - 20}, 115)">
+                <circle cx="0" cy="0" r="10" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5" />
+                <text x="0" y="4" fill="#fff" font-size="13" font-weight="900" text-anchor="middle">-</text>
+                <text x="-24" y="3.5" fill="#60a5fa" font-size="8.5" font-weight="800" text-anchor="end">DC-</text>
+            </g>
+
+            <!-- PE / Schutzleiter Klemme -->
+            <g transform="translate(${invWidth - 20}, 160)">
+                <circle cx="0" cy="0" r="8" fill="#eab308" stroke="#854d0e" stroke-width="1.2" />
+                <text x="0" y="3" fill="#000" font-size="8" font-weight="800" text-anchor="middle">PE</text>
+                <text x="-24" y="3" fill="#facc15" font-size="8" font-weight="700" text-anchor="end">Erde</text>
+            </g>
+
+            <text x="${invWidth / 2}" y="${invHeight - 12}" fill="#64748b" font-size="8" text-anchor="middle">VDE 0100-712</text>
+        </g>
+
+        <!-- KABELWEGE (WIRES & LEITUNGSFÜHRUNG) -->
+        <g id="wires-layer" filter="url(#wireGlow)">
+            ${wirePaths.map(w => {
+                const isDCMinus = w.type === 'dc-minus';
+                const strokeDash = isDCMinus ? '8,4' : (isAnim ? '12,6' : 'none');
+                const strokeWidth = isDCMinus ? 3.5 : 3.8;
+                const flowClass = isAnim ? 'flow-active' : '';
+                return `
+                    <path d="${w.d}" fill="none" stroke="${w.color}" stroke-width="${strokeWidth}" 
+                          stroke-linecap="round" stroke-linejoin="round"
+                          stroke-dasharray="${strokeDash}" class="${flowClass}">
+                        <title>${w.label}</title>
+                    </path>
+                `;
+            }).join('')}
+        </g>
+
+        <!-- STECKREIHENFOLGE-NUMMERN (STEP BADGES AUF KABELN) -->
+        ${settings.showWireNumbers ? stepBadges.map(b => `
+            <g transform="translate(${b.x}, ${b.y})">
+                <circle cx="0" cy="0" r="9" fill="#0f172a" stroke="${stringColor}" stroke-width="2" />
+                <text x="0" y="3.5" fill="#f8fafc" font-size="8.5" font-weight="800" text-anchor="middle">${b.step}</text>
+            </g>
+        `).join('') : ''}
+
+        <!-- SOLAR-MODULE IM RASTER -->
+        <g id="panels-layer">
+            ${positions.map(p => {
+                const isHigh = settings.highlightPanelIdx === p.idx;
+                const strokeCol = isHigh ? '#38bdf8' : '#475569';
+                const strokeW = isHigh ? 3 : 1.5;
+
+                return `
+                <g id="panel-${p.idx}" transform="translate(${p.x}, ${p.y})" class="cursor-pointer transition-transform" onclick="highlightWiringPanel(${p.idx})">
+                    <!-- Modul-Rahmen (Aluminium) -->
+                    <rect width="${p.w}" height="${p.h}" rx="6" fill="url(#panelGrad)" stroke="${strokeCol}" stroke-width="${strokeW}" filter="url(#wireGlow)" />
+                    
+                    <!-- Solarzellen / Sub-Wafer Linien -->
+                    <g stroke="#334155" stroke-width="0.6" opacity="0.65">
+                        <line x1="${p.w * 0.33}" y1="0" x2="${p.w * 0.33}" y2="${p.h}" />
+                        <line x1="${p.w * 0.66}" y1="0" x2="${p.w * 0.66}" y2="${p.h}" />
+                        <line x1="0" y1="${p.h * 0.25}" x2="${p.w}" y2="${p.h * 0.25}" />
+                        <line x1="0" y1="${p.h * 0.5}" x2="${p.w}" y2="${p.h * 0.5}" />
+                        <line x1="0" y1="${p.h * 0.75}" x2="${p.w}" y2="${p.h * 0.75}" />
+                    </g>
+
+                    <!-- Modul-Nummer Badge (Oben Links) -->
+                    <rect x="5" y="5" width="24" height="16" rx="4" fill="#0f172a" stroke="#64748b" stroke-width="1" />
+                    <text x="17" y="16.5" fill="#f8fafc" font-size="9" font-weight="800" text-anchor="middle">#${p.labelNum}</text>
+
+                    <!-- Anschlussdose (Junction Box) mit MC4-Klemmen -->
+                    <rect x="${p.w * 0.22}" y="6" width="${p.w * 0.56}" height="16" rx="4" fill="#020617" stroke="#334155" stroke-width="1" />
+
+                    <!-- Pluspol (+) Klemme (Rot) -->
+                    <circle cx="${p.w * 0.32}" cy="14" r="6" fill="#ef4444" stroke="#991b1b" stroke-width="1" />
+                    <text x="${p.w * 0.32}" y="17" fill="#fff" font-size="8.5" font-weight="900" text-anchor="middle">+</text>
+
+                    <!-- Minuspol (-) Klemme (Blau/Schwarz) -->
+                    <circle cx="${p.w * 0.68}" cy="14" r="6" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1" />
+                    <text x="${p.w * 0.68}" y="17" fill="#fff" font-size="10" font-weight="900" text-anchor="middle">-</text>
+
+                    <!-- Modul-Beschriftung im Zentrum -->
+                    <text x="${p.w / 2}" y="${p.h - 18}" fill="#94a3b8" font-size="8" font-weight="700" text-anchor="middle">${p.model.pmax || 440} Wp</text>
+                    <text x="${p.w / 2}" y="${p.h - 8}" fill="#64748b" font-size="7.5" text-anchor="middle">${p.model.vmp || 32.5}V | ${p.tilt}°</text>
+                </g>
+                `;
+            }).join('')}
+        </g>
+    </svg>
+    `;
+}
+
+// Haupt-Renderfunktion des neuen Tabs "Verkabelung"
+function renderWiringTab() {
+    const container = document.getElementById('tab-verkabelung');
+    if (!container) return;
+
+    if (strings.length === 0) {
+        container.innerHTML = `
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-8 text-center border border-slate-200 dark:border-slate-800 shadow-sm max-w-xl mx-auto space-y-4">
+                <div class="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+                    <span class="material-symbols-rounded text-3xl">cable</span>
+                </div>
+                <h3 class="text-xl font-extrabold text-slate-800 dark:text-slate-100">Noch keine Strings angelegt</h3>
+                <p class="text-sm text-slate-500 dark:text-slate-400">
+                    Um die Verkabelung, Kabelwege und Leitungsverluste nach VDE visualisieren zu können, lege bitte zuerst mindestens einen PV-String im Tab "Strings" an.
+                </p>
+                <div class="pt-2">
+                    <button onclick="addDemoStringIfEmpty()" class="bg-primary hover:bg-primary-hover text-white font-bold px-6 py-3 rounded-2xl shadow transition-all inline-flex items-center gap-2 text-sm">
+                        <span class="material-symbols-rounded text-lg">add_circle</span> Standard-String anlegen (12x 440W)
+                    </button>
+                </div>
+            </div>
+        `;
+        return;
+    }
+
+    // Welcher String soll dargestellt werden?
+    let activeStrings = [];
+    if (wiringSettings.selectedStringId === 'all') {
+        activeStrings = [...strings];
+    } else {
+        const found = strings.find(s => s.id === wiringSettings.selectedStringId);
+        activeStrings = found ? [found] : [strings[0]];
+    }
+
+    const primaryStr = activeStrings[0] || strings[0];
+    const calc = calculateCablePhysics(primaryStr, wiringSettings);
+
+    container.innerHTML = `
+        <!-- HEADER & CONTROL BAR -->
+        <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-2xl">cable</span>
+                    </div>
+                    <div>
+                        <h2 class="text-lg md:text-xl font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                            Kabelwege & String-Visualisierung
+                            <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">VDE 0100-712</span>
+                        </h2>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            Interaktiver DC-Schaltplan, Leiterschleifenminimierung (DIN EN 62305-3) & Leitungsverlust-Analyse
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="flex items-center gap-2 self-start md:self-auto">
+                    <button onclick="printWiringPlan()" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300 dark:border-slate-700">
+                        <span class="material-symbols-rounded text-base">print</span>
+                        <span>Drucken / PDF</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- STRING-SELEKTOR & SCHNELL-FILTER -->
+            <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 mr-1 flex items-center gap-1">
+                    <span class="material-symbols-rounded text-sm">filter_alt</span> String:
+                </span>
+                <button onclick="setWiringString('all')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${wiringSettings.selectedStringId === 'all' ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}">
+                    <span class="material-symbols-rounded text-sm">dashboard</span> Alle Strings (${strings.length})
+                </button>
+                ${strings.map((s, idx) => `
+                    <button onclick="setWiringString(${s.id})" class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${wiringSettings.selectedStringId === s.id ? 'bg-primary text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}">
+                        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color: ${s.color || '#3b82f6'};"></span>
+                        <span>${s.name || ('String ' + (idx + 1))}</span>
+                        <span class="text-[10px] opacity-75 font-normal">(${(s.fields || []).reduce((a, f) => a + (parseInt(f.count) || 0), 0)} Mod.)</span>
+                    </button>
+                `).join('')}
+            </div>
+
+            <!-- KONFIGURATIONS-LEISTE FÜR DIE VERKABELUNG -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                <!-- 1. Verlegemethode -->
+                <div>
+                    <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm text-primary">alt_route</span> Verlegemethode (VDE):
+                    </label>
+                    <select onchange="setWiringLayout(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 font-medium text-slate-800 dark:text-slate-200 outline-none">
+                        <option value="leapfrog" ${wiringSettings.layoutMode === 'leapfrog' ? 'selected' : ''}>Reißverschluss (Leap-Frog) - Schleifenfrei</option>
+                        <option value="loop_reduced" ${wiringSettings.layoutMode === 'loop_reduced' ? 'selected' : ''}>Reihe + Paralleler Rückleiter im Profil</option>
+                        <option value="simple" ${wiringSettings.layoutMode === 'simple' ? 'selected' : ''}>Standard Reihenschaltung (Offene Schleife)</option>
+                    </select>
+                </div>
+
+                <!-- 2. Dach-Matrix & Modulausrichtung -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Ausrichtung:</label>
+                        <select onchange="setWiringOrientation(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 font-medium text-slate-800 dark:text-slate-200 outline-none">
+                            <option value="portrait" ${wiringSettings.orientation === 'portrait' ? 'selected' : ''}>Hochkant</option>
+                            <option value="landscape" ${wiringSettings.orientation === 'landscape' ? 'selected' : ''}>Querformat</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5">Spalten:</label>
+                        <select onchange="setWiringColumns(this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-2 font-medium text-slate-800 dark:text-slate-200 outline-none">
+                            <option value="auto" ${wiringSettings.columns === 'auto' ? 'selected' : ''}>Auto</option>
+                            <option value="1" ${wiringSettings.columns === '1' ? 'selected' : ''}>1 Reihe</option>
+                            <option value="2" ${wiringSettings.columns === '2' ? 'selected' : ''}>2 Spalten</option>
+                            <option value="3" ${wiringSettings.columns === '3' ? 'selected' : ''}>3 Spalten</option>
+                            <option value="4" ${wiringSettings.columns === '4' ? 'selected' : ''}>4 Spalten</option>
+                            <option value="6" ${wiringSettings.columns === '6' ? 'selected' : ''}>6 Spalten</option>
+                            <option value="8" ${wiringSettings.columns === '8' ? 'selected' : ''}>8 Spalten</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 3. Toggles für Darstellung -->
+                <div class="flex items-center justify-between md:justify-end gap-3 pt-4 md:pt-0">
+                    <label class="flex items-center gap-1.5 cursor-pointer font-bold text-slate-600 dark:text-slate-300">
+                        <input type="checkbox" ${wiringSettings.showCurrentAnimation ? 'checked' : ''} onchange="toggleWiringAnimation()" class="rounded border-slate-300 text-primary focus:ring-primary">
+                        <span>Fluss animieren</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer font-bold text-slate-600 dark:text-slate-300">
+                        <input type="checkbox" ${wiringSettings.showWireNumbers ? 'checked' : ''} onchange="toggleWiringNumbers()" class="rounded border-slate-300 text-primary focus:ring-primary">
+                        <span>Steckreihenfolge</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- SCHALTPLAN / SVG-CONTAINER -->
+        ${activeStrings.map((s, sIdx) => {
+            const sCalc = calculateCablePhysics(s, wiringSettings);
+            const totalMod = (s.fields || []).reduce((a, f) => a + (parseInt(f.count) || 0), 0);
+            const inv = flatInverters.find(i => i.id === parseInt(s.inverterId)) || { name: 'Wechselrichter' };
+            const svgContent = generateStringWiringSvg(s, wiringSettings);
+
+            return `
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-3.5 h-3.5 rounded-full shrink-0" style="background-color: ${s.color || '#3b82f6'};"></span>
+                        <h3 class="text-base md:text-lg font-extrabold text-slate-900 dark:text-white">
+                            ${s.name || ('String ' + (sIdx + 1))}
+                        </h3>
+                        <span class="text-xs font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            ${totalMod} Module (${(sCalc.pTotalWp / 1000).toFixed(2)} kWp)
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                        <span>WR: <strong class="text-slate-800 dark:text-slate-200">${inv.name.slice(0, 18)}</strong></span>
+                        <span>•</span>
+                        <span>MPPT: <strong class="text-slate-800 dark:text-slate-200">MPPT ${s.mpptId || 1}</strong></span>
+                        <span>•</span>
+                        <span>$U_{mpp}$: <strong class="text-emerald-600 dark:text-emerald-400">${Math.round(sCalc.vmpTotal)} V</strong></span>
+                        <span>•</span>
+                        <span>$I_{mpp}$: <strong class="text-sky-600 dark:text-sky-400">${sCalc.imp.toFixed(1)} A</strong></span>
+                    </div>
+                </div>
+
+                <!-- SVG SCHALTPLAN -->
+                <div class="w-full overflow-x-auto rounded-2xl">
+                    ${svgContent}
+                </div>
+
+                <!-- LEGENDE & HINWEISE -->
+                <div class="flex flex-wrap items-center justify-between gap-3 pt-2 text-[11px] text-slate-500 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800">
+                    <div class="flex flex-wrap items-center gap-4">
+                        <span class="flex items-center gap-1.5 font-bold">
+                            <span class="w-3 h-1 bg-rose-500 rounded-full inline-block"></span> DC+ Hinleiter (Rot)
+                        </span>
+                        <span class="flex items-center gap-1.5 font-bold">
+                            <span class="w-3 h-1 bg-blue-500 rounded-full inline-block border-t border-dashed"></span> DC- Rückleiter (Blau/Schwarz)
+                        </span>
+                        <span class="flex items-center gap-1.5 font-bold">
+                            <span class="w-3 h-1 rounded-full inline-block" style="background-color: ${s.color || '#3b82f6'};"></span> Modul-Brücke
+                        </span>
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-3.5 h-3.5 rounded-full bg-rose-500 text-white text-[8px] font-black inline-flex items-center justify-center">+</span> Pluspol
+                        </span>
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-3.5 h-3.5 rounded-full bg-blue-500 text-white text-[8px] font-black inline-flex items-center justify-center">-</span> Minuspol
+                        </span>
+                    </div>
+                    <div class="font-medium text-slate-400">
+                        Klick auf ein Modul hebt die Verbindung hervor.
+                    </div>
+                </div>
+            </div>
+            `;
+        }).join('')}
+
+        <!-- DC-KABELANALYSE & VDE 0100-712 BERECHNUNG -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- RECHNER & PARAMETER -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span class="material-symbols-rounded text-primary">electrical_services</span>
+                        DC-Leitungsberechnung (VDE 0100-712)
+                    </h3>
+                    <span class="text-xs font-bold px-2.5 py-0.5 rounded-full border ${calc.vdeBadgeClass}">
+                        ${calc.vdeStatus === 'green' ? 'Normgerecht' : (calc.vdeStatus === 'yellow' ? 'Prüfen' : 'Kritisch')}
+                    </span>
+                </div>
+
+                <!-- Schieberegler Kabelweg -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="font-bold text-slate-700 dark:text-slate-300">Kabelweg einfach zum Wechselrichter:</span>
+                        <div class="flex items-center gap-1">
+                            <input type="number" min="1" max="150" value="${calc.lengthWrOneWay}" onchange="setWiringCableLength(this.value)" class="w-16 text-right font-black border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-lg px-2 py-1 text-sm outline-none text-primary">
+                            <span class="font-bold text-slate-500">m</span>
+                        </div>
+                    </div>
+                    <input type="range" min="2" max="80" step="1" value="${calc.lengthWrOneWay}" oninput="setWiringCableLength(this.value)" class="w-full cursor-pointer accent-primary">
+                    <div class="flex justify-between text-[10px] text-slate-400">
+                        <span>2 m (Dachzentrale)</span>
+                        <span>15 m (Standard Haus)</span>
+                        <span>40 m (Keller/Außen)</span>
+                    </div>
+                </div>
+
+                <!-- Kabelquerschnitt & Temperatur -->
+                <div class="grid grid-cols-2 gap-4 pt-1">
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Kabelquerschnitt:</label>
+                        <div class="grid grid-cols-3 gap-1.5">
+                            <button onclick="setWiringCrossSection(4)" class="py-2 text-xs font-black rounded-xl border transition-all ${calc.crossSection === 4 ? 'bg-primary text-white border-primary shadow' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">4 mm²</button>
+                            <button onclick="setWiringCrossSection(6)" class="py-2 text-xs font-black rounded-xl border transition-all ${calc.crossSection === 6 ? 'bg-primary text-white border-primary shadow' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">6 mm²</button>
+                            <button onclick="setWiringCrossSection(10)" class="py-2 text-xs font-black rounded-xl border transition-all ${calc.crossSection === 10 ? 'bg-primary text-white border-primary shadow' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">10 mm²</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Betriebstemperatur:</label>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <button onclick="setWiringTemp(25)" class="py-2 text-xs font-bold rounded-xl border transition-all ${calc.temp === 25 ? 'bg-slate-800 text-white border-slate-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">25°C (Labor)</button>
+                            <button onclick="setWiringTemp(50)" class="py-2 text-xs font-bold rounded-xl border transition-all ${calc.temp === 50 ? 'bg-amber-600 text-white border-amber-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'}">50°C (Dach)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- KPI-KACHELN FÜR VERLUSTE -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2">
+                    <div class="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase block">Spannungsabfall</span>
+                        <span class="text-base font-black ${calc.vdeStatus === 'green' ? 'text-emerald-600 dark:text-emerald-400' : (calc.vdeStatus === 'yellow' ? 'text-amber-500' : 'text-rose-500')}">
+                            ${calc.deltaUPct.toFixed(2)} %
+                        </span>
+                        <span class="text-[10px] text-slate-400 block">${calc.deltaU.toFixed(1)} Volt</span>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase block">Verlustleistung</span>
+                        <span class="text-base font-black text-slate-800 dark:text-slate-100">
+                            ${Math.round(calc.powerLossW)} W
+                        </span>
+                        <span class="text-[10px] text-slate-400 block">bei Nennstrom</span>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase block">Widerstand R</span>
+                        <span class="text-base font-black text-slate-800 dark:text-slate-100">
+                            ${calc.loopResistance.toFixed(2)} Ω
+                        </span>
+                        <span class="text-[10px] text-slate-400 block">Schleife gesamt</span>
+                    </div>
+                    <div class="bg-slate-50 dark:bg-slate-950 p-3 rounded-2xl border border-slate-200 dark:border-slate-800 text-center">
+                        <span class="text-[10px] font-bold text-slate-500 uppercase block">Jahresverlust</span>
+                        <span class="text-base font-black text-slate-800 dark:text-slate-100">
+                            ${calc.annualLossKWh.toFixed(1)} kWh
+                        </span>
+                        <span class="text-[10px] text-slate-400 block">pro Jahr</span>
+                    </div>
+                </div>
+
+                <div class="p-3.5 rounded-2xl border ${calc.vdeBadgeClass} flex items-start gap-2.5">
+                    <span class="material-symbols-rounded text-lg mt-0.5 shrink-0">
+                        ${calc.vdeStatus === 'green' ? 'check_circle' : (calc.vdeStatus === 'yellow' ? 'info' : 'warning')}
+                    </span>
+                    <div class="text-xs">
+                        <p class="font-bold">${calc.vdeText}</p>
+                        <p class="text-[11px] opacity-80 mt-0.5">DIN VDE 0100-712 empfiehlt einen relativen Spannungsabfall auf der DC-Seite von unter 1,0 %.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MONTAGE-STÜCKLISTE & MATERIALZUG -->
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <h3 class="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span class="material-symbols-rounded text-primary">checklist</span>
+                        Montage-Stückliste & Kabelzug
+                    </h3>
+                    <span class="text-xs font-bold text-slate-500">Für Installateur</span>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <!-- Kabelbedarf -->
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                        <div class="flex items-center gap-2.5">
+                            <span class="material-symbols-rounded text-emerald-500 text-xl">cable</span>
+                            <div>
+                                <p class="font-bold text-slate-800 dark:text-slate-200">DC-Solarkabel (H1Z2Z2-K, ${calc.crossSection} mm²)</p>
+                                <p class="text-[10px] text-slate-400">Inkl. 10 % Verschnitt & Biegungsreserve</p>
+                            </div>
+                        </div>
+                        <span class="text-sm font-black text-slate-900 dark:text-white">${calc.totalCableLength} m</span>
+                    </div>
+
+                    <!-- MC4 Stecker -->
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                        <div class="flex items-center gap-2.5">
+                            <span class="material-symbols-rounded text-primary text-xl">power</span>
+                            <div>
+                                <p class="font-bold text-slate-800 dark:text-slate-200">MC4-Steckverbinder-Paare (IP68)</p>
+                                <p class="text-[10px] text-slate-400">Stift & Buchse mit Verriegelung</p>
+                            </div>
+                        </div>
+                        <span class="text-sm font-black text-slate-900 dark:text-white">${calc.mc4Pairs} Paare</span>
+                    </div>
+
+                    <!-- Kabelclips / Zubehör -->
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                        <div class="flex items-center gap-2.5">
+                            <span class="material-symbols-rounded text-amber-500 text-xl">hardware</span>
+                            <div>
+                                <p class="font-bold text-slate-800 dark:text-slate-200">UV-Kabelbinder / Edelstahl-Kabelclips</p>
+                                <p class="text-[10px] text-slate-400">Zur Befestigung an Tragschienen</p>
+                            </div>
+                        </div>
+                        <span class="text-sm font-black text-slate-900 dark:text-white">ca. ${calc.zipTies} Stk</span>
+                    </div>
+
+                    <!-- Schutzrohr -->
+                    <div class="flex items-center justify-between p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                        <div class="flex items-center gap-2.5">
+                            <span class="material-symbols-rounded text-sky-500 text-xl">architecture</span>
+                            <div>
+                                <p class="font-bold text-slate-800 dark:text-slate-200">Empfohlenes UV-Wellrohr</p>
+                                <p class="text-[10px] text-slate-400">Für mechanischen Schutz der DC-Leitung</p>
+                            </div>
+                        </div>
+                        <span class="text-sm font-black text-slate-900 dark:text-white">${calc.crossSection >= 6 ? 'M25 / M32' : 'M20 / M25'}</span>
+                    </div>
+                </div>
+
+                <!-- Leiterschleifen-Check nach VDE 0185 -->
+                <div class="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 text-xs space-y-1">
+                    <p class="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <span class="material-symbols-rounded text-base ${calc.loopSafety === 'optimal' ? 'text-emerald-500' : (calc.loopSafety === 'acceptable' ? 'text-amber-500' : 'text-rose-500')}">
+                            ${calc.loopSafety === 'optimal' ? 'verified_user' : (calc.loopSafety === 'acceptable' ? 'shield' : 'gpp_bad')}
+                        </span>
+                        Blitzschutz-Status: Leiterschleifenfläche ${calc.loopAreaM2} m²
+                    </p>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        ${calc.loopSafety === 'optimal' 
+                            ? 'Durch die Reißverschluss-Verkabelung ist die aufgespannte Induktionsfläche minimal. Höchster Schutz gegen Blitzeinkopplungen nach DIN EN 62305-3.' 
+                            : (calc.loopSafety === 'acceptable' 
+                                ? 'Der parallele Rückleiter im Montagekanal reduziert die Induktionsschleife auf ein sicheres Maß.' 
+                                : 'Achtung: Große Leiterschleife! Im Schadensfall können bei nahen Blitzeinschlägen Überspannungen Wechselrichter und Module beschädigen.')}
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
 }
 
 // ==========================================
