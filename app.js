@@ -489,16 +489,29 @@ function renderStringsUI() {
 
 let wiringSettings = {
     selectedStringId: 'all',
-    layoutMode: 'leapfrog',      // 'leapfrog', 'loop_reduced', 'simple'
+    layoutMode: 'leapfrog',      // 'leapfrog', 'loop_reduced', 'simple', 'manual'
     orientation: 'portrait',     // 'portrait', 'landscape'
-    columns: 'auto',             // 'auto', 1, 2, 3, 4, 5, 6, 8
+    columns: 'auto',             // 'auto', 1, 2, 3, 4, 5, 6, 8, 10
     cableLengthWr: 15,           // Meter einfacher Weg zum WR
     cableCrossSection: 6,        // mm² (4, 6, 10)
     cableTemp: 50,               // °C Betriebstemperatur
     showCurrentAnimation: true,
     showWireNumbers: true,
     showPolarity: true,
-    highlightPanelIdx: null
+    highlightPanelIdx: null,
+
+    // Manuelle Zuweisung je String: { [strId]: [panelIdx0, panelIdx1, ...] }
+    customSequences: {},
+
+    // Interaktiver Klick-Absteckmodus
+    interactiveActive: false,
+    interactiveTargetStringId: null,
+    interactiveQueue: [],
+
+    // Dachhindernisse & Geometrie je String:
+    // { [strId]: { obstacles: [ { id, row, col, type, label } ] } }
+    customRoofLayouts: {},
+    showObstacleEditor: false
 };
 
 function loadWiringSettings() {
@@ -506,6 +519,9 @@ function loadWiringSettings() {
     if(s && typeof s === 'object') {
         wiringSettings = Object.assign(wiringSettings, s);
     }
+    if (!wiringSettings.customSequences) wiringSettings.customSequences = {};
+    if (!wiringSettings.customRoofLayouts) wiringSettings.customRoofLayouts = {};
+    if (!wiringSettings.interactiveQueue) wiringSettings.interactiveQueue = [];
 }
 
 function saveWiringSettings() {
@@ -603,8 +619,161 @@ function getLeapfrogOrder(n) {
     return [...forward, ...backward];
 }
 
+// --- MANUELLE REIHENFOLGE & INTERAKTIVES ABSTECKEN ---
+function startInteractiveWiring(strId) {
+    wiringSettings.layoutMode = 'manual';
+    wiringSettings.interactiveActive = true;
+    wiringSettings.interactiveTargetStringId = strId;
+    wiringSettings.interactiveQueue = [];
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function handlePanelWiringClick(strId, panelIdx) {
+    if (wiringSettings.interactiveActive && wiringSettings.interactiveTargetStringId === strId) {
+        const str = strings.find(s => s.id === strId);
+        const total = (str?.fields || []).reduce((a, f) => a + (parseInt(f.count) || 0), 0);
+        
+        const q = wiringSettings.interactiveQueue;
+        const existsIdx = q.indexOf(panelIdx);
+        if (existsIdx >= 0) {
+            // Wenn das zuletzt geklickte Modul angeklickt wird: Undo
+            if (existsIdx === q.length - 1) {
+                q.pop();
+            }
+        } else {
+            q.push(panelIdx);
+            if (q.length === total) {
+                // Alle Module verbunden
+                wiringSettings.customSequences[strId] = [...q];
+                wiringSettings.interactiveActive = false;
+            }
+        }
+        saveWiringSettings();
+        renderWiringTab();
+        return;
+    }
+    highlightWiringPanel(panelIdx);
+}
+
+function undoInteractiveStep() {
+    if (wiringSettings.interactiveQueue && wiringSettings.interactiveQueue.length > 0) {
+        wiringSettings.interactiveQueue.pop();
+        saveWiringSettings();
+        renderWiringTab();
+    }
+}
+
+function finishInteractiveWiring(strId, totalPanels) {
+    const q = wiringSettings.interactiveQueue || [];
+    for (let i = 0; i < totalPanels; i++) {
+        if (!q.includes(i)) q.push(i);
+    }
+    wiringSettings.customSequences[strId] = [...q];
+    wiringSettings.interactiveActive = false;
+    wiringSettings.interactiveQueue = [];
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function cancelInteractiveWiring() {
+    wiringSettings.interactiveActive = false;
+    wiringSettings.interactiveQueue = [];
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function invertWiringSequence(strId, totalPanels) {
+    let seq = wiringSettings.customSequences[strId];
+    if (!Array.isArray(seq) || seq.length !== totalPanels) {
+        seq = Array.from({ length: totalPanels }, (_, i) => i);
+    }
+    seq.reverse();
+    wiringSettings.customSequences[strId] = seq;
+    wiringSettings.layoutMode = 'manual';
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function resetWiringToLeapfrog(strId, totalPanels) {
+    wiringSettings.customSequences[strId] = getLeapfrogOrder(totalPanels);
+    wiringSettings.layoutMode = 'manual';
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function resetWiringToLinear(strId, totalPanels) {
+    wiringSettings.customSequences[strId] = Array.from({ length: totalPanels }, (_, i) => i);
+    wiringSettings.layoutMode = 'manual';
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function shiftWiringSequenceItem(strId, seqIdx, dir) {
+    const seq = wiringSettings.customSequences[strId];
+    if (!seq || !seq.length) return;
+    const targetIdx = seqIdx + dir;
+    if (targetIdx < 0 || targetIdx >= seq.length) return;
+    const temp = seq[seqIdx];
+    seq[seqIdx] = seq[targetIdx];
+    seq[targetIdx] = temp;
+    wiringSettings.layoutMode = 'manual';
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+// --- HINDERNIS-LOGIK (FENSTER, GAUBEN, KAMINE, LEERFLÄCHEN) ---
+function toggleObstacleEditor() {
+    wiringSettings.showObstacleEditor = !wiringSettings.showObstacleEditor;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function addRoofObstacle(strId, type, row, col, label) {
+    if (!wiringSettings.customRoofLayouts[strId]) {
+        wiringSettings.customRoofLayouts[strId] = { obstacles: [] };
+    }
+    const obList = wiringSettings.customRoofLayouts[strId].obstacles || [];
+    const r = Math.max(0, parseInt(row) || 0);
+    const c = Math.max(0, parseInt(col) || 0);
+    
+    // Vorhandenes an gleicher Stelle überschreiben
+    const existIdx = obList.findIndex(o => o.row === r && o.col === c);
+    const item = {
+        id: Date.now(),
+        row: r,
+        col: c,
+        type: type || 'window',
+        label: label || (type === 'window' ? 'Dachfenster' : (type === 'dormer' ? 'Gaube' : (type === 'chimney' ? 'Kamin' : 'Leerfeld')))
+    };
+    if (existIdx >= 0) {
+        obList[existIdx] = item;
+    } else {
+        obList.push(item);
+    }
+    wiringSettings.customRoofLayouts[strId].obstacles = obList;
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function removeRoofObstacle(strId, obId) {
+    if (wiringSettings.customRoofLayouts[strId]?.obstacles) {
+        wiringSettings.customRoofLayouts[strId].obstacles = wiringSettings.customRoofLayouts[strId].obstacles.filter(o => o.id !== obId);
+        saveWiringSettings();
+        renderWiringTab();
+    }
+}
+
+function clearAllRoofObstacles(strId) {
+    if (wiringSettings.customRoofLayouts[strId]) {
+        wiringSettings.customRoofLayouts[strId].obstacles = [];
+        saveWiringSettings();
+        renderWiringTab();
+    }
+}
+
 // Exakte Berechnung der VDE-Leitungsparameter
-function calculateCablePhysics(str, settings) {
+function calculateCablePhysics(str, settings, positions = null, sequence = null) {
     const totalPanels = (str.fields || []).reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
     const pModel = (str.fields && str.fields[0]) ? (flatPanels.find(x => x.id === parseInt(str.fields[0].panelId)) || { vmp: 32.5, imp: 13.5, pmax: 440 }) : { vmp: 32.5, imp: 13.5, pmax: 440 };
     
@@ -624,12 +793,32 @@ function calculateCablePhysics(str, settings) {
     const temp = parseFloat(settings.cableTemp) || 50;
 
     let moduleBridgeLength = 0;
-    if (settings.layoutMode === 'leapfrog') {
-        moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.9;
-    } else if (settings.layoutMode === 'loop_reduced') {
-        moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 1.15);
+    if (positions && sequence && sequence.length > 1) {
+        // Exakte euklidische Distanzberechnung anhand der realen Modulkoordinaten auf dem Dach
+        for (let k = 0; k < sequence.length - 1; k++) {
+            const p1 = positions[sequence[k]];
+            const p2 = positions[sequence[k + 1]];
+            if (p1 && p2) {
+                const dc = Math.abs(p1.col - p2.col);
+                const dr = Math.abs(p1.row - p2.row);
+                // Schrittlängen: Horizontale ≈ 1.15 m, Vertikale ≈ 1.85 m
+                const distM = Math.sqrt(Math.pow(dc * 1.15, 2) + Math.pow(dr * 1.85, 2));
+                moduleBridgeLength += Math.max(0.9, distM + 0.35); // + 0.35m Verlegereserve/Schienenführung
+            }
+        }
+        if (settings.layoutMode === 'loop_reduced') {
+            moduleBridgeLength += (totalPanels * 1.15);
+        }
     } else {
-        moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 0.9);
+        if (settings.layoutMode === 'leapfrog') {
+            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.9;
+        } else if (settings.layoutMode === 'loop_reduced') {
+            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 1.15);
+        } else if (settings.layoutMode === 'manual') {
+            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.6;
+        } else {
+            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 0.9);
+        }
     }
 
     const rawCableLength = (2 * lengthWrOneWay) + moduleBridgeLength;
@@ -652,6 +841,9 @@ function calculateCablePhysics(str, settings) {
     } else if (settings.layoutMode === 'loop_reduced') {
         loopAreaM2 = Math.round(totalPanels * 0.15 * 10) / 10;
         loopSafety = 'acceptable';
+    } else if (settings.layoutMode === 'manual') {
+        loopAreaM2 = Math.round(totalPanels * 0.35 * 10) / 10;
+        loopSafety = loopAreaM2 > 5 ? 'warning' : 'acceptable';
     } else {
         loopAreaM2 = 0.1;
         loopSafety = 'optimal';
@@ -723,17 +915,25 @@ function generateStringWiringSvg(str, settings) {
     const gapX = 28;
     const gapY = 40;
 
+    // Hindernisse für diesen String abrufen
+    const strLayout = settings.customRoofLayouts[str.id] || { obstacles: [] };
+    const obstacles = strLayout.obstacles || [];
+
     let cols;
     if (settings.columns === 'auto') {
-        if (n <= 4) cols = n;
-        else if (n <= 8) cols = Math.ceil(n / 2);
-        else if (n <= 14) cols = Math.ceil(n / 2);
-        else cols = Math.ceil(n / 3);
+        const totalItems = n + obstacles.length;
+        if (totalItems <= 4) cols = totalItems;
+        else if (totalItems <= 8) cols = Math.ceil(totalItems / 2);
+        else if (totalItems <= 14) cols = Math.ceil(totalItems / 2);
+        else cols = Math.ceil(totalItems / 3);
     } else {
-        cols = Math.min(n, parseInt(settings.columns) || 4);
+        cols = Math.min(12, parseInt(settings.columns) || 4);
     }
+    // Sicherstellen, dass Hindernisse in das Raster passen
+    obstacles.forEach(o => {
+        if (o.col >= cols) cols = o.col + 1;
+    });
     cols = Math.max(1, cols);
-    const rows = Math.ceil(n / cols);
 
     const invWidth = 150;
     const invHeight = 220;
@@ -743,40 +943,99 @@ function generateStringWiringSvg(str, settings) {
     const gridStartX = invX + invWidth + 60;
     const gridStartY = 45;
 
+    // Zellen-Zuordnung für Module & Hindernisse
+    const positions = [];
+    const obstaclesPos = [];
+    let curR = 0;
+    let curC = 0;
+    let pIdx = 0;
+
+    // Belegte Hindernis-Zellen erfassen
+    const obstacleMap = new Map();
+    obstacles.forEach(ob => {
+        obstacleMap.set(`${ob.row},${ob.col}`, ob);
+    });
+
+    while (pIdx < n) {
+        const key = `${curR},${curC}`;
+        if (obstacleMap.has(key)) {
+            // Zelle ist durch Hindernis belegt
+            const ob = obstacleMap.get(key);
+            obstaclesPos.push({
+                ...ob,
+                x: gridStartX + curC * (pw + gapX),
+                y: gridStartY + curR * (ph + gapY),
+                w: pw,
+                h: ph
+            });
+            obstacleMap.delete(key);
+        } else {
+            // Freie Zelle für PV-Modul
+            const p = panelsList[pIdx];
+            const x = gridStartX + curC * (pw + gapX);
+            const y = gridStartY + curR * (ph + gapY);
+            positions.push({
+                ...p,
+                x,
+                y,
+                w: pw,
+                h: ph,
+                row: curR,
+                col: curC,
+                plusX: x + (pw * 0.32),
+                plusY: y + 14,
+                minusX: x + (pw * 0.68),
+                minusY: y + 14,
+                centerX: x + pw / 2,
+                centerY: y + ph / 2
+            });
+            pIdx++;
+        }
+        curC++;
+        if (curC >= cols) {
+            curC = 0;
+            curR++;
+        }
+    }
+
+    // Eventuell noch verbleibende Hindernisse außerhalb der belegten Modul-Zellen
+    obstacleMap.forEach(ob => {
+        obstaclesPos.push({
+            ...ob,
+            x: gridStartX + ob.col * (pw + gapX),
+            y: gridStartY + ob.row * (ph + gapY),
+            w: pw,
+            h: ph
+        });
+        if (ob.row >= curR) curR = ob.row + 1;
+    });
+
+    const maxRowUsed = Math.max(curR, ...positions.map(p => p.row + 1), ...obstaclesPos.map(o => o.row + 1));
+    const rows = Math.max(1, maxRowUsed);
+
     const gridWidth = cols * (pw + gapX);
     const gridHeight = rows * (ph + gapY);
 
     const svgWidth = Math.max(860, gridStartX + gridWidth + 40);
     const svgHeight = Math.max(340, Math.max(invY + invHeight, gridStartY + gridHeight) + 60);
 
-    const positions = panelsList.map((p, i) => {
-        const c = i % cols;
-        const r = Math.floor(i / cols);
-        const x = gridStartX + c * (pw + gapX);
-        const y = gridStartY + r * (ph + gapY);
-        return {
-            ...p,
-            x,
-            y,
-            w: pw,
-            h: ph,
-            row: r,
-            col: c,
-            plusX: x + (pw * 0.32),
-            plusY: y + 14,
-            minusX: x + (pw * 0.68),
-            minusY: y + 14,
-            centerX: x + pw / 2,
-            centerY: y + ph / 2
-        };
-    });
-
     const dcPlusTerm = { x: invX + invWidth - 10, y: invY + 70 };
     const dcMinusTerm = { x: invX + invWidth - 10, y: invY + 115 };
     const peTerm = { x: invX + invWidth - 10, y: invY + 160 };
 
+    const isInteractive = settings.interactiveActive && settings.interactiveTargetStringId === str.id;
     let sequence = [];
-    if (settings.layoutMode === 'leapfrog') {
+
+    if (isInteractive) {
+        sequence = [...(settings.interactiveQueue || [])];
+    } else if (settings.layoutMode === 'manual') {
+        const custom = settings.customSequences[str.id];
+        if (Array.isArray(custom) && custom.length === n) {
+            sequence = [...custom];
+        } else {
+            sequence = Array.from({ length: n }, (_, i) => i);
+        }
+    } else if (settings.layoutMode === 'leapfrog') {
         sequence = getLeapfrogOrder(n);
     } else {
         sequence = Array.from({ length: n }, (_, i) => i);
@@ -790,89 +1049,92 @@ function generateStringWiringSvg(str, settings) {
     const wirePaths = [];
     const stepBadges = [];
 
-    // 1. Zuleitung DC+ (WR -> Erstes Modul Plus)
-    const firstPos = positions[sequence[0]];
-    const dcPlusPath = `M ${dcPlusTerm.x} ${dcPlusTerm.y} C ${dcPlusTerm.x + 35} ${dcPlusTerm.y}, ${firstPos.plusX - 35} ${firstPos.plusY - 20}, ${firstPos.plusX} ${firstPos.plusY}`;
-    wirePaths.push({
-        d: dcPlusPath,
-        type: 'dc-plus',
-        color: '#ef4444',
-        label: 'DC+ Hinleiter (Rot)',
-        step: 0
-    });
-
-    // 2. Modul-zu-Modul Verbindungen
-    for (let k = 0; k < sequence.length - 1; k++) {
-        const fromPos = positions[sequence[k]];
-        const toPos = positions[sequence[k + 1]];
-        const x1 = fromPos.minusX;
-        const y1 = fromPos.minusY;
-        const x2 = toPos.plusX;
-        const y2 = toPos.plusY;
-        const stepNum = k + 1;
-
-        let d = '';
-        let midX = (x1 + x2) / 2;
-        let midY = (y1 + y2) / 2;
-
-        if (fromPos.row === toPos.row) {
-            const arch = -24;
-            d = `M ${x1} ${y1} C ${x1 + 10} ${y1 + arch}, ${x2 - 10} ${y2 + arch}, ${x2} ${y2}`;
-            midY = y1 + arch + 4;
-        } else {
-            const curveOffset = fromPos.col > toPos.col ? -35 : 35;
-            d = `M ${x1} ${y1} C ${x1} ${y1 + 40}, ${x2 + curveOffset} ${y2 - 40}, ${x2} ${y2}`;
+    if (sequence.length > 0) {
+        // 1. Zuleitung DC+ (WR -> Erstes Modul Plus)
+        const firstPos = positions[sequence[0]];
+        if (firstPos) {
+            const dcPlusPath = `M ${dcPlusTerm.x} ${dcPlusTerm.y} C ${dcPlusTerm.x + 35} ${dcPlusTerm.y}, ${firstPos.plusX - 35} ${firstPos.plusY - 20}, ${firstPos.plusX} ${firstPos.plusY}`;
+            wirePaths.push({
+                d: dcPlusPath,
+                type: 'dc-plus',
+                color: '#ef4444',
+                label: 'DC+ Hinleiter (Rot)',
+                step: 0
+            });
         }
 
-        wirePaths.push({
-            d,
-            type: 'module-wire',
-            color: stringColor,
-            label: `Steckung #${stepNum}`,
-            step: stepNum,
-            from: sequence[k],
-            to: sequence[k + 1]
-        });
+        // 2. Modul-zu-Modul Verbindungen
+        for (let k = 0; k < sequence.length - 1; k++) {
+            const fromPos = positions[sequence[k]];
+            const toPos = positions[sequence[k + 1]];
+            if (!fromPos || !toPos) continue;
 
-        stepBadges.push({
-            x: midX,
-            y: midY,
-            step: stepNum
-        });
+            const x1 = fromPos.minusX;
+            const y1 = fromPos.minusY;
+            const x2 = toPos.plusX;
+            const y2 = toPos.plusY;
+            const stepNum = k + 1;
+
+            let d = '';
+            let midX = (x1 + x2) / 2;
+            let midY = (y1 + y2) / 2;
+
+            if (fromPos.row === toPos.row && Math.abs(fromPos.col - toPos.col) <= 1) {
+                const arch = -24;
+                d = `M ${x1} ${y1} C ${x1 + 10} ${y1 + arch}, ${x2 - 10} ${y2 + arch}, ${x2} ${y2}`;
+                midY = y1 + arch + 4;
+            } else {
+                const curveOffset = fromPos.col > toPos.col ? -35 : 35;
+                d = `M ${x1} ${y1} C ${x1} ${y1 + 40}, ${x2 + curveOffset} ${y2 - 40}, ${x2} ${y2}`;
+            }
+
+            wirePaths.push({
+                d,
+                type: 'module-wire',
+                color: stringColor,
+                label: `Steckung #${stepNum}`,
+                step: stepNum,
+                from: sequence[k],
+                to: sequence[k + 1]
+            });
+
+            stepBadges.push({
+                x: midX,
+                y: midY,
+                step: stepNum
+            });
+        }
+
+        // 3. Rückleitung DC- (Letztes Modul Minus -> WR DC-)
+        // Im interaktiven Modus erst zeichnen wenn alle Module verbunden sind
+        if (!isInteractive || sequence.length === n) {
+            const lastPos = positions[sequence[sequence.length - 1]];
+            if (lastPos) {
+                let dcMinusPath = '';
+                if (settings.layoutMode === 'leapfrog') {
+                    dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${lastPos.minusX - 30} ${lastPos.minusY + 30}, ${dcMinusTerm.x + 35} ${dcMinusTerm.y + 20}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
+                } else if (settings.layoutMode === 'loop_reduced') {
+                    const railY = lastPos.y + lastPos.h + 16;
+                    dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} L ${lastPos.minusX} ${railY} L ${gridStartX - 25} ${railY} C ${gridStartX - 45} ${railY}, ${dcMinusTerm.x + 30} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
+                } else {
+                    dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${(lastPos.minusX + dcMinusTerm.x) / 2} ${(lastPos.minusY + dcMinusTerm.y) / 2 - 40}, ${dcMinusTerm.x + 40} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
+                }
+
+                wirePaths.push({
+                    d: dcMinusPath,
+                    type: 'dc-minus',
+                    color: '#3b82f6',
+                    label: 'DC- Rückleiter (Blau)',
+                    step: sequence.length
+                });
+            }
+        }
     }
 
-    // 3. Rückleitung DC- (Letztes Modul Minus -> WR DC-)
-    const lastPos = positions[sequence[sequence.length - 1]];
-    let dcMinusPath = '';
-    if (settings.layoutMode === 'leapfrog') {
-        dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${lastPos.minusX - 30} ${lastPos.minusY + 30}, ${dcMinusTerm.x + 35} ${dcMinusTerm.y + 20}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
-    } else if (settings.layoutMode === 'loop_reduced') {
-        const railY = lastPos.y + lastPos.h + 16;
-        dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} L ${lastPos.minusX} ${railY} L ${gridStartX - 25} ${railY} C ${gridStartX - 45} ${railY}, ${dcMinusTerm.x + 30} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
-    } else {
-        dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${(lastPos.minusX + dcMinusTerm.x) / 2} ${(lastPos.minusY + dcMinusTerm.y) / 2 - 40}, ${dcMinusTerm.x + 40} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
-    }
-
-    wirePaths.push({
-        d: dcMinusPath,
-        type: 'dc-minus',
-        color: '#3b82f6',
-        label: 'DC- Rückleiter (Blau)',
-        step: sequence.length
-    });
-
-    // Warnfläche bei einfacher Schleife
+    // Status / Zertifikat SVG
     let loopAreaSvg = '';
     if (settings.layoutMode === 'simple') {
-        const polyPoints = [
-            `${dcPlusTerm.x},${dcPlusTerm.y}`,
-            `${firstPos.plusX},${firstPos.plusY}`,
-            ...positions.map(p => `${p.minusX},${p.minusY}`),
-            `${lastPos.minusX},${lastPos.minusY}`,
-            `${dcMinusTerm.x},${dcMinusTerm.y}`
-        ].join(' ');
         loopAreaSvg = `
-            <polygon points="${polyPoints}" fill="rgba(244, 63, 94, 0.08)" stroke="#f43f5e" stroke-width="1.5" stroke-dasharray="6,4" />
             <g transform="translate(${gridStartX + gridWidth / 2 - 120}, ${gridStartY + gridHeight / 2 - 16})">
                 <rect width="240" height="32" rx="8" fill="#1e1b4b" stroke="#f43f5e" stroke-width="1.5" opacity="0.95" />
                 <text x="120" y="20" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">⚠️ Große Induktionsschleife (~${Math.round(n * 1.85)} m²)</text>
@@ -883,6 +1145,13 @@ function generateStringWiringSvg(str, settings) {
             <g transform="translate(${gridStartX + gridWidth / 2 - 130}, ${gridStartY - 28})">
                 <rect width="260" height="24" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="1.2" opacity="0.9" />
                 <text x="130" y="16" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="700">🛡️ VDE 0185-305: Leiterschleife ≈ 0 m² (Optimal)</text>
+            </g>
+        `;
+    } else if (settings.layoutMode === 'manual') {
+        loopAreaSvg = `
+            <g transform="translate(${gridStartX + gridWidth / 2 - 130}, ${gridStartY - 28})">
+                <rect width="260" height="24" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="1.2" opacity="0.95" />
+                <text x="130" y="16" text-anchor="middle" fill="#7dd3fc" font-size="10.5" font-weight="700">✏️ Manuelle Reihenfolge (${sequence.length}/${n} verbunden)</text>
             </g>
         `;
     }
@@ -913,35 +1182,38 @@ function generateStringWiringSvg(str, settings) {
                 .flow-active {
                     animation: dcFlow 1.2s linear infinite;
                 }
+                @keyframes pulseNext {
+                    0%, 100% { stroke-opacity: 1; stroke-width: 2.5; }
+                    50% { stroke-opacity: 0.4; stroke-width: 4; }
+                }
+                .pulse-candidate {
+                    animation: pulseNext 1.4s ease-in-out infinite;
+                }
             </style>
         </defs>
 
         <!-- Blueprint Grid Hintergrund -->
         <rect width="100%" height="100%" fill="url(#wiringGrid)" />
 
-        <!-- Induktionsschleifen-Warnung oder Zertifikat -->
+        <!-- Status / Zertifikat -->
         ${loopAreaSvg}
 
         <!-- WECHSELRICHTER (INVERTER) SYMBOL -->
         <g id="inverter-symbol" transform="translate(${invX}, ${invY})">
-            <!-- WR Chassis -->
             <rect width="${invWidth}" height="${invHeight}" rx="14" fill="url(#invGrad)" stroke="#475569" stroke-width="2" filter="url(#wireGlow)" />
             
-            <!-- Header mit Status-LED -->
             <rect x="0" y="0" width="${invWidth}" height="38" rx="14" fill="#334155" />
             <rect x="0" y="24" width="${invWidth}" height="14" fill="#334155" />
             <circle cx="18" cy="19" r="4.5" fill="#10b981" />
             <circle cx="18" cy="19" r="8" fill="#10b981" opacity="0.3" class="animate-ping" />
             <text x="32" y="23" fill="#f8fafc" font-size="11" font-weight="800" letter-spacing="0.5">WECHSELRICHTER</text>
 
-            <!-- Display -->
             <rect x="12" y="48" width="${invWidth - 24}" height="76" rx="8" fill="#020617" stroke="#1e293b" stroke-width="1.5" />
             <text x="20" y="66" fill="#38bdf8" font-size="9.5" font-weight="700">${inverter.name.slice(0, 16)}</text>
             <text x="20" y="82" fill="#94a3b8" font-size="9">Eingang: <tspan fill="#f8fafc" font-weight="700">MPPT ${str.mpptId || 1}</tspan></text>
             <text x="20" y="98" fill="#94a3b8" font-size="9">Spannung: <tspan fill="#34d399" font-weight="700">${Math.round(str._phys?.vmpHot || 380)} V</tspan></text>
             <text x="20" y="114" fill="#94a3b8" font-size="8.5">Status: <tspan fill="#38bdf8">TRACKING</tspan></text>
 
-            <!-- Klemmenleiste (Terminals) -->
             <!-- DC+ Klemme -->
             <g transform="translate(${invWidth - 20}, 70)">
                 <circle cx="0" cy="0" r="10" fill="#ef4444" stroke="#991b1b" stroke-width="1.5" />
@@ -964,6 +1236,60 @@ function generateStringWiringSvg(str, settings) {
             </g>
 
             <text x="${invWidth / 2}" y="${invHeight - 12}" fill="#64748b" font-size="8" text-anchor="middle">VDE 0100-712</text>
+        </g>
+
+        <!-- HINDERNISSE-EBENE (FENSTER, GAUBEN, KAMINE, LEERFLÄCHEN) -->
+        <g id="obstacles-layer">
+            ${obstaclesPos.map(ob => {
+                if (ob.type === 'window') {
+                    // Dachfenster (Velux)
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0b1329" stroke="#38bdf8" stroke-width="1.5" />
+                        <rect x="6" y="6" width="${ob.w - 12}" height="${ob.h - 12}" rx="3" fill="#0284c7" fill-opacity="0.18" stroke="#0284c7" stroke-width="1" />
+                        <!-- Fenstersprossen -->
+                        <line x1="${ob.w / 2}" y1="6" x2="${ob.w / 2}" y2="${ob.h - 6}" stroke="#64748b" stroke-width="1.5" />
+                        <line x1="6" y1="${ob.h * 0.45}" x2="${ob.w - 6}" y2="${ob.h * 0.45}" stroke="#64748b" stroke-width="1.5" />
+                        <!-- Griff & Reflexion -->
+                        <rect x="${ob.w / 2 - 7}" y="${ob.h * 0.45 - 2.5}" width="14" height="5" rx="1.5" fill="#94a3b8" />
+                        <polygon points="12,12 ${ob.w - 16},12 12,${ob.h - 20}" fill="#ffffff" fill-opacity="0.08" />
+                        <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" stroke="#334155" stroke-width="0.8" />
+                        <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#38bdf8" font-size="8" font-weight="700" text-anchor="middle">${ob.label || 'Dachfenster'}</text>
+                    </g>
+                    `;
+                } else if (ob.type === 'dormer') {
+                    // Gaube
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
+                        <polygon points="8,${ob.h - 14} ${ob.w / 2},12 ${ob.w - 8},${ob.h - 14}" fill="#334155" stroke="#f59e0b" stroke-width="1" />
+                        <line x1="${ob.w * 0.25}" y1="${ob.h * 0.6}" x2="${ob.w * 0.75}" y2="${ob.h * 0.6}" stroke="#f59e0b" stroke-width="0.8" opacity="0.6" />
+                        <line x1="${ob.w * 0.35}" y1="${ob.h * 0.4}" x2="${ob.w * 0.65}" y2="${ob.h * 0.4}" stroke="#f59e0b" stroke-width="0.8" opacity="0.6" />
+                        <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" />
+                        <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#fbbf24" font-size="8.5" font-weight="700" text-anchor="middle">${ob.label || 'Gaube'}</text>
+                    </g>
+                    `;
+                } else if (ob.type === 'chimney') {
+                    // Kamin / Schornstein
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1c1917" stroke="#78716c" stroke-width="1.5" />
+                        <rect x="12" y="12" width="${ob.w - 24}" height="${ob.h - 24}" rx="3" fill="#7f1d1d" stroke="#b91c1c" stroke-width="1" />
+                        <ellipse cx="${ob.w / 2}" cy="${ob.h / 2}" rx="10" ry="7" fill="#0c0a09" stroke="#991b1b" stroke-width="1" />
+                        <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" />
+                        <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#fca5a5" font-size="8.5" font-weight="700" text-anchor="middle">${ob.label || 'Kamin'}</text>
+                    </g>
+                    `;
+                } else {
+                    // Leerfläche / Aussparung
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1" stroke-dasharray="4,4" opacity="0.55" />
+                        <text x="${ob.w / 2}" y="${ob.h / 2 + 3}" fill="#64748b" font-size="8.5" font-weight="600" text-anchor="middle">${ob.label || 'Leerfeld'}</text>
+                    </g>
+                    `;
+                }
+            }).join('')}
         </g>
 
         <!-- KABELWEGE (WIRES & LEITUNGSFÜHRUNG) -->
@@ -995,13 +1321,31 @@ function generateStringWiringSvg(str, settings) {
         <g id="panels-layer">
             ${positions.map(p => {
                 const isHigh = settings.highlightPanelIdx === p.idx;
-                const strokeCol = isHigh ? '#38bdf8' : '#475569';
-                const strokeW = isHigh ? 3 : 1.5;
+                const seqStepIdx = sequence.indexOf(p.idx);
+                const isConnected = seqStepIdx >= 0;
+
+                let strokeCol = '#475569';
+                let strokeW = 1.5;
+                let extraClass = '';
+
+                if (isInteractive) {
+                    if (isConnected) {
+                        strokeCol = '#10b981';
+                        strokeW = 2.5;
+                    } else if (sequence.length === 0 || seqStepIdx === -1) {
+                        strokeCol = '#38bdf8';
+                        strokeW = 2;
+                        extraClass = 'pulse-candidate';
+                    }
+                } else if (isHigh) {
+                    strokeCol = '#38bdf8';
+                    strokeW = 3;
+                }
 
                 return `
-                <g id="panel-${p.idx}" transform="translate(${p.x}, ${p.y})" class="cursor-pointer transition-transform" onclick="highlightWiringPanel(${p.idx})">
+                <g id="panel-${p.idx}" transform="translate(${p.x}, ${p.y})" class="cursor-pointer transition-transform" onclick="handlePanelWiringClick(${str.id}, ${p.idx})">
                     <!-- Modul-Rahmen (Aluminium) -->
-                    <rect width="${p.w}" height="${p.h}" rx="6" fill="url(#panelGrad)" stroke="${strokeCol}" stroke-width="${strokeW}" filter="url(#wireGlow)" />
+                    <rect width="${p.w}" height="${p.h}" rx="6" fill="url(#panelGrad)" stroke="${strokeCol}" stroke-width="${strokeW}" class="${extraClass}" filter="url(#wireGlow)" />
                     
                     <!-- Solarzellen / Sub-Wafer Linien -->
                     <g stroke="#334155" stroke-width="0.6" opacity="0.65">
@@ -1015,6 +1359,15 @@ function generateStringWiringSvg(str, settings) {
                     <!-- Modul-Nummer Badge (Oben Links) -->
                     <rect x="5" y="5" width="24" height="16" rx="4" fill="#0f172a" stroke="#64748b" stroke-width="1" />
                     <text x="17" y="16.5" fill="#f8fafc" font-size="9" font-weight="800" text-anchor="middle">#${p.labelNum}</text>
+
+                    <!-- Wenn manuell vergeben: Reihenfolge-Badge oben rechts -->
+                    ${isConnected ? `
+                        <rect x="${p.w - 29}" y="5" width="24" height="16" rx="4" fill="#064e3b" stroke="#10b981" stroke-width="1.2" />
+                        <text x="${p.w - 17}" y="16.5" fill="#6ee7b7" font-size="9" font-weight="900" text-anchor="middle">${seqStepIdx + 1}</text>
+                    ` : (isInteractive ? `
+                        <rect x="${p.w - 29}" y="5" width="24" height="16" rx="4" fill="#1e293b" stroke="#38bdf8" stroke-width="1" stroke-dasharray="2,2" />
+                        <text x="${p.w - 17}" y="16.5" fill="#38bdf8" font-size="8.5" font-weight="700" text-anchor="middle">?</text>
+                    ` : '')}
 
                     <!-- Anschlussdose (Junction Box) mit MC4-Klemmen -->
                     <rect x="${p.w * 0.22}" y="6" width="${p.w * 0.56}" height="16" rx="4" fill="#020617" stroke="#334155" stroke-width="1" />
@@ -1120,7 +1473,7 @@ function renderWiringTab() {
             </div>
 
             <!-- KONFIGURATIONS-LEISTE FÜR DIE VERKABELUNG -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                 <!-- 1. Verlegemethode -->
                 <div>
                     <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1">
@@ -1130,6 +1483,7 @@ function renderWiringTab() {
                         <option value="leapfrog" ${wiringSettings.layoutMode === 'leapfrog' ? 'selected' : ''}>Reißverschluss (Leap-Frog) - Schleifenfrei</option>
                         <option value="loop_reduced" ${wiringSettings.layoutMode === 'loop_reduced' ? 'selected' : ''}>Reihe + Paralleler Rückleiter im Profil</option>
                         <option value="simple" ${wiringSettings.layoutMode === 'simple' ? 'selected' : ''}>Standard Reihenschaltung (Offene Schleife)</option>
+                        <option value="manual" ${wiringSettings.layoutMode === 'manual' ? 'selected' : ''}>✏️ Manuelle Zuweisung (Zerstückeltes Dach / Gauben)</option>
                     </select>
                 </div>
 
@@ -1152,11 +1506,28 @@ function renderWiringTab() {
                             <option value="4" ${wiringSettings.columns === '4' ? 'selected' : ''}>4 Spalten</option>
                             <option value="6" ${wiringSettings.columns === '6' ? 'selected' : ''}>6 Spalten</option>
                             <option value="8" ${wiringSettings.columns === '8' ? 'selected' : ''}>8 Spalten</option>
+                            <option value="10" ${wiringSettings.columns === '10' ? 'selected' : ''}>10 Spalten</option>
                         </select>
                     </div>
                 </div>
 
-                <!-- 3. Toggles für Darstellung -->
+                <!-- 3. Dach-Hindernisse Button (Gauben, Fenster, Kamine) -->
+                <div>
+                    <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm text-amber-500">roofing</span> Dach-Hindernisse:
+                    </label>
+                    <button onclick="toggleObstacleEditor()" class="w-full py-2 px-3 rounded-xl font-bold transition-all border flex items-center justify-between ${wiringSettings.showObstacleEditor ? 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400' : 'bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}">
+                        <span class="flex items-center gap-1.5">
+                            <span class="material-symbols-rounded text-base">window</span>
+                            <span>Gauben & Fenster</span>
+                        </span>
+                        <span class="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-extrabold">
+                            ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).length}
+                        </span>
+                    </button>
+                </div>
+
+                <!-- 4. Toggles für Darstellung -->
                 <div class="flex items-center justify-between md:justify-end gap-3 pt-4 md:pt-0">
                     <label class="flex items-center gap-1.5 cursor-pointer font-bold text-slate-600 dark:text-slate-300">
                         <input type="checkbox" ${wiringSettings.showCurrentAnimation ? 'checked' : ''} onchange="toggleWiringAnimation()" class="rounded border-slate-300 text-primary focus:ring-primary">
@@ -1168,14 +1539,102 @@ function renderWiringTab() {
                     </label>
                 </div>
             </div>
+
+            <!-- HINDERNIS-VERWALTUNG (GAUBEN, DACHFENSTER, KAMINE, AUSSPARUNGEN) -->
+            ${wiringSettings.showObstacleEditor ? `
+            <div class="p-4 rounded-2xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/60 space-y-3 text-xs">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 dark:border-amber-800/40 pb-2.5">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-rounded text-amber-600 dark:text-amber-400 text-lg">home_repair_service</span>
+                        <div>
+                            <h4 class="font-extrabold text-slate-900 dark:text-white">Dach-Hindernisse für ${primaryStr.name || 'String 1'}</h4>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Positioniere Fenster, Gauben oder Kamine im Dachraster. Die PV-Module weichen diesen Zellen automatisch aus.</p>
+                        </div>
+                    </div>
+                    <button onclick="clearAllRoofObstacles(${primaryStr.id})" class="text-rose-600 dark:text-rose-400 hover:underline font-bold text-[11px] flex items-center gap-1 self-start sm:self-auto">
+                        <span class="material-symbols-rounded text-sm">delete_sweep</span> Alle Hindernisse leeren
+                    </button>
+                </div>
+
+                <!-- Formular zum Hinzufügen eines Hindernisses -->
+                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end">
+                    <div>
+                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Typ:</label>
+                        <select id="ob_type_input" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-medium outline-none">
+                            <option value="window">Dachfenster (Velux)</option>
+                            <option value="dormer">Gaube</option>
+                            <option value="chimney">Kamin / Schornstein</option>
+                            <option value="empty">Leerfläche / Aussparung</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Reihe (0 = oben):</label>
+                        <input type="number" id="ob_row_input" min="0" max="15" value="0" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Spalte (0 = links):</label>
+                        <input type="number" id="ob_col_input" min="0" max="15" value="1" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold outline-none">
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Bezeichnung:</label>
+                        <input type="text" id="ob_label_input" placeholder="z. B. Gaube Ost" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-medium outline-none">
+                    </div>
+                    <div>
+                        <button onclick="addRoofObstacle(${primaryStr.id}, document.getElementById('ob_type_input').value, document.getElementById('ob_row_input').value, document.getElementById('ob_col_input').value, document.getElementById('ob_label_input').value)" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-1.5 px-3 rounded-xl shadow-sm transition-all flex items-center justify-center gap-1">
+                            <span class="material-symbols-rounded text-base">add</span> Platzieren
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Liste der aktuell platzierten Hindernisse -->
+                ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).length > 0 ? `
+                <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/40 dark:border-amber-800/30">
+                    <span class="font-bold text-slate-500">Platzierte Elemente:</span>
+                    ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).map(ob => `
+                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 shadow-2xs">
+                            <span class="material-symbols-rounded text-xs text-amber-500">${ob.type === 'window' ? 'window' : (ob.type === 'dormer' ? 'roofing' : (ob.type === 'chimney' ? 'fireplace' : 'check_box_outline_blank'))}</span>
+                            <span>${ob.label}</span>
+                            <span class="text-slate-400 font-normal">[R${ob.row} : S${ob.col}]</span>
+                            <button onclick="removeRoofObstacle(${primaryStr.id}, ${ob.id})" class="text-slate-400 hover:text-rose-500 transition-colors ml-0.5">
+                                <span class="material-symbols-rounded text-sm">close</span>
+                            </button>
+                        </span>
+                    `).join('')}
+                </div>
+                ` : `
+                <div class="text-[11px] text-slate-500 dark:text-slate-400 italic">
+                    Noch keine Hindernisse platziert. Füge oben ein Dachfenster oder eine Gaube hinzu, um das zerstückelte Dach nachzubilden.
+                </div>
+                `}
+            </div>
+            ` : ''}
         </div>
 
         <!-- SCHALTPLAN / SVG-CONTAINER -->
         ${activeStrings.map((s, sIdx) => {
-            const sCalc = calculateCablePhysics(s, wiringSettings);
             const totalMod = (s.fields || []).reduce((a, f) => a + (parseInt(f.count) || 0), 0);
             const inv = flatInverters.find(i => i.id === parseInt(s.inverterId)) || { name: 'Wechselrichter' };
             const svgContent = generateStringWiringSvg(s, wiringSettings);
+            const isInteractive = wiringSettings.interactiveActive && wiringSettings.interactiveTargetStringId === s.id;
+
+            // Reihenfolge für diesen String
+            let currentSeq = [];
+            if (isInteractive) {
+                currentSeq = [...(wiringSettings.interactiveQueue || [])];
+            } else if (wiringSettings.layoutMode === 'manual') {
+                const custom = wiringSettings.customSequences[s.id];
+                if (Array.isArray(custom) && custom.length === totalMod) {
+                    currentSeq = [...custom];
+                } else {
+                    currentSeq = Array.from({ length: totalMod }, (_, i) => i);
+                }
+            } else if (wiringSettings.layoutMode === 'leapfrog') {
+                currentSeq = getLeapfrogOrder(totalMod);
+            } else {
+                currentSeq = Array.from({ length: totalMod }, (_, i) => i);
+            }
+
+            const sCalc = calculateCablePhysics(s, wiringSettings, null, currentSeq);
 
             return `
             <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -1188,6 +1647,11 @@ function renderWiringTab() {
                         <span class="text-xs font-bold px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                             ${totalMod} Module (${(sCalc.pTotalWp / 1000).toFixed(2)} kWp)
                         </span>
+                        ${wiringSettings.layoutMode === 'manual' ? `
+                            <span class="text-[11px] font-extrabold px-2 py-0.5 rounded-lg bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+                                ✏️ Manuelle Zuweisung
+                            </span>
+                        ` : ''}
                     </div>
 
                     <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
@@ -1198,6 +1662,86 @@ function renderWiringTab() {
                         <span>$U_{mpp}$: <strong class="text-emerald-600 dark:text-emerald-400">${Math.round(sCalc.vmpTotal)} V</strong></span>
                         <span>•</span>
                         <span>$I_{mpp}$: <strong class="text-sky-600 dark:text-sky-400">${sCalc.imp.toFixed(1)} A</strong></span>
+                    </div>
+                </div>
+
+                <!-- MANUELLE ZUWEISUNG / INTERAKTIVE STEUERUNG -->
+                <div class="p-3.5 rounded-2xl ${isInteractive ? 'bg-sky-500/10 border-2 border-sky-500' : 'bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800'} space-y-3">
+                    ${isInteractive ? `
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="w-3 h-3 rounded-full bg-sky-500 animate-ping shrink-0"></span>
+                                <div>
+                                    <p class="font-extrabold text-sky-700 dark:text-sky-300 text-sm">
+                                        Schritt ${currentSeq.length + 1} von ${totalMod}: Klicke das nächste Modul an
+                                    </p>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                                        Klicke die PV-Module auf dem Schaltplan in der gewünschten Steckreihenfolge an (${currentSeq.length}/${totalMod} verbunden).
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 self-end sm:self-auto">
+                                <button onclick="undoInteractiveStep()" ${currentSeq.length === 0 ? 'disabled' : ''} class="px-3 py-1.5 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 disabled:opacity-40 flex items-center gap-1 transition-all">
+                                    <span class="material-symbols-rounded text-sm">undo</span> Rückgängig
+                                </button>
+                                <button onclick="finishInteractiveWiring(${s.id}, ${totalMod})" class="px-3.5 py-1.5 rounded-xl font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm flex items-center gap-1 transition-all">
+                                    <span class="material-symbols-rounded text-sm">check</span> Fertigstellen
+                                </button>
+                                <button onclick="cancelInteractiveWiring()" class="px-3 py-1.5 rounded-xl font-bold text-slate-500 hover:text-slate-800 dark:hover:text-slate-200">
+                                    Abbrechen
+                                </button>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-xs">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-rounded text-base text-primary">route</span>
+                                <span class="font-bold text-slate-800 dark:text-slate-200">Reihenfolge der Modulverkabelung:</span>
+                                <span class="text-slate-500 font-medium">(${wiringSettings.layoutMode === 'manual' ? 'Benutzerdefiniert' : (wiringSettings.layoutMode === 'leapfrog' ? 'Leap-Frog Automatik' : 'Reihen-Automatik')})</span>
+                            </div>
+
+                            <div class="flex flex-wrap items-center gap-2">
+                                <button onclick="startInteractiveWiring(${s.id})" class="px-3 py-1.5 rounded-xl font-extrabold bg-primary hover:bg-primary-hover text-white shadow-sm flex items-center gap-1.5 transition-all text-xs">
+                                    <span class="material-symbols-rounded text-sm">touch_app</span> Interaktiv per Klick abstecken
+                                </button>
+                                <button onclick="invertWiringSequence(${s.id}, ${totalMod})" title="Reihenfolge umkehren" class="px-2.5 py-1.5 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-xs">
+                                    <span class="material-symbols-rounded text-sm">swap_horiz</span> Umkehren
+                                </button>
+                                <button onclick="resetWiringToLeapfrog(${s.id}, ${totalMod})" title="Auf Leap-Frog Reißverschluss zurücksetzen" class="px-2.5 py-1.5 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-xs">
+                                    <span class="material-symbols-rounded text-sm">shuffle</span> Leap-Frog
+                                </button>
+                                <button onclick="resetWiringToLinear(${s.id}, ${totalMod})" title="Auf fortlaufende Reihe zurücksetzen" class="px-2.5 py-1.5 rounded-xl font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-1 text-xs">
+                                    <span class="material-symbols-rounded text-sm">linear_scale</span> In Reihe
+                                </button>
+                            </div>
+                        </div>
+                    `}
+
+                    <!-- VISUELLER REIHENFOLGE-STRANG MIT FEIN-JUSTIERUNG (PFEILE) -->
+                    <div class="pt-2 border-t border-slate-200/60 dark:border-slate-800/80">
+                        <div class="flex items-center gap-2 overflow-x-auto pb-1 text-[11px]">
+                            <span class="font-bold text-slate-500 shrink-0 flex items-center gap-1">
+                                <span class="material-symbols-rounded text-sm text-rose-500">arrow_forward</span> DC+ WR
+                            </span>
+                            ${currentSeq.map((panelIdx, posIdx) => `
+                                <div class="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-bold shrink-0 shadow-2xs">
+                                    <span class="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] flex items-center justify-center font-black text-slate-500">${posIdx + 1}</span>
+                                    <span>Modul #${panelIdx + 1}</span>
+                                    ${wiringSettings.layoutMode === 'manual' ? `
+                                        <button onclick="shiftWiringSequenceItem(${s.id}, ${posIdx}, -1)" ${posIdx === 0 ? 'disabled' : ''} class="text-slate-400 hover:text-primary disabled:opacity-20 px-0.5" title="Nach links verschieben">
+                                            ◀
+                                        </button>
+                                        <button onclick="shiftWiringSequenceItem(${s.id}, ${posIdx}, 1)" ${posIdx === currentSeq.length - 1 ? 'disabled' : ''} class="text-slate-400 hover:text-primary disabled:opacity-20 px-0.5" title="Nach rechts verschieben">
+                                            ▶
+                                        </button>
+                                    ` : ''}
+                                </div>
+                                ${posIdx < currentSeq.length - 1 ? '<span class="text-slate-400 font-bold">→</span>' : ''}
+                            `).join('')}
+                            <span class="font-bold text-slate-500 shrink-0 flex items-center gap-1">
+                                → DC- WR <span class="material-symbols-rounded text-sm text-blue-500">arrow_forward</span>
+                            </span>
+                        </div>
                     </div>
                 </div>
 
@@ -1224,9 +1768,12 @@ function renderWiringTab() {
                         <span class="flex items-center gap-1.5">
                             <span class="w-3.5 h-3.5 rounded-full bg-blue-500 text-white text-[8px] font-black inline-flex items-center justify-center">-</span> Minuspol
                         </span>
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-3.5 h-3.5 rounded-full bg-amber-500/20 text-amber-500 text-[8px] font-black inline-flex items-center justify-center border border-amber-500/40">G</span> Gauben / Fenster
+                        </span>
                     </div>
                     <div class="font-medium text-slate-400">
-                        Klick auf ein Modul hebt die Verbindung hervor.
+                        Klicke auf ein Modul oder nutze "Interaktiv abstecken", um die Zuweisung festzulegen.
                     </div>
                 </div>
             </div>
