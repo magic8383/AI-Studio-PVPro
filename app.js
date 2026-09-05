@@ -1664,23 +1664,136 @@ function updateCustomDbFields() {
 }
 function saveCustomDevice() {
     let t = document.getElementById('cdb_type').value;
-    let name = document.getElementById('cdb_name').value;
-    if(!name) return alert("Bitte Namen eingeben");
+    let name = document.getElementById('cdb_name')?.value?.trim();
+    if(!name) return alert("Bitte Gerätenamen eingeben.");
     
     let userDB = JSON.parse(localStorage.getItem('pvpro_user_db')) || { panels: [], batteries: [], inverters: [] };
     let newId = Date.now() % 100000;
 
-    if(t==='panel') userDB.panels.push({ id: newId, name, pmax: parseFloat(document.getElementById('cdb_pmax').value)||400, voc: parseFloat(document.getElementById('cdb_voc').value)||40, vmp: parseFloat(document.getElementById('cdb_vmp').value)||30, isc: parseFloat(document.getElementById('cdb_isc').value)||10, tempVoc: -0.25 });
+    if(t==='panel') {
+        userDB.panels.push({ 
+            id: newId, 
+            name, 
+            pmax: parseFloat(document.getElementById('cdb_pmax').value)||440, 
+            voc: parseFloat(document.getElementById('cdb_voc').value)||40.5, 
+            vmp: parseFloat(document.getElementById('cdb_vmp').value)||34.0, 
+            isc: parseFloat(document.getElementById('cdb_isc').value)||14.5, 
+            tempVoc: -0.25,
+            isCustom: true
+        });
+    }
     if(t==='inv') {
         let mppts = []; let count = parseInt(document.getElementById('cdb_mppts').value)||2;
-        for(let i=1; i<=count; i++) mppts.push({id:i, name:`MPPT ${i}`, maxIsc:20, maxI:15});
-        userDB.inverters.push({ id: newId, name, acMax: parseFloat(document.getElementById('cdb_acmax').value)||5000, startV: parseFloat(document.getElementById('cdb_startv').value)||80, maxV: parseFloat(document.getElementById('cdb_maxv').value)||1000, minMppV: parseFloat(document.getElementById('cdb_startv').value)+50, maxMppV: 800, mppts });
+        for(let i=1; i<=count; i++) mppts.push({id:i, name:`MPPT ${i}`, maxIsc:25, maxI:15});
+        userDB.inverters.push({ 
+            id: newId, 
+            name, 
+            acMax: parseFloat(document.getElementById('cdb_acmax').value)||5000, 
+            startV: parseFloat(document.getElementById('cdb_startv').value)||80, 
+            maxV: parseFloat(document.getElementById('cdb_maxv').value)||1000, 
+            minMppV: (parseFloat(document.getElementById('cdb_startv').value)||80) + 40, 
+            maxMppV: 800, 
+            mppts,
+            isCustom: true
+        });
     }
-    if(t==='bat') userDB.batteries.push({ id: newId, name, cap: parseFloat(document.getElementById('cdb_cap').value)||5, power: parseFloat(document.getElementById('cdb_power').value)||5000, eff: 0.95 });
+    if(t==='bat') {
+        userDB.batteries.push({ 
+            id: newId, 
+            name, 
+            cap: parseFloat(document.getElementById('cdb_cap').value)||5.0, 
+            power: parseFloat(document.getElementById('cdb_power').value)||5000, 
+            eff: 0.95,
+            isCustom: true
+        });
+    }
 
     localStorage.setItem('pvpro_user_db', JSON.stringify(userDB));
-    toggleCustomDbForm();
-    alert("Gerät gespeichert! App lädt neu.");
+
+    // Optional: Erstes Dokument / Zertifikat direkt mitspeichern
+    const docTitle = document.getElementById('cdb_doc_title')?.value?.trim();
+    const docCat = document.getElementById('cdb_doc_cat')?.value || 'datenblatt';
+    const docStandard = document.getElementById('cdb_doc_standard')?.value?.trim() || '';
+    const docUrl = document.getElementById('cdb_doc_url')?.value?.trim() || '';
+    const docFileInput = document.getElementById('cdb_doc_file');
+    const docFile = docFileInput && docFileInput.files ? docFileInput.files[0] : null;
+
+    const finishSave = () => {
+        toggleCustomDbForm();
+        if (typeof showToastNotification === 'function') {
+            showToastNotification(`Gerät "${name}" erfolgreich angelegt!`, 'success');
+        } else {
+            alert(`Gerät "${name}" gespeichert!`);
+        }
+        location.reload();
+    };
+
+    if (docTitle && typeof HardwareDocManager !== 'undefined') {
+        if (docFile) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    HardwareDocManager.addDoc({
+                        deviceType: t,
+                        deviceId: newId,
+                        deviceName: name,
+                        category: docCat,
+                        title: docTitle,
+                        standard: docStandard,
+                        fileName: docFile.name,
+                        fileType: docFile.type,
+                        fileSize: docFile.size,
+                        url: e.target.result
+                    });
+                } catch(err) {
+                    console.warn("Dokument konnte nicht lokal gesichert werden:", err);
+                }
+                finishSave();
+            };
+            reader.readAsDataURL(docFile);
+            return;
+        } else if (docUrl) {
+            try {
+                HardwareDocManager.addDoc({
+                    deviceType: t,
+                    deviceId: newId,
+                    deviceName: name,
+                    category: docCat,
+                    title: docTitle,
+                    standard: docStandard,
+                    url: docUrl
+                });
+            } catch(err) {
+                console.warn("Dokument-URL Fehler:", err);
+            }
+        }
+    }
+
+    finishSave();
+}
+
+function deleteCustomDevice(type, id) {
+    if (!confirm("Möchten Sie dieses eigene Gerät wirklich aus der Datenbank entfernen?")) return;
+
+    let userDB = JSON.parse(localStorage.getItem('pvpro_user_db')) || { panels: [], batteries: [], inverters: [] };
+    const idNum = parseInt(id);
+
+    if (type === 'panel') userDB.panels = (userDB.panels || []).filter(p => p.id !== idNum);
+    if (type === 'inv') userDB.inverters = (userDB.inverters || []).filter(i => i.id !== idNum);
+    if (type === 'bat') userDB.batteries = (userDB.batteries || []).filter(b => b.id !== idNum);
+
+    localStorage.setItem('pvpro_user_db', JSON.stringify(userDB));
+
+    // Zugehörige Benutzerdokumente ebenfalls aufräumen
+    if (typeof HardwareDocManager !== 'undefined') {
+        let allDocs = HardwareDocManager.getAllUserDocs();
+        allDocs = allDocs.filter(d => !(d.deviceType === type && String(d.deviceId) === String(id)));
+        localStorage.setItem(HardwareDocManager.STORAGE_KEY, JSON.stringify(allDocs));
+    }
+
+    if (typeof showToastNotification === 'function') {
+        showToastNotification("Gerät gelöscht.", 'info');
+    }
     location.reload();
 }
 
@@ -1702,18 +1815,41 @@ function renderDatabaseUI() {
     if(wrCard) {
         wrCard.innerHTML = flatInverters.map(w => {
             let currentBatOpt = batOptions.replace(`value="${w.batteryId}"`, `value="${w.batteryId}" selected`);
+            const docCount = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.countDocsForDevice('inv', w.id) : 0;
+            const isCustom = !!w.isCustom;
+            
             return `
             <div class="m3-card bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
                 <div>
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="material-symbols-rounded text-primary text-xl">settings_input_component</span>
-                        <h4 class="font-bold text-slate-800 dark:text-slate-100 text-sm">${w.name}</h4>
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-rounded text-primary text-xl">settings_input_component</span>
+                            <h4 class="font-bold text-slate-800 dark:text-slate-100 text-sm">${w.name}</h4>
+                        </div>
+                        ${isCustom ? `
+                            <button onclick="deleteCustomDevice('inv', ${w.id})" class="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors" title="Gerät löschen">
+                                <span class="material-symbols-rounded text-base">delete</span>
+                            </button>` : ''}
                     </div>
-                    <div class="flex gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1 mb-4">
+                    <div class="flex flex-wrap gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 mt-1 mb-3">
                         <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">AC Max: ${w.acMax}W</span>
                         <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">Start: ${w.startV}V</span>
+                        <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">${(w.mppts||[]).length} MPPTs</span>
+                    </div>
+
+                    <!-- DOKUMENTEN-STATUS & BUTTON -->
+                    <div class="mb-4 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                        <span class="inline-flex items-center gap-1 text-[11px] font-bold ${docCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
+                            <span class="material-symbols-rounded text-sm">${docCount > 0 ? 'verified' : 'draft'}</span>
+                            ${docCount} Dokument${docCount === 1 ? '' : 'e'} / Nachweise
+                        </span>
+                        <button onclick="openHardwareDocModal('inv', ${w.id}, '${escapeHtml(w.name)}')" class="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold flex items-center gap-1 transition-all">
+                            <span class="material-symbols-rounded text-sm">attach_file</span>
+                            <span>Dokumente</span>
+                        </button>
                     </div>
                 </div>
+
                 <div>
                     <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Zugewiesene Batterie</label>
                     <select onchange="updateInverterBattery(${w.id}, this.value)" class="w-full text-xs font-medium border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary">${currentBatOpt}</select>
@@ -1724,28 +1860,328 @@ function renderDatabaseUI() {
 
     let pCard = document.getElementById('panelCardGrid');
     if(pCard) {
-        pCard.innerHTML = flatPanels.map(p => `
-            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-between items-center shadow-sm">
-                <div>
-                    <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5"><span class="material-symbols-rounded text-sm text-primary">solar_power</span> ${p.name}</h4>
-                    <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Voc: ${p.voc}V | Vmp: ${p.vmp?.toFixed(1)}V | Isc: ${p.isc}A</p>
+        pCard.innerHTML = flatPanels.map(p => {
+            const docCount = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.countDocsForDevice('panel', p.id) : 0;
+            const isCustom = !!p.isCustom;
+
+            return `
+            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm gap-2">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <span class="material-symbols-rounded text-sm text-primary">solar_power</span> ${p.name}
+                        </h4>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Voc: ${p.voc}V | Vmp: ${p.vmp?.toFixed(1)}V | Isc: ${p.isc}A</p>
+                    </div>
+                    <div class="text-right flex items-center gap-1.5">
+                        <span class="text-xs font-black text-primary">${p.pmax} W</span>
+                        ${isCustom ? `
+                            <button onclick="deleteCustomDevice('panel', ${p.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950" title="Modul löschen">
+                                <span class="material-symbols-rounded text-sm">delete</span>
+                            </button>` : ''}
+                    </div>
                 </div>
-                <div class="text-right"><span class="text-xs font-black text-primary">${p.pmax} W</span></div>
-            </div>`).join('');
+                
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+                    <span class="inline-flex items-center gap-1 font-bold ${docCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
+                        <span class="material-symbols-rounded text-xs">${docCount > 0 ? 'verified' : 'draft'}</span>
+                        ${docCount} Dok${docCount === 1 ? '' : 's'}
+                    </span>
+                    <button onclick="openHardwareDocModal('panel', ${p.id}, '${escapeHtml(p.name)}')" class="px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary font-bold flex items-center gap-1 text-[10px] transition-all">
+                        <span class="material-symbols-rounded text-xs">attach_file</span>
+                        <span>Dokumente & Zertifikate</span>
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
     }
     
     let bCard = document.getElementById('batCardGrid');
     if(bCard) {
-        bCard.innerHTML = flatBatteries.map(b => `
-            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex justify-between items-center shadow-sm">
-                <div>
-                    <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5"><span class="material-symbols-rounded text-sm text-accent">battery_charging_full</span> ${b.name}</h4>
-                    <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Max. P: ${b.power}W | Eff: ${Math.round((b.eff || 1) * 100)}%</p>
+        bCard.innerHTML = flatBatteries.map(b => {
+            const docCount = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.countDocsForDevice('bat', b.id) : 0;
+            const isCustom = !!b.isCustom;
+
+            return `
+            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm gap-2">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <span class="material-symbols-rounded text-sm text-accent">battery_charging_full</span> ${b.name}
+                        </h4>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Max. P: ${b.power}W | Eff: ${Math.round((b.eff || 1) * 100)}%</p>
+                    </div>
+                    <div class="text-right flex items-center gap-1.5">
+                        <span class="text-xs font-black text-accent">${b.cap.toFixed(2)} kWh</span>
+                        ${isCustom ? `
+                            <button onclick="deleteCustomDevice('bat', ${b.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950" title="Batterie löschen">
+                                <span class="material-symbols-rounded text-sm">delete</span>
+                            </button>` : ''}
+                    </div>
                 </div>
-                <div class="text-right"><span class="text-xs font-black text-accent">${b.cap.toFixed(2)} kWh</span></div>
-            </div>`).join('');
+
+                <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
+                    <span class="inline-flex items-center gap-1 font-bold ${docCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
+                        <span class="material-symbols-rounded text-xs">${docCount > 0 ? 'verified' : 'draft'}</span>
+                        ${docCount} Dok${docCount === 1 ? '' : 's'}
+                    </span>
+                    <button onclick="openHardwareDocModal('bat', ${b.id}, '${escapeHtml(b.name)}')" class="px-2 py-0.5 rounded bg-accent/10 hover:bg-accent/20 text-accent font-bold flex items-center gap-1 text-[10px] transition-all">
+                        <span class="material-symbols-rounded text-xs">attach_file</span>
+                        <span>Dokumente & Zertifikate</span>
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
     }
 }
+
+// ==========================================
+// INTERAKTIVER DOKUMENTEN-MANAGER MODAL
+// ==========================================
+function openHardwareDocModal(deviceType, deviceId, deviceName) {
+    let modal = document.getElementById('modal-hardware-docs');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-hardware-docs';
+        modal.className = 'fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden';
+        document.body.appendChild(modal);
+    }
+
+    const typeLabels = { panel: 'Solarmodul', inv: 'Wechselrichter', bat: 'Batteriespeicher' };
+    const typeLabel = typeLabels[deviceType] || 'Hardware';
+    const docs = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.getDocsForDevice(deviceType, deviceId) : [];
+
+    modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <!-- HEADER -->
+        <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                    <span class="material-symbols-rounded text-2xl">folder_special</span>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase">${typeLabel}</span>
+                        <h3 class="text-base font-black text-slate-900 dark:text-white">${escapeHtml(deviceName)}</h3>
+                    </div>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">Hinterlegte Datenblätter, Zertifikate (VDE-AR-N 4105) & Prüfberichte</p>
+                </div>
+            </div>
+            <button onclick="closeHardwareDocModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all">
+                <span class="material-symbols-rounded text-lg">close</span>
+            </button>
+        </div>
+
+        <!-- CONTENT SCROLLABLE -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            
+            <!-- VORHANDENE DOKUMENTE -->
+            <div>
+                <h4 class="text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-primary text-base">verified</span>
+                    Hinterlegte Dokumente & Zertifikate (${docs.length})
+                </h4>
+                
+                ${docs.length === 0 ? `
+                    <div class="p-6 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-center">
+                        <span class="material-symbols-rounded text-3xl text-slate-300 dark:text-slate-700 mb-1">description</span>
+                        <p class="text-xs text-slate-500">Noch keine Dokumente für dieses Gerät hinterlegt.</p>
+                        <p class="text-[11px] text-slate-400 mt-1">Nutzen Sie das Formular unten, um Datenblätter oder Zertifikate hinzuzufügen.</p>
+                    </div>
+                ` : `
+                    <div class="space-y-2.5">
+                        ${docs.map(doc => {
+                            const isMaster = !!doc.isMaster;
+                            const isCert = doc.category === 'zertifikat';
+                            const badgeColor = isCert ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20' : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20';
+                            const catName = isCert ? 'Zertifikat' : (doc.category === 'garantie' ? 'Garantie' : 'Datenblatt');
+                            
+                            return `
+                            <div class="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-3 shadow-2xs">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="w-8 h-8 rounded-xl ${isCert ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'} flex items-center justify-center shrink-0 mt-0.5">
+                                        <span class="material-symbols-rounded text-lg">${isCert ? 'verified_user' : 'description'}</span>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[10px] font-black px-2 py-0.5 rounded-md border ${badgeColor}">${catName}</span>
+                                            <span class="font-bold text-xs text-slate-900 dark:text-slate-100 truncate">${escapeHtml(doc.title)}</span>
+                                        </div>
+                                        <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 truncate">
+                                            ${doc.standard ? `Norm: <strong class="text-slate-700 dark:text-slate-300">${escapeHtml(doc.standard)}</strong> • ` : ''}
+                                            ${doc.issuer ? `Aussteller: ${escapeHtml(doc.issuer)} • ` : ''}
+                                            ${doc.certNo ? `Zertifikat-Nr.: ${escapeHtml(doc.certNo)}` : ''}
+                                            ${doc.notes ? `<span class="italic block text-[10px] text-slate-400">${escapeHtml(doc.notes)}</span>` : ''}
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    ${doc.url ? `
+                                        <a href="${escapeHtml(doc.url)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1 transition-all" title="Dokument öffnen / anzeigen">
+                                            <span class="material-symbols-rounded text-sm">open_in_new</span>
+                                            <span class="hidden sm:inline">Öffnen</span>
+                                        </a>` : ''}
+                                    ${!isMaster ? `
+                                        <button onclick="deleteHardwareDocFromModal('${doc.id}', '${deviceType}', ${deviceId}, '${escapeHtml(deviceName)}')" class="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/60 flex items-center justify-center transition-all" title="Dokument löschen">
+                                            <span class="material-symbols-rounded text-sm">delete</span>
+                                        </button>` : ''}
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                `}
+            </div>
+
+            <!-- NEUES DOKUMENT ANHÄNGEN FORMULAR -->
+            <div class="p-5 rounded-2xl bg-slate-50 dark:bg-slate-950 border-2 border-dashed border-slate-300 dark:border-slate-800">
+                <h4 class="text-xs font-black text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-primary text-base">add_circle</span>
+                    Neues Dokument / Zertifikat anfügen
+                </h4>
+
+                <div class="space-y-3 text-xs">
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kategorie</label>
+                            <select id="mdl_doc_cat" class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2.5 py-2 font-medium outline-none focus:border-primary">
+                                <option value="datenblatt">Technisches Datenblatt</option>
+                                <option value="zertifikat">Einheitenzertifikat (VDE-AR-N 4105)</option>
+                                <option value="zertifikat">TÜV / IEC Sicherheitszertifikat</option>
+                                <option value="garantie">Garantie & Handbuch</option>
+                                <option value="sonstiges">Sonstiger Nachweis</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dokument-Titel *</label>
+                            <input type="text" id="mdl_doc_title" placeholder="z.B. Offizielles Datenblatt 2026 oder VDE-AR-N 4105 Nachweis" class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2.5 py-2 outline-none focus:border-primary">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Norm / Prüfgrundlage (optional)</label>
+                            <input type="text" id="mdl_doc_standard" placeholder="z.B. VDE-AR-N 4105:2018-11, IEC 61215" class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2.5 py-2 outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Prüfstelle / Zertifikats-Nr. (optional)</label>
+                            <input type="text" id="mdl_doc_certNo" placeholder="z.B. TÜV Rheinland AK 50456123" class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2.5 py-2 outline-none focus:border-primary">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Web-Link / Download-URL</label>
+                            <input type="url" id="mdl_doc_url" placeholder="https://..." class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2.5 py-2 outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Oder Datei hochladen (PDF, PNG, JPG)</label>
+                            <input type="file" id="mdl_doc_file" accept=".pdf,image/*" class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2 py-1.5 outline-none focus:border-primary file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Notizen / Spezifikation (optional)</label>
+                        <input type="text" id="mdl_doc_notes" placeholder="z.B. Wirkungsgrad 23.6%, IP68, 25 Jahre Produktgarantie" class="w-full border border-slate-300 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-2.5 py-2 outline-none focus:border-primary">
+                    </div>
+
+                    <div class="pt-2 flex justify-end">
+                        <button onclick="addHardwareDocFromModal('${deviceType}', ${deviceId}, '${escapeHtml(deviceName)}')" class="bg-primary hover:bg-primary-hover text-white font-extrabold px-4 py-2 rounded-xl flex items-center gap-1.5 shadow-md transition-all">
+                            <span class="material-symbols-rounded text-base">save</span>
+                            <span>Dokument speichern</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FOOTER -->
+        <div class="px-6 py-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center text-xs">
+            <span class="text-slate-500">Wird bei aktivierter Option im Dossier / PDF beigelegt</span>
+            <button onclick="closeHardwareDocModal()" class="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold transition-all">
+                Schließen
+            </button>
+        </div>
+    </div>
+    `;
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeHardwareDocModal() {
+    const modal = document.getElementById('modal-hardware-docs');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+}
+
+function addHardwareDocFromModal(deviceType, deviceId, deviceName) {
+    const title = document.getElementById('mdl_doc_title')?.value?.trim();
+    if (!title) return alert("Bitte einen Dokument-Titel eingeben.");
+
+    const category = document.getElementById('mdl_doc_cat')?.value || 'datenblatt';
+    const standard = document.getElementById('mdl_doc_standard')?.value?.trim() || '';
+    const certNo = document.getElementById('mdl_doc_certNo')?.value?.trim() || '';
+    const url = document.getElementById('mdl_doc_url')?.value?.trim() || '';
+    const notes = document.getElementById('mdl_doc_notes')?.value?.trim() || '';
+    const fileInput = document.getElementById('mdl_doc_file');
+    const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+    const saveAndRefresh = (docUrl, fileName, fileType, fileSize) => {
+        try {
+            HardwareDocManager.addDoc({
+                deviceType,
+                deviceId,
+                deviceName,
+                category,
+                title,
+                standard,
+                certNo,
+                url: docUrl,
+                fileName,
+                fileType,
+                fileSize,
+                notes
+            });
+            if (typeof showToastNotification === 'function') {
+                showToastNotification("Dokument erfolgreich angefügt!", 'success');
+            }
+            renderDatabaseUI();
+            openHardwareDocModal(deviceType, deviceId, deviceName);
+        } catch(e) {
+            alert(e.message || "Fehler beim Speichern des Dokuments.");
+        }
+    };
+
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            saveAndRefresh(e.target.result, file.name, file.type, file.size);
+        };
+        reader.readAsDataURL(file);
+    } else {
+        saveAndRefresh(url, '', '', 0);
+    }
+}
+
+function deleteHardwareDocFromModal(docId, deviceType, deviceId, deviceName) {
+    if (!confirm("Dokument wirklich löschen?")) return;
+    HardwareDocManager.deleteDoc(docId);
+    if (typeof showToastNotification === 'function') {
+        showToastNotification("Dokument entfernt.", 'info');
+    }
+    renderDatabaseUI();
+    openHardwareDocModal(deviceType, deviceId, deviceName);
+}
+
+window.openHardwareDocModal = openHardwareDocModal;
+window.closeHardwareDocModal = closeHardwareDocModal;
+window.addHardwareDocFromModal = addHardwareDocFromModal;
+window.deleteHardwareDocFromModal = deleteHardwareDocFromModal;
+window.deleteCustomDevice = deleteCustomDevice;
+
 
 // ==========================================
 // SYNTHETISCHER OFFLINE FALLBACK GENERATOR
