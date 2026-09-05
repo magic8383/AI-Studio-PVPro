@@ -226,3 +226,36 @@ $$P_{\text{PV}}(y) = P_{\text{PV,0}} \cdot (1 - deg)^y$$
 ### 7.3 Amortisationszeit (Break-Even)
 Das Jahr, in dem der kumulierte Netto-Cashflow die Erstinvestition $I_0$ übersteigt:
 $$\sum_{y=1}^{T_{\text{Amortisation}}} \left(\text{Ersparnis}(y) - K_{\text{Wartung}}(y)\right) \ge I_0$$
+
+---
+
+## 8. Projektdossier & PDF-Export nach DIN VDE 0100-712
+
+Das ab Version 7.0 integrierte Dokumentationssystem erzeugt keine bloßen Screenshots der Benutzeroberfläche, sondern eine normgerechte, mehrseitige Fachdokumentation:
+
+### 8.1 Dokumentenaufbau
+1. **Anlagenpass & Executive Summary:** Zentrale Leistungsparameter (kWp, PVGIS-Jahresertrag, CO₂-Vermeidung, WR- & Speicherkonfiguration).
+2. **String-Konfiguration & Grenzwerte:** Tabelle mit gradgenauem Azimut, Himmelsrichtung, $U_{oc,-10^\circ\text{C}}$, $U_{mp,+70^\circ\text{C}}$ und $I_{sc}$ im Vergleich zu den Grenzwerten des Wechselrichters.
+3. **DC-Schaltplan & Leitungsführung:** Scharfe SVG-Vektorgrafik mit Modul-Nummerierung, Polaritäten (+/-), Dachhindernissen (Gauben, Dachfenster, Kamine) und farbcodierten Trassen.
+4. **VDE 0100-712 DC-Leitungsberechnung:** Vollständige Aufschlüsselung der Kabelwege (Weg A, Weg B, Brücken, Modulkabel zzgl. 10% Reserve), Querschnitt, Schleifenwiderstand, Spannungsabfall $\Delta U$ (V & %) und Leistungsverlusten.
+5. **Material-Stückliste (BOM):** Alle für die Montage erforderlichen Komponenten (Module, WR, Speicher, H1Z2Z2-K Solarkabel, MC4-EVO2 Stecker, Potentialausgleich).
+6. **Wirtschaftlichkeits- & Ertragsprognose:** 20-Jahres-Cashflow-Übersicht, Stromgestehungskosten (LCOE) und Amortisationsdauer.
+7. **Prüf- & Inbetriebnahmeprotokoll:** VDE-konforme Checkliste mit Prüfpunkten (Sichtprüfung, Gestellpotentialausgleich, Polarität, $U_{oc}$, $I_{sc}$, $R_{iso}$, SPD-Überspannungsschutz) und Unterschriftenfeldern für Errichter und Betreiber.
+
+### 8.2 Druck- & PDF-Architektur
+* **Vollvektorielle Ausgabe:** Vektorbasiertes SVG-Rendering verhindert Pixelbildung oder Artefakte im PDF.
+* **Saubere Seitenumbrüche:** Durch CSS `@media print`-Regeln (`break-after: page`, `page-break-inside: avoid`) werden Sektionen sauber getrennt.
+* **Reines Papierlayout:** Alle Web-App-Elemente (Header, Navigationsleisten, Knöpfe, Scrollbars) werden im Druckmodus vollständig ausgeblendet.
+
+---
+
+## 9. Modulare Software-Architektur (V7.0)
+
+Zur Gewährleistung von Wartbarkeit und Stabilität ist die Codebasis nach Best Practice strukturiert:
+- **`app.js`:** Kernorchestrierung, State, Physik-Engine, PVGIS-Simulation und Finanzen.
+- **`wiring.js`:** DC-Verkabelungs-Engine, Leap-Frog-Algorithmus, Dachhindernis-Vermeidung und interaktive Modulzuweisung.
+- **`dossier.js`:** VDE-Dossiererstellung, Druck-DOM und PDF-Export-Engine.
+- **`database.js`:** Hardware-Stammdaten (Module, Wechselrichter, Speicher).
+- **`content.js`:** In-App Handbuch, Glossar und Hilfetexte.
+- **`sw.js`:** Service Worker & PWA Caching.
+- **`DEVELOPMENT_GUIDELINES.md` & `AGENTS.md`:** Verbindliche Entwicklungsregeln (Guidelines First, Versionspflicht nach jeder Änderung, keine Insellösungen).
