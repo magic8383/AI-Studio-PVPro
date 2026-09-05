@@ -40,6 +40,9 @@ let wiringSettings = {
     fieldBridges: {},            // { [strId]: { [bridgeIdx]: number (Meter) } }
     panelCableRate: 2.0          // Pauschal 2,0 m Kabel pro PV-Modul
 };
+if (typeof window !== 'undefined') {
+    window.wiringSettings = wiringSettings;
+}
 
 function loadWiringSettings() {
     let s = readJsonStorage('pvpro_wiring', null);
@@ -596,6 +599,7 @@ function calculateCablePhysics(str, settings, positions = null, sequence = null)
         loopResistance,
         deltaU,
         deltaUPct,
+        deltaUPercent: deltaUPct,
         powerLossW,
         annualLossKWh,
         loopAreaM2,
@@ -2347,150 +2351,173 @@ function fsSwitchString(strId) {
 }
 
 function renderWiringFullscreenContent() {
-    const s = strings.find(st => st.id === fsWiringState.stringId) || strings[0];
-    if (!s) return;
+    try {
+        const s = strings.find(st => st.id === fsWiringState.stringId) || strings[0];
+        if (!s) return;
 
-    const sCalc = calculateCablePhysics(s, wiringSettings);
-    const totalMod = (s.fields || []).reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
+        const sCalc = calculateCablePhysics(s, wiringSettings);
+        const totalMod = (s.fields || []).reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
+        const pTotalWp = (sCalc && typeof sCalc.pTotalWp === 'number') ? sCalc.pTotalWp : 0;
+        const vmpTotal = (sCalc && typeof sCalc.vmpTotal === 'number') ? sCalc.vmpTotal : 0;
+        const impVal = (sCalc && typeof sCalc.imp === 'number') ? sCalc.imp : 0;
+        const cableLen = (sCalc && typeof sCalc.totalCableLength === 'number') ? sCalc.totalCableLength : 0;
+        const deltaUPercentVal = (sCalc && (sCalc.deltaUPct !== undefined ? sCalc.deltaUPct : (sCalc.deltaUPercent !== undefined ? sCalc.deltaUPercent : 0))) || 0;
 
-    // Update title
-    const titleEl = document.getElementById('fs-header-title');
-    if (titleEl) {
-        titleEl.innerHTML = `
-            <span class="w-3 h-3 rounded-full inline-block shrink-0" style="background-color: ${s.color || '#3b82f6'};"></span>
-            <span>${s.name || 'String 1'}</span>
-            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-normal">
-                ${totalMod} Module • ${(sCalc.pTotalWp/1000).toFixed(2)} kWp
-            </span>
-        `;
-    }
+        // Update title
+        const titleEl = document.getElementById('fs-header-title');
+        if (titleEl) {
+            titleEl.innerHTML = `
+                <span class="w-3 h-3 rounded-full inline-block shrink-0" style="background-color: ${s.color || '#3b82f6'};"></span>
+                <span>${s.name || 'String 1'}</span>
+                <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-normal">
+                    ${totalMod} Module • ${(pTotalWp / 1000).toFixed(2)} kWp
+                </span>
+            `;
+        }
 
-    // Update String Pills (Desktop & Mobile)
-    const renderPills = (containerId) => {
-        const c = document.getElementById(containerId);
-        if (!c) return;
-        c.innerHTML = strings.map((st, idx) => `
-            <button onclick="fsSwitchString(${st.id})" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${st.id === s.id ? 'bg-primary text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'}">
-                <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${st.color || '#3b82f6'};"></span>
-                <span>${st.name || ('String ' + (idx + 1))}</span>
-            </button>
-        `).join('');
-    };
-    renderPills('fs-string-pills');
-    renderPills('fs-mobile-string-pills');
+        // Update String Pills (Desktop & Mobile)
+        const renderPills = (containerId) => {
+            const c = document.getElementById(containerId);
+            if (!c) return;
+            c.innerHTML = strings.map((st, idx) => `
+                <button onclick="fsSwitchString(${st.id})" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${st.id === s.id ? 'bg-primary text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'}">
+                    <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${st.color || '#3b82f6'};"></span>
+                    <span>${st.name || ('String ' + (idx + 1))}</span>
+                </button>
+            `).join('');
+        };
+        renderPills('fs-string-pills');
+        renderPills('fs-mobile-string-pills');
 
-    // Update Mobile Metrics
-    const mobMet = document.getElementById('fs-mobile-metrics');
-    if (mobMet) {
-        mobMet.innerText = `${sCalc.totalCableLength}m • ${Math.round(sCalc.vmpTotal)}V • ${sCalc.imp.toFixed(1)}A`;
-    }
+        // Update Mobile Metrics
+        const mobMet = document.getElementById('fs-mobile-metrics');
+        if (mobMet) {
+            mobMet.innerText = `${cableLen}m • ${Math.round(vmpTotal)}V • ${impVal.toFixed(1)}A`;
+        }
 
-    // Update Floating Metrics
-    const floatMet = document.getElementById('fs-floating-metrics');
-    if (floatMet) {
-        floatMet.innerHTML = `
-            <span><strong class="text-white">${totalMod}</strong> Module</span>
-            <span>•</span>
-            <span><strong class="text-emerald-400">${Math.round(sCalc.vmpTotal)} V</strong> $U_{mpp}$</span>
-            <span>•</span>
-            <span><strong class="text-sky-400">${sCalc.imp.toFixed(1)} A</strong> $I_{mpp}$</span>
-            <span>•</span>
-            <span>Kabel: <strong class="text-amber-400">${sCalc.totalCableLength} m</strong> (${wiringSettings.cableCrossSection} mm²)</span>
-            <span>•</span>
-            <span>$\Delta U$: <strong class="text-white">${sCalc.deltaUPercent.toFixed(2)} %</strong></span>
-        `;
-    }
+        // Update Floating Metrics
+        const floatMet = document.getElementById('fs-floating-metrics');
+        if (floatMet) {
+            floatMet.innerHTML = `
+                <span><strong class="text-white">${totalMod}</strong> Module</span>
+                <span>•</span>
+                <span><strong class="text-emerald-400">${Math.round(vmpTotal)} V</strong> $U_{mpp}$</span>
+                <span>•</span>
+                <span><strong class="text-sky-400">${impVal.toFixed(1)} A</strong> $I_{mpp}$</span>
+                <span>•</span>
+                <span>Kabel: <strong class="text-amber-400">${cableLen} m</strong> (${wiringSettings.cableCrossSection || 6} mm²)</span>
+                <span>•</span>
+                <span>$\Delta U$: <strong class="text-white">${deltaUPercentVal.toFixed(2)} %</strong></span>
+            `;
+        }
 
-    // Update Rotate Button Label
-    const rotLbl = document.getElementById('fs-btn-rot-label');
-    if (rotLbl) rotLbl.innerText = fsWiringState.rotation === 90 ? '0°' : '90°';
+        // Update Rotate Button Label
+        const rotLbl = document.getElementById('fs-btn-rot-label');
+        if (rotLbl) rotLbl.innerText = fsWiringState.rotation === 90 ? '0°' : '90°';
 
-    // Generate and inject SVG
-    const stage = document.getElementById('fs-stage');
-    if (stage) {
-        const svgContent = generateStringWiringSvg(s, wiringSettings);
-        if (!svgContent || svgContent.trim() === '') {
+        // Generate and inject SVG
+        const stage = document.getElementById('fs-stage');
+        if (stage) {
+            const svgContent = generateStringWiringSvg(s, wiringSettings);
+            if (!svgContent || svgContent.trim() === '') {
+                stage.innerHTML = `
+                    <div class="flex flex-col items-center justify-center p-8 text-center text-slate-300 bg-slate-900/95 rounded-3xl border border-slate-800 shadow-2xl max-w-sm">
+                        <span class="material-symbols-rounded text-5xl text-amber-400 mb-3">solar_power</span>
+                        <h4 class="font-black text-sm text-white mb-1">Keine Module im String</h4>
+                        <p class="text-xs text-slate-400">Dieser String enthält aktuell keine Solarmodule. Füge Module im Generator- oder Verkabelungstab hinzu.</p>
+                    </div>
+                `;
+                stage.style.width = '320px';
+                stage.style.height = '200px';
+                stage.style.minWidth = '320px';
+                stage.style.minHeight = '200px';
+                fsWiringState.scale = 1.0;
+                fsWiringState.panX = 0;
+                fsWiringState.panY = 0;
+                applyFsTransform();
+                return;
+            }
+
+            stage.innerHTML = svgContent;
+            const svg = stage.querySelector('svg');
+            if (svg) {
+                let vb = svg.viewBox?.baseVal;
+                let w = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || 1200);
+                let h = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || 700);
+
+                // Set explicit dimensions so SVG does not collapse to 0x0 inside absolute container
+                svg.setAttribute('width', w);
+                svg.setAttribute('height', h);
+                svg.style.width = `${w}px`;
+                svg.style.height = `${h}px`;
+                svg.style.minWidth = `${w}px`;
+                svg.style.minHeight = `${h}px`;
+                svg.style.maxWidth = 'none';
+                svg.style.maxHeight = 'none';
+                svg.style.display = 'block';
+
+                stage.style.width = `${w}px`;
+                stage.style.height = `${h}px`;
+                stage.style.minWidth = `${w}px`;
+                stage.style.minHeight = `${h}px`;
+            }
+        }
+
+        applyFsTransform();
+    } catch (err) {
+        console.error('Fehler in renderWiringFullscreenContent:', err);
+        const stage = document.getElementById('fs-stage');
+        if (stage) {
             stage.innerHTML = `
-                <div class="flex flex-col items-center justify-center p-8 text-center text-slate-300 bg-slate-900/95 rounded-3xl border border-slate-800 shadow-2xl max-w-sm">
-                    <span class="material-symbols-rounded text-5xl text-amber-400 mb-3">solar_power</span>
-                    <h4 class="font-black text-sm text-white mb-1">Keine Module im String</h4>
-                    <p class="text-xs text-slate-400">Dieser String enthält aktuell keine Solarmodule. Füge Module im Generator- oder Verkabelungstab hinzu.</p>
+                <div class="p-6 bg-slate-900 border border-red-500/40 rounded-2xl text-center max-w-md shadow-2xl">
+                    <span class="material-symbols-rounded text-3xl text-red-400 mb-2">error</span>
+                    <h4 class="text-sm font-bold text-white mb-1">Darstellungsfehler</h4>
+                    <p class="text-xs text-slate-400">${err?.message || 'Unbekannter Fehler beim Rendern des Schaltplans.'}</p>
                 </div>
             `;
-            stage.style.width = '320px';
-            stage.style.height = '200px';
-            stage.style.minWidth = '320px';
-            stage.style.minHeight = '200px';
-            fsWiringState.scale = 1.0;
-            fsWiringState.panX = 0;
-            fsWiringState.panY = 0;
-            applyFsTransform();
-            return;
-        }
-
-        stage.innerHTML = svgContent;
-        const svg = stage.querySelector('svg');
-        if (svg) {
-            let vb = svg.viewBox?.baseVal;
-            let w = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || 1200);
-            let h = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || 700);
-
-            // Set explicit dimensions so SVG does not collapse to 0x0 inside absolute container
-            svg.setAttribute('width', w);
-            svg.setAttribute('height', h);
-            svg.style.width = `${w}px`;
-            svg.style.height = `${h}px`;
-            svg.style.minWidth = `${w}px`;
-            svg.style.minHeight = `${h}px`;
-            svg.style.maxWidth = 'none';
-            svg.style.maxHeight = 'none';
-            svg.style.display = 'block';
-
-            stage.style.width = `${w}px`;
-            stage.style.height = `${h}px`;
-            stage.style.minWidth = `${w}px`;
-            stage.style.minHeight = `${h}px`;
         }
     }
-
-    applyFsTransform();
 }
 
 function fsFitToScreen() {
-    const viewport = document.getElementById('fs-viewport');
-    const stage = document.getElementById('fs-stage');
-    if (!viewport || !stage) return;
+    try {
+        const viewport = document.getElementById('fs-viewport');
+        const stage = document.getElementById('fs-stage');
+        if (!viewport || !stage) return;
 
-    const svg = stage.querySelector('svg');
-    if (!svg) return;
+        const svg = stage.querySelector('svg');
+        if (!svg) return;
 
-    const vpRect = viewport.getBoundingClientRect();
-    const vpW = (vpRect && vpRect.width > 0) ? vpRect.width : (viewport.clientWidth || window.innerWidth || 360);
-    const vpH = (vpRect && vpRect.height > 0) ? vpRect.height : (viewport.clientHeight || window.innerHeight || 600);
+        const vpRect = viewport.getBoundingClientRect();
+        const vpW = (vpRect && vpRect.width > 0) ? vpRect.width : (viewport.clientWidth || window.innerWidth || 360);
+        const vpH = (vpRect && vpRect.height > 0) ? vpRect.height : (viewport.clientHeight || window.innerHeight || 600);
 
-    let vb = svg.viewBox?.baseVal;
-    let svgW = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || parseFloat(stage.style.width) || 1200);
-    let svgH = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || parseFloat(stage.style.height) || 700);
+        let vb = svg.viewBox?.baseVal;
+        let svgW = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || parseFloat(stage.style.width) || 1200);
+        let svgH = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || parseFloat(stage.style.height) || 700);
 
-    const isRot = (fsWiringState.rotation % 180 !== 0);
-    const effW = isRot ? svgH : svgW;
-    const effH = isRot ? svgW : svgH;
+        const isRot = (fsWiringState.rotation % 180 !== 0);
+        const effW = isRot ? svgH : svgW;
+        const effH = isRot ? svgW : svgH;
 
-    const availW = Math.max(80, vpW - 32);
-    const availH = Math.max(80, vpH - 140); // Clearance for top bar and thumb navigation bar
+        const availW = Math.max(80, vpW - 32);
+        const availH = Math.max(80, vpH - 140); // Clearance for top bar and thumb navigation bar
 
-    const scaleX = availW / effW;
-    const scaleY = availH / effH;
-    let fitScale = Math.min(scaleX, scaleY);
+        const scaleX = availW / effW;
+        const scaleY = availH / effH;
+        let fitScale = Math.min(scaleX, scaleY);
 
-    if (!Number.isFinite(fitScale) || fitScale <= 0) {
-        fitScale = 0.35;
+        if (!Number.isFinite(fitScale) || fitScale <= 0) {
+            fitScale = 0.35;
+        }
+
+        fsWiringState.scale = Math.min(3.0, Math.max(0.08, fitScale));
+        fsWiringState.panX = 0;
+        fsWiringState.panY = 0;
+        applyFsTransform();
+    } catch (err) {
+        console.error('Fehler in fsFitToScreen:', err);
     }
-
-    fsWiringState.scale = Math.min(3.0, Math.max(0.08, fitScale));
-    fsWiringState.panX = 0;
-    fsWiringState.panY = 0;
-    applyFsTransform();
 }
 
 function fsToggleRotation() {

@@ -4,6 +4,27 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.5.1] – 2026-09-05
+
+### 🎯 Vollbild-Schaltplan Fix & Spannungsabfall-Harmonisierung
+
+#### 1. Behebung der Schwarz-Darstellung im Vollbild-Schaltplan (`wiring.js`)
+* **Ursachen-Analyse des Fehlers:**
+  - Im Vollbild-Renderprozess (`renderWiringFullscreenContent`) wurde beim Aktualisieren der schwebenden Metrikleiste (`#fs-floating-metrics`) auf die Eigenschaft `sCalc.deltaUPercent` zugegriffen: `${sCalc.deltaUPercent.toFixed(2)} %`.
+  - Da die physikalische Berechnungsfunktion `calculateCablePhysics` den relativen Spannungsabfall als `deltaUPct` zurückgab, war `sCalc.deltaUPercent` `undefined`.
+  - Der Aufruf `undefined.toFixed(2)` führte zu einer unbehandelten JavaScript-Ausnahme (`TypeError: Cannot read properties of undefined (reading 'toFixed')`), wodurch das Skript vor Erreichen der SVG-Injektion (`stage.innerHTML = svgContent`) abbrach.
+  - Infolgedessen blieb der SVG-Container `#fs-stage` komplett leer (schwarzer Bildschirm), die schwebende Metrikleiste unvollständig und der Auto-Fit-Zoom auf 100 % eingefroren.
+* **Lösung & Absicherung:**
+  - **Namens-Harmonisierung in `calculateCablePhysics`:** Rückgabe des Alias `deltaUPercent: deltaUPct`, sodass beide Schreibweisen norm- und abwärtskompatibel zur Verfügung stehen.
+  - **Defensiver Zugriff & Fallbacks:** Absicherung aller String- und Leitungsmetriken (`pTotalWp`, `vmpTotal`, `imp`, `totalCableLength`, `deltaUPct`/`deltaUPercent`) gegen `null` oder `undefined`.
+  - **Globaler Try/Catch-Schutz:** Kapselung von `renderWiringFullscreenContent` und `fsFitToScreen` in fehlertolerante `try / catch`-Blöcke mit optischer Hinweisbox bei Renderfehlern.
+  - **Objektverfügbarkeit:** Sichere Bindung von `wiringSettings` an den `window`-Scope.
+
+#### 2. Synchronisation der Version 7.5.1
+* Synchronisation aller Referenzen über `package.json`, `index.html` (Titel, OpenGraph, Kopfzeile `Pro 7.5.1`, Script-Tags `?v=7.5.1`), `sw.js` (Cache-Busting `pvpro-cache-v7.5.1`), `DEVELOPMENT_GUIDELINES.md`, `content.js` und `CHANGELOG.md`.
+
+---
+
 ## [Version 7.5.0] – 2026-09-05
 
 ### 🎯 Vollbild-Schaltplan Zentrierung & Bereinigung der Hardware-Datenbank

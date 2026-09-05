@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.5';
+        if (verEl) verEl.innerText = 'Pro 7.5.1';
 
         if (!strings || strings.length === 0) {
             addString();
