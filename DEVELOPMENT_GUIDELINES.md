@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 7.0.0 (Modulare Architektur & Normgerechtes VDE-Dossier- & PDF-System)  
+**Aktuelle Version:** 7.2.0 (Vollbild-Kabelvisualisierung & Cross-Device Sync)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -33,10 +33,11 @@ Um unkontrolliertes Anwachsen von Monolithen zu verhindern, ist die Codebasis mo
 
 | Datei / Modul | Primäre Verantwortung |
 |---|---|
-| `index.html` | Semantisches DOM-Gerüst, App-Shell, M3 Header, adaptive Navigation & globale CSS-Klassen. |
-| `app.js` | Kern-Orchestrierung, reaktiver State, Physik- & MPP-Prüfung, 8.760h PVGIS-Simulation, Finanzen & Lastprofile. |
-| `wiring.js` | **DC-Verkabelungs-Engine:** Interaktiver Schaltplan, Reißverschluss-Verfahren (Leap-Frog nach DIN EN 62305-3), Dachhindernisse (Gauben/Fenster), Mehrfeld-Dächer & VDE 0100-712 Leitungsrechnung. |
+| `index.html` | Semantisches DOM-Gerüst, App-Shell, M3 Header, adaptive Navigation, Vollbild-Modal & globale CSS-Klassen. |
+| `app.js` | Kern-Orchestrierung, reaktiver State, Physik- & MPP-Prüfung, 8.760h PVGIS-Simulation, Finanzen, Cross-Device Sync & QR-Transfer. |
+| `wiring.js` | **DC-Verkabelungs-Engine:** Interaktiver Schaltplan, Reißverschluss-Verfahren (Leap-Frog nach DIN EN 62305-3), Dachhindernisse (Gauben/Fenster), Mehrfeld-Dächer, VDE 0100-712 Leitungsrechnung & Vollbild-Viewer mit Zoom/Pan/Rotation. |
 | `dossier.js` | **Druck- & PDF-Dossier-Engine:** Vollständige, normgerechte Dokumentation (Anlagenpass, String-Verifikation, SVG-Schaltplan, Kabelberechnung, Stückliste, 20-Jahres-ROI & DIN VDE 0100-712 Inbetriebnahmeprotokoll). |
+| `server.js` | Express Server, persistente Share-API (`/api/share`), QR-Code Generierung (`qrcode`) & statische Auslieferung. |
 | `database.js` | Master-Hardwarekatalog (Solarmodule, Wechselrichter, Speicher, MPPT-Spezifikationen) & Custom-DB. |
 | `content.js` | Integriertes Handbuch, Hilfetexte, Glossar und In-App-Changelog. |
 | `sw.js` | Service Worker für Offline-Fähigkeit, PWA-Caching und Stale-While-Revalidate. |

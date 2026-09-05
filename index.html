@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.0 (DIN VDE 0100-712 & Material Expressive 3)</title>
+    <title>PV-Planung Pro 7.2 (DIN VDE 0100-712 & Vollbild-Visualisierung)</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.0 (DIN VDE 0100-712 & Material Expressive 3)">
+    <meta property="og:title" content="PV-Planung Pro 7.2 (DIN VDE 0100-712 & Vollbild-Visualisierung)">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings -->
@@ -160,10 +160,10 @@
                         <span class="material-symbols-rounded text-xl fill-1">solar_power</span>
                     </div>
                     <div>
-                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span class="text-primary font-black">Pro 7.0</span></h1>
+                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span class="text-primary font-black">Pro 7.1</span></h1>
                         <p class="text-slate-400 text-[10px] md:text-xs mt-0.5 font-medium flex items-center gap-1">
                             <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
-                            Material Expressive Architecture • VDE 0100-712
+                            Material Expressive Architecture • VDE 0100-712 • Sync
                         </p>
                     </div>
                 </div>
@@ -171,6 +171,10 @@
                     <button id="btnPwaInstall" onclick="installPwaApp()" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 animate-pulse">
                         <span class="material-symbols-rounded text-base">install_mobile</span>
                         <span class="hidden md:inline">Installieren</span>
+                    </button>
+                    <button id="btnHeaderShare" onclick="openShareModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-indigo-500/40 cursor-pointer" title="Auf Handy übertragen / Teilen (QR-Code & Link)">
+                        <span class="material-symbols-rounded text-base">devices</span>
+                        <span class="hidden md:inline">Auf Handy</span>
                     </button>
                     <button id="btnHeaderDossier" onclick="openDossierModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-emerald-500/40" title="Projektdossier & PDF erzeugen">
                         <span class="material-symbols-rounded text-base">picture_as_pdf</span>
@@ -894,6 +898,16 @@
             </button>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-2">
+            <button onclick="closeMoreSheet(); openShareModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-indigo-900/40 hover:bg-indigo-800/50 border border-indigo-500/40 text-left transition-all">
+                <span class="material-symbols-rounded text-2xl text-indigo-400">devices</span>
+                <div>
+                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
+                        Auf Smartphone übertragen / Teilen
+                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">QR & Code</span>
+                    </p>
+                    <p class="text-[10px] text-slate-300">Desktop-Planung sofort am Handy öffnen oder Datei sichern</p>
+                </div>
+            </button>
             <button onclick="closeMoreSheet(); openDossierModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-emerald-900/40 hover:bg-emerald-800/50 border border-emerald-500/40 text-left transition-all">
                 <span class="material-symbols-rounded text-2xl text-emerald-400">picture_as_pdf</span>
                 <div>
@@ -902,6 +916,16 @@
                         <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">DIN VDE 0100-712</span>
                     </p>
                     <p class="text-[10px] text-slate-300">Anlagenpass, Schaltplan, Stückliste & Protokoll</p>
+                </div>
+            </button>
+            <button onclick="closeMoreSheet(); openWiringFullscreen('all');" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
+                <span class="material-symbols-rounded text-2xl text-primary">open_in_full</span>
+                <div>
+                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
+                        Kabelplan Vollbild / Großansicht
+                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono">Zoom & Pan</span>
+                    </p>
+                    <p class="text-[10px] text-slate-300">Schaltplan im gesamten Bildschirm betrachten (Touch-Gesten)</p>
                 </div>
             </button>
             <button onclick="switchTab('verkabelung')" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
@@ -942,11 +966,14 @@
         </div>
     </div>
 
-    <!-- MODULARE ARCHITEKTUR V7.0 (Separation of Concerns) -->
-    <script src="database.js?v=7.0.0"></script>
-    <script src="content.js?v=7.0.0"></script>
-    <script src="app.js?v=7.0.0"></script>
-    <script src="wiring.js?v=7.0.0"></script>
-    <script src="dossier.js?v=7.0.0"></script>
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
+
+    <!-- MODULARE ARCHITEKTUR V7.2 (Separation of Concerns) -->
+    <script src="database.js?v=7.2.0"></script>
+    <script src="content.js?v=7.2.0"></script>
+    <script src="app.js?v=7.2.0"></script>
+    <script src="wiring.js?v=7.2.0"></script>
+    <script src="dossier.js?v=7.2.0"></script>
 </body>
 </html>

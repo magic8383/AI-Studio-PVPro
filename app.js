@@ -106,6 +106,7 @@ function initDatabase() {
         loadInvestSettings();
         loadWiringSettings();
         updatePhysicsOnly();
+        checkUrlShareImport();
     } catch(e) { console.error("Init Error:", e); }
 }
 
@@ -127,7 +128,478 @@ function saveConfiguration() {
         btn.classList.remove('bg-amber-500', 'animate-pulse');
         btn.classList.add('bg-primary');
     }
-    alert("Erfolgreich gespeichert!"); 
+    showToastNotification('✅ Planung erfolgreich lokal im Browserspeicher gesichert!', 'success');
+}
+
+// ==========================================
+// 1.1 CROSS-DEVICE TRANSFER & SHARING (V7.1.0)
+// ==========================================
+
+function showToastNotification(message, type = 'info') {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    const bgCol = type === 'success' ? 'bg-emerald-600 text-white' : (type === 'error' ? 'bg-rose-600 text-white' : 'bg-slate-900 text-white border border-slate-700');
+    toast.className = `${bgCol} px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 text-xs font-bold transition-all duration-300 transform translate-y-4 opacity-0 pointer-events-auto`;
+    toast.innerHTML = `
+        <span class="material-symbols-rounded text-lg">${type === 'success' ? 'check_circle' : (type === 'error' ? 'error' : 'info')}</span>
+        <span class="flex-1">${message}</span>
+        <button onclick="this.parentElement.remove()" class="text-white/70 hover:text-white"><span class="material-symbols-rounded text-sm">close</span></button>
+    `;
+    container.appendChild(toast);
+    requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+    });
+    setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+function exportFullConfiguration() {
+    return {
+        version: '7.1.0',
+        exportedAt: new Date().toISOString(),
+        appName: 'PV-Planung Pro',
+        strings: strings || [],
+        LocationData: LocationData || {},
+        consumption: (typeof getConsumptionSettingsPayload === 'function' ? getConsumptionSettingsPayload() : JSON.parse(localStorage.getItem('pvpro_cons') || '{}')),
+        invest: JSON.parse(localStorage.getItem('pvpro_invest') || '{}'),
+        finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
+        wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')),
+        userDB: (typeof userDB !== 'undefined' ? userDB : JSON.parse(localStorage.getItem('pvpro_user_db') || '{}')),
+        batMap: (typeof batMap !== 'undefined' ? batMap : JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'))
+    };
+}
+
+function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration') {
+    if (!config || typeof config !== 'object') {
+        showToastNotification('Ungültiges Konfigurations-Format.', 'error');
+        return false;
+    }
+    
+    try {
+        if (Array.isArray(config.strings)) {
+            strings = config.strings;
+            localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+        }
+        if (config.LocationData && typeof config.LocationData === 'object') {
+            LocationData = Object.assign(LocationData, config.LocationData);
+            localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
+            const locInp = document.getElementById('locSearchInput'); if (locInp) locInp.value = LocationData.name || '';
+            const locTxt = document.getElementById('locNameText'); if (locTxt) locTxt.innerText = LocationData.name || '';
+        }
+        if (config.consumption && typeof config.consumption === 'object') {
+            localStorage.setItem('pvpro_cons', JSON.stringify(config.consumption));
+            if (typeof loadConsumptionSettings === 'function') loadConsumptionSettings();
+        }
+        if (config.invest && typeof config.invest === 'object') {
+            localStorage.setItem('pvpro_invest', JSON.stringify(config.invest));
+            if (typeof loadInvestSettings === 'function') loadInvestSettings();
+        }
+        if (config.finance && typeof config.finance === 'object') {
+            localStorage.setItem('pvpro_finance', JSON.stringify(config.finance));
+            if (typeof loadFinanceSettings === 'function') loadFinanceSettings();
+        }
+        if (config.wiring && typeof config.wiring === 'object') {
+            if (typeof wiringSettings !== 'undefined') {
+                Object.assign(wiringSettings, config.wiring);
+            }
+            localStorage.setItem('pvpro_wiring', JSON.stringify(config.wiring));
+        }
+        if (config.userDB && typeof config.userDB === 'object') {
+            if (typeof userDB !== 'undefined') Object.assign(userDB, config.userDB);
+            localStorage.setItem('pvpro_user_db', JSON.stringify(config.userDB));
+        }
+        if (config.batMap && typeof config.batMap === 'object') {
+            if (typeof batMap !== 'undefined') Object.assign(batMap, config.batMap);
+            localStorage.setItem('pvpro_batmap', JSON.stringify(config.batMap));
+        }
+
+        // Re-run physics and render
+        updatePhysicsOnly();
+        if (typeof renderWiringTab === 'function') renderWiringTab();
+        
+        showToastNotification(`✅ Konfiguration (${sourceLabel}) erfolgreich übernommen!`, 'success');
+        return true;
+    } catch (err) {
+        console.error("Import Error:", err);
+        showToastNotification('Fehler beim Laden: ' + err.message, 'error');
+        return false;
+    }
+}
+
+async function checkUrlShareImport() {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        let shareCode = urlParams.get('share');
+        if (!shareCode && window.location.hash) {
+            const hashMatch = window.location.hash.match(/share=([A-Za-z0-9_-]+)/);
+            if (hashMatch) shareCode = hashMatch[1];
+        }
+        
+        // Offline link fallback: #config=<base64>
+        if (!shareCode && window.location.hash && window.location.hash.startsWith('#config=')) {
+            try {
+                const rawBase64 = window.location.hash.slice(8);
+                const decodedJson = decodeURIComponent(escape(atob(rawBase64)));
+                const cfg = JSON.parse(decodedJson);
+                importFullConfiguration(cfg, 'Offline-Link');
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+                return;
+            } catch (e) {
+                console.warn("Could not parse #config hash:", e);
+            }
+        }
+
+        if (shareCode) {
+            showToastNotification('Lade geteilte Konfiguration vom Server...', 'info');
+            const res = await fetch(`/api/share/${encodeURIComponent(shareCode)}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.config) {
+                    importFullConfiguration(data.config, `Code ${data.code || shareCode}`);
+                    // Clean URL query parameter cleanly without page reload
+                    const cleanUrl = window.location.pathname + window.location.hash;
+                    history.replaceState(null, '', cleanUrl);
+                }
+            } else {
+                showToastNotification('Geteilte Konfiguration konnte nicht gefunden werden (abgelaufen oder falscher Code).', 'error');
+            }
+        }
+    } catch (err) {
+        console.error("Share Fetch Error:", err);
+    }
+}
+
+function ensureShareModalDom() {
+    if (document.getElementById('modal-share-device')) return;
+
+    const modalHtml = `
+    <div id="modal-share-device" class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 md:p-6 bg-slate-950/80 backdrop-blur-md hidden no-print">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[96vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- Header -->
+            <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-indigo-600/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-sm">
+                        <span class="material-symbols-rounded text-2xl">devices</span>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight flex items-center gap-2">
+                            Auf Smartphone übertragen & Teilen
+                        </h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Desktop-Planung sofort am Handy öffnen oder Datei sichern</p>
+                    </div>
+                </div>
+                <button onclick="closeShareModal()" class="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors">
+                    <span class="material-symbols-rounded text-xl">close</span>
+                </button>
+            </div>
+            
+            <!-- Body (scrollable) -->
+            <div id="share-modal-body" class="p-5 sm:p-6 overflow-y-auto space-y-6">
+                <!-- Dynamic Content -->
+            </div>
+        </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+}
+
+function openShareModal() {
+    ensureShareModalDom();
+    const modal = document.getElementById('modal-share-device');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+
+    const body = document.getElementById('share-modal-body');
+    body.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-12 text-center">
+            <div class="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+            <p class="text-sm font-bold text-slate-700 dark:text-slate-200">Übertragungs-Code & Vektor-QR-Code werden generiert...</p>
+            <p class="text-xs text-slate-400 mt-1">Sichere Bereitstellung für dein Smartphone</p>
+        </div>
+    `;
+
+    const config = exportFullConfiguration();
+    const locName = LocationData?.name || 'PV-Planung';
+
+    fetch('/api/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config, name: locName })
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data && data.success) {
+            renderShareModalContent(data);
+        } else {
+            renderShareModalOfflineFallback(config);
+        }
+    })
+    .catch(err => {
+        console.warn("Share API Error, using offline fallback:", err);
+        renderShareModalOfflineFallback(config);
+    });
+}
+
+function closeShareModal() {
+    const modal = document.getElementById('modal-share-device');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+}
+
+function renderShareModalContent(data) {
+    const body = document.getElementById('share-modal-body');
+    if (!body) return;
+
+    body.innerHTML = `
+    <div class="space-y-6">
+        <!-- QR Code Hero Card -->
+        <div class="bg-gradient-to-b from-indigo-500/10 to-transparent dark:from-indigo-950/30 rounded-2xl p-5 border border-indigo-200 dark:border-indigo-800/60 flex flex-col sm:flex-row items-center gap-6">
+            <div class="bg-white p-3 rounded-2xl shadow-md border border-slate-200 shrink-0 w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center overflow-hidden">
+                <div class="w-full h-full [&>svg]:w-full [&>svg]:h-full">${data.qrSvg}</div>
+            </div>
+            <div class="flex-1 text-center sm:text-left space-y-3">
+                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold">
+                    <span class="material-symbols-rounded text-sm">qr_code_scanner</span>
+                    Smartphone-Kamera vorhalten
+                </div>
+                <h4 class="text-lg font-black text-slate-900 dark:text-white leading-snug">
+                    Sofort am Handy weitermachen
+                </h4>
+                <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Öffne einfach die Standard-Kamera deines Smartphones (iPhone / Android) und scanne diesen QR-Code. Sämtliche Strings, Dächer, Ertragsberechnungen und Kabelwege werden sofort geladen!
+                </p>
+                
+                <!-- Code Badge -->
+                <div class="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <div class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3.5 py-1.5 rounded-xl font-mono text-base font-black text-indigo-600 dark:text-indigo-400 tracking-wider">
+                        ${data.code}
+                    </div>
+                    <button onclick="copyShareCode('${data.code}')" class="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm">content_copy</span> Code kopieren
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Direct URL Box -->
+        <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+            <label class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-base text-primary">link</span>
+                Direkt-Link zur Planung:
+            </label>
+            <div class="flex items-center gap-2">
+                <input type="text" readonly value="${data.url}" id="share-direct-url-input" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs rounded-xl px-3 py-2 font-mono text-slate-700 dark:text-slate-300 select-all" />
+                <button onclick="copyShareLink('${data.url}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0 flex items-center gap-1">
+                    <span class="material-symbols-rounded text-sm">content_copy</span>
+                    Kopieren
+                </button>
+                ${navigator.share ? `
+                <button onclick="shareViaWebShare('${data.url}', '${data.code}')" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0 flex items-center gap-1">
+                    <span class="material-symbols-rounded text-sm">share</span>
+                    Teilen
+                </button>` : ''}
+            </div>
+        </div>
+
+        <!-- Two columns: Code Import on this device & File Backup -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Load by Code on this Device -->
+            <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                <div>
+                    <h5 class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
+                        <span class="material-symbols-rounded text-base text-emerald-500">download</span>
+                        Anderen Transfer-Code laden
+                    </h5>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        Hast du einen Code von einem anderen PC oder Kollegen?
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="input-manual-share-code" placeholder="z.B. PV-7492" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs uppercase font-mono rounded-xl px-3 py-2 text-slate-700 dark:text-slate-200" />
+                    <button onclick="loadConfigurationByCode(document.getElementById('input-manual-share-code').value)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0">
+                        Laden
+                    </button>
+                </div>
+            </div>
+
+            <!-- Local JSON File Backup & Restore -->
+            <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                <div>
+                    <h5 class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
+                        <span class="material-symbols-rounded text-base text-amber-500">folder_zip</span>
+                        Offline-Datei (.json)
+                    </h5>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        Planung als Datei auf dem PC sichern oder Datei einspielen.
+                    </p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="downloadConfigurationFile()" class="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors flex items-center justify-center gap-1">
+                        <span class="material-symbols-rounded text-sm">download</span> JSON-Export
+                    </button>
+                    <button onclick="triggerConfigurationFileInput()" class="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors flex items-center justify-center gap-1">
+                        <span class="material-symbols-rounded text-sm">upload_file</span> Import
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderShareModalOfflineFallback(config) {
+    const body = document.getElementById('share-modal-body');
+    if (!body) return;
+
+    let hashUrl = '';
+    try {
+        const jsonStr = JSON.stringify(config);
+        const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
+        hashUrl = `${window.location.origin}${window.location.pathname}#config=${b64}`;
+    } catch(e) {
+        hashUrl = window.location.href;
+    }
+
+    body.innerHTML = `
+    <div class="space-y-6">
+        <div class="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs space-y-1">
+            <p class="font-bold flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-base">wifi_off</span>
+                Offline-Modus aktiv
+            </p>
+            <p>Die Planung kann direkt als Offline-Datei (.json) gesichert oder per Datei auf das Smartphone übertragen werden.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <button onclick="downloadConfigurationFile()" class="p-5 rounded-2xl bg-primary hover:bg-primary-hover text-white text-left transition-all shadow-md">
+                <span class="material-symbols-rounded text-3xl mb-2">download</span>
+                <p class="font-bold text-sm">Planung als Datei herunterladen</p>
+                <p class="text-xs text-blue-100 mt-1">Speichert alle Daten als .json-Datei</p>
+            </button>
+            <button onclick="triggerConfigurationFileInput()" class="p-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white text-left transition-all border border-slate-700">
+                <span class="material-symbols-rounded text-3xl mb-2">upload_file</span>
+                <p class="font-bold text-sm">Planung aus Datei laden</p>
+                <p class="text-xs text-slate-400 mt-1">Importiert eine vorhandene .json-Datei</p>
+            </button>
+        </div>
+    </div>`;
+}
+
+function copyShareLink(url) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(() => {
+            showToastNotification('📋 Link in die Zwischenablage kopiert!', 'success');
+        });
+    } else {
+        const inp = document.getElementById('share-direct-url-input');
+        if (inp) {
+            inp.select();
+            document.execCommand('copy');
+            showToastNotification('📋 Link in die Zwischenablage kopiert!', 'success');
+        }
+    }
+}
+
+function copyShareCode(code) {
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(code).then(() => {
+            showToastNotification(`📋 Code ${code} kopiert!`, 'success');
+        });
+    }
+}
+
+function shareViaWebShare(url, code) {
+    if (navigator.share) {
+        navigator.share({
+            title: 'PV-Planung Pro – Anlagenkonfiguration',
+            text: `Hier ist die PV-Planung (${code}) für die Auslegung:`,
+            url: url
+        }).catch(() => {});
+    }
+}
+
+function downloadConfigurationFile() {
+    const config = exportFullConfiguration();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const fileName = `PV-Planung_${(LocationData?.name || 'Anlage').replace(/[^a-zA-Z0-9_-]/g, '_')}_${dateStr}.json`;
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToastNotification('📄 Konfigurations-Datei wurde heruntergeladen!', 'success');
+}
+
+function triggerConfigurationFileInput() {
+    let inp = document.getElementById('file-config-upload');
+    if (!inp) {
+        inp = document.createElement('input');
+        inp.id = 'file-config-upload';
+        inp.type = 'file';
+        inp.accept = '.json,application/json';
+        inp.style.display = 'none';
+        inp.onchange = (e) => handleConfigurationFileUpload(e);
+        document.body.appendChild(inp);
+    }
+    inp.value = '';
+    inp.click();
+}
+
+function handleConfigurationFileUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const cfg = JSON.parse(event.target.result);
+            if (cfg && typeof cfg === 'object') {
+                importFullConfiguration(cfg, file.name);
+                closeShareModal();
+            } else {
+                alert('Ungültiges Format der JSON-Datei.');
+            }
+        } catch (err) {
+            alert('Fehler beim Lesen der JSON-Datei: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+}
+
+async function loadConfigurationByCode(code) {
+    if (!code || !code.trim()) {
+        showToastNotification('Bitte gib einen gültigen Transfer-Code ein.', 'error');
+        return;
+    }
+    const cleanCode = code.trim().toUpperCase();
+    try {
+        showToastNotification(`Suche Code ${cleanCode}...`, 'info');
+        const res = await fetch(`/api/share/${encodeURIComponent(cleanCode)}`);
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.config) {
+                importFullConfiguration(data.config, `Code ${cleanCode}`);
+                closeShareModal();
+            }
+        } else {
+            showToastNotification(`Code ${cleanCode} nicht gefunden oder abgelaufen.`, 'error');
+        }
+    } catch (err) {
+        showToastNotification('Verbindungsfehler beim Laden des Codes.', 'error');
+    }
 }
 
 // ==========================================

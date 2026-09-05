@@ -1244,6 +1244,9 @@ function generateStringWiringSvg(str, settings) {
 
 // Haupt-Renderfunktion des neuen Tabs "Verkabelung"
 function renderWiringTab() {
+    if (typeof fsWiringState !== 'undefined' && fsWiringState.active) {
+        renderWiringFullscreenContent();
+    }
     const container = document.getElementById('tab-verkabelung');
     if (!container) return;
 
@@ -1299,6 +1302,10 @@ function renderWiringTab() {
                 </div>
                 
                 <div class="flex items-center gap-2 self-start md:self-auto">
+                    <button onclick="openWiringFullscreen('all')" class="bg-primary hover:bg-primary-hover text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm shadow-primary/20 cursor-pointer" title="Kabelvisualisierung im Vollbild öffnen (Pinch-to-Zoom, Pan & 90°-Drehung)">
+                        <span class="material-symbols-rounded text-base">open_in_full</span>
+                        <span>Großansicht / Vollbild</span>
+                    </button>
                     <button onclick="printWiringPlan()" class="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 border border-slate-300 dark:border-slate-700">
                         <span class="material-symbols-rounded text-base">print</span>
                         <span>Drucken / PDF</span>
@@ -1822,8 +1829,34 @@ function renderWiringTab() {
                     </div>
                 </div>
 
+                <!-- SVG SCHALTPLAN HEADER & MOBILE BANNER -->
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-rounded text-primary text-base">schema</span>
+                        <span class="text-xs font-bold text-slate-800 dark:text-slate-200">DC-Schaltplan & Leitungsführung</span>
+                    </div>
+                    <button onclick="openWiringFullscreen(${s.id})" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-auto cursor-pointer">
+                        <span class="material-symbols-rounded text-base">open_in_full</span>
+                        <span>Großansicht / Vollbild</span>
+                    </button>
+                </div>
+
+                <!-- MOBILER VOLLBILD-HINWEIS (Speziell für Smartphones) -->
+                <div class="md:hidden p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <span class="material-symbols-rounded text-indigo-500 text-xl">zoom_in</span>
+                        <div>
+                            <p class="text-xs font-bold text-slate-800 dark:text-slate-100">Zu klein auf dem Smartphone?</p>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">Öffne den Plan im Vollbild mit Touch-Pinch-Zoom & 90°-Drehung</p>
+                        </div>
+                    </div>
+                    <button onclick="openWiringFullscreen(${s.id})" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold px-3 py-2 rounded-xl shrink-0 flex items-center gap-1 shadow-sm">
+                        <span class="material-symbols-rounded text-base">fullscreen</span> Vollbild
+                    </button>
+                </div>
+
                 <!-- SVG SCHALTPLAN -->
-                <div class="w-full overflow-x-auto rounded-2xl">
+                <div class="w-full overflow-x-auto rounded-2xl bg-slate-900/40 p-2 border border-slate-100 dark:border-slate-800">
                     ${svgContent}
                 </div>
 
@@ -2030,3 +2063,408 @@ function renderWiringTab() {
         </div>
     `;
 }
+
+// ==========================================
+// 4.2 FULLSCREEN CABLE VISUALIZER (V7.1.0)
+// Large screen / mobile full-viewport canvas
+// Pinch-to-zoom, pan, 90 deg rotation, auto-fit
+// ==========================================
+
+let fsWiringState = {
+    active: false,
+    stringId: 1,
+    scale: 1.0,
+    panX: 0,
+    panY: 0,
+    rotation: 0, // 0 or 90
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    lastPanX: 0,
+    lastPanY: 0,
+    pointers: new Map(),
+    initialPinchDist: 0,
+    initialPinchScale: 1.0
+};
+
+function ensureWiringFullscreenModalDom() {
+    if (document.getElementById('modal-wiring-fullscreen')) return;
+
+    const modalHtml = `
+    <div id="modal-wiring-fullscreen" class="fixed inset-0 z-50 w-screen h-[100dvh] bg-slate-950 flex flex-col select-none hidden no-print">
+        <!-- TOP TOOLBAR -->
+        <header class="px-3 sm:px-5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0 z-30 backdrop-blur-md">
+            <!-- Left: Close & Title -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <button onclick="closeWiringFullscreen()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1.5 transition-colors border border-slate-700 shadow-sm cursor-pointer" title="Vollbild beenden (Esc)">
+                    <span class="material-symbols-rounded text-lg">arrow_back</span>
+                    <span class="hidden sm:inline">Zurück</span>
+                </button>
+                <div>
+                    <h3 id="fs-header-title" class="text-xs sm:text-sm font-black text-white leading-tight flex items-center gap-2">
+                        DC-Schaltplan Vollbild
+                    </h3>
+                    <p id="fs-header-subtitle" class="text-[10px] text-slate-400 font-medium">
+                        Touch-Pinch / Mausrad zum Zoomen • Ziehen zum Verschieben
+                    </p>
+                </div>
+            </div>
+
+            <!-- Middle: String Switcher Pills (Desktop) -->
+            <div id="fs-string-pills" class="hidden md:flex items-center gap-1.5 overflow-x-auto max-w-md py-0.5">
+                <!-- Injected dynamically -->
+            </div>
+
+            <!-- Right: Controls -->
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                <!-- Rotate Button -->
+                <button onclick="fsToggleRotation()" class="px-2.5 py-1.5 rounded-xl bg-indigo-900/50 hover:bg-indigo-800/60 text-indigo-300 hover:text-white text-xs font-bold flex items-center gap-1 border border-indigo-700/60 transition-colors cursor-pointer" title="90° Drehen (optimal für breite Dächer auf Handys)">
+                    <span class="material-symbols-rounded text-base">screen_rotation</span>
+                    <span class="hidden lg:inline">90° Drehen</span>
+                </button>
+
+                <!-- Fit Button -->
+                <button onclick="fsFitToScreen()" class="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold flex items-center gap-1 border border-slate-700 transition-colors cursor-pointer" title="Optimal einpassen">
+                    <span class="material-symbols-rounded text-base">fit_screen</span>
+                    <span class="hidden lg:inline">Einpassen</span>
+                </button>
+
+                <!-- Zoom Controls -->
+                <div class="flex items-center bg-slate-800/90 rounded-xl border border-slate-700/80 p-0.5">
+                    <button onclick="fsZoom(-0.25)" class="w-7 h-7 rounded-lg hover:bg-slate-700 text-white flex items-center justify-center transition-colors cursor-pointer" title="Verkleinern">
+                        <span class="material-symbols-rounded text-base">zoom_out</span>
+                    </button>
+                    <span id="fs-zoom-indicator" class="text-[11px] font-mono font-bold text-slate-300 w-11 text-center select-none">100%</span>
+                    <button onclick="fsZoom(0.25)" class="w-7 h-7 rounded-lg hover:bg-slate-700 text-white flex items-center justify-center transition-colors cursor-pointer" title="Vergrößern">
+                        <span class="material-symbols-rounded text-base">zoom_in</span>
+                    </button>
+                </div>
+
+                <!-- Close Icon -->
+                <button onclick="closeWiringFullscreen()" class="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer ml-1" title="Schließen">
+                    <span class="material-symbols-rounded text-xl">close</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- SUBHEADER STRING SELECTOR (FOR MOBILE) -->
+        <div class="md:hidden px-3 py-1.5 bg-slate-900 border-b border-slate-800/80 flex items-center justify-between gap-2 shrink-0 z-20">
+            <div id="fs-mobile-string-pills" class="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5">
+                <!-- Mobile string pills -->
+            </div>
+            <div id="fs-mobile-metrics" class="text-[10px] font-mono text-emerald-400 font-bold shrink-0">
+                <!-- Mobile metrics -->
+            </div>
+        </div>
+
+        <!-- MAIN VIEWPORT STAGE -->
+        <div id="fs-viewport" class="flex-1 relative overflow-hidden touch-none bg-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing">
+            <div id="fs-stage" class="absolute transition-transform duration-75 origin-center will-change-transform flex items-center justify-center pointer-events-auto">
+                <!-- SVG diagram injected here -->
+            </div>
+
+            <!-- FLOATING MOBILE ACTION BAR (For Thumb Operation) -->
+            <div class="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3 py-2 rounded-2xl bg-slate-900/90 border border-slate-700/80 shadow-2xl backdrop-blur-md">
+                <button onclick="fsZoom(-0.25)" class="w-9 h-9 rounded-xl bg-slate-800 text-white flex items-center justify-center hover:bg-slate-700 active:scale-95 transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-lg">zoom_out</span>
+                </button>
+                <button onclick="fsFitToScreen()" class="px-3 py-1.5 rounded-xl bg-slate-800 text-white text-xs font-bold flex items-center gap-1 hover:bg-slate-700 active:scale-95 transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-base">fit_screen</span>
+                    <span>Fit</span>
+                </button>
+                <button onclick="fsToggleRotation()" class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-base">screen_rotation</span>
+                    <span id="fs-btn-rot-label">90°</span>
+                </button>
+                <button onclick="fsZoom(0.25)" class="w-9 h-9 rounded-xl bg-slate-800 text-white flex items-center justify-center hover:bg-slate-700 active:scale-95 transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-lg">zoom_in</span>
+                </button>
+            </div>
+
+            <!-- FLOATING LIVE METRICS CHIP (TOP LEFT OF VIEWPORT) -->
+            <div id="fs-floating-metrics" class="hidden sm:flex absolute top-4 left-4 z-20 flex-wrap items-center gap-2 px-3.5 py-2 rounded-2xl bg-slate-900/85 border border-slate-800 shadow-lg backdrop-blur-sm pointer-events-none text-xs text-slate-300">
+                <!-- Dynamic metrics -->
+            </div>
+        </div>
+    </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    initFsViewportEvents();
+}
+
+function initFsViewportEvents() {
+    const vp = document.getElementById('fs-viewport');
+    if (!vp) return;
+
+    // Wheel zoom
+    vp.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        fsWiringState.scale = Math.min(5.0, Math.max(0.12, fsWiringState.scale * factor));
+        applyFsTransform();
+    }, { passive: false });
+
+    // Pointer Events for drag pan & multi-touch pinch zoom
+    vp.addEventListener('pointerdown', (e) => {
+        // If clicking on SVG button/input, let it handle the event
+        if (e.target.closest('button') || e.target.closest('input')) return;
+
+        vp.setPointerCapture(e.pointerId);
+        fsWiringState.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (fsWiringState.pointers.size === 1) {
+            fsWiringState.isDragging = true;
+            fsWiringState.startX = e.clientX;
+            fsWiringState.startY = e.clientY;
+            fsWiringState.lastPanX = fsWiringState.panX;
+            fsWiringState.lastPanY = fsWiringState.panY;
+        } else if (fsWiringState.pointers.size === 2) {
+            fsWiringState.isDragging = false;
+            const pts = Array.from(fsWiringState.pointers.values());
+            fsWiringState.initialPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            fsWiringState.initialPinchScale = fsWiringState.scale;
+        }
+    });
+
+    vp.addEventListener('pointermove', (e) => {
+        if (!fsWiringState.pointers.has(e.pointerId)) return;
+        fsWiringState.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+        if (fsWiringState.pointers.size === 2) {
+            const pts = Array.from(fsWiringState.pointers.values());
+            const currentDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            if (fsWiringState.initialPinchDist > 0) {
+                const ratio = currentDist / fsWiringState.initialPinchDist;
+                fsWiringState.scale = Math.min(5.0, Math.max(0.12, fsWiringState.initialPinchScale * ratio));
+                applyFsTransform();
+            }
+        } else if (fsWiringState.pointers.size === 1 && fsWiringState.isDragging) {
+            const dx = e.clientX - fsWiringState.startX;
+            const dy = e.clientY - fsWiringState.startY;
+            fsWiringState.panX = fsWiringState.lastPanX + dx;
+            fsWiringState.panY = fsWiringState.lastPanY + dy;
+            applyFsTransform();
+        }
+    });
+
+    const endPointer = (e) => {
+        fsWiringState.pointers.delete(e.pointerId);
+        if (fsWiringState.pointers.size === 1) {
+            const remaining = Array.from(fsWiringState.pointers.values())[0];
+            fsWiringState.isDragging = true;
+            fsWiringState.startX = remaining.x;
+            fsWiringState.startY = remaining.y;
+            fsWiringState.lastPanX = fsWiringState.panX;
+            fsWiringState.lastPanY = fsWiringState.panY;
+        } else if (fsWiringState.pointers.size === 0) {
+            fsWiringState.isDragging = false;
+        }
+    };
+
+    vp.addEventListener('pointerup', endPointer);
+    vp.addEventListener('pointercancel', endPointer);
+
+    // Double-click or double-tap to reset/fit
+    let lastTap = 0;
+    vp.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+            fsFitToScreen();
+        }
+        lastTap = now;
+    });
+    vp.addEventListener('dblclick', () => {
+        fsFitToScreen();
+    });
+
+    // Window resize handler
+    window.addEventListener('resize', () => {
+        if (fsWiringState.active) {
+            fsFitToScreen();
+        }
+    });
+
+    // Esc key
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && fsWiringState.active) {
+            closeWiringFullscreen();
+        }
+    });
+}
+
+function openWiringFullscreen(strId) {
+    if (!strings || strings.length === 0) {
+        showToastNotification('Bitte lege zuerst mindestens einen String an.', 'error');
+        return;
+    }
+
+    ensureWiringFullscreenModalDom();
+
+    let targetId = strId;
+    if (!targetId || targetId === 'all') {
+        targetId = (wiringSettings.selectedStringId !== 'all' ? wiringSettings.selectedStringId : strings[0].id);
+    }
+    targetId = Number(targetId) || strings[0].id;
+
+    fsWiringState.active = true;
+    fsWiringState.stringId = targetId;
+    fsWiringState.scale = 1.0;
+    fsWiringState.panX = 0;
+    fsWiringState.panY = 0;
+    fsWiringState.rotation = 0;
+    fsWiringState.pointers.clear();
+
+    const modal = document.getElementById('modal-wiring-fullscreen');
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
+    }
+
+    renderWiringFullscreenContent();
+    
+    // Auto-fit to screen on opening
+    setTimeout(() => {
+        fsFitToScreen();
+    }, 60);
+}
+
+function closeWiringFullscreen() {
+    fsWiringState.active = false;
+    const modal = document.getElementById('modal-wiring-fullscreen');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+}
+
+function fsSwitchString(strId) {
+    fsWiringState.stringId = Number(strId);
+    renderWiringFullscreenContent();
+    fsFitToScreen();
+}
+
+function renderWiringFullscreenContent() {
+    const s = strings.find(st => st.id === fsWiringState.stringId) || strings[0];
+    if (!s) return;
+
+    const sCalc = calculateCablePhysics(s, wiringSettings);
+    const totalMod = (s.fields || []).reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
+
+    // Update title
+    const titleEl = document.getElementById('fs-header-title');
+    if (titleEl) {
+        titleEl.innerHTML = `
+            <span class="w-3 h-3 rounded-full inline-block shrink-0" style="background-color: ${s.color || '#3b82f6'};"></span>
+            <span>${s.name || 'String 1'}</span>
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-normal">
+                ${totalMod} Module • ${(sCalc.pTotalWp/1000).toFixed(2)} kWp
+            </span>
+        `;
+    }
+
+    // Update String Pills (Desktop & Mobile)
+    const renderPills = (containerId) => {
+        const c = document.getElementById(containerId);
+        if (!c) return;
+        c.innerHTML = strings.map((st, idx) => `
+            <button onclick="fsSwitchString(${st.id})" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${st.id === s.id ? 'bg-primary text-white shadow' : 'bg-slate-800 text-slate-400 hover:text-white'}">
+                <span class="w-2 h-2 rounded-full shrink-0" style="background-color: ${st.color || '#3b82f6'};"></span>
+                <span>${st.name || ('String ' + (idx + 1))}</span>
+            </button>
+        `).join('');
+    };
+    renderPills('fs-string-pills');
+    renderPills('fs-mobile-string-pills');
+
+    // Update Mobile Metrics
+    const mobMet = document.getElementById('fs-mobile-metrics');
+    if (mobMet) {
+        mobMet.innerText = `${sCalc.totalCableLength}m • ${Math.round(sCalc.vmpTotal)}V • ${sCalc.imp.toFixed(1)}A`;
+    }
+
+    // Update Floating Metrics
+    const floatMet = document.getElementById('fs-floating-metrics');
+    if (floatMet) {
+        floatMet.innerHTML = `
+            <span><strong class="text-white">${totalMod}</strong> Module</span>
+            <span>•</span>
+            <span><strong class="text-emerald-400">${Math.round(sCalc.vmpTotal)} V</strong> $U_{mpp}$</span>
+            <span>•</span>
+            <span><strong class="text-sky-400">${sCalc.imp.toFixed(1)} A</strong> $I_{mpp}$</span>
+            <span>•</span>
+            <span>Kabel: <strong class="text-amber-400">${sCalc.totalCableLength} m</strong> (${wiringSettings.cableCrossSection} mm²)</span>
+            <span>•</span>
+            <span>$\Delta U$: <strong class="text-white">${sCalc.deltaUPercent.toFixed(2)} %</strong></span>
+        `;
+    }
+
+    // Update Rotate Button Label
+    const rotLbl = document.getElementById('fs-btn-rot-label');
+    if (rotLbl) rotLbl.innerText = fsWiringState.rotation === 90 ? '0°' : '90°';
+
+    // Generate and inject SVG
+    const stage = document.getElementById('fs-stage');
+    if (stage) {
+        const svgContent = generateStringWiringSvg(s, wiringSettings);
+        stage.innerHTML = svgContent;
+    }
+
+    applyFsTransform();
+}
+
+function fsFitToScreen() {
+    const viewport = document.getElementById('fs-viewport');
+    const stage = document.getElementById('fs-stage');
+    if (!viewport || !stage) return;
+
+    const svg = stage.querySelector('svg');
+    if (!svg) return;
+
+    const vpW = viewport.clientWidth || window.innerWidth;
+    const vpH = viewport.clientHeight || window.innerHeight;
+
+    let vb = svg.viewBox?.baseVal;
+    let svgW = (vb && vb.width > 0) ? vb.width : 1000;
+    let svgH = (vb && vb.height > 0) ? vb.height : 600;
+
+    const isRot = (fsWiringState.rotation % 180 !== 0);
+    const effW = isRot ? svgH : svgW;
+    const effH = isRot ? svgW : svgH;
+
+    const availW = Math.max(100, vpW - 32);
+    const availH = Math.max(100, vpH - 80); // leave room for mobile bottom bar
+
+    const scaleX = availW / effW;
+    const scaleY = availH / effH;
+    const fitScale = Math.min(scaleX, scaleY);
+
+    fsWiringState.scale = Math.min(3.0, Math.max(0.15, fitScale));
+    fsWiringState.panX = 0;
+    fsWiringState.panY = 0;
+    applyFsTransform();
+}
+
+function fsToggleRotation() {
+    fsWiringState.rotation = (fsWiringState.rotation === 0 ? 90 : 0);
+    const rotLbl = document.getElementById('fs-btn-rot-label');
+    if (rotLbl) rotLbl.innerText = fsWiringState.rotation === 90 ? '0°' : '90°';
+    fsFitToScreen();
+    showToastNotification(fsWiringState.rotation === 90 ? '🔄 90° Querformat-Drehung aktiviert' : '🔄 0° Normalansicht aktiviert', 'info');
+}
+
+function fsZoom(delta) {
+    fsWiringState.scale = Math.min(5.0, Math.max(0.12, fsWiringState.scale + delta));
+    applyFsTransform();
+}
+
+function applyFsTransform() {
+    const stage = document.getElementById('fs-stage');
+    if (stage) {
+        stage.style.transform = `translate(${fsWiringState.panX}px, ${fsWiringState.panY}px) scale(${fsWiringState.scale}) rotate(${fsWiringState.rotation}deg)`;
+    }
+    const indicator = document.getElementById('fs-zoom-indicator');
+    if (indicator) {
+        indicator.textContent = `${Math.round(fsWiringState.scale * 100)}%`;
+    }
+}
+
