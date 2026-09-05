@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.4';
+        if (verEl) verEl.innerText = 'Pro 7.5';
 
         if (!strings || strings.length === 0) {
             addString();
@@ -1979,7 +1979,6 @@ function renderDatabaseUI() {
     if(wrCard) {
         wrCard.innerHTML = flatInverters.map(w => {
             let currentBatOpt = batOptions.replace(`value="${w.batteryId}"`, `value="${w.batteryId}" selected`);
-            const docCount = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.countDocsForDevice('inv', w.id) : 0;
             const isCustom = !!w.isCustom;
             
             return `
@@ -1988,29 +1987,17 @@ function renderDatabaseUI() {
                     <div class="flex items-start justify-between gap-2 mb-2">
                         <div class="flex items-center gap-2">
                             <span class="material-symbols-rounded text-primary text-xl">settings_input_component</span>
-                            <h4 class="font-bold text-slate-800 dark:text-slate-100 text-sm">${w.name}</h4>
+                            <h4 class="font-bold text-slate-800 dark:text-slate-100 text-sm">${escapeHtml(w.name)}</h4>
                         </div>
                         ${isCustom ? `
-                            <button onclick="deleteCustomDevice('inv', ${w.id})" class="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors" title="Gerät löschen">
+                            <button onclick="deleteCustomDevice('inv', ${w.id})" class="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer" title="Gerät löschen">
                                 <span class="material-symbols-rounded text-base">delete</span>
                             </button>` : ''}
                     </div>
-                    <div class="flex flex-wrap gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 mt-1 mb-3">
+                    <div class="flex flex-wrap gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 mt-1 mb-4">
                         <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">AC Max: ${w.acMax}W</span>
                         <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">Start: ${w.startV}V</span>
                         <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">${(w.mppts||[]).length} MPPTs</span>
-                    </div>
-
-                    <!-- DOKUMENTEN-STATUS & BUTTON -->
-                    <div class="mb-4 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                        <span class="inline-flex items-center gap-1 text-[11px] font-bold ${docCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
-                            <span class="material-symbols-rounded text-sm">${docCount > 0 ? 'verified' : 'draft'}</span>
-                            ${docCount} Dokument${docCount === 1 ? '' : 'e'} / Nachweise
-                        </span>
-                        <button onclick="openHardwareDocModal('inv', ${w.id}, '${escapeHtml(w.name)}')" class="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-[11px] font-bold flex items-center gap-1 transition-all">
-                            <span class="material-symbols-rounded text-sm">attach_file</span>
-                            <span>Dokumente</span>
-                        </button>
                     </div>
                 </div>
 
@@ -2025,36 +2012,25 @@ function renderDatabaseUI() {
     let pCard = document.getElementById('panelCardGrid');
     if(pCard) {
         pCard.innerHTML = flatPanels.map(p => {
-            const docCount = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.countDocsForDevice('panel', p.id) : 0;
             const isCustom = !!p.isCustom;
+            const vmpFormatted = typeof p.vmp === 'number' ? p.vmp.toFixed(1) : (parseFloat(p.vmp) || 0).toFixed(1);
 
             return `
             <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm gap-2">
                 <div class="flex justify-between items-start">
                     <div>
                         <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                            <span class="material-symbols-rounded text-sm text-primary">solar_power</span> ${p.name}
+                            <span class="material-symbols-rounded text-sm text-primary">solar_power</span> ${escapeHtml(p.name)}
                         </h4>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Voc: ${p.voc}V | Vmp: ${p.vmp?.toFixed(1)}V | Isc: ${p.isc}A</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Voc: ${p.voc}V | Vmp: ${vmpFormatted}V | Isc: ${p.isc}A</p>
                     </div>
                     <div class="text-right flex items-center gap-1.5">
                         <span class="text-xs font-black text-primary">${p.pmax} W</span>
                         ${isCustom ? `
-                            <button onclick="deleteCustomDevice('panel', ${p.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950" title="Modul löschen">
+                            <button onclick="deleteCustomDevice('panel', ${p.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950 cursor-pointer" title="Modul löschen">
                                 <span class="material-symbols-rounded text-sm">delete</span>
                             </button>` : ''}
                     </div>
-                </div>
-                
-                <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
-                    <span class="inline-flex items-center gap-1 font-bold ${docCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
-                        <span class="material-symbols-rounded text-xs">${docCount > 0 ? 'verified' : 'draft'}</span>
-                        ${docCount} Dok${docCount === 1 ? '' : 's'}
-                    </span>
-                    <button onclick="openHardwareDocModal('panel', ${p.id}, '${escapeHtml(p.name)}')" class="px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 text-primary font-bold flex items-center gap-1 text-[10px] transition-all">
-                        <span class="material-symbols-rounded text-xs">attach_file</span>
-                        <span>Dokumente & Zertifikate</span>
-                    </button>
                 </div>
             </div>`;
         }).join('');
@@ -2063,36 +2039,25 @@ function renderDatabaseUI() {
     let bCard = document.getElementById('batCardGrid');
     if(bCard) {
         bCard.innerHTML = flatBatteries.map(b => {
-            const docCount = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.countDocsForDevice('bat', b.id) : 0;
             const isCustom = !!b.isCustom;
+            const capFormatted = typeof b.cap === 'number' ? b.cap.toFixed(2) : (parseFloat(b.cap) || 0).toFixed(2);
 
             return `
             <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm gap-2">
                 <div class="flex justify-between items-start">
                     <div>
                         <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                            <span class="material-symbols-rounded text-sm text-accent">battery_charging_full</span> ${b.name}
+                            <span class="material-symbols-rounded text-sm text-accent">battery_charging_full</span> ${escapeHtml(b.name)}
                         </h4>
                         <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Max. P: ${b.power}W | Eff: ${Math.round((b.eff || 1) * 100)}%</p>
                     </div>
                     <div class="text-right flex items-center gap-1.5">
-                        <span class="text-xs font-black text-accent">${b.cap.toFixed(2)} kWh</span>
+                        <span class="text-xs font-black text-accent">${capFormatted} kWh</span>
                         ${isCustom ? `
-                            <button onclick="deleteCustomDevice('bat', ${b.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950" title="Batterie löschen">
+                            <button onclick="deleteCustomDevice('bat', ${b.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950 cursor-pointer" title="Batterie löschen">
                                 <span class="material-symbols-rounded text-sm">delete</span>
                             </button>` : ''}
                     </div>
-                </div>
-
-                <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[11px]">
-                    <span class="inline-flex items-center gap-1 font-bold ${docCount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}">
-                        <span class="material-symbols-rounded text-xs">${docCount > 0 ? 'verified' : 'draft'}</span>
-                        ${docCount} Dok${docCount === 1 ? '' : 's'}
-                    </span>
-                    <button onclick="openHardwareDocModal('bat', ${b.id}, '${escapeHtml(b.name)}')" class="px-2 py-0.5 rounded bg-accent/10 hover:bg-accent/20 text-accent font-bold flex items-center gap-1 text-[10px] transition-all">
-                        <span class="material-symbols-rounded text-xs">attach_file</span>
-                        <span>Dokumente & Zertifikate</span>
-                    </button>
                 </div>
             </div>`;
         }).join('');

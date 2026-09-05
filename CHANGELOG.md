@@ -4,6 +4,38 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.5.0] – 2026-09-05
+
+### 🎯 Vollbild-Schaltplan Zentrierung & Bereinigung der Hardware-Datenbank
+
+#### 1. Beseitigung der Schwarz-Darstellung im Vollbild-Schaltplan (`wiring.js`)
+* **Exakte Zentrierung via `translate(-50%, -50%)`:**
+  - Ursache des schwarzen Bildschirms: Der absolute Container `#fs-stage` war ohne Centering-Offset platziert, wodurch die Skalierungstransformation (`scale(0.2x-0.4x)`) den 1200x700px SVG-Plan auf Smartphones weit außerhalb des sichtbaren Viewport-Bereichs verschoben hat.
+  - Implementierung von `left: 50%; top: 50%; transform-origin: center center;` und `transform: translate(-50%, -50%) translate(...) scale(...) rotate(...)`.
+* **Präzise Viewport-Geometrie (`getBoundingClientRect`):**
+  - Umstellung von unzuverlässigen Fallback-Größen auf `viewport.getBoundingClientRect()`, wodurch die verfügbare Zeichenfläche auf mobilen Geräten unter Berücksichtigung von Safe-Areas und Navigationsleisten millimetergenau eingepasst wird.
+* **Robuster Leer-Zustand (Empty-State):**
+  - Falls ein String noch keine Module enthält, wird anstelle einer leeren schwarzen Fläche eine ansprechende Hinweiskarte angezeigt.
+* **Priorisierter Modal-Z-Index:**
+  - Das Vollbild-Modal läuft jetzt mit `z-[200]` über allen App-Headern und Navigationselementen.
+
+#### 2. Vollständige Bereinigung der Hardware-Stammdaten (`database.js`, `app.js`, `dossier.js`)
+* **Entfernung aller externen Schrott-Links und Muster-Dokumente:**
+  - `MasterHardwareDocs` wurde komplett geleert; alle fehlerhaften oder ins Leere laufenden Drittanbieter-URLs wurden restlos entfernt.
+  - Entfernung von unzuverlässigen Status-Badges und Modalen aus den Hardware-Karten im Tab „Datenbank“.
+* **Fokus auf reale technische Gerätedaten:**
+  - Saubere, übersichtliche Darstellung der physikalischen Kenndaten für Module (Voc, Vmp, Isc, Pmax), Wechselrichter (AC-Leistung, Startspannung, MPPT-Anzahl) und Batteriespeicher (Kapazität, Ladeleistung, Wirkungsgrad).
+* **Fachgerechte Dossier-Ausgabe:**
+  - Die Datenblatt- und Zertifikatsübersichten im Dossier verweisen nun professionell und prüffähig auf die beiliegenden Werksdatenblätter gemäß IEC 61215, EN 62109 und VDE-AR-N 4105.
+
+#### 3. Konsistente Versionsführung in der Kopfzeile (`index.html`, `app.js`, `DEVELOPMENT_GUIDELINES.md`)
+* **App-Header aktualisiert:**
+  - Kopfzeile führt nun `Pro 7.5` synchron in HTML und Laufzeitinitialisierung (`app.js`).
+* **Entwicklungsrichtlinien:**
+  - Die Richtlinie zur synchronen Aktualisierung von `app-header-version` ist verbindlich in den Entwicklungs-Guidelines verankert.
+
+---
+
 ## [Version 7.4.0] – 2026-09-05
 
 ### 🚀 Debugging & Optimierung: Mobile-Sync QR-Code & Vollbild-Schaltplan

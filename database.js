@@ -82,54 +82,23 @@ const MasterDB = {
 };
 
 // ==========================================
-// STANDARD-ZERTIFIKATE & DATENBLÄTTER DER MASTER-HARDWARE
-// DIN VDE 0100-712 / VDE-AR-N 4105 / IEC 61215 / IEC 62619
+// SICHERER HTML-ESCAPING-HELPER (GLOBAL)
 // ==========================================
-const MasterHardwareDocs = {
-    // Solarmodule
-    'panel_101': [
-        { id: 'm_p_101_db', category: 'datenblatt', title: 'AIKO Neostar 3S+54 Datenblatt (ABC N-Type)', standard: 'IEC 61215 / IEC 61730', issuer: 'AIKO Solar Energy', url: 'https://aikosolar.com', notes: 'All-Back-Contact (ABC), 23.6% Wirkungsgrad, -0.22%/°C Temp.-Koeff., 1722x1134x30 mm, 20.5 kg, IP68' },
-        { id: 'm_p_101_cert', category: 'zertifikat', title: 'TÜV Rheinland Zertifikat IEC 61215/61730', standard: 'DIN EN IEC 61215:2021', issuer: 'TÜV Rheinland', certNo: 'PV 50578491', validUntil: '2029-03', notes: 'Zertifiziert für Ammoniak-, Salznebel- und Hagelwiderstandsklasse HW4' }
-    ],
-    'panel_201': [
-        { id: 'm_p_201_db', category: 'datenblatt', title: 'Jolywood JW-HD96N-R2 Datenblatt (TOPCon Bifazial)', standard: 'IEC 61215 / IEC 61730', issuer: 'Jolywood Solar', url: 'https://jolywood.cn', notes: 'N-Type TOPCon Doppelglas bifazial, Glas-Glas 2.0+2.0 mm, 1762x1134x30 mm, 24.5 kg, IP68' },
-        { id: 'm_p_201_cert', category: 'zertifikat', title: 'TÜV NORD Bauartzulassung & Sicherheitszertifikat', standard: 'IEC 61215 / IEC 61730', issuer: 'TÜV NORD CERT GmbH', certNo: '44 780 22 40674', validUntil: '2028-11', notes: 'Brandschutzklasse Class A nach IEC 61730-2' }
-    ],
-    'panel_301': [
-        { id: 'm_p_301_db', category: 'datenblatt', title: 'Jolywood JW-HD120N-R3 Datenblatt (TOPCon Doppelglas)', standard: 'IEC 61215 / IEC 61730', issuer: 'Jolywood Solar', url: 'https://jolywood.cn', notes: 'N-Type TOPCon bifazial, 485-510W, 1903x1134x30 mm, 26.5 kg, IP68' },
-        { id: 'm_p_301_cert', category: 'zertifikat', title: 'TÜV NORD Zertifikat IEC 61215 / IEC 61730', standard: 'IEC 61215 / IEC 61730', issuer: 'TÜV NORD CERT GmbH', certNo: '44 780 23 40812', validUntil: '2029-01', notes: 'Geprüft nach IEC 62716 (Ammoniak) & IEC 61701 (Salznebel)' }
-    ],
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
 
-    // Wechselrichter
-    'inv_10': [
-        { id: 'm_inv_10_db', category: 'datenblatt', title: 'Fronius Symo GEN24 Plus Datenblatt (3.0 - 10.0 kW)', standard: 'DIN EN 62109-1/-2', issuer: 'Fronius International GmbH', url: 'https://fronius.com', notes: 'Dreiphasiger Hybrid-Wechselrichter, Multi-Flow Technology, 2 MPP-Tracker, IP66, 98.2% max. Wirkungsgrad' },
-        { id: 'm_inv_10_cert1', category: 'zertifikat', title: 'VDE-AR-N 4105 Einheitenzertifikat (Erzeugungseinheit Typ 2)', standard: 'VDE-AR-N 4105:2018-11', issuer: 'TÜV Rheinland LGA Products GmbH', certNo: 'AK 50456123 0001', validUntil: '2029-12', notes: 'Konformitätsnachweis für Erzeugungsanlagen am Niederspannungsnetz inkl. integriertem NA-Schutz' },
-        { id: 'm_inv_10_cert2', category: 'zertifikat', title: 'Konformitätsnachweis NA-Schutz (Netz- & Anlagenschutz)', standard: 'DIN VDE V 0124-100:2020', issuer: 'TÜV Rheinland', certNo: 'AK 50456124 0001', validUntil: '2029-12', notes: 'Zentraler & integrierter NA-Schutz mit Schnittstellenprüfung' }
-    ],
-    'inv_100': [
-        { id: 'm_inv_100_db', category: 'datenblatt', title: 'Anker SOLIX Solarbank 2 Pro E1600 Datenblatt', standard: 'DIN EN 62109', issuer: 'Anker Innovations', url: 'https://anker.com', notes: 'All-in-One Speicher & 4-fach MPPT Mikrowechselrichter, 800W AC, IP65' },
-        { id: 'm_inv_100_cert', category: 'zertifikat', title: 'VDE-AR-N 4105 Unbedenklichkeitsbescheinigung & Zertifikat', standard: 'VDE-AR-N 4105:2018-11', issuer: 'Bureau Veritas Consumer Products', certNo: 'BV-VDE-24-00918', validUntil: '2029-05', notes: 'Zugelassen für steckerfertige PV-Anlagen und Speicherintegration' }
-    ],
-
-    // Batteriespeicher
-    'bat_302': [
-        { id: 'm_bat_302_db', category: 'datenblatt', title: 'BYD Battery-Box Premium HVS Datenblatt (5.1 - 12.8 kWh)', standard: 'IEC 62619 / VDE 2510-50', issuer: 'BYD Company Ltd.', url: 'https://bydbatterybox.com', notes: 'Kobaltfreies Lithium-Eisenphosphat (LiFePO4), Hochvolt 200 - 500V, modular erweiterbar, IP55, 96% Round-Trip' },
-        { id: 'm_bat_302_cert1', category: 'zertifikat', title: 'VDE 2510-50 Sicherheitsleitfaden Batteriespeicher', standard: 'VDE 2510-50:2017', issuer: 'TÜV Rheinland', certNo: 'VDE-2510-BYD-HVS', validUntil: '2029-08', notes: 'Höchste Sicherheitsanforderungen für stationäre Batteriespeicher im Wohnbereich' },
-        { id: 'm_bat_302_cert2', category: 'zertifikat', title: 'UN 38.3 Transportsicherheitsprüfung & IEC 62619', standard: 'UN 38.3 / IEC 62619:2022', issuer: 'Vkan Certification & Testing', certNo: 'RZUN2023-0182', validUntil: '2028-10', notes: 'Nachweis der Eigensicherheit gegen thermisches Durchgehen' }
-    ],
-    'bat_403': [
-        { id: 'm_bat_403_db', category: 'datenblatt', title: 'BYD Battery-Box Premium HVM Datenblatt (8.3 - 22.1 kWh)', standard: 'IEC 62619 / VDE 2510-50', issuer: 'BYD Company Ltd.', url: 'https://bydbatterybox.com', notes: 'Hochvolt LiFePO4 Speicher, 150 - 400V, modulare Kaskadierung' },
-        { id: 'm_bat_403_cert', category: 'zertifikat', title: 'TÜV Rheinland Bauart- & Sicherheitszertifikat', standard: 'IEC 62619 / VDE 2510-50', issuer: 'TÜV Rheinland', certNo: 'R 50462918', validUntil: '2029-06', notes: 'Zertifiziert für gewerbliche und private PV-Eigenverbrauchssysteme' }
-    ],
-    'bat_202': [
-        { id: 'm_bat_202_db', category: 'datenblatt', title: 'Fronius Reserva LiFePO4 Hochvoltspeicher Datenblatt', standard: 'IEC 62619', issuer: 'Fronius International GmbH', url: 'https://fronius.com', notes: 'LiFePO4 Hochvolt-Speichermodule, 6.3 - 15.8 kWh, DC-Kopplung mit GEN24 Plus' },
-        { id: 'm_bat_202_cert', category: 'zertifikat', title: 'VDE 2510-50 Sicherheitszertifikat & CE', standard: 'VDE 2510-50', issuer: 'TÜV Rheinland', certNo: 'FR-RES-2510-01', validUntil: '2029-04', notes: 'Vollständige Prüfung nach aktuellen Brandschutz- und Sicherheitsstandards' }
-    ],
-    'bat_500': [
-        { id: 'm_bat_500_db', category: 'datenblatt', title: 'Anker SOLIX BP1600 / BP2700 Erweiterungsakku', standard: 'IEC 62619', issuer: 'Anker Innovations', url: 'https://anker.com', notes: 'LiFePO4 Erweiterungsspeicher 1.6 bis 15 kWh, IP65, 6.000 Ladezyklen' },
-        { id: 'm_bat_500_cert', category: 'zertifikat', title: 'CE & UN 38.3 Prüfzertifikat für LiFePO4 Speicher', standard: 'UN 38.3 / IEC 62619', issuer: 'Bureau Veritas', certNo: 'BV-BAT-ANK-091', validUntil: '2029-05', notes: 'Zertifiziert für den Außeneinsatz im Temperaturbereich -20°C bis +55°C' }
-    ]
-};
+// ==========================================
+// STANDARD-ZERTIFIKATE & DATENBLÄTTER DER MASTER-HARDWARE
+// (Bereinigt: Keine Dummy-Links / Junk-Einträge)
+// ==========================================
+const MasterHardwareDocs = {};
 
 // ==========================================
 // DOKUMENTENVERWALTUNG-ENGINE (HARDWARE DOCS)
@@ -150,34 +119,10 @@ const HardwareDocManager = {
     getDocsForDevice(deviceType, deviceId) {
         const idStr = String(deviceId);
         const userDocs = this.getAllUserDocs().filter(d => d.deviceType === deviceType && String(d.deviceId) === idStr);
-        const masterDocs = this.getMasterDocsForDevice(deviceType, deviceId);
-        return [...masterDocs, ...userDocs];
+        return userDocs;
     },
 
     getMasterDocsForDevice(deviceType, deviceId) {
-        const key = `${deviceType}_${deviceId}`;
-        if (MasterHardwareDocs[key]) {
-            return MasterHardwareDocs[key].map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-        }
-        // Wenn spezifisches Modell nicht da ist, Fallback auf Modellreihe
-        if (deviceType === 'panel') {
-            const idNum = parseInt(deviceId);
-            if (idNum >= 101 && idNum <= 104) return (MasterHardwareDocs['panel_101'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-            if (idNum >= 201 && idNum <= 204) return (MasterHardwareDocs['panel_201'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-            if (idNum >= 301 && idNum <= 306) return (MasterHardwareDocs['panel_301'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-        }
-        if (deviceType === 'inv') {
-            const idNum = parseInt(deviceId);
-            if (idNum >= 10 && idNum <= 16) return (MasterHardwareDocs['inv_10'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-            if (idNum === 100) return (MasterHardwareDocs['inv_100'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-        }
-        if (deviceType === 'bat') {
-            const idNum = parseInt(deviceId);
-            if (idNum >= 302 && idNum <= 305) return (MasterHardwareDocs['bat_302'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-            if (idNum >= 403 && idNum <= 408) return (MasterHardwareDocs['bat_403'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-            if (idNum >= 202 && idNum <= 205) return (MasterHardwareDocs['bat_202'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-            if (idNum >= 500 && idNum <= 525) return (MasterHardwareDocs['bat_500'] || []).map(d => ({ ...d, isMaster: true, deviceType, deviceId }));
-        }
         return [];
     },
 
@@ -230,5 +175,6 @@ const HardwareDocManager = {
 };
 
 // Globale Verfügbarkeit
+window.escapeHtml = escapeHtml;
 window.MasterHardwareDocs = MasterHardwareDocs;
 window.HardwareDocManager = HardwareDocManager;

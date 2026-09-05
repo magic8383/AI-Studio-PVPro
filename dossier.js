@@ -348,55 +348,55 @@ function buildDataSheetsSection(hardwareData, isCompact = false) {
                     </thead>
                     <tbody class="divide-y divide-slate-200">
                         ${usedPanels.map(p => {
-                            const ds = (p.docs || []).find(d => d.category === 'datenblatt') || (p.docs || [])[0];
+                            const ds = (p.docs || []).find(d => d.category === 'datenblatt');
                             return `
                             <tr>
                                 <td class="p-2 font-bold text-slate-600">PV-Modul</td>
                                 <td class="p-2 font-black text-slate-900">${escapeHtml(p.name)} (${p.count}×)</td>
                                 <td class="p-2 font-mono text-[11px] text-slate-700">Pmax: ${p.pmax}W | Voc: ${p.voc}V | Vmp: ${p.vmp}V</td>
                                 <td class="p-2 text-slate-600">
-                                    ${ds ? `
+                                    ${ds && ds.url ? `
                                         <a href="${escapeHtml(ds.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline font-bold">
                                             <span class="material-symbols-rounded text-sm">open_in_new</span>
                                             ${escapeHtml(ds.title)}
                                         </a>
-                                    ` : '<span class="text-slate-400">Herstellerspezifikation liegt bei</span>'}
+                                    ` : '<span class="text-slate-600 font-medium">Werksdatenblatt gemäß IEC 61215 beiliegend</span>'}
                                 </td>
                             </tr>
                             `;
                         }).join('')}
                         ${usedInverters.map(inv => {
-                            const ds = (inv.docs || []).find(d => d.category === 'datenblatt') || (inv.docs || [])[0];
+                            const ds = (inv.docs || []).find(d => d.category === 'datenblatt');
                             return `
                             <tr>
                                 <td class="p-2 font-bold text-slate-600">Wechselrichter</td>
                                 <td class="p-2 font-black text-slate-900">${escapeHtml(inv.name)}</td>
                                 <td class="p-2 font-mono text-[11px] text-slate-700">AC: ${(inv.acMax / 1000).toFixed(1)}kW | MPPT: ${inv.minMppV}-${inv.maxMppV}V | Max: ${inv.maxV}V</td>
                                 <td class="p-2 text-slate-600">
-                                    ${ds ? `
+                                    ${ds && ds.url ? `
                                         <a href="${escapeHtml(ds.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline font-bold">
                                             <span class="material-symbols-rounded text-sm">open_in_new</span>
                                             ${escapeHtml(ds.title)}
                                         </a>
-                                    ` : '<span class="text-slate-400">Herstellerspezifikation liegt bei</span>'}
+                                    ` : '<span class="text-slate-600 font-medium">Werksdatenblatt gemäß EN 62109 beiliegend</span>'}
                                 </td>
                             </tr>
                             `;
                         }).join('')}
                         ${usedBattery ? (() => {
-                            const ds = (usedBattery.docs || []).find(d => d.category === 'datenblatt') || (usedBattery.docs || [])[0];
+                            const ds = (usedBattery.docs || []).find(d => d.category === 'datenblatt');
                             return `
                             <tr>
                                 <td class="p-2 font-bold text-slate-600">Speicher</td>
                                 <td class="p-2 font-black text-slate-900">${escapeHtml(usedBattery.name)}</td>
                                 <td class="p-2 font-mono text-[11px] text-slate-700">Kapazität: ${usedBattery.cap} kWh | Ladeleistung: ${(usedBattery.power / 1000).toFixed(1)} kW</td>
                                 <td class="p-2 text-slate-600">
-                                    ${ds ? `
+                                    ${ds && ds.url ? `
                                         <a href="${escapeHtml(ds.url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 text-primary hover:underline font-bold">
                                             <span class="material-symbols-rounded text-sm">open_in_new</span>
                                             ${escapeHtml(ds.title)}
                                         </a>
-                                    ` : '<span class="text-slate-400">Herstellerspezifikation liegt bei</span>'}
+                                    ` : '<span class="text-slate-600 font-medium">Werksdatenblatt gemäß IEC 62619 beiliegend</span>'}
                                 </td>
                             </tr>
                             `;
@@ -687,10 +687,10 @@ function buildCertificatesSection(hardwareData, isCompact = false) {
                 </div>
 
                 <div class="p-3 bg-white rounded-lg border border-slate-200 space-y-1.5">
-                    <span class="font-black text-slate-900 text-xs block">Zertifikatsdaten & Verifizierung:</span>
+                    <span class="font-black text-slate-900 text-xs block">Normenbasis & Verifizierung:</span>
                     <ul class="space-y-1 text-[11px] divide-y divide-slate-100">
-                        <li class="pt-1 flex justify-between"><span>Prüfbericht-Referenz:</span> <span class="font-mono font-bold">TR-VDE-4105-${new Date().getFullYear()}</span></li>
-                        <li class="pt-1 flex justify-between"><span>Akkreditierte Zertifizierungsstelle:</span> <span>TÜV Rheinland / Bureau Veritas</span></li>
+                        <li class="pt-1 flex justify-between"><span>Anforderungsnorm:</span> <span class="font-bold text-slate-800">VDE-AR-N 4105:2018-11</span></li>
+                        <li class="pt-1 flex justify-between"><span>Prüfgrundlage:</span> <span>DIN VDE V 0124-100</span></li>
                         <li class="pt-1 flex justify-between"><span>Netzrückwirkungen:</span> <span>DIN EN 61000-3-2 / DIN EN 61000-3-3</span></li>
                         <li class="pt-1 flex justify-between"><span>Inselnetzerkennung:</span> <span>Aktiv & Passiv geprüft (&le; 5.0 s)</span></li>
                     </ul>

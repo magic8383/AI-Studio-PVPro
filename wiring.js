@@ -2091,7 +2091,7 @@ function ensureWiringFullscreenModalDom() {
     if (document.getElementById('modal-wiring-fullscreen')) return;
 
     const modalHtml = `
-    <div id="modal-wiring-fullscreen" class="fixed inset-0 z-50 w-screen h-[100dvh] bg-slate-950 flex flex-col select-none hidden no-print">
+    <div id="modal-wiring-fullscreen" class="fixed inset-0 z-[200] w-screen h-[100dvh] bg-slate-950 flex flex-col select-none hidden no-print">
         <!-- TOP TOOLBAR -->
         <header class="px-3 sm:px-5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0 z-30 backdrop-blur-md">
             <!-- Left: Close & Title -->
@@ -2159,7 +2159,7 @@ function ensureWiringFullscreenModalDom() {
 
         <!-- MAIN VIEWPORT STAGE -->
         <div id="fs-viewport" class="flex-1 relative overflow-hidden touch-none bg-slate-950 flex items-center justify-center cursor-grab active:cursor-grabbing">
-            <div id="fs-stage" class="absolute transition-transform duration-75 origin-center will-change-transform flex items-center justify-center pointer-events-auto">
+            <div id="fs-stage" class="absolute transition-transform duration-75 will-change-transform flex items-center justify-center pointer-events-auto" style="left: 50%; top: 50%; transform-origin: center center;">
                 <!-- SVG diagram injected here -->
             </div>
 
@@ -2409,6 +2409,25 @@ function renderWiringFullscreenContent() {
     const stage = document.getElementById('fs-stage');
     if (stage) {
         const svgContent = generateStringWiringSvg(s, wiringSettings);
+        if (!svgContent || svgContent.trim() === '') {
+            stage.innerHTML = `
+                <div class="flex flex-col items-center justify-center p-8 text-center text-slate-300 bg-slate-900/95 rounded-3xl border border-slate-800 shadow-2xl max-w-sm">
+                    <span class="material-symbols-rounded text-5xl text-amber-400 mb-3">solar_power</span>
+                    <h4 class="font-black text-sm text-white mb-1">Keine Module im String</h4>
+                    <p class="text-xs text-slate-400">Dieser String enthält aktuell keine Solarmodule. Füge Module im Generator- oder Verkabelungstab hinzu.</p>
+                </div>
+            `;
+            stage.style.width = '320px';
+            stage.style.height = '200px';
+            stage.style.minWidth = '320px';
+            stage.style.minHeight = '200px';
+            fsWiringState.scale = 1.0;
+            fsWiringState.panX = 0;
+            fsWiringState.panY = 0;
+            applyFsTransform();
+            return;
+        }
+
         stage.innerHTML = svgContent;
         const svg = stage.querySelector('svg');
         if (svg) {
@@ -2445,8 +2464,9 @@ function fsFitToScreen() {
     const svg = stage.querySelector('svg');
     if (!svg) return;
 
-    const vpW = viewport.clientWidth || window.innerWidth;
-    const vpH = viewport.clientHeight || window.innerHeight;
+    const vpRect = viewport.getBoundingClientRect();
+    const vpW = (vpRect && vpRect.width > 0) ? vpRect.width : (viewport.clientWidth || window.innerWidth || 360);
+    const vpH = (vpRect && vpRect.height > 0) ? vpRect.height : (viewport.clientHeight || window.innerHeight || 600);
 
     let vb = svg.viewBox?.baseVal;
     let svgW = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || parseFloat(stage.style.width) || 1200);
@@ -2456,14 +2476,18 @@ function fsFitToScreen() {
     const effW = isRot ? svgH : svgW;
     const effH = isRot ? svgW : svgH;
 
-    const availW = Math.max(100, vpW - 48);
-    const availH = Math.max(100, vpH - 130); // leave room for top bar & mobile thumb bar
+    const availW = Math.max(80, vpW - 32);
+    const availH = Math.max(80, vpH - 140); // Clearance for top bar and thumb navigation bar
 
     const scaleX = availW / effW;
     const scaleY = availH / effH;
-    const fitScale = Math.min(scaleX, scaleY);
+    let fitScale = Math.min(scaleX, scaleY);
 
-    fsWiringState.scale = Math.min(3.0, Math.max(0.12, fitScale));
+    if (!Number.isFinite(fitScale) || fitScale <= 0) {
+        fitScale = 0.35;
+    }
+
+    fsWiringState.scale = Math.min(3.0, Math.max(0.08, fitScale));
     fsWiringState.panX = 0;
     fsWiringState.panY = 0;
     applyFsTransform();
@@ -2478,14 +2502,17 @@ function fsToggleRotation() {
 }
 
 function fsZoom(delta) {
-    fsWiringState.scale = Math.min(5.0, Math.max(0.12, fsWiringState.scale + delta));
+    fsWiringState.scale = Math.min(5.0, Math.max(0.08, fsWiringState.scale + delta));
     applyFsTransform();
 }
 
 function applyFsTransform() {
     const stage = document.getElementById('fs-stage');
     if (stage) {
-        stage.style.transform = `translate(${fsWiringState.panX}px, ${fsWiringState.panY}px) scale(${fsWiringState.scale}) rotate(${fsWiringState.rotation}deg)`;
+        stage.style.left = '50%';
+        stage.style.top = '50%';
+        stage.style.transformOrigin = 'center center';
+        stage.style.transform = `translate(-50%, -50%) translate(${fsWiringState.panX}px, ${fsWiringState.panY}px) scale(${fsWiringState.scale}) rotate(${fsWiringState.rotation}deg)`;
     }
     const indicator = document.getElementById('fs-zoom-indicator');
     if (indicator) {
