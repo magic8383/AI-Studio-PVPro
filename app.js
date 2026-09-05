@@ -68,7 +68,15 @@ function initDatabase() {
             try {
                 let loaded = readJsonStorage('pvpro_strings', []);
                 if (Array.isArray(loaded)) {
-                    strings = loaded.map(s => { if(!s.fields) s.fields = [{ id: Date.now()+Math.random(), panelId: flatPanels[0]?.id||1, count: s.panels||1, tilt: 30 }]; return s; });
+                    strings = loaded.map(s => { 
+                        if(!s.fields) s.fields = [{ id: Date.now()+Math.random(), name: 'Hauptdach', panelId: flatPanels[0]?.id||1, count: s.panels||1, tilt: 30, cols: Math.min(s.panels||1, 4)||4, rows: Math.ceil((s.panels||1)/(Math.min(s.panels||1, 4)||1)) }]; 
+                        s.fields.forEach((f, fIdx) => {
+                            if (!f.name) f.name = fIdx === 0 ? 'Hauptdach' : (fIdx === 1 ? 'Gaube' : `Feld ${fIdx + 1}`);
+                            if (!f.cols) f.cols = Math.min(f.count || 4, 4) || 4;
+                            if (!f.rows) f.rows = Math.ceil((f.count || 1) / (f.cols || 1));
+                        });
+                        return s; 
+                    });
                 } else {
                     strings = [];
                 }
@@ -256,11 +264,44 @@ function toggleAcc(id) {
 // 3. STRINGS, PHYSIK & UI
 // ==========================================
 function addString() { 
-    strings.push({ id: Date.now(), name: "Neuer String", group: "", shading: 0, azimuth: 180, inverterId: flatInverters[0]?.id || 1, mpptId: 1, color: colors[strings.length % colors.length], fields: [{ id: Date.now()+1, panelId: flatPanels[0]?.id || 1, count: 5, tilt: 30 }] }); 
+    strings.push({ 
+        id: Date.now(), 
+        name: "Neuer String", 
+        group: "", 
+        shading: 0, 
+        azimuth: 180, 
+        inverterId: flatInverters[0]?.id || 1, 
+        mpptId: 1, 
+        color: colors[strings.length % colors.length], 
+        fields: [{ 
+            id: Date.now()+1, 
+            name: "Hauptdach", 
+            panelId: flatPanels[0]?.id || 1, 
+            count: 6, 
+            tilt: 30, 
+            cols: 3, 
+            rows: 2 
+        }] 
+    }); 
     updatePhysicsOnly(); 
 }
 function removeString(id) { strings = strings.filter(s => s.id !== id); updatePhysicsOnly(); }
-function addField(id) { strings.find(s => s.id === id)?.fields.push({ id: Date.now(), panelId: flatPanels[0]?.id || 1, count: 1, tilt: 30 }); updatePhysicsOnly(); }
+function addField(id) { 
+    const str = strings.find(s => s.id === id);
+    if (str) {
+        const nextIdx = (str.fields || []).length + 1;
+        str.fields.push({ 
+            id: Date.now() + Math.floor(Math.random() * 1000), 
+            name: nextIdx === 2 ? "Gaube" : `Feld ${nextIdx}`, 
+            panelId: str.fields[0]?.panelId || flatPanels[0]?.id || 1, 
+            count: 4, 
+            tilt: 30, 
+            cols: 4, 
+            rows: 1 
+        }); 
+        updatePhysicsOnly(); 
+    }
+}
 function removeField(sId, fId) { const str = strings.find(s => s.id === sId); if(str) str.fields = str.fields.filter(f => f.id !== fId); updatePhysicsOnly(); }
 
 function toggleEditMode(strId) {
@@ -511,7 +552,13 @@ let wiringSettings = {
     // Dachhindernisse & Geometrie je String:
     // { [strId]: { obstacles: [ { id, row, col, type, label } ] } }
     customRoofLayouts: {},
-    showObstacleEditor: false
+    showObstacleEditor: false,
+
+    // Exakte Kabelwege Weg A, Weg B und Feldbrücken je String
+    cableWegA: {},               // { [strId]: number (Meter) }
+    cableWegB: {},               // { [strId]: number (Meter) }
+    fieldBridges: {},            // { [strId]: { [bridgeIdx]: number (Meter) } }
+    panelCableRate: 2.0          // Pauschal 2,0 m Kabel pro PV-Modul
 };
 
 function loadWiringSettings() {
@@ -522,6 +569,152 @@ function loadWiringSettings() {
     if (!wiringSettings.customSequences) wiringSettings.customSequences = {};
     if (!wiringSettings.customRoofLayouts) wiringSettings.customRoofLayouts = {};
     if (!wiringSettings.interactiveQueue) wiringSettings.interactiveQueue = [];
+    if (!wiringSettings.cableWegA) wiringSettings.cableWegA = {};
+    if (!wiringSettings.cableWegB) wiringSettings.cableWegB = {};
+    if (!wiringSettings.fieldBridges) wiringSettings.fieldBridges = {};
+    if (!wiringSettings.panelCableRate) wiringSettings.panelCableRate = 2.0;
+}
+
+function getWiringWegA(strId) {
+    if (wiringSettings.cableWegA && wiringSettings.cableWegA[strId] !== undefined) {
+        return Math.max(1, parseFloat(wiringSettings.cableWegA[strId]) || 15);
+    }
+    return Math.max(1, parseFloat(wiringSettings.cableLengthWr) || 15);
+}
+
+function setWiringWegA(strId, val) {
+    if (!wiringSettings.cableWegA) wiringSettings.cableWegA = {};
+    wiringSettings.cableWegA[strId] = Math.max(1, Math.min(250, parseFloat(val) || 15));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function getWiringWegB(strId) {
+    if (wiringSettings.cableWegB && wiringSettings.cableWegB[strId] !== undefined) {
+        return Math.max(1, parseFloat(wiringSettings.cableWegB[strId]) || 15);
+    }
+    return Math.max(1, parseFloat(wiringSettings.cableLengthWr) || 15);
+}
+
+function setWiringWegB(strId, val) {
+    if (!wiringSettings.cableWegB) wiringSettings.cableWegB = {};
+    wiringSettings.cableWegB[strId] = Math.max(1, Math.min(250, parseFloat(val) || 15));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function getWiringBridgeLength(strId, bridgeIdx) {
+    if (wiringSettings.fieldBridges && wiringSettings.fieldBridges[strId] && wiringSettings.fieldBridges[strId][bridgeIdx] !== undefined) {
+        return Math.max(0.5, parseFloat(wiringSettings.fieldBridges[strId][bridgeIdx]) || 4.0);
+    }
+    return 4.0;
+}
+
+function setWiringBridgeLength(strId, bridgeIdx, val) {
+    if (!wiringSettings.fieldBridges) wiringSettings.fieldBridges = {};
+    if (!wiringSettings.fieldBridges[strId]) wiringSettings.fieldBridges[strId] = {};
+    wiringSettings.fieldBridges[strId][bridgeIdx] = Math.max(0.5, Math.min(100, parseFloat(val) || 4.0));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function promptEditBridgeLength(strId, bridgeIdx, currentLen) {
+    const val = prompt(`Länge der Feld-Brücke in Metern (aktuell: ${currentLen} m):`, currentLen);
+    if (val !== null && !isNaN(parseFloat(val))) {
+        setWiringBridgeLength(strId, bridgeIdx, parseFloat(val));
+    }
+}
+
+// Bearbeitung von Feldern direkt aus dem Verkabelungs-Tab
+function updateFieldInWiring(strId, fieldId, key, val) {
+    const str = strings.find(s => s.id === strId);
+    if (!str) return;
+    const f = (str.fields || []).find(field => field.id === fieldId);
+    if (!f) return;
+
+    if (key === 'name') {
+        f.name = val;
+    } else if (key === 'count') {
+        f.count = Math.max(1, Math.min(100, parseInt(val) || 1));
+        f.rows = Math.ceil(f.count / (f.cols || 1));
+    } else if (key === 'cols') {
+        f.cols = Math.max(1, Math.min(12, parseInt(val) || 1));
+        f.rows = Math.ceil((f.count || 1) / f.cols);
+    } else if (key === 'rows') {
+        f.rows = Math.max(1, Math.min(12, parseInt(val) || 1));
+        f.cols = Math.ceil((f.count || 1) / f.rows);
+    } else if (key === 'tilt') {
+        f.tilt = Math.max(0, Math.min(90, parseInt(val) || 30));
+    } else if (key === 'panelId') {
+        f.panelId = parseInt(val);
+    }
+
+    const totalMod = (str.fields || []).reduce((a, x) => a + (parseInt(x.count) || 0), 0);
+    if (wiringSettings.customSequences[strId]?.length !== totalMod) {
+        delete wiringSettings.customSequences[strId];
+    }
+
+    updatePhysicsOnly();
+    localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function addFieldInWiring(strId) {
+    const str = strings.find(s => s.id === strId);
+    if (!str) return;
+    if (!str.fields) str.fields = [];
+    const nextIdx = str.fields.length + 1;
+    const defaultName = nextIdx === 2 ? 'Gaube' : `Feld ${nextIdx}`;
+    str.fields.push({
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        name: defaultName,
+        panelId: str.fields[0]?.panelId || flatPanels[0]?.id || 1,
+        count: 4,
+        tilt: 30,
+        cols: 4,
+        rows: 1
+    });
+
+    if (!wiringSettings.fieldBridges) wiringSettings.fieldBridges = {};
+    if (!wiringSettings.fieldBridges[strId]) wiringSettings.fieldBridges[strId] = {};
+    wiringSettings.fieldBridges[strId][nextIdx - 2] = 4.0;
+
+    delete wiringSettings.customSequences[strId];
+    updatePhysicsOnly();
+    localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function removeFieldInWiring(strId, fieldId) {
+    const str = strings.find(s => s.id === strId);
+    if (!str || !str.fields || str.fields.length <= 1) return;
+    str.fields = str.fields.filter(f => f.id !== fieldId);
+    delete wiringSettings.customSequences[strId];
+    updatePhysicsOnly();
+    localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function getMultiFieldSequence(str, mode) {
+    const fields = str.fields || [];
+    const totalMod = fields.reduce((a, f) => a + (parseInt(f.count) || 0), 0);
+    if (totalMod === 0) return [];
+
+    if (mode === 'leapfrog') {
+        const seq = [];
+        let offset = 0;
+        fields.forEach(f => {
+            const cnt = parseInt(f.count) || 0;
+            const sub = getLeapfrogOrder(cnt).map(i => i + offset);
+            seq.push(...sub);
+            offset += cnt;
+        });
+        return seq;
+    }
+    return Array.from({ length: totalMod }, (_, i) => i);
 }
 
 function saveWiringSettings() {
@@ -559,7 +752,14 @@ function setWiringCrossSection(cs) {
 }
 
 function setWiringCableLength(len) {
-    wiringSettings.cableLengthWr = Math.max(1, Math.min(150, Number(len) || 15));
+    const val = Math.max(1, Math.min(150, Number(len) || 15));
+    wiringSettings.cableLengthWr = val;
+    if (wiringSettings.selectedStringId && wiringSettings.selectedStringId !== 'all') {
+        if (!wiringSettings.cableWegA) wiringSettings.cableWegA = {};
+        if (!wiringSettings.cableWegB) wiringSettings.cableWegB = {};
+        wiringSettings.cableWegA[wiringSettings.selectedStringId] = val;
+        wiringSettings.cableWegB[wiringSettings.selectedStringId] = val;
+    }
     saveWiringSettings();
     renderWiringTab();
 }
@@ -696,14 +896,24 @@ function invertWiringSequence(strId, totalPanels) {
 }
 
 function resetWiringToLeapfrog(strId, totalPanels) {
-    wiringSettings.customSequences[strId] = getLeapfrogOrder(totalPanels);
+    const str = strings.find(s => s.id === strId);
+    if (str && str.fields && str.fields.length > 0) {
+        wiringSettings.customSequences[strId] = getMultiFieldSequence(str, 'leapfrog');
+    } else {
+        wiringSettings.customSequences[strId] = getLeapfrogOrder(totalPanels);
+    }
     wiringSettings.layoutMode = 'manual';
     saveWiringSettings();
     renderWiringTab();
 }
 
 function resetWiringToLinear(strId, totalPanels) {
-    wiringSettings.customSequences[strId] = Array.from({ length: totalPanels }, (_, i) => i);
+    const str = strings.find(s => s.id === strId);
+    if (str && str.fields && str.fields.length > 0) {
+        wiringSettings.customSequences[strId] = getMultiFieldSequence(str, 'simple');
+    } else {
+        wiringSettings.customSequences[strId] = Array.from({ length: totalPanels }, (_, i) => i);
+    }
     wiringSettings.layoutMode = 'manual';
     saveWiringSettings();
     renderWiringTab();
@@ -729,18 +939,20 @@ function toggleObstacleEditor() {
     renderWiringTab();
 }
 
-function addRoofObstacle(strId, type, row, col, label) {
+function addRoofObstacle(strId, type, row, col, label, fieldIdx = 0) {
     if (!wiringSettings.customRoofLayouts[strId]) {
         wiringSettings.customRoofLayouts[strId] = { obstacles: [] };
     }
     const obList = wiringSettings.customRoofLayouts[strId].obstacles || [];
     const r = Math.max(0, parseInt(row) || 0);
     const c = Math.max(0, parseInt(col) || 0);
+    const fIdx = Math.max(0, parseInt(fieldIdx) || 0);
     
     // Vorhandenes an gleicher Stelle überschreiben
-    const existIdx = obList.findIndex(o => o.row === r && o.col === c);
+    const existIdx = obList.findIndex(o => (o.fieldIdx === undefined ? 0 : o.fieldIdx) === fIdx && o.row === r && o.col === c);
     const item = {
         id: Date.now(),
+        fieldIdx: fIdx,
         row: r,
         col: c,
         type: type || 'window',
@@ -773,56 +985,56 @@ function clearAllRoofObstacles(strId) {
 }
 
 // Exakte Berechnung der VDE-Leitungsparameter
+// Physikalische Berechnungen für DC-Leitung, Spannungsabfall und VDE-Norm
 function calculateCablePhysics(str, settings, positions = null, sequence = null) {
-    const totalPanels = (str.fields || []).reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
-    const pModel = (str.fields && str.fields[0]) ? (flatPanels.find(x => x.id === parseInt(str.fields[0].panelId)) || { vmp: 32.5, imp: 13.5, pmax: 440 }) : { vmp: 32.5, imp: 13.5, pmax: 440 };
+    const fields = (str && str.fields && str.fields.length > 0) ? str.fields : [{ id: 1, name: 'Hauptdach', count: 6, cols: 3, rows: 2, tilt: 30 }];
+    const totalPanels = fields.reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
+    const pModel = (fields[0]) ? (flatPanels.find(x => x.id === parseInt(fields[0].panelId)) || { vmp: 32.5, imp: 13.5, pmax: 440 }) : { vmp: 32.5, imp: 13.5, pmax: 440 };
     
-    const vmpTotal = (str.fields || []).reduce((acc, f) => {
+    const vmpTotal = fields.reduce((acc, f) => {
         const p = flatPanels.find(x => x.id === parseInt(f.panelId)) || pModel;
-        return acc + (p.vmp * f.count);
+        return acc + (p.vmp * (parseInt(f.count) || 0));
     }, 0) || (totalPanels * 32.5);
     
     const imp = pModel.imp || 13.5;
-    const pTotalWp = (str.fields || []).reduce((acc, f) => {
+    const pTotalWp = fields.reduce((acc, f) => {
         const p = flatPanels.find(x => x.id === parseInt(f.panelId)) || pModel;
-        return acc + (p.pmax * f.count);
+        return acc + (p.pmax * (parseInt(f.count) || 0));
     }, 0) || (totalPanels * 440);
 
-    const lengthWrOneWay = parseFloat(settings.cableLengthWr) || 15;
-    const crossSection = parseFloat(settings.cableCrossSection) || 6;
-    const temp = parseFloat(settings.cableTemp) || 50;
+    // 1. Weg A: WR zu Feld 1
+    const wegA = getWiringWegA(str.id);
 
-    let moduleBridgeLength = 0;
-    if (positions && sequence && sequence.length > 1) {
-        // Exakte euklidische Distanzberechnung anhand der realen Modulkoordinaten auf dem Dach
-        for (let k = 0; k < sequence.length - 1; k++) {
-            const p1 = positions[sequence[k]];
-            const p2 = positions[sequence[k + 1]];
-            if (p1 && p2) {
-                const dc = Math.abs(p1.col - p2.col);
-                const dr = Math.abs(p1.row - p2.row);
-                // Schrittlängen: Horizontale ≈ 1.15 m, Vertikale ≈ 1.85 m
-                const distM = Math.sqrt(Math.pow(dc * 1.15, 2) + Math.pow(dr * 1.85, 2));
-                moduleBridgeLength += Math.max(0.9, distM + 0.35); // + 0.35m Verlegereserve/Schienenführung
-            }
-        }
-        if (settings.layoutMode === 'loop_reduced') {
-            moduleBridgeLength += (totalPanels * 1.15);
-        }
-    } else {
-        if (settings.layoutMode === 'leapfrog') {
-            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.9;
-        } else if (settings.layoutMode === 'loop_reduced') {
-            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 1.15);
-        } else if (settings.layoutMode === 'manual') {
-            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.6;
-        } else {
-            moduleBridgeLength = Math.max(0, (totalPanels - 1)) * 1.1 + (totalPanels * 0.9);
-        }
+    // 2. Weg B: Feld X zu WR
+    const wegB = getWiringWegB(str.id);
+
+    // 3. Brücken zwischen den Feldern
+    const numBridges = Math.max(0, fields.length - 1);
+    const bridgeDetails = [];
+    let sumFieldBridges = 0;
+    for (let b = 0; b < numBridges; b++) {
+        const bLen = getWiringBridgeLength(str.id, b);
+        const fromName = fields[b]?.name || `Feld ${b + 1}`;
+        const toName = fields[b + 1]?.name || `Feld ${b + 2}`;
+        bridgeDetails.push({
+            idx: b,
+            from: fromName,
+            to: toName,
+            length: bLen
+        });
+        sumFieldBridges += bLen;
     }
 
-    const rawCableLength = (2 * lengthWrOneWay) + moduleBridgeLength;
+    // 4. Pauschal 2m Kabel pro Panel
+    const panelCablePerUnit = parseFloat(settings.panelCableRate) || 2.0;
+    const panelCableTotal = totalPanels * panelCablePerUnit;
+
+    // Gesamtlänge des Kabels im String (exakt nach Kundenformel: Weg A + Weg B + Brücken + 2m * Module)
+    const rawCableLength = wegA + sumFieldBridges + panelCableTotal + wegB;
     const totalCableLength = Math.ceil(rawCableLength * 1.1); // 10% Reserve
+
+    const crossSection = parseFloat(settings.cableCrossSection) || 6;
+    const temp = parseFloat(settings.cableTemp) || 50;
 
     // Spezifischer Widerstand rho von Kupfer bei Temperatur
     const rho = 0.01786 * (1 + 0.00393 * (temp - 20));
@@ -862,19 +1074,26 @@ function calculateCablePhysics(str, settings, positions = null, sequence = null)
         vdeBadgeClass = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30';
     }
 
-    const mc4Pairs = Math.max(2, totalPanels + 1);
-    const zipTies = Math.ceil(totalPanels * 4 + lengthWrOneWay * 2);
+    const mc4Pairs = Math.max(2, totalPanels + 1 + numBridges);
+    const zipTies = Math.ceil(totalPanels * 4 + (wegA + wegB) * 2);
 
     return {
         totalPanels,
         vmpTotal,
         imp,
         pTotalWp,
-        lengthWrOneWay,
+        lengthWrOneWay: wegA,
+        wegA,
+        wegB,
+        numBridges,
+        sumFieldBridges,
+        bridgeDetails,
+        panelCablePerUnit,
+        panelCableTotal,
+        rawCableLength,
+        totalCableLength,
         crossSection,
         temp,
-        totalCableLength,
-        rawCableLength,
         loopResistance,
         deltaU,
         deltaUPct,
@@ -890,98 +1109,93 @@ function calculateCablePhysics(str, settings, positions = null, sequence = null)
     };
 }
 
-// Generierung des interaktiven SVG-Schaltplans
+// Generierung des interaktiven SVG-Schaltplans mit Modulfeldern, Brücken & Hindernissen
 function generateStringWiringSvg(str, settings) {
-    const panelsList = [];
-    (str.fields || []).forEach((field, fIdx) => {
-        const pModel = flatPanels.find(p => p.id === parseInt(field.panelId)) || { name: 'PV-Modul', pmax: 440, vmp: 32.5, imp: 13.5, voc: 39 };
-        for (let k = 0; k < field.count; k++) {
-            panelsList.push({
-                idx: panelsList.length,
-                labelNum: panelsList.length + 1,
-                fieldIdx: fIdx,
-                model: pModel,
-                tilt: field.tilt
-            });
-        }
-    });
-
-    const n = panelsList.length;
-    if (n === 0) return '';
+    const fields = (str.fields && str.fields.length > 0) ? str.fields : [{ id: 1, name: 'Hauptdach', count: 6, cols: 3, rows: 2, tilt: 30 }];
+    const totalPanels = fields.reduce((acc, f) => acc + (parseInt(f.count) || 0), 0);
+    if (totalPanels === 0) return '';
 
     const isPortrait = settings.orientation === 'portrait';
     const pw = isPortrait ? 96 : 144;
     const ph = isPortrait ? 144 : 96;
-    const gapX = 28;
-    const gapY = 40;
+    const gapX = 24;
+    const gapY = 32;
 
-    // Hindernisse für diesen String abrufen
-    const strLayout = settings.customRoofLayouts[str.id] || { obstacles: [] };
-    const obstacles = strLayout.obstacles || [];
-
-    let cols;
-    if (settings.columns === 'auto') {
-        const totalItems = n + obstacles.length;
-        if (totalItems <= 4) cols = totalItems;
-        else if (totalItems <= 8) cols = Math.ceil(totalItems / 2);
-        else if (totalItems <= 14) cols = Math.ceil(totalItems / 2);
-        else cols = Math.ceil(totalItems / 3);
-    } else {
-        cols = Math.min(12, parseInt(settings.columns) || 4);
-    }
-    // Sicherstellen, dass Hindernisse in das Raster passen
-    obstacles.forEach(o => {
-        if (o.col >= cols) cols = o.col + 1;
-    });
-    cols = Math.max(1, cols);
-
-    const invWidth = 150;
+    const invWidth = 145;
     const invHeight = 220;
     const invX = 30;
     const invY = 50;
 
-    const gridStartX = invX + invWidth + 60;
-    const gridStartY = 45;
-
-    // Zellen-Zuordnung für Module & Hindernisse
+    const fieldBridgeGap = 110;
+    let curFieldX = invX + invWidth + 80;
+    const fieldContainers = [];
     const positions = [];
     const obstaclesPos = [];
-    let curR = 0;
-    let curC = 0;
-    let pIdx = 0;
+    let globalPanelIdx = 0;
 
-    // Belegte Hindernis-Zellen erfassen
-    const obstacleMap = new Map();
-    obstacles.forEach(ob => {
-        obstacleMap.set(`${ob.row},${ob.col}`, ob);
-    });
+    const strLayout = settings.customRoofLayouts[str.id] || { obstacles: [] };
+    const obstacles = strLayout.obstacles || [];
 
-    while (pIdx < n) {
-        const key = `${curR},${curC}`;
-        if (obstacleMap.has(key)) {
-            // Zelle ist durch Hindernis belegt
-            const ob = obstacleMap.get(key);
-            obstaclesPos.push({
-                ...ob,
-                x: gridStartX + curC * (pw + gapX),
-                y: gridStartY + curR * (ph + gapY),
-                w: pw,
-                h: ph
-            });
-            obstacleMap.delete(key);
-        } else {
-            // Freie Zelle für PV-Modul
-            const p = panelsList[pIdx];
-            const x = gridStartX + curC * (pw + gapX);
-            const y = gridStartY + curR * (ph + gapY);
+    fields.forEach((f, fIdx) => {
+        const fCount = parseInt(f.count) || 1;
+        const fCols = Math.max(1, parseInt(f.cols) || Math.min(fCount, 4) || 4);
+        const fRows = Math.max(1, parseInt(f.rows) || Math.ceil(fCount / fCols));
+        const fName = f.name || `Feld ${fIdx + 1}`;
+        const fModel = flatPanels.find(p => p.id === parseInt(f.panelId)) || flatPanels[0] || { pmax: 440, vmp: 32.5, imp: 13.5 };
+
+        const contentW = fCols * pw + (fCols - 1) * gapX;
+        const contentH = fRows * ph + (fRows - 1) * gapY;
+        const padX = 22;
+        const headerH = 46;
+        const padB = 20;
+
+        const boxW = Math.max(220, contentW + (padX * 2));
+        const boxH = headerH + contentH + padB;
+        const boxX = curFieldX;
+        const boxY = 40;
+
+        fieldContainers.push({
+            fieldIdx: fIdx,
+            id: f.id,
+            name: fName,
+            count: fCount,
+            cols: fCols,
+            rows: fRows,
+            tilt: f.tilt || 30,
+            model: fModel,
+            x: boxX,
+            y: boxY,
+            w: boxW,
+            h: boxH,
+            headerH: headerH,
+            padX: padX,
+            contentW: contentW,
+            contentH: contentH
+        });
+
+        // Module in diesem Feld platzieren
+        let r = 0, c = 0;
+        for (let localIdx = 0; localIdx < fCount; localIdx++) {
+            const x = boxX + padX + c * (pw + gapX);
+            const y = boxY + headerH + r * (ph + gapY);
+
             positions.push({
-                ...p,
-                x,
-                y,
+                idx: globalPanelIdx,
+                fieldIdx: fIdx,
+                fieldId: f.id,
+                fieldName: fName,
+                fieldShort: `F${fIdx + 1}`,
+                localIdx: localIdx,
+                labelNum: globalPanelIdx + 1,
+                localLabel: `F${fIdx + 1}-${localIdx + 1}`,
+                model: fModel,
+                tilt: f.tilt || 30,
+                x: x,
+                y: y,
                 w: pw,
                 h: ph,
-                row: curR,
-                col: curC,
+                row: r,
+                col: c,
                 plusX: x + (pw * 0.32),
                 plusY: y + 14,
                 minusX: x + (pw * 0.68),
@@ -989,35 +1203,34 @@ function generateStringWiringSvg(str, settings) {
                 centerX: x + pw / 2,
                 centerY: y + ph / 2
             });
-            pIdx++;
-        }
-        curC++;
-        if (curC >= cols) {
-            curC = 0;
-            curR++;
-        }
-    }
 
-    // Eventuell noch verbleibende Hindernisse außerhalb der belegten Modul-Zellen
-    obstacleMap.forEach(ob => {
-        obstaclesPos.push({
-            ...ob,
-            x: gridStartX + ob.col * (pw + gapX),
-            y: gridStartY + ob.row * (ph + gapY),
-            w: pw,
-            h: ph
+            globalPanelIdx++;
+            c++;
+            if (c >= fCols) {
+                c = 0;
+                r++;
+            }
+        }
+
+        // Hindernisse für dieses Feld zuordnen
+        obstacles.filter(ob => (ob.fieldIdx === undefined ? fIdx === 0 : ob.fieldIdx === fIdx)).forEach(ob => {
+            const obX = boxX + padX + (ob.col || 0) * (pw + gapX);
+            const obY = boxY + headerH + (ob.row || 0) * (ph + gapY);
+            obstaclesPos.push({
+                ...ob,
+                x: obX,
+                y: obY,
+                w: pw,
+                h: ph
+            });
         });
-        if (ob.row >= curR) curR = ob.row + 1;
+
+        curFieldX += boxW + fieldBridgeGap;
     });
 
-    const maxRowUsed = Math.max(curR, ...positions.map(p => p.row + 1), ...obstaclesPos.map(o => o.row + 1));
-    const rows = Math.max(1, maxRowUsed);
-
-    const gridWidth = cols * (pw + gapX);
-    const gridHeight = rows * (ph + gapY);
-
-    const svgWidth = Math.max(860, gridStartX + gridWidth + 40);
-    const svgHeight = Math.max(340, Math.max(invY + invHeight, gridStartY + gridHeight) + 60);
+    const totalCanvasW = Math.max(920, curFieldX - fieldBridgeGap + 60);
+    const maxBoxH = Math.max(...fieldContainers.map(b => b.h), invHeight);
+    const totalCanvasH = Math.max(380, maxBoxH + 110);
 
     const dcPlusTerm = { x: invX + invWidth - 10, y: invY + 70 };
     const dcMinusTerm = { x: invX + invWidth - 10, y: invY + 115 };
@@ -1030,40 +1243,57 @@ function generateStringWiringSvg(str, settings) {
         sequence = [...(settings.interactiveQueue || [])];
     } else if (settings.layoutMode === 'manual') {
         const custom = settings.customSequences[str.id];
-        if (Array.isArray(custom) && custom.length === n) {
+        if (Array.isArray(custom) && custom.length === totalPanels) {
             sequence = [...custom];
         } else {
-            sequence = Array.from({ length: n }, (_, i) => i);
+            sequence = getMultiFieldSequence(str, 'simple');
         }
     } else if (settings.layoutMode === 'leapfrog') {
-        sequence = getLeapfrogOrder(n);
+        sequence = getMultiFieldSequence(str, 'leapfrog');
     } else {
-        sequence = Array.from({ length: n }, (_, i) => i);
+        sequence = getMultiFieldSequence(str, 'simple');
     }
 
     const inverter = flatInverters.find(i => i.id === parseInt(str.inverterId)) || { name: 'Wechselrichter' };
     const stringColor = str.color || '#3b82f6';
     const isAnim = settings.showCurrentAnimation;
 
-    // Kabelpfade konstruieren
+    const wegA = getWiringWegA(str.id);
+    const wegB = getWiringWegB(str.id);
+
+    // Kabelpfade, Badges und Brückenverbindungen
     const wirePaths = [];
     const stepBadges = [];
+    const routeBadges = [];
 
     if (sequence.length > 0) {
-        // 1. Zuleitung DC+ (WR -> Erstes Modul Plus)
+        // 1. Zuleitung Weg A: WR DC+ -> Erstes Modul Plus
         const firstPos = positions[sequence[0]];
         if (firstPos) {
-            const dcPlusPath = `M ${dcPlusTerm.x} ${dcPlusTerm.y} C ${dcPlusTerm.x + 35} ${dcPlusTerm.y}, ${firstPos.plusX - 35} ${firstPos.plusY - 20}, ${firstPos.plusX} ${firstPos.plusY}`;
+            const dcPlusPath = `M ${dcPlusTerm.x} ${dcPlusTerm.y} C ${dcPlusTerm.x + 40} ${dcPlusTerm.y}, ${firstPos.plusX - 40} ${firstPos.plusY - 20}, ${firstPos.plusX} ${firstPos.plusY}`;
             wirePaths.push({
                 d: dcPlusPath,
                 type: 'dc-plus',
                 color: '#ef4444',
-                label: 'DC+ Hinleiter (Rot)',
+                label: `Weg A: WR → ${firstPos.fieldName} #${firstPos.localIdx + 1} (${wegA} m)`,
                 step: 0
+            });
+
+            // Weg A Längenbadge
+            const badgeAx = (dcPlusTerm.x + firstPos.plusX) / 2;
+            const badgeAy = Math.min(dcPlusTerm.y, firstPos.plusY) - 15;
+            routeBadges.push({
+                x: badgeAx,
+                y: badgeAy,
+                label: `Weg A: ${wegA} m (DC+)`,
+                type: 'wegA',
+                color: '#ef4444',
+                bgColor: '#1e1b4b',
+                textColor: '#fca5a5'
             });
         }
 
-        // 2. Modul-zu-Modul Verbindungen
+        // 2. Modul-zu-Modul Verbindungen (inklusive Feld-Brücken)
         for (let k = 0; k < sequence.length - 1; k++) {
             const fromPos = positions[sequence[k]];
             const toPos = positions[sequence[k + 1]];
@@ -1078,86 +1308,104 @@ function generateStringWiringSvg(str, settings) {
             let d = '';
             let midX = (x1 + x2) / 2;
             let midY = (y1 + y2) / 2;
+            const isBridgeTransition = fromPos.fieldIdx !== toPos.fieldIdx;
 
-            if (fromPos.row === toPos.row && Math.abs(fromPos.col - toPos.col) <= 1) {
+            if (isBridgeTransition) {
+                // Brücke zwischen zwei Feldern!
+                const bIdx = Math.min(fromPos.fieldIdx, toPos.fieldIdx);
+                const bLen = getWiringBridgeLength(str.id, bIdx);
+                const arch = -45;
+                d = `M ${x1} ${y1} C ${x1 + 45} ${y1 + arch}, ${x2 - 45} ${y2 + arch}, ${x2} ${y2}`;
+                midY = (y1 + y2) / 2 + arch + 10;
+
+                wirePaths.push({
+                    d,
+                    type: 'field-bridge',
+                    color: '#f59e0b',
+                    label: `Feld-Brücke: ${fromPos.fieldName} → ${toPos.fieldName} (${bLen} m)`,
+                    step: stepNum,
+                    from: sequence[k],
+                    to: sequence[k + 1]
+                });
+            } else if (fromPos.row === toPos.row && Math.abs(fromPos.col - toPos.col) <= 1) {
                 const arch = -24;
                 d = `M ${x1} ${y1} C ${x1 + 10} ${y1 + arch}, ${x2 - 10} ${y2 + arch}, ${x2} ${y2}`;
                 midY = y1 + arch + 4;
+
+                wirePaths.push({
+                    d,
+                    type: 'module-wire',
+                    color: stringColor,
+                    label: `Steckung #${stepNum}`,
+                    step: stepNum,
+                    from: sequence[k],
+                    to: sequence[k + 1]
+                });
             } else {
                 const curveOffset = fromPos.col > toPos.col ? -35 : 35;
                 d = `M ${x1} ${y1} C ${x1} ${y1 + 40}, ${x2 + curveOffset} ${y2 - 40}, ${x2} ${y2}`;
-            }
 
-            wirePaths.push({
-                d,
-                type: 'module-wire',
-                color: stringColor,
-                label: `Steckung #${stepNum}`,
-                step: stepNum,
-                from: sequence[k],
-                to: sequence[k + 1]
-            });
+                wirePaths.push({
+                    d,
+                    type: 'module-wire',
+                    color: stringColor,
+                    label: `Steckung #${stepNum}`,
+                    step: stepNum,
+                    from: sequence[k],
+                    to: sequence[k + 1]
+                });
+            }
 
             stepBadges.push({
                 x: midX,
                 y: midY,
-                step: stepNum
+                step: stepNum,
+                isBridge: isBridgeTransition
             });
         }
 
-        // 3. Rückleitung DC- (Letztes Modul Minus -> WR DC-)
-        // Im interaktiven Modus erst zeichnen wenn alle Module verbunden sind
-        if (!isInteractive || sequence.length === n) {
+        // 3. Rückleitung Weg B: Letztes Modul Minus -> WR DC-
+        if (!isInteractive || sequence.length === totalPanels) {
             const lastPos = positions[sequence[sequence.length - 1]];
             if (lastPos) {
-                let dcMinusPath = '';
-                if (settings.layoutMode === 'leapfrog') {
-                    dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${lastPos.minusX - 30} ${lastPos.minusY + 30}, ${dcMinusTerm.x + 35} ${dcMinusTerm.y + 20}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
-                } else if (settings.layoutMode === 'loop_reduced') {
-                    const railY = lastPos.y + lastPos.h + 16;
-                    dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} L ${lastPos.minusX} ${railY} L ${gridStartX - 25} ${railY} C ${gridStartX - 45} ${railY}, ${dcMinusTerm.x + 30} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
-                } else {
-                    dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${(lastPos.minusX + dcMinusTerm.x) / 2} ${(lastPos.minusY + dcMinusTerm.y) / 2 - 40}, ${dcMinusTerm.x + 40} ${dcMinusTerm.y}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
-                }
+                const dcMinusPath = `M ${lastPos.minusX} ${lastPos.minusY} C ${lastPos.minusX - 40} ${lastPos.minusY + 50}, ${dcMinusTerm.x + 50} ${dcMinusTerm.y + 40}, ${dcMinusTerm.x} ${dcMinusTerm.y}`;
 
                 wirePaths.push({
                     d: dcMinusPath,
                     type: 'dc-minus',
                     color: '#3b82f6',
-                    label: 'DC- Rückleiter (Blau)',
+                    label: `Weg B: ${lastPos.fieldName} #${lastPos.localIdx + 1} → WR (${wegB} m)`,
                     step: sequence.length
+                });
+
+                // Weg B Längenbadge
+                const badgeBx = (lastPos.minusX + dcMinusTerm.x) / 2;
+                const badgeBy = Math.max(lastPos.minusY, dcMinusTerm.y) + 30;
+                routeBadges.push({
+                    x: badgeBx,
+                    y: badgeBy,
+                    label: `Weg B: ${wegB} m (DC-)`,
+                    type: 'wegB',
+                    color: '#3b82f6',
+                    bgColor: '#0f172a',
+                    textColor: '#93c5fd'
                 });
             }
         }
     }
 
     // Status / Zertifikat SVG
-    let loopAreaSvg = '';
-    if (settings.layoutMode === 'simple') {
-        loopAreaSvg = `
-            <g transform="translate(${gridStartX + gridWidth / 2 - 120}, ${gridStartY + gridHeight / 2 - 16})">
-                <rect width="240" height="32" rx="8" fill="#1e1b4b" stroke="#f43f5e" stroke-width="1.5" opacity="0.95" />
-                <text x="120" y="20" text-anchor="middle" fill="#fda4af" font-size="11" font-weight="700">⚠️ Große Induktionsschleife (~${Math.round(n * 1.85)} m²)</text>
-            </g>
-        `;
-    } else if (settings.layoutMode === 'leapfrog') {
-        loopAreaSvg = `
-            <g transform="translate(${gridStartX + gridWidth / 2 - 130}, ${gridStartY - 28})">
-                <rect width="260" height="24" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="1.2" opacity="0.9" />
-                <text x="130" y="16" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="700">🛡️ VDE 0185-305: Leiterschleife ≈ 0 m² (Optimal)</text>
-            </g>
-        `;
-    } else if (settings.layoutMode === 'manual') {
-        loopAreaSvg = `
-            <g transform="translate(${gridStartX + gridWidth / 2 - 130}, ${gridStartY - 28})">
-                <rect width="260" height="24" rx="12" fill="#1e293b" stroke="#38bdf8" stroke-width="1.2" opacity="0.95" />
-                <text x="130" y="16" text-anchor="middle" fill="#7dd3fc" font-size="10.5" font-weight="700">✏️ Manuelle Reihenfolge (${sequence.length}/${n} verbunden)</text>
-            </g>
-        `;
-    }
+    let loopAreaSvg = `
+        <g transform="translate(${invX + invWidth + 80}, 16)">
+            <rect width="360" height="24" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="1.2" opacity="0.95" />
+            <text x="180" y="16" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="700">
+                🛡️ DIN VDE 0100-712 • ${fields.length} Modulfeld${fields.length > 1 ? 'er' : ''} • ${totalPanels} Module
+            </text>
+        </g>
+    `;
 
     return `
-    <svg viewBox="0 0 ${svgWidth} ${svgHeight}" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 ${totalCanvasW} ${totalCanvasH}" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
         <defs>
             <pattern id="wiringGrid" width="20" height="20" patternUnits="userSpaceOnUse">
                 <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#334155" stroke-width="0.5" opacity="0.25" />
@@ -1214,14 +1462,14 @@ function generateStringWiringSvg(str, settings) {
             <text x="20" y="98" fill="#94a3b8" font-size="9">Spannung: <tspan fill="#34d399" font-weight="700">${Math.round(str._phys?.vmpHot || 380)} V</tspan></text>
             <text x="20" y="114" fill="#94a3b8" font-size="8.5">Status: <tspan fill="#38bdf8">TRACKING</tspan></text>
 
-            <!-- DC+ Klemme -->
+            <!-- DC+ Klemme (Rot) -->
             <g transform="translate(${invWidth - 20}, 70)">
                 <circle cx="0" cy="0" r="10" fill="#ef4444" stroke="#991b1b" stroke-width="1.5" />
                 <text x="0" y="4" fill="#fff" font-size="12" font-weight="900" text-anchor="middle">+</text>
                 <text x="-24" y="3.5" fill="#f87171" font-size="8.5" font-weight="800" text-anchor="end">DC+</text>
             </g>
 
-            <!-- DC- Klemme -->
+            <!-- DC- Klemme (Blau) -->
             <g transform="translate(${invWidth - 20}, 115)">
                 <circle cx="0" cy="0" r="10" fill="#3b82f6" stroke="#1d4ed8" stroke-width="1.5" />
                 <text x="0" y="4" fill="#fff" font-size="13" font-weight="900" text-anchor="middle">-</text>
@@ -1238,39 +1486,87 @@ function generateStringWiringSvg(str, settings) {
             <text x="${invWidth / 2}" y="${invHeight - 12}" fill="#64748b" font-size="8" text-anchor="middle">VDE 0100-712</text>
         </g>
 
+        <!-- MODULFELDER-KORRIDORE & DACHFLÄCHEN -->
+        <g id="field-containers-layer">
+            ${fieldContainers.map((b, fIdx) => `
+                <g id="field-box-${b.id}">
+                    <!-- Feldrahmen / Dachbereich -->
+                    <rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="14" fill="#070d1e" stroke="#1e293b" stroke-width="1.8" filter="url(#wireGlow)" />
+                    
+                    <!-- Feld-Kopfzeile -->
+                    <rect x="${b.x}" y="${b.y}" width="${b.w}" height="36" rx="14" fill="#1e293b" opacity="0.9" />
+                    <rect x="${b.x}" y="${b.y + 22}" width="${b.w}" height="14" fill="#1e293b" opacity="0.9" />
+                    <text x="${b.x + 14}" y="${b.y + 22}" fill="#38bdf8" font-size="11" font-weight="900" letter-spacing="0.5">
+                        ${b.name.toUpperCase()} (FELD ${fIdx + 1})
+                    </text>
+                    <text x="${b.x + b.w - 14}" y="${b.y + 22}" fill="#94a3b8" font-size="9" font-weight="700" text-anchor="end">
+                        ${b.count} Mod. • ${b.cols}×${b.rows} • ${b.tilt}° • ${(b.count * (b.model.pmax || 440) / 1000).toFixed(2)} kWp
+                    </text>
+
+                    <!-- Aluminium-Montageschienen hinter den Modulen -->
+                    ${Array.from({ length: b.rows }).map((_, rIdx) => {
+                        const railY1 = b.y + b.headerH + rIdx * (ph + gapY) + ph * 0.25;
+                        const railY2 = b.y + b.headerH + rIdx * (ph + gapY) + ph * 0.75;
+                        return `
+                            <line x1="${b.x + 10}" y1="${railY1}" x2="${b.x + b.w - 10}" y2="${railY1}" stroke="#334155" stroke-width="3.5" opacity="0.45" />
+                            <line x1="${b.x + 10}" y1="${railY2}" x2="${b.x + b.w - 10}" y2="${railY2}" stroke="#334155" stroke-width="3.5" opacity="0.45" />
+                        `;
+                    }).join('')}
+                </g>
+            `).join('')}
+        </g>
+
+        <!-- BRÜCKEN ZWISCHEN DEN MODULFELDERN (VISUELLER KABELKANAL / TRASSE) -->
+        <g id="field-bridges-layer">
+            ${fieldContainers.slice(0, -1).map((bFrom, idx) => {
+                const bTo = fieldContainers[idx + 1];
+                const bridgeStartX = bFrom.x + bFrom.w;
+                const bridgeEndX = bTo.x;
+                const bridgeMidX = (bridgeStartX + bridgeEndX) / 2;
+                const bridgeY = bFrom.y + 55;
+                const bLen = getWiringBridgeLength(str.id, idx);
+
+                return `
+                <g id="bridge-${idx}">
+                    <!-- Verbindungstrasse gepunktet -->
+                    <line x1="${bridgeStartX + 4}" y1="${bridgeY}" x2="${bridgeEndX - 4}" y2="${bridgeY}" stroke="#f59e0b" stroke-width="2.2" stroke-dasharray="6,4" opacity="0.65" />
+                    
+                    <!-- Brücken-Längenbadge mit Klick-Bearbeitung -->
+                    <g class="cursor-pointer" onclick="promptEditBridgeLength(${str.id}, ${idx}, ${bLen})">
+                        <rect x="${bridgeMidX - 52}" y="${bridgeY - 14}" width="104" height="28" rx="8" fill="#1e293b" stroke="#f59e0b" stroke-width="1.6" filter="url(#wireGlow)" />
+                        <text x="${bridgeMidX}" y="${bridgeY + 4}" fill="#fbbf24" font-size="9.5" font-weight="900" text-anchor="middle">
+                            ⚡ Brücke: ${bLen.toFixed(1)} m
+                        </text>
+                    </g>
+                </g>
+                `;
+            }).join('')}
+        </g>
+
         <!-- HINDERNISSE-EBENE (FENSTER, GAUBEN, KAMINE, LEERFLÄCHEN) -->
         <g id="obstacles-layer">
             ${obstaclesPos.map(ob => {
                 if (ob.type === 'window') {
-                    // Dachfenster (Velux)
                     return `
                     <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
                         <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0b1329" stroke="#38bdf8" stroke-width="1.5" />
                         <rect x="6" y="6" width="${ob.w - 12}" height="${ob.h - 12}" rx="3" fill="#0284c7" fill-opacity="0.18" stroke="#0284c7" stroke-width="1" />
-                        <!-- Fenstersprossen -->
                         <line x1="${ob.w / 2}" y1="6" x2="${ob.w / 2}" y2="${ob.h - 6}" stroke="#64748b" stroke-width="1.5" />
                         <line x1="6" y1="${ob.h * 0.45}" x2="${ob.w - 6}" y2="${ob.h * 0.45}" stroke="#64748b" stroke-width="1.5" />
-                        <!-- Griff & Reflexion -->
-                        <rect x="${ob.w / 2 - 7}" y="${ob.h * 0.45 - 2.5}" width="14" height="5" rx="1.5" fill="#94a3b8" />
-                        <polygon points="12,12 ${ob.w - 16},12 12,${ob.h - 20}" fill="#ffffff" fill-opacity="0.08" />
                         <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" stroke="#334155" stroke-width="0.8" />
                         <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#38bdf8" font-size="8" font-weight="700" text-anchor="middle">${ob.label || 'Dachfenster'}</text>
                     </g>
                     `;
                 } else if (ob.type === 'dormer') {
-                    // Gaube
                     return `
                     <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
                         <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
                         <polygon points="8,${ob.h - 14} ${ob.w / 2},12 ${ob.w - 8},${ob.h - 14}" fill="#334155" stroke="#f59e0b" stroke-width="1" />
-                        <line x1="${ob.w * 0.25}" y1="${ob.h * 0.6}" x2="${ob.w * 0.75}" y2="${ob.h * 0.6}" stroke="#f59e0b" stroke-width="0.8" opacity="0.6" />
-                        <line x1="${ob.w * 0.35}" y1="${ob.h * 0.4}" x2="${ob.w * 0.65}" y2="${ob.h * 0.4}" stroke="#f59e0b" stroke-width="0.8" opacity="0.6" />
                         <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" />
                         <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#fbbf24" font-size="8.5" font-weight="700" text-anchor="middle">${ob.label || 'Gaube'}</text>
                     </g>
                     `;
                 } else if (ob.type === 'chimney') {
-                    // Kamin / Schornstein
                     return `
                     <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
                         <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1c1917" stroke="#78716c" stroke-width="1.5" />
@@ -1281,7 +1577,6 @@ function generateStringWiringSvg(str, settings) {
                     </g>
                     `;
                 } else {
-                    // Leerfläche / Aussparung
                     return `
                     <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
                         <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1" stroke-dasharray="4,4" opacity="0.55" />
@@ -1296,8 +1591,9 @@ function generateStringWiringSvg(str, settings) {
         <g id="wires-layer" filter="url(#wireGlow)">
             ${wirePaths.map(w => {
                 const isDCMinus = w.type === 'dc-minus';
-                const strokeDash = isDCMinus ? '8,4' : (isAnim ? '12,6' : 'none');
-                const strokeWidth = isDCMinus ? 3.5 : 3.8;
+                const isBridge = w.type === 'field-bridge';
+                const strokeDash = isDCMinus ? '8,4' : (isBridge ? 'none' : (isAnim ? '12,6' : 'none'));
+                const strokeWidth = isBridge ? 4.5 : (isDCMinus ? 3.5 : 3.8);
                 const flowClass = isAnim ? 'flow-active' : '';
                 return `
                     <path d="${w.d}" fill="none" stroke="${w.color}" stroke-width="${strokeWidth}" 
@@ -1309,15 +1605,25 @@ function generateStringWiringSvg(str, settings) {
             }).join('')}
         </g>
 
+        <!-- ROUTEN-BADGES (WEG A & WEG B LÄNGENANZEIGE) -->
+        <g id="route-badges-layer">
+            ${routeBadges.map(rb => `
+                <g transform="translate(${rb.x}, ${rb.y})">
+                    <rect x="-65" y="-12" width="130" height="24" rx="6" fill="${rb.bgColor}" stroke="${rb.color}" stroke-width="1.4" filter="url(#wireGlow)" />
+                    <text x="0" y="4.5" fill="${rb.textColor}" font-size="9" font-weight="800" text-anchor="middle">${rb.label}</text>
+                </g>
+            `).join('')}
+        </g>
+
         <!-- STECKREIHENFOLGE-NUMMERN (STEP BADGES AUF KABELN) -->
         ${settings.showWireNumbers ? stepBadges.map(b => `
             <g transform="translate(${b.x}, ${b.y})">
-                <circle cx="0" cy="0" r="9" fill="#0f172a" stroke="${stringColor}" stroke-width="2" />
-                <text x="0" y="3.5" fill="#f8fafc" font-size="8.5" font-weight="800" text-anchor="middle">${b.step}</text>
+                <circle cx="0" cy="0" r="${b.isBridge ? 11 : 9}" fill="#0f172a" stroke="${b.isBridge ? '#f59e0b' : stringColor}" stroke-width="2" />
+                <text x="0" y="3.5" fill="${b.isBridge ? '#fbbf24' : '#f8fafc'}" font-size="${b.isBridge ? '9' : '8.5'}" font-weight="800" text-anchor="middle">${b.step}</text>
             </g>
         `).join('') : ''}
 
-        <!-- SOLAR-MODULE IM RASTER -->
+        <!-- SOLAR-MODULE IN DEN FELDERN -->
         <g id="panels-layer">
             ${positions.map(p => {
                 const isHigh = settings.highlightPanelIdx === p.idx;
@@ -1356,9 +1662,9 @@ function generateStringWiringSvg(str, settings) {
                         <line x1="0" y1="${p.h * 0.75}" x2="${p.w}" y2="${p.h * 0.75}" />
                     </g>
 
-                    <!-- Modul-Nummer Badge (Oben Links) -->
-                    <rect x="5" y="5" width="24" height="16" rx="4" fill="#0f172a" stroke="#64748b" stroke-width="1" />
-                    <text x="17" y="16.5" fill="#f8fafc" font-size="9" font-weight="800" text-anchor="middle">#${p.labelNum}</text>
+                    <!-- Feld & Modul-Nummer Badge (Oben Links) -->
+                    <rect x="5" y="5" width="34" height="16" rx="4" fill="#0f172a" stroke="#64748b" stroke-width="1" />
+                    <text x="22" y="16.5" fill="#38bdf8" font-size="8.5" font-weight="900" text-anchor="middle">${p.localLabel}</text>
 
                     <!-- Wenn manuell vergeben: Reihenfolge-Badge oben rechts -->
                     ${isConnected ? `
@@ -1557,7 +1863,7 @@ function renderWiringTab() {
                 </div>
 
                 <!-- Formular zum Hinzufügen eines Hindernisses -->
-                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end">
+                <div class="grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-end">
                     <div>
                         <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Typ:</label>
                         <select id="ob_type_input" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-medium outline-none">
@@ -1565,6 +1871,14 @@ function renderWiringTab() {
                             <option value="dormer">Gaube</option>
                             <option value="chimney">Kamin / Schornstein</option>
                             <option value="empty">Leerfläche / Aussparung</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Modulfeld:</label>
+                        <select id="ob_field_input" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-medium outline-none">
+                            ${(primaryStr.fields || []).map((f, fIdx) => `
+                                <option value="${fIdx}">Feld ${fIdx + 1}: ${f.name || ('Feld ' + (fIdx + 1))}</option>
+                            `).join('')}
                         </select>
                     </div>
                     <div>
@@ -1580,7 +1894,7 @@ function renderWiringTab() {
                         <input type="text" id="ob_label_input" placeholder="z. B. Gaube Ost" class="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-medium outline-none">
                     </div>
                     <div>
-                        <button onclick="addRoofObstacle(${primaryStr.id}, document.getElementById('ob_type_input').value, document.getElementById('ob_row_input').value, document.getElementById('ob_col_input').value, document.getElementById('ob_label_input').value)" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-1.5 px-3 rounded-xl shadow-sm transition-all flex items-center justify-center gap-1">
+                        <button onclick="addRoofObstacle(${primaryStr.id}, document.getElementById('ob_type_input').value, document.getElementById('ob_row_input').value, document.getElementById('ob_col_input').value, document.getElementById('ob_label_input').value, document.getElementById('ob_field_input')?.value || 0)" class="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-1.5 px-3 rounded-xl shadow-sm transition-all flex items-center justify-center gap-1">
                             <span class="material-symbols-rounded text-base">add</span> Platzieren
                         </button>
                     </div>
@@ -1590,16 +1904,19 @@ function renderWiringTab() {
                 ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).length > 0 ? `
                 <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/40 dark:border-amber-800/30">
                     <span class="font-bold text-slate-500">Platzierte Elemente:</span>
-                    ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).map(ob => `
+                    ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).map(ob => {
+                        const fName = (primaryStr.fields && primaryStr.fields[ob.fieldIdx !== undefined ? ob.fieldIdx : 0]) ? primaryStr.fields[ob.fieldIdx !== undefined ? ob.fieldIdx : 0].name : `Feld ${(ob.fieldIdx !== undefined ? ob.fieldIdx : 0) + 1}`;
+                        return `
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 shadow-2xs">
                             <span class="material-symbols-rounded text-xs text-amber-500">${ob.type === 'window' ? 'window' : (ob.type === 'dormer' ? 'roofing' : (ob.type === 'chimney' ? 'fireplace' : 'check_box_outline_blank'))}</span>
                             <span>${ob.label}</span>
-                            <span class="text-slate-400 font-normal">[R${ob.row} : S${ob.col}]</span>
+                            <span class="text-slate-400 font-normal">[${fName} - R${ob.row} : S${ob.col}]</span>
                             <button onclick="removeRoofObstacle(${primaryStr.id}, ${ob.id})" class="text-slate-400 hover:text-rose-500 transition-colors ml-0.5">
                                 <span class="material-symbols-rounded text-sm">close</span>
                             </button>
                         </span>
-                    `).join('')}
+                        `;
+                    }).join('')}
                 </div>
                 ` : `
                 <div class="text-[11px] text-slate-500 dark:text-slate-400 italic">
@@ -1626,18 +1943,19 @@ function renderWiringTab() {
                 if (Array.isArray(custom) && custom.length === totalMod) {
                     currentSeq = [...custom];
                 } else {
-                    currentSeq = Array.from({ length: totalMod }, (_, i) => i);
+                    currentSeq = getMultiFieldSequence(s, 'simple');
                 }
             } else if (wiringSettings.layoutMode === 'leapfrog') {
-                currentSeq = getLeapfrogOrder(totalMod);
+                currentSeq = getMultiFieldSequence(s, 'leapfrog');
             } else {
-                currentSeq = Array.from({ length: totalMod }, (_, i) => i);
+                currentSeq = getMultiFieldSequence(s, 'simple');
             }
 
             const sCalc = calculateCablePhysics(s, wiringSettings, null, currentSeq);
 
             return `
-            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+            <div class="bg-white dark:bg-slate-900 rounded-3xl p-5 md:p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+                <!-- STRING HEADER -->
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
                     <div class="flex items-center gap-2.5">
                         <span class="w-3.5 h-3.5 rounded-full shrink-0" style="background-color: ${s.color || '#3b82f6'};"></span>
@@ -1662,6 +1980,205 @@ function renderWiringTab() {
                         <span>$U_{mpp}$: <strong class="text-emerald-600 dark:text-emerald-400">${Math.round(sCalc.vmpTotal)} V</strong></span>
                         <span>•</span>
                         <span>$I_{mpp}$: <strong class="text-sky-600 dark:text-sky-400">${sCalc.imp.toFixed(1)} A</strong></span>
+                    </div>
+                </div>
+
+                <!-- 1. MODULFELDER DIESES STRINGS (DIREKT BEARBEITBAR MIT REIHEN/SPALTEN) -->
+                <div class="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3.5">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/80 dark:border-slate-800 pb-2.5">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-rounded text-primary text-lg">grid_view</span>
+                            <div>
+                                <h4 class="font-extrabold text-xs md:text-sm text-slate-900 dark:text-white flex items-center gap-2">
+                                    Modulfelder & Dachaufbau (${(s.fields || []).length} Feld${(s.fields || []).length > 1 ? 'er' : ''})
+                                    <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/10 text-primary">Zerstückeltes Dach</span>
+                                </h4>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                                    Passe Reihen und Spalten pro Feld an. Brücken verbinden getrennte Dachflächen (Gauben, Fenster, Firste).
+                                </p>
+                            </div>
+                        </div>
+                        <button onclick="addFieldInWiring(${s.id})" class="bg-primary hover:bg-primary-hover text-white text-xs font-extrabold px-3 py-1.5 rounded-xl shadow-xs transition-all flex items-center gap-1.5 self-start sm:self-auto shrink-0">
+                            <span class="material-symbols-rounded text-base">add_circle</span> Weiteres Feld anlegen (z.B. Gaube)
+                        </button>
+                    </div>
+
+                    <!-- FELDER-GRID MIT ZWISCHENBRÜCKEN -->
+                    <div class="space-y-3">
+                        ${(s.fields || []).map((f, fIdx) => {
+                            const fCols = parseInt(f.cols) || 4;
+                            const fRows = parseInt(f.rows) || Math.ceil((parseInt(f.count) || 1) / fCols);
+                            const nextField = s.fields[fIdx + 1];
+                            const bridgeLen = getWiringBridgeLength(s.id, fIdx);
+
+                            return `
+                            <!-- FELD-KARTE -->
+                            <div class="bg-white dark:bg-slate-900 rounded-2xl p-3.5 border border-slate-200 dark:border-slate-700/80 shadow-2xs space-y-3">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/60 pb-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-6 h-6 rounded-lg bg-primary/10 text-primary font-black text-xs flex items-center justify-center">
+                                            F${fIdx + 1}
+                                        </span>
+                                        <input type="text" value="${f.name || ('Feld ' + (fIdx + 1))}" onchange="updateFieldInWiring(${s.id}, ${f.id}, 'name', this.value)" class="font-extrabold text-xs text-slate-800 dark:text-slate-100 bg-transparent border-b border-dashed border-slate-300 dark:border-slate-700 hover:border-primary focus:border-primary outline-none px-1 py-0.5" title="Feldname bearbeiten">
+                                        <span class="text-[11px] text-slate-400 font-medium">(${f.count} Module)</span>
+                                    </div>
+                                    ${(s.fields || []).length > 1 ? `
+                                        <button onclick="removeFieldInWiring(${s.id}, ${f.id})" class="text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-2 py-1 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all self-end sm:self-auto" title="Feld löschen">
+                                            <span class="material-symbols-rounded text-sm">delete</span> Feld entfernen
+                                        </button>
+                                    ` : ''}
+                                </div>
+
+                                <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs">
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Modulanzahl:</label>
+                                        <input type="number" min="1" max="60" value="${f.count}" onchange="updateFieldInWiring(${s.id}, ${f.id}, 'count', this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-black text-primary outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Spalten (Breite):</label>
+                                        <input type="number" min="1" max="16" value="${fCols}" onchange="updateFieldInWiring(${s.id}, ${f.id}, 'cols', this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Reihen (Höhe):</label>
+                                        <input type="number" min="1" max="16" value="${fRows}" onchange="updateFieldInWiring(${s.id}, ${f.id}, 'rows', this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Neigung (°):</label>
+                                        <input type="number" min="0" max="90" value="${f.tilt || 30}" onchange="updateFieldInWiring(${s.id}, ${f.id}, 'tilt', this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 font-bold outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block font-bold text-slate-600 dark:text-slate-400 mb-1">Modul-Modell:</label>
+                                        <select onchange="updateFieldInWiring(${s.id}, ${f.id}, 'panelId', this.value)" class="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1.5 font-medium outline-none truncate">
+                                            ${flatPanels.map(p => `
+                                                <option value="${p.id}" ${parseInt(f.panelId) === p.id ? 'selected' : ''}>${p.pmax}Wp - ${p.name.slice(0, 16)}</option>
+                                            `).join('')}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- BRÜCKE ZUM NÄCHSTEN FELD (FALLS VORHANDEN) -->
+                            ${nextField ? `
+                            <div class="flex items-center gap-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs">
+                                <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                                    <span class="material-symbols-rounded text-lg">alt_route</span>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex flex-wrap items-center justify-between gap-2">
+                                        <span class="font-extrabold text-slate-900 dark:text-slate-100">
+                                            Brücke: <strong class="text-amber-600 dark:text-amber-400">${f.name || ('Feld ' + (fIdx + 1))}</strong> ➔ <strong class="text-amber-600 dark:text-amber-400">${nextField.name || ('Feld ' + (fIdx + 2))}</strong>
+                                        </span>
+                                        <div class="flex items-center gap-1.5">
+                                            <span class="font-bold text-slate-600 dark:text-slate-300">Brückenlänge:</span>
+                                            <input type="number" min="0.5" max="60" step="0.5" value="${bridgeLen}" onchange="setWiringBridgeLength(${s.id}, ${fIdx}, this.value)" class="w-16 bg-white dark:bg-slate-900 border border-amber-500/40 rounded-lg px-2 py-1 font-black text-amber-600 dark:text-amber-400 text-center outline-none">
+                                            <span class="font-bold text-slate-500">m</span>
+                                        </div>
+                                    </div>
+                                    <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        DC-Verbindungskabel über Gaubenkehle, First oder Wandvorsprung zwischen den getrennten Modulfeldern.
+                                    </p>
+                                </div>
+                            </div>
+                            ` : ''}
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <!-- 2. KABELWEG-KALKULATOR & TRANSPARENTE FORMEL -->
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div class="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-rounded text-emerald-600 dark:text-emerald-400 text-lg">straighten</span>
+                            <h4 class="font-extrabold text-xs md:text-sm text-slate-900 dark:text-white">
+                                Kabelwege-Kalkulator & Gesamtlänge (String ${sIdx + 1})
+                            </h4>
+                        </div>
+                        <span class="text-[11px] font-bold text-slate-500">
+                            Pauschal: 2,0 m Kabel pro PV-Modul
+                        </span>
+                    </div>
+
+                    <!-- 4 WEGSTRECKEN-KACHELN -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                        <!-- WEG A -->
+                        <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-rose-500 flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-rose-500"></span> Weg A (Hinweg)
+                                </span>
+                                <div class="flex items-center gap-1">
+                                    <input type="number" min="1" max="150" step="0.5" value="${sCalc.wegA}" onchange="setWiringWegA(${s.id}, this.value)" class="w-14 text-right font-black border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-md px-1.5 py-0.5 text-xs text-rose-500 outline-none">
+                                    <span class="font-bold text-slate-400 text-[10px]">m</span>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                DC+ Hinleiter: WR zu Feld 1 (#1 Plus)
+                            </p>
+                        </div>
+
+                        <!-- BRÜCKEN -->
+                        <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-amber-500 flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-amber-500"></span> Feld-Brücken
+                                </span>
+                                <span class="font-black text-xs text-amber-500">
+                                    ${sCalc.sumFieldBridges.toFixed(1)} m
+                                </span>
+                            </div>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                ${sCalc.numBridges > 0 ? `${sCalc.numBridges} Brücke${sCalc.numBridges === 1 ? '' : 'n'} zwischen Feldern` : 'Keine Brücken (einzelnes Feld)'}
+                            </p>
+                        </div>
+
+                        <!-- MODULKABEL-PAUSCHALE -->
+                        <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-primary flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-primary"></span> Modulkabel
+                                </span>
+                                <span class="font-black text-xs text-primary">
+                                    ${sCalc.panelCableTotal.toFixed(1)} m
+                                </span>
+                            </div>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                ${totalMod} Module × 2,0 m Pauschale
+                            </p>
+                        </div>
+
+                        <!-- WEG B -->
+                        <div class="bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <span class="font-bold text-sky-500 flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full bg-sky-500"></span> Weg B (Rückweg)
+                                </span>
+                                <div class="flex items-center gap-1">
+                                    <input type="number" min="1" max="150" step="0.5" value="${sCalc.wegB}" onchange="setWiringWegB(${s.id}, this.value)" class="w-14 text-right font-black border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-md px-1.5 py-0.5 text-xs text-sky-500 outline-none">
+                                    <span class="font-bold text-slate-400 text-[10px]">m</span>
+                                </div>
+                            </div>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                                DC- Rückleiter: Feld ${(s.fields || []).length} zurück zum WR
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- FORMEL-SUMMENLEISTE -->
+                    <div class="p-3 rounded-xl bg-primary/10 border border-primary/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                        <div class="space-y-0.5">
+                            <p class="font-extrabold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                <span class="material-symbols-rounded text-base text-primary">functions</span>
+                                Formel: Weg A (${sCalc.wegA} m) + Brücken (${sCalc.sumFieldBridges} m) + Modulkabel (${sCalc.panelCableTotal} m) + Weg B (${sCalc.wegB} m)
+                            </p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                                Exakte Leitungslänge im String: <strong>${sCalc.rawCableLength.toFixed(1)} m</strong> (+ 10% Installationsreserve: <strong>${sCalc.totalCableLength} m</strong>)
+                            </p>
+                        </div>
+                        <div class="text-right self-end sm:self-auto">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase block">Gesamtkabel String</span>
+                            <span class="text-base md:text-lg font-black text-primary">${sCalc.totalCableLength} m</span>
+                        </div>
                     </div>
                 </div>
 
@@ -1723,10 +2240,24 @@ function renderWiringTab() {
                             <span class="font-bold text-slate-500 shrink-0 flex items-center gap-1">
                                 <span class="material-symbols-rounded text-sm text-rose-500">arrow_forward</span> DC+ WR
                             </span>
-                            ${currentSeq.map((panelIdx, posIdx) => `
+                            ${currentSeq.map((panelIdx, posIdx) => {
+                                // Berechne Feld- und Modul-Label für panelIdx
+                                let rem = panelIdx;
+                                let fNum = 1;
+                                let lNum = panelIdx + 1;
+                                for (let fi = 0; fi < (s.fields || []).length; fi++) {
+                                    const cnt = parseInt(s.fields[fi].count) || 0;
+                                    if (rem < cnt) {
+                                        fNum = fi + 1;
+                                        lNum = rem + 1;
+                                        break;
+                                    }
+                                    rem -= cnt;
+                                }
+                                return `
                                 <div class="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 font-bold shrink-0 shadow-2xs">
                                     <span class="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 text-[10px] flex items-center justify-center font-black text-slate-500">${posIdx + 1}</span>
-                                    <span>Modul #${panelIdx + 1}</span>
+                                    <span>F${fNum}-${lNum}</span>
                                     ${wiringSettings.layoutMode === 'manual' ? `
                                         <button onclick="shiftWiringSequenceItem(${s.id}, ${posIdx}, -1)" ${posIdx === 0 ? 'disabled' : ''} class="text-slate-400 hover:text-primary disabled:opacity-20 px-0.5" title="Nach links verschieben">
                                             ◀
@@ -1737,7 +2268,8 @@ function renderWiringTab() {
                                     ` : ''}
                                 </div>
                                 ${posIdx < currentSeq.length - 1 ? '<span class="text-slate-400 font-bold">→</span>' : ''}
-                            `).join('')}
+                                `;
+                            }).join('')}
                             <span class="font-bold text-slate-500 shrink-0 flex items-center gap-1">
                                 → DC- WR <span class="material-symbols-rounded text-sm text-blue-500">arrow_forward</span>
                             </span>
