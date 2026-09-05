@@ -263,6 +263,49 @@ function toggleAcc(id) {
 // ==========================================
 // 3. STRINGS, PHYSIK & UI
 // ==========================================
+function getCompassDirection(deg) {
+    let d = Math.round(((Number(deg) % 360) + 360) % 360);
+    const sectors = [
+        { name: 'Nord (0°)', short: 'N', min: 348.75, max: 11.25, dev: 180, devLabel: '180° Nord (Vollverschattet/Norddach)' },
+        { name: 'Nord-Nordost (22°)', short: 'NNO', min: 11.25, max: 33.75, dev: 158, devLabel: '158° Nord-Ost' },
+        { name: 'Nordost (45°)', short: 'NO', min: 33.75, max: 56.25, dev: 135, devLabel: '135° Nord-Ost' },
+        { name: 'Ost-Nordost (68°)', short: 'ONO', min: 56.25, max: 78.75, dev: 112, devLabel: '112° Ost-Nord' },
+        { name: 'Ost (90°)', short: 'O', min: 78.75, max: 101.25, dev: 90, devLabel: '90° Ost (Vormittagssonne)' },
+        { name: 'Ost-Südost (112°)', short: 'OSO', min: 101.25, max: 123.75, dev: 68, devLabel: '68° Ost' },
+        { name: 'Südost (135°)', short: 'SO', min: 123.75, max: 146.25, dev: 45, devLabel: '45° Ost' },
+        { name: 'Süd-Südost (158°)', short: 'SSO', min: 146.25, max: 168.75, dev: 22, devLabel: '22° Ost' },
+        { name: 'Süd (180°)', short: 'S', min: 168.75, max: 191.25, dev: 0, devLabel: 'Optimal Süd (0° Abweichung)' },
+        { name: 'Süd-Südwest (202°)', short: 'SSW', min: 191.25, max: 213.75, dev: 22, devLabel: '22° West' },
+        { name: 'Südwest (225°)', short: 'SW', min: 213.75, max: 236.25, dev: 45, devLabel: '45° West' },
+        { name: 'West-Südwest (248°)', short: 'WSW', min: 236.25, max: 258.75, dev: 68, devLabel: '68° West' },
+        { name: 'West (270°)', short: 'W', min: 258.75, max: 281.25, dev: 90, devLabel: '90° West (Nachmittagssonne)' },
+        { name: 'West-Nordwest (292°)', short: 'WNW', min: 281.25, max: 303.75, dev: 112, devLabel: '112° West-Nord' },
+        { name: 'Nordwest (315°)', short: 'NW', min: 303.75, max: 326.25, dev: 135, devLabel: '135° Nord-West' },
+        { name: 'Nord-Nordwest (338°)', short: 'NNW', min: 326.25, max: 348.75, dev: 158, devLabel: '158° Nord-West' }
+    ];
+    for (const s of sectors) {
+        if (s.min > s.max) {
+            if (d >= s.min || d < s.max) return { ...s, angle: d };
+        } else {
+            if (d >= s.min && d < s.max) return { ...s, angle: d };
+        }
+    }
+    return { name: 'Süd (180°)', short: 'S', angle: d, dev: 0, devLabel: 'Optimal Süd' };
+}
+
+function updateAzimuthLive(strId, val) {
+    const num = Math.min(360, Math.max(0, parseFloat(val) || 0));
+    const lbl = document.getElementById(`azimuth-label-${strId}`);
+    if (lbl) {
+        const info = getCompassDirection(num);
+        lbl.innerHTML = `<span>${info.name}</span> <span class="text-primary font-bold">${info.devLabel}</span>`;
+    }
+    const slider = document.getElementById(`azimuth-slider-${strId}`);
+    if (slider && Number(slider.value) !== num) slider.value = num;
+    const numInput = document.getElementById(`azimuth-num-${strId}`);
+    if (numInput && Number(numInput.value) !== num) numInput.value = num;
+}
+
 function addString() { 
     strings.push({ 
         id: Date.now(), 
@@ -315,7 +358,11 @@ function updateStringData(id, key, val) {
         if (['name', 'group', 'color'].includes(key)) str[key] = val; else str[key] = Number(val);
         if(key === 'inverterId') str.mpptId = 1; 
         updatePhysicsOnly(); 
-        document.getElementById('edit-' + id).classList.remove('hidden');
+        const editEl = document.getElementById('edit-' + id);
+        if (editEl) editEl.classList.remove('hidden');
+        if (document.getElementById('tab-verkabelung') && !document.getElementById('tab-verkabelung').classList.contains('hidden')) {
+            renderWiringTab();
+        }
     } 
 }
 
@@ -422,7 +469,7 @@ function renderStringsUI() {
                         <div class="flex flex-col">
                             <h4 class="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-1.5 leading-none">
                                 ${str.name} 
-                                <span class="font-normal text-xs text-slate-400">| ${modTotal}x Modul an ${inv.name}</span>
+                                <span class="font-normal text-xs text-slate-400">| ${modTotal}x Modul an ${inv.name} • <strong class="text-amber-500 font-bold">${str.azimuth ?? 180}° (${getCompassDirection(str.azimuth ?? 180).short})</strong></span>
                             </h4>
                         </div>
                     </div>
@@ -459,15 +506,42 @@ function renderStringsUI() {
                         <select onchange="updateStringData(${str.id}, 'mpptId', this.value)" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-3 py-1.5 text-xs font-medium outline-none focus:border-primary">${mOpt}</select>
                     </div>
                     <div>
-                        <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Azimut (Grad)</label>
-                        <select onchange="updateStringData(${str.id}, 'azimuth', this.value)" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-3 py-1.5 text-xs font-medium outline-none focus:border-primary">
-                            <option value="180" ${str.azimuth==180?'selected':''}>Süd (180°)</option>
-                            <option value="90" ${str.azimuth==90?'selected':''}>Ost (90°)</option>
-                            <option value="270" ${str.azimuth==270?'selected':''}>West (270°)</option>
-                            <option value="0" ${str.azimuth==0?'selected':''}>Nord (0°)</option>
-                            <option value="135" ${str.azimuth==135?'selected':''}>Südost (135°)</option>
-                            <option value="225" ${str.azimuth==225?'selected':''}>Südwest (225°)</option>
-                        </select>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Azimut (Grad 0-360°)</label>
+                            <span class="text-[10px] font-black px-1.5 py-0.2 rounded bg-primary/10 text-primary">${getCompassDirection(str.azimuth ?? 180).short}</span>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <div class="relative flex-1">
+                                <input type="number" id="azimuth-num-${str.id}" min="0" max="360" step="1" value="${str.azimuth ?? 180}" 
+                                       oninput="updateAzimuthLive(${str.id}, this.value)"
+                                       onchange="updateStringData(${str.id}, 'azimuth', this.value)" 
+                                       class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-xl pl-2.5 pr-6 py-1.5 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-primary"
+                                       title="Gradgenaue manuelle Ausrichtung (z. B. 165°)">
+                                <span class="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 pointer-events-none">°</span>
+                            </div>
+                            <select onchange="updateStringData(${str.id}, 'azimuth', this.value)" 
+                                    class="border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-xl px-1.5 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 outline-none focus:border-primary shrink-0 cursor-pointer max-w-[90px]">
+                                <option value="" disabled selected>Preset</option>
+                                <option value="180">Süd (180°)</option>
+                                <option value="158">SSO (158°)</option>
+                                <option value="135">SO (135°)</option>
+                                <option value="90">Ost (90°)</option>
+                                <option value="202">SSW (202°)</option>
+                                <option value="225">SW (225°)</option>
+                                <option value="270">West (270°)</option>
+                                <option value="0">Nord (0°)</option>
+                                <option value="45">NO (45°)</option>
+                                <option value="315">NW (315°)</option>
+                            </select>
+                        </div>
+                        <input type="range" id="azimuth-slider-${str.id}" min="0" max="360" step="1" value="${str.azimuth ?? 180}"
+                               oninput="updateAzimuthLive(${str.id}, this.value)"
+                               onchange="updateStringData(${str.id}, 'azimuth', this.value)"
+                               class="w-full mt-1.5 accent-primary h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer">
+                        <div class="text-[10px] text-slate-500 dark:text-slate-400 mt-1 flex justify-between items-center" id="azimuth-label-${str.id}">
+                            <span>${getCompassDirection(str.azimuth ?? 180).name}</span>
+                            <span class="text-primary font-bold">${getCompassDirection(str.azimuth ?? 180).devLabel}</span>
+                        </div>
                     </div>
                 </div>
 
@@ -940,47 +1014,62 @@ function toggleObstacleEditor() {
 }
 
 function addRoofObstacle(strId, type, row, col, label, fieldIdx = 0) {
-    if (!wiringSettings.customRoofLayouts[strId]) {
-        wiringSettings.customRoofLayouts[strId] = { obstacles: [] };
+    const sId = Number(strId);
+    if (!wiringSettings.customRoofLayouts) wiringSettings.customRoofLayouts = {};
+    if (!wiringSettings.customRoofLayouts[sId]) {
+        wiringSettings.customRoofLayouts[sId] = { obstacles: [] };
     }
-    const obList = wiringSettings.customRoofLayouts[strId].obstacles || [];
+    const obList = wiringSettings.customRoofLayouts[sId].obstacles || [];
     const r = Math.max(0, parseInt(row) || 0);
     const c = Math.max(0, parseInt(col) || 0);
     const fIdx = Math.max(0, parseInt(fieldIdx) || 0);
     
     // Vorhandenes an gleicher Stelle überschreiben
-    const existIdx = obList.findIndex(o => (o.fieldIdx === undefined ? 0 : o.fieldIdx) === fIdx && o.row === r && o.col === c);
+    const existIdx = obList.findIndex(o => (o.fieldIdx === undefined ? 0 : Number(o.fieldIdx)) === fIdx && Number(o.row) === r && Number(o.col) === c);
     const item = {
-        id: Date.now(),
+        id: Date.now() + Math.floor(Math.random() * 1000),
         fieldIdx: fIdx,
         row: r,
         col: c,
         type: type || 'window',
-        label: label || (type === 'window' ? 'Dachfenster' : (type === 'dormer' ? 'Gaube' : (type === 'chimney' ? 'Kamin' : 'Leerfeld')))
+        label: (label && label.trim().length > 0) ? label.trim() : (type === 'window' ? 'Dachfenster' : (type === 'dormer' ? 'Gaube' : (type === 'chimney' ? 'Kamin' : 'Leerfläche')))
     };
     if (existIdx >= 0) {
         obList[existIdx] = item;
     } else {
         obList.push(item);
     }
-    wiringSettings.customRoofLayouts[strId].obstacles = obList;
+    wiringSettings.customRoofLayouts[sId].obstacles = obList;
+    wiringSettings.customRoofLayouts[String(sId)] = wiringSettings.customRoofLayouts[sId];
     saveWiringSettings();
     renderWiringTab();
 }
 
 function removeRoofObstacle(strId, obId) {
-    if (wiringSettings.customRoofLayouts[strId]?.obstacles) {
-        wiringSettings.customRoofLayouts[strId].obstacles = wiringSettings.customRoofLayouts[strId].obstacles.filter(o => o.id !== obId);
-        saveWiringSettings();
-        renderWiringTab();
-    }
+    const sId = Number(strId);
+    [sId, String(sId)].forEach(k => {
+        if (wiringSettings.customRoofLayouts && wiringSettings.customRoofLayouts[k]?.obstacles) {
+            wiringSettings.customRoofLayouts[k].obstacles = wiringSettings.customRoofLayouts[k].obstacles.filter(o => Number(o.id) !== Number(obId));
+        }
+    });
+    saveWiringSettings();
+    renderWiringTab();
 }
 
 function clearAllRoofObstacles(strId) {
-    if (wiringSettings.customRoofLayouts[strId]) {
-        wiringSettings.customRoofLayouts[strId].obstacles = [];
-        saveWiringSettings();
-        renderWiringTab();
+    const sId = Number(strId);
+    [sId, String(sId)].forEach(k => {
+        if (wiringSettings.customRoofLayouts && wiringSettings.customRoofLayouts[k]) {
+            wiringSettings.customRoofLayouts[k].obstacles = [];
+        }
+    });
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function confirmRemoveObstaclePrompt(strId, obId, label) {
+    if (confirm(`Hindernis "${label}" von der Dachfläche entfernen? Die PV-Module schließen diese Lücke automatisch.`)) {
+        removeRoofObstacle(strId, obId);
     }
 }
 
@@ -1133,15 +1222,28 @@ function generateStringWiringSvg(str, settings) {
     const obstaclesPos = [];
     let globalPanelIdx = 0;
 
-    const strLayout = settings.customRoofLayouts[str.id] || { obstacles: [] };
+    const strLayout = settings.customRoofLayouts[str.id] || settings.customRoofLayouts[String(str.id)] || { obstacles: [] };
     const obstacles = strLayout.obstacles || [];
 
     fields.forEach((f, fIdx) => {
         const fCount = parseInt(f.count) || 1;
-        const fCols = Math.max(1, parseInt(f.cols) || Math.min(fCount, 4) || 4);
-        const fRows = Math.max(1, parseInt(f.rows) || Math.ceil(fCount / fCols));
         const fName = f.name || `Feld ${fIdx + 1}`;
         const fModel = flatPanels.find(p => p.id === parseInt(f.panelId)) || flatPanels[0] || { pmax: 440, vmp: 32.5, imp: 13.5 };
+
+        // Hindernisse für dieses Feld
+        const fieldObs = obstacles.filter(ob => (ob.fieldIdx === undefined ? fIdx === 0 : Number(ob.fieldIdx) === fIdx));
+        const maxObCol = fieldObs.length > 0 ? Math.max(...fieldObs.map(o => parseInt(o.col) || 0)) : -1;
+        const maxObRow = fieldObs.length > 0 ? Math.max(...fieldObs.map(o => parseInt(o.row) || 0)) : -1;
+
+        let fCols = Math.max(1, parseInt(f.cols) || Math.min(fCount, 4) || 4);
+        if (maxObCol >= fCols) fCols = maxObCol + 1;
+
+        const totalSpots = fCount + fieldObs.length;
+        let fRows = Math.max(1, parseInt(f.rows) || Math.ceil(totalSpots / fCols));
+        if (maxObRow >= fRows) fRows = maxObRow + 1;
+        if (fRows * fCols < totalSpots) {
+            fRows = Math.ceil(totalSpots / fCols);
+        }
 
         const contentW = fCols * pw + (fCols - 1) * gapX;
         const contentH = fRows * ph + (fRows - 1) * gapY;
@@ -1173,57 +1275,72 @@ function generateStringWiringSvg(str, settings) {
             contentH: contentH
         });
 
-        // Module in diesem Feld platzieren
-        let r = 0, c = 0;
-        for (let localIdx = 0; localIdx < fCount; localIdx++) {
-            const x = boxX + padX + c * (pw + gapX);
-            const y = boxY + headerH + r * (ph + gapY);
+        // Hindernisse in obMap eintragen und Koordinaten berechnen
+        const obMap = new Map();
+        fieldObs.forEach(ob => {
+            const r = Math.max(0, parseInt(ob.row) || 0);
+            const c = Math.max(0, parseInt(ob.col) || 0);
+            obMap.set(`${r}_${c}`, ob);
 
-            positions.push({
-                idx: globalPanelIdx,
-                fieldIdx: fIdx,
-                fieldId: f.id,
-                fieldName: fName,
-                fieldShort: `F${fIdx + 1}`,
-                localIdx: localIdx,
-                labelNum: globalPanelIdx + 1,
-                localLabel: `F${fIdx + 1}-${localIdx + 1}`,
-                model: fModel,
-                tilt: f.tilt || 30,
-                x: x,
-                y: y,
-                w: pw,
-                h: ph,
-                row: r,
-                col: c,
-                plusX: x + (pw * 0.32),
-                plusY: y + 14,
-                minusX: x + (pw * 0.68),
-                minusY: y + 14,
-                centerX: x + pw / 2,
-                centerY: y + ph / 2
-            });
-
-            globalPanelIdx++;
-            c++;
-            if (c >= fCols) {
-                c = 0;
-                r++;
-            }
-        }
-
-        // Hindernisse für dieses Feld zuordnen
-        obstacles.filter(ob => (ob.fieldIdx === undefined ? fIdx === 0 : ob.fieldIdx === fIdx)).forEach(ob => {
-            const obX = boxX + padX + (ob.col || 0) * (pw + gapX);
-            const obY = boxY + headerH + (ob.row || 0) * (ph + gapY);
+            const obX = boxX + padX + c * (pw + gapX);
+            const obY = boxY + headerH + r * (ph + gapY);
             obstaclesPos.push({
                 ...ob,
+                fieldIdx: fIdx,
+                row: r,
+                col: c,
                 x: obX,
                 y: obY,
                 w: pw,
                 h: ph
             });
         });
+
+        // Module in freien Rasterzellen platzieren (Hindernisse freilassen)
+        let placedCount = 0;
+        let r = 0, c = 0;
+        while (placedCount < fCount) {
+            if (obMap.has(`${r}_${c}`)) {
+                // Zelle durch Hindernis belegt -> überspringen
+            } else {
+                const x = boxX + padX + c * (pw + gapX);
+                const y = boxY + headerH + r * (ph + gapY);
+
+                positions.push({
+                    idx: globalPanelIdx,
+                    fieldIdx: fIdx,
+                    fieldId: f.id,
+                    fieldName: fName,
+                    fieldShort: `F${fIdx + 1}`,
+                    localIdx: placedCount,
+                    labelNum: globalPanelIdx + 1,
+                    localLabel: `F${fIdx + 1}-${placedCount + 1}`,
+                    model: fModel,
+                    tilt: f.tilt || 30,
+                    x: x,
+                    y: y,
+                    w: pw,
+                    h: ph,
+                    row: r,
+                    col: c,
+                    plusX: x + (pw * 0.32),
+                    plusY: y + 14,
+                    minusX: x + (pw * 0.68),
+                    minusY: y + 14,
+                    centerX: x + pw / 2,
+                    centerY: y + ph / 2
+                });
+
+                globalPanelIdx++;
+                placedCount++;
+            }
+
+            c++;
+            if (c >= fCols) {
+                c = 0;
+                r++;
+            }
+        }
 
         curFieldX += boxW + fieldBridgeGap;
     });
@@ -1543,86 +1660,6 @@ function generateStringWiringSvg(str, settings) {
             }).join('')}
         </g>
 
-        <!-- HINDERNISSE-EBENE (FENSTER, GAUBEN, KAMINE, LEERFLÄCHEN) -->
-        <g id="obstacles-layer">
-            ${obstaclesPos.map(ob => {
-                if (ob.type === 'window') {
-                    return `
-                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
-                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0b1329" stroke="#38bdf8" stroke-width="1.5" />
-                        <rect x="6" y="6" width="${ob.w - 12}" height="${ob.h - 12}" rx="3" fill="#0284c7" fill-opacity="0.18" stroke="#0284c7" stroke-width="1" />
-                        <line x1="${ob.w / 2}" y1="6" x2="${ob.w / 2}" y2="${ob.h - 6}" stroke="#64748b" stroke-width="1.5" />
-                        <line x1="6" y1="${ob.h * 0.45}" x2="${ob.w - 6}" y2="${ob.h * 0.45}" stroke="#64748b" stroke-width="1.5" />
-                        <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" stroke="#334155" stroke-width="0.8" />
-                        <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#38bdf8" font-size="8" font-weight="700" text-anchor="middle">${ob.label || 'Dachfenster'}</text>
-                    </g>
-                    `;
-                } else if (ob.type === 'dormer') {
-                    return `
-                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
-                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="1.5" />
-                        <polygon points="8,${ob.h - 14} ${ob.w / 2},12 ${ob.w - 8},${ob.h - 14}" fill="#334155" stroke="#f59e0b" stroke-width="1" />
-                        <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" />
-                        <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#fbbf24" font-size="8.5" font-weight="700" text-anchor="middle">${ob.label || 'Gaube'}</text>
-                    </g>
-                    `;
-                } else if (ob.type === 'chimney') {
-                    return `
-                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
-                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1c1917" stroke="#78716c" stroke-width="1.5" />
-                        <rect x="12" y="12" width="${ob.w - 24}" height="${ob.h - 24}" rx="3" fill="#7f1d1d" stroke="#b91c1c" stroke-width="1" />
-                        <ellipse cx="${ob.w / 2}" cy="${ob.h / 2}" rx="10" ry="7" fill="#0c0a09" stroke="#991b1b" stroke-width="1" />
-                        <rect x="${ob.w * 0.1}" y="${ob.h - 22}" width="${ob.w * 0.8}" height="16" rx="3" fill="#0f172a" fill-opacity="0.9" />
-                        <text x="${ob.w / 2}" y="${ob.h - 11}" fill="#fca5a5" font-size="8.5" font-weight="700" text-anchor="middle">${ob.label || 'Kamin'}</text>
-                    </g>
-                    `;
-                } else {
-                    return `
-                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})">
-                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1" stroke-dasharray="4,4" opacity="0.55" />
-                        <text x="${ob.w / 2}" y="${ob.h / 2 + 3}" fill="#64748b" font-size="8.5" font-weight="600" text-anchor="middle">${ob.label || 'Leerfeld'}</text>
-                    </g>
-                    `;
-                }
-            }).join('')}
-        </g>
-
-        <!-- KABELWEGE (WIRES & LEITUNGSFÜHRUNG) -->
-        <g id="wires-layer" filter="url(#wireGlow)">
-            ${wirePaths.map(w => {
-                const isDCMinus = w.type === 'dc-minus';
-                const isBridge = w.type === 'field-bridge';
-                const strokeDash = isDCMinus ? '8,4' : (isBridge ? 'none' : (isAnim ? '12,6' : 'none'));
-                const strokeWidth = isBridge ? 4.5 : (isDCMinus ? 3.5 : 3.8);
-                const flowClass = isAnim ? 'flow-active' : '';
-                return `
-                    <path d="${w.d}" fill="none" stroke="${w.color}" stroke-width="${strokeWidth}" 
-                          stroke-linecap="round" stroke-linejoin="round"
-                          stroke-dasharray="${strokeDash}" class="${flowClass}">
-                        <title>${w.label}</title>
-                    </path>
-                `;
-            }).join('')}
-        </g>
-
-        <!-- ROUTEN-BADGES (WEG A & WEG B LÄNGENANZEIGE) -->
-        <g id="route-badges-layer">
-            ${routeBadges.map(rb => `
-                <g transform="translate(${rb.x}, ${rb.y})">
-                    <rect x="-65" y="-12" width="130" height="24" rx="6" fill="${rb.bgColor}" stroke="${rb.color}" stroke-width="1.4" filter="url(#wireGlow)" />
-                    <text x="0" y="4.5" fill="${rb.textColor}" font-size="9" font-weight="800" text-anchor="middle">${rb.label}</text>
-                </g>
-            `).join('')}
-        </g>
-
-        <!-- STECKREIHENFOLGE-NUMMERN (STEP BADGES AUF KABELN) -->
-        ${settings.showWireNumbers ? stepBadges.map(b => `
-            <g transform="translate(${b.x}, ${b.y})">
-                <circle cx="0" cy="0" r="${b.isBridge ? 11 : 9}" fill="#0f172a" stroke="${b.isBridge ? '#f59e0b' : stringColor}" stroke-width="2" />
-                <text x="0" y="3.5" fill="${b.isBridge ? '#fbbf24' : '#f8fafc'}" font-size="${b.isBridge ? '9' : '8.5'}" font-weight="800" text-anchor="middle">${b.step}</text>
-            </g>
-        `).join('') : ''}
-
         <!-- SOLAR-MODULE IN DEN FELDERN -->
         <g id="panels-layer">
             ${positions.map(p => {
@@ -1693,6 +1730,104 @@ function generateStringWiringSvg(str, settings) {
                 `;
             }).join('')}
         </g>
+
+        <!-- HINDERNISSE-EBENE (FENSTER, GAUBEN, KAMINE, LEERFLÄCHEN) -->
+        <g id="obstacles-layer">
+            ${obstaclesPos.map(ob => {
+                const escLabel = (ob.label || '').replace(/'/g, "\\'");
+                if (ob.type === 'window') {
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})" class="cursor-pointer" onclick="confirmRemoveObstaclePrompt(${str.id}, ${ob.id}, '${escLabel}')">
+                        <title>${ob.label || 'Dachfenster'} (Klicken zum Entfernen)</title>
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#03203c" stroke="#38bdf8" stroke-width="2.2" />
+                        <rect x="6" y="6" width="${ob.w - 12}" height="${ob.h - 12}" rx="4" fill="#0284c7" fill-opacity="0.25" stroke="#38bdf8" stroke-width="1.2" />
+                        <line x1="${ob.w / 2}" y1="6" x2="${ob.w / 2}" y2="${ob.h - 6}" stroke="#7dd3fc" stroke-width="2" />
+                        <line x1="6" y1="${ob.h * 0.45}" x2="${ob.w - 6}" y2="${ob.h * 0.45}" stroke="#7dd3fc" stroke-width="2" />
+                        <polygon points="10,${ob.h - 10} 10,${ob.h - 26} ${ob.w - 26},10 ${ob.w - 10},10" fill="#ffffff" fill-opacity="0.12" />
+                        <rect x="${ob.w * 0.08}" y="${ob.h - 24}" width="${ob.w * 0.84}" height="18" rx="4" fill="#0f172a" fill-opacity="0.95" stroke="#0284c7" stroke-width="1" />
+                        <text x="${ob.w / 2}" y="${ob.h - 12}" fill="#38bdf8" font-size="8.5" font-weight="800" text-anchor="middle">🪟 ${ob.label || 'Dachfenster'}</text>
+                        <circle cx="${ob.w - 10}" cy="10" r="7" fill="#ef4444" stroke="#991b1b" stroke-width="1" opacity="0.85" />
+                        <text x="${ob.w - 10}" y="13" fill="#fff" font-size="8.5" font-weight="900" text-anchor="middle">×</text>
+                    </g>
+                    `;
+                } else if (ob.type === 'dormer') {
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})" class="cursor-pointer" onclick="confirmRemoveObstaclePrompt(${str.id}, ${ob.id}, '${escLabel}')">
+                        <title>${ob.label || 'Gaube'} (Klicken zum Entfernen)</title>
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1e293b" stroke="#f59e0b" stroke-width="2.2" />
+                        <polygon points="10,${ob.h - 16} ${ob.w / 2},12 ${ob.w - 10},${ob.h - 16}" fill="#334155" stroke="#f59e0b" stroke-width="1.5" />
+                        <rect x="${ob.w * 0.35}" y="${ob.h * 0.5}" width="${ob.w * 0.3}" height="${ob.h * 0.28}" rx="2" fill="#0284c7" fill-opacity="0.4" stroke="#38bdf8" stroke-width="1" />
+                        <rect x="${ob.w * 0.08}" y="${ob.h - 24}" width="${ob.w * 0.84}" height="18" rx="4" fill="#0f172a" fill-opacity="0.95" stroke="#f59e0b" stroke-width="1" />
+                        <text x="${ob.w / 2}" y="${ob.h - 12}" fill="#fbbf24" font-size="8.5" font-weight="800" text-anchor="middle">🏠 ${ob.label || 'Gaube'}</text>
+                        <circle cx="${ob.w - 10}" cy="10" r="7" fill="#ef4444" stroke="#991b1b" stroke-width="1" opacity="0.85" />
+                        <text x="${ob.w - 10}" y="13" fill="#fff" font-size="8.5" font-weight="900" text-anchor="middle">×</text>
+                    </g>
+                    `;
+                } else if (ob.type === 'chimney') {
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})" class="cursor-pointer" onclick="confirmRemoveObstaclePrompt(${str.id}, ${ob.id}, '${escLabel}')">
+                        <title>${ob.label || 'Kamin'} (Klicken zum Entfernen)</title>
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#1c1917" stroke="#dc2626" stroke-width="2.2" />
+                        <rect x="10" y="10" width="${ob.w - 20}" height="${ob.h - 20}" rx="4" fill="#7f1d1d" stroke="#b91c1c" stroke-width="1.2" />
+                        <ellipse cx="${ob.w / 2}" cy="${ob.h / 2 - 4}" rx="12" ry="8" fill="#0c0a09" stroke="#991b1b" stroke-width="1.5" />
+                        <rect x="${ob.w * 0.08}" y="${ob.h - 24}" width="${ob.w * 0.84}" height="18" rx="4" fill="#0f172a" fill-opacity="0.95" stroke="#dc2626" stroke-width="1" />
+                        <text x="${ob.w / 2}" y="${ob.h - 12}" fill="#fca5a5" font-size="8.5" font-weight="800" text-anchor="middle">🧱 ${ob.label || 'Kamin'}</text>
+                        <circle cx="${ob.w - 10}" cy="10" r="7" fill="#ef4444" stroke="#991b1b" stroke-width="1" opacity="0.85" />
+                        <text x="${ob.w - 10}" y="13" fill="#fff" font-size="8.5" font-weight="900" text-anchor="middle">×</text>
+                    </g>
+                    `;
+                } else {
+                    return `
+                    <g id="obstacle-${ob.id}" transform="translate(${ob.x}, ${ob.y})" class="cursor-pointer" onclick="confirmRemoveObstaclePrompt(${str.id}, ${ob.id}, '${escLabel}')">
+                        <title>${ob.label || 'Leerfläche'} (Klicken zum Entfernen)</title>
+                        <rect width="${ob.w}" height="${ob.h}" rx="6" fill="#0f172a" fill-opacity="0.88" stroke="#64748b" stroke-width="1.8" stroke-dasharray="6,4" />
+                        <line x1="8" y1="8" x2="${ob.w - 8}" y2="${ob.h - 8}" stroke="#334155" stroke-width="1.5" opacity="0.5" />
+                        <line x1="${ob.w - 8}" y1="8" x2="8" y2="${ob.h - 8}" stroke="#334155" stroke-width="1.5" opacity="0.5" />
+                        <rect x="${ob.w * 0.08}" y="${ob.h - 24}" width="${ob.w * 0.84}" height="18" rx="4" fill="#0f172a" stroke="#475569" stroke-width="1" />
+                        <text x="${ob.w / 2}" y="${ob.h - 12}" fill="#94a3b8" font-size="8.5" font-weight="800" text-anchor="middle">🚫 ${ob.label || 'Leerfläche'}</text>
+                        <circle cx="${ob.w - 10}" cy="10" r="7" fill="#ef4444" stroke="#991b1b" stroke-width="1" opacity="0.85" />
+                        <text x="${ob.w - 10}" y="13" fill="#fff" font-size="8.5" font-weight="900" text-anchor="middle">×</text>
+                    </g>
+                    `;
+                }
+            }).join('')}
+        </g>
+
+        <!-- KABELWEGE (WIRES & LEITUNGSFÜHRUNG) -->
+        <g id="wires-layer" filter="url(#wireGlow)">
+            ${wirePaths.map(w => {
+                const isDCMinus = w.type === 'dc-minus';
+                const isBridge = w.type === 'field-bridge';
+                const strokeDash = isDCMinus ? '8,4' : (isBridge ? 'none' : (isAnim ? '12,6' : 'none'));
+                const strokeWidth = isBridge ? 4.5 : (isDCMinus ? 3.5 : 3.8);
+                const flowClass = isAnim ? 'flow-active' : '';
+                return `
+                    <path d="${w.d}" fill="none" stroke="${w.color}" stroke-width="${strokeWidth}" 
+                          stroke-linecap="round" stroke-linejoin="round"
+                          stroke-dasharray="${strokeDash}" class="${flowClass}">
+                        <title>${w.label}</title>
+                    </path>
+                `;
+            }).join('')}
+        </g>
+
+        <!-- ROUTEN-BADGES (WEG A & WEG B LÄNGENANZEIGE) -->
+        <g id="route-badges-layer">
+            ${routeBadges.map(rb => `
+                <g transform="translate(${rb.x}, ${rb.y})">
+                    <rect x="-65" y="-12" width="130" height="24" rx="6" fill="${rb.bgColor}" stroke="${rb.color}" stroke-width="1.4" filter="url(#wireGlow)" />
+                    <text x="0" y="4.5" fill="${rb.textColor}" font-size="9" font-weight="800" text-anchor="middle">${rb.label}</text>
+                </g>
+            `).join('')}
+        </g>
+
+        <!-- STECKREIHENFOLGE-NUMMERN (STEP BADGES AUF KABELN) -->
+        ${settings.showWireNumbers ? stepBadges.map(b => `
+            <g transform="translate(${b.x}, ${b.y})">
+                <circle cx="0" cy="0" r="${b.isBridge ? 11 : 9}" fill="#0f172a" stroke="${b.isBridge ? '#f59e0b' : stringColor}" stroke-width="2" />
+                <text x="0" y="3.5" fill="${b.isBridge ? '#fbbf24' : '#f8fafc'}" font-size="${b.isBridge ? '9' : '8.5'}" font-weight="800" text-anchor="middle">${b.step}</text>
+            </g>
+        `).join('') : ''}
     </svg>
     `;
 }
@@ -1901,10 +2036,10 @@ function renderWiringTab() {
                 </div>
 
                 <!-- Liste der aktuell platzierten Hindernisse -->
-                ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).length > 0 ? `
+                ${((wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || wiringSettings.customRoofLayouts[String(primaryStr.id)]?.obstacles || []).length > 0) ? `
                 <div class="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/40 dark:border-amber-800/30">
                     <span class="font-bold text-slate-500">Platzierte Elemente:</span>
-                    ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || []).map(ob => {
+                    ${(wiringSettings.customRoofLayouts[primaryStr.id]?.obstacles || wiringSettings.customRoofLayouts[String(primaryStr.id)]?.obstacles || []).map(ob => {
                         const fName = (primaryStr.fields && primaryStr.fields[ob.fieldIdx !== undefined ? ob.fieldIdx : 0]) ? primaryStr.fields[ob.fieldIdx !== undefined ? ob.fieldIdx : 0].name : `Feld ${(ob.fieldIdx !== undefined ? ob.fieldIdx : 0) + 1}`;
                         return `
                         <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-700 dark:text-slate-300 shadow-2xs">
