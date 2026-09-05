@@ -28,13 +28,15 @@ const HandbuchHTML = `
         </button>
         <div id="acc_ht1b" class="acc-content px-5 pb-5 text-sm text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800">
             <p class="mt-4"><strong>Interaktiver Schaltplan:</strong> Im Tab "Verkabelung" siehst du die exakte Verlege- und Steckreihenfolge aller Solarmodule deines Strings. Jedes Modul zeigt seine Polarität (+ in Rot, - in Schwarz) sowie die MC4-Kupplungen.</p>
+            <p class="mt-2"><strong>Modulfelder & Zerstückelte Dächer:</strong> Du kannst Hauptdächer, Gauben und getrennte Teilflächen direkt im Verkabelungs-Tab verwalten. Für jedes Feld lassen sich Spalten, Reihen und Modultypen anpassen. Zwischen getrennten Feldern werden Verbindungskabel (Brücken) in Metern definiert.</p>
+            <p class="mt-2"><strong>4-Wege-Kabelkalkulator:</strong> Die Gesamtlänge wird transparent ermittelt: <em>Weg A (Hinweg) + Summe Brücken + Modulkabel (2 m Pauschale je Modul) + Weg B (Rückweg)</em> zzgl. 10 % Verlegereserve nach DIN VDE 0100-712.</p>
             <p class="mt-2"><strong>Verlegemethoden:</strong> Du kannst zwischen drei bewährten Montageverfahren umschalten:</p>
             <ul class="list-disc pl-5 mt-2 space-y-1">
-                <li><strong>Reißverschluss (Leap-Frog):</strong> Springt auf dem Hinweg über jedes zweite Modul (1 -> 3 -> 5...) und verbindet auf dem Rückweg die geraden Module. Minimiert Induktionsschleifen ohne langes Rückleiterkabel.</li>
+                <li><strong>Reißverschluss (Leap-Frog):</strong> Springt auf dem Hinweg über jedes zweite Modul (1 -> 3 -> 5...) und verbindet auf dem Rückweg die geraden Module. Minimiert Induktionsschleifen geometrisch auf ca. 0 m² ohne langes Rückleiterkabel.</li>
                 <li><strong>Schleifenarme Verlegung:</strong> Verbindet Module fortlaufend (1 -> 2 -> 3...), führt den Rückleiter aber im Tragschienensystem parallel zurück.</li>
                 <li><strong>Standard Daisy-Chain:</strong> Einfache Reihenschaltung mit offenem Rückleiter (nur für kleine Sonderanlagen geeignet).</li>
             </ul>
-            <p class="mt-2"><strong>Kabelverluste & Querschnitt:</strong> Gib die einfache Distanz zum Wechselrichter ein. Die App berechnet ohmsche Leitungsverluste, Spannungsabfall in Volt und Prozent nach DIN VDE 0100-712.</p>
+            <p class="mt-2"><strong>Kabelverluste & Querschnitt:</strong> Berechnet ohmsche Leitungsverluste, Spannungsabfall in Volt und Prozent sowie jährliche kWh-Verluste für 4, 6 und 10 mm² Solarkabel nach DIN VDE 0100-712.</p>
         </div>
     </div>
 
@@ -144,12 +146,15 @@ const HandbuchHTML = `
 
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
         <button onclick="toggleAcc('acc_bg4')" class="w-full p-5 text-left font-bold text-slate-800 dark:text-slate-100 flex justify-between items-center bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
-            <span class="flex items-center gap-2"><span class="material-symbols-rounded text-primary">history</span> Changelog & Versionen</span>
+            <span class="flex items-center gap-2"><span class="material-symbols-rounded text-primary">history</span> Changelog & Versionen (CHANGELOG.md & HANDBUCH.md)</span>
             <span class="material-symbols-rounded text-slate-400 transform transition-transform acc-icon">expand_more</span>
         </button>
         <div id="acc_bg4" class="acc-content px-5 pb-5 text-sm text-slate-600 dark:text-slate-300 border-t border-slate-100 dark:border-slate-800">
-            <ul class="space-y-3 mt-4">
-                <li><strong>v6.18 (Current):</strong> Neuer Tab 'Verkabelung' zur interaktiven Visualisierung von Strings, Solarmodulen und Kabelwegen. Unterstützt Reißverschluss-Verkabelung (Leap-Frog zur Leiterschleifenminimierung nach VDE 0185-305), fortlaufende Reihenschaltung mit parallelem Rückleiter, animierte Flussrichtung, konfigurierbare Dach-Matrix (Portrait/Landscape), normgerechte DC-Kabelberechnung (Spannungsabfall & Verlust in %/W/kWh für 4/6/10 mm&sup2;) sowie Montage-Stückliste für Solarteure.</li>
+            <div class="p-3 mb-3 mt-4 bg-primary/10 rounded-xl border border-primary/20 text-xs text-slate-700 dark:text-slate-300">
+                <span class="font-black text-primary">Vollständige Dokumentation als eigenständige Dateien:</span> Alle Details, mathematischen Formeln und historischen Versionen werden zusätzlich in den Dateien <code>CHANGELOG.md</code> (neueste Versionen immer ganz oben) und <code>HANDBUCH.md</code> im Hauptverzeichnis geführt.
+            </div>
+            <ul class="space-y-3 mt-2">
+                <li><strong>v6.18 (Current):</strong> Multi-Modulfelder und zerstückelte Dächer direkt im Tab 'Verkabelung' bearbeiten (Spalten, Reihen, Neigung je Teilfläche). Konfigurierbare Zwischenfeld-Brücken zur Überbrückung von Gauben und Firsten. Transparenter 4-Wege-Kabelkalkulator: Weg A (Hinweg) + Brücken + Modulkabel (2 m Pauschale) + Weg B (Rückweg) inkl. 10 % Verlegereserve nach DIN VDE 0100-712. Dachhindernisse (Gauben, Fenster, Kamine) mit Teilfeld-Zuweisung. Interaktive manuelle Zuweisung (F1-1, F1-2...), Polaritäts-Invertierung (+/-), Reißverschluss (Leap-Frog zur Leiterschleifenminimierung nach DIN EN 62305 / VDE 0185-305), Schleifenarme Verlegung, DC-Verlustanalyse für 4/6/10 mm² und Montage-Stückliste.</li>
                 <li><strong>v6.17:</strong> Material Expressive 3 (2026) Design-System. Google Material Symbols Rounded Vektor-Iconografie in der gesamten App. Adaptive Dual-Navigation (ergonomische M3 Bottom Navigation Bar auf Mobilgeräten + M3 Segmented Rail auf Desktop + animiertes M3 More Bottom Sheet). Konsistente Tonal Surfaces, zentrale Badge-Steuerung und vollständige Dark/Light-Mode Harmonisierung.</li>
                 <li><strong>v6.16:</strong> Umstellung auf reale historische 8.760h-Stundenwerte via seriescalc über den Synology Reverse Proxy. Direkte stundengenaue Auswertung mit physikalischer Präzision.</li>
                 <li><strong>v6.15:</strong> Umstellung auf dedizierten Synology PVGIS-Proxy (pvgis.mb10.org). Schnellerer & zuverlässiger Abruf ohne Drittanbieter-Timeouts.</li>
