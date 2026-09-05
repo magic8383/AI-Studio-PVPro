@@ -83,7 +83,7 @@ function generateShareCode() {
 // POST /api/share: Save config and return short code + QR Code
 app.post('/api/share', async (req, res) => {
   try {
-    const { config, name } = req.body;
+    const { config, name, origin } = req.body;
     if (!config || typeof config !== 'object') {
       return res.status(400).json({ success: false, error: 'Keine gültige Konfiguration übergeben' });
     }
@@ -93,9 +93,14 @@ app.post('/api/share', async (req, res) => {
       code = generateShareCode();
     }
 
-    const host = req.get('host') || `localhost:${PORT}`;
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const shareUrl = `${protocol}://${host}/?share=${code}`;
+    let shareUrl;
+    if (origin && typeof origin === 'string' && origin.startsWith('http')) {
+      shareUrl = `${origin.replace(/\/+$/, '')}/?share=${code}`;
+    } else {
+      const host = req.headers['x-forwarded-host'] || req.get('host') || `localhost:${PORT}`;
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+      shareUrl = `${protocol}://${host}/?share=${code}`;
+    }
 
     // Generate crisp QR-Code SVG
     const qrSvg = await QRCode.toString(shareUrl, {

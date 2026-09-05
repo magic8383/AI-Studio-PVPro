@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 7.3.0 (Hardware-Dokumentenverwaltung & Modulares Dossier)  
+**Aktuelle Version:** 7.4.0 (Mobile-Sync QR & Vollbild-Schaltplan Fix)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -16,6 +16,7 @@
    Bevor irgendeine Code-Datei angefasst wird, MUSS dieser Leitfaden konsultiert werden.
 2. **Versionierungs-Pflicht nach JEDER Änderung:**  
    Nach **jeder** funktionalen oder architektonischen Anpassung **MUSS zwingend eine neue Version angelegt werden** (Semantic Versioning: `MAJOR.MINOR.PATCH`). Ein Stillstand der Versionsnummer bei Code-Änderungen ist untersagt.
+   * **Kopfzeilen-Synchronisation:** Die in der App-Kopfzeile sichtbare Versionsnummer (`#app-header-version` in `index.html` sowie im Starter in `app.js`) **MUSS** bei jedem Versionswechsel zwingend synchron mitgeführt und aktualisiert werden.
 3. **Changelog-Synchronisationspflicht:**  
    Zu jeder neuen Version **MUSS** parallel der `CHANGELOG.md` aktualisiert werden.  
    **Strikte Regel:** Die neuesten Versionen stehen **IMMER ganz oben** (chronologisch absteigend).  
@@ -33,7 +34,8 @@ Um unkontrolliertes Anwachsen von Monolithen zu verhindern, ist die Codebasis mo
 
 | Datei / Modul | Primäre Verantwortung |
 |---|---|
-| `index.html` | Semantisches DOM-Gerüst, App-Shell, M3 Header, adaptive Navigation, Vollbild-Modal & globale CSS-Klassen. |
+| `index.html` | Semantisches DOM-Gerüst, App-Shell, M3 Header (inkl. dynamischer Version `#app-header-version`), adaptive Navigation, Vollbild-Modal & globale CSS-Klassen. |
+| `qrcode.client.js` | Autarke Client-seitige Vektor-QR-Code-Engine (Zero-Dependency SVG-Rendering für Offline- & Mobil-Sync). |
 | `app.js` | Kern-Orchestrierung, reaktiver State, Physik- & MPP-Prüfung, 8.760h PVGIS-Simulation, Finanzen, Cross-Device Sync & QR-Transfer. |
 | `wiring.js` | **DC-Verkabelungs-Engine:** Interaktiver Schaltplan, Reißverschluss-Verfahren (Leap-Frog nach DIN EN 62305-3), Dachhindernisse (Gauben/Fenster), Mehrfeld-Dächer, VDE 0100-712 Leitungsrechnung & Vollbild-Viewer mit Zoom/Pan/Rotation. |
 | `dossier.js` | **Druck- & PDF-Dossier-Engine:** Vollständige, normgerechte Dokumentation (Anlagenpass, String-Verifikation, SVG-Schaltplan, Kabelberechnung, Stückliste, 20-Jahres-ROI & DIN VDE 0100-712 Inbetriebnahmeprotokoll). |

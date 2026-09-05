@@ -1,7 +1,8 @@
-const CACHE_NAME = 'pvpro-cache-v7.3.0';
+const CACHE_NAME = 'pvpro-cache-v7.4.0';
 const STATIC_ASSETS = [
     './',
     './index.html',
+    './qrcode.client.js',
     './app.js',
     './wiring.js',
     './dossier.js',

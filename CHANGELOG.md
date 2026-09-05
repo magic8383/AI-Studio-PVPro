@@ -4,7 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
-## [Version 7.3.0] – 2026-09-05
+## [Version 7.4.0] – 2026-09-05
+
+### 🚀 Debugging & Optimierung: Mobile-Sync QR-Code & Vollbild-Schaltplan
+
+#### 1. Behebung des Mobile-Sync Offline-Bugs (`app.js`, `qrcode.client.js`, `index.html`)
+* **Autarke Client-seitige QR-Code-Engine:**
+  - Bereitstellung und Einbindung von `qrcode.client.js` als Standalone-Client-Bundle.
+  - Dadurch funktioniert die Vektor-QR-Code-Generierung nun 100% autark im Browser – selbst im Offline-Modus, bei instabiler Mobilfunkverbindung oder ohne Serverzugriff.
+* **Verlässliche QR-Code- & Zahlencode-Anzeige:**
+  - Der QR-Code und der 6-stellige Transfercode (z.B. `PV-8RC6` bzw. Prüfsummen-Code im autarken Modus) werden nun in jedem Fall angezeigt und ersetzen den reinen JSON-Fallback.
+  - Nahtloser Direkttransfer via URL-Hash (`#config=...`) mit Unicode-sicherer Base64-Kodierung, der beim Scannen mit der nativen Smartphone-Kamera sofort die vollständige Planung lädt.
+* **Server-Sync-Robustheit (`server.js`):**
+  - Korrektur der URL-Generierung im `/api/share`-Endpunkt zur Berücksichtigung des Client-Origins (`window.location.origin`) und Reverse-Proxy-Headern (`x-forwarded-host`, `x-forwarded-proto`).
+
+#### 2. Behebung der Schwarz-Darstellung im Vollbild-Schaltplan (`wiring.js`)
+* **Explizite SVG-Dimensionierung:**
+  - `generateStringWiringSvg` weist dem `<svg>` nun explizite `width`- und `height`-Attribute entsprechend der Canvas-Geometrie zu.
+  - In `renderWiringFullscreenContent` werden explizite Pixelabmessungen auf dem SVG-Element und dem `#fs-stage`-Container gesetzt, wodurch ein 0x0-Kollabieren innerhalb der absoluten flexiblen Vollbildbühne verhindert wird.
+* **Synchroner Bounding-Box-Fit (`fsFitToScreen`):**
+  - `fsFitToScreen` berechnet den optimalen Skalierungsfaktor jetzt anhand der tatsächlichen geometrischen Bounding-Box (auch unter 90°-Drehung).
+  - Beim Öffnen der Großansicht wird eine Doppel-Pass-Kalkulation (`requestAnimationFrame` + Timeout) ausgeführt, die sicherstellt, dass der Schaltplan sofort scharf, zentriert und vollständig sichtbar gerendert wird.
+
+#### 3. Dynamische Versionsanzeige in der App-Kopfzeile & Guidelines (`index.html`, `app.js`, `DEVELOPMENT_GUIDELINES.md`)
+* **Kopfzeilen-Synchronisation:**
+  - Die Kopfzeile in `index.html` führt nun das Element `<span id="app-header-version">Pro 7.4</span>`, welches zusätzlich beim Start in `initDatabase()` dynamisch validiert wird.
+* **Entwicklungs-Richtlinien:**
+  - `DEVELOPMENT_GUIDELINES.md` wurde um eine explizite Anweisung ergänzt, bei jedem Versions-Bump stets auch die Kopfzeile der App (`#app-header-version`) synchron zu aktualisieren.
+
+---
 
 ### 📑 Neu: Hardware-Dokumentenverwaltung & Modulare Dossier-Ausgabe
 

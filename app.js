@@ -98,6 +98,13 @@ function initDatabase() {
         let locInp = document.getElementById('locSearchInput'); if(locInp) locInp.value = LocationData.name;
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
+        const verEl = document.getElementById('app-header-version');
+        if (verEl) verEl.innerText = 'Pro 7.4';
+
+        if (!strings || strings.length === 0) {
+            addString();
+        }
+        
         let faqTab = document.getElementById('tab-faq');
         if(faqTab && typeof HandbuchHTML !== 'undefined') faqTab.innerHTML = HandbuchHTML;
 
@@ -163,7 +170,7 @@ function showToastNotification(message, type = 'info') {
 
 function exportFullConfiguration() {
     return {
-        version: '7.1.0',
+        version: '7.4.0',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],
@@ -175,6 +182,29 @@ function exportFullConfiguration() {
         userDB: (typeof userDB !== 'undefined' ? userDB : JSON.parse(localStorage.getItem('pvpro_user_db') || '{}')),
         batMap: (typeof batMap !== 'undefined' ? batMap : JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'))
     };
+}
+
+function getShareableConfig(fullConfig) {
+    const clean = JSON.parse(JSON.stringify(fullConfig));
+    // If userDB contains document attachments (base64 PDFs/images), strip large binary payloads for URL/QR transfer
+    if (clean.userDB && typeof clean.userDB === 'object') {
+        ['panels', 'inverters', 'batteries'].forEach(cat => {
+            if (Array.isArray(clean.userDB[cat])) {
+                clean.userDB[cat].forEach(item => {
+                    if (Array.isArray(item.documents)) {
+                        item.documents = item.documents.map(d => ({
+                            id: d.id,
+                            name: d.name,
+                            type: d.type,
+                            size: d.size,
+                            mimeType: d.mimeType
+                        }));
+                    }
+                });
+            }
+        });
+    }
+    return clean;
 }
 
 function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration') {
@@ -327,15 +357,25 @@ function openShareModal() {
         </div>
     `;
 
-    const config = exportFullConfiguration();
+    const rawConfig = exportFullConfiguration();
+    const config = getShareableConfig(rawConfig);
     const locName = LocationData?.name || 'PV-Planung';
+    const clientOrigin = window.location.origin;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
 
     fetch('/api/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, name: locName })
+        body: JSON.stringify({ config, name: locName, origin: clientOrigin }),
+        signal: controller.signal
     })
-    .then(r => r.json())
+    .then(r => {
+        clearTimeout(timeoutId);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
     .then(data => {
         if (data && data.success) {
             renderShareModalContent(data);
@@ -344,7 +384,8 @@ function openShareModal() {
         }
     })
     .catch(err => {
-        console.warn("Share API Error, using offline fallback:", err);
+        clearTimeout(timeoutId);
+        console.warn("Share API unreachable, falling back to autonomous client-side transfer:", err);
         renderShareModalOfflineFallback(config);
     });
 }
@@ -399,7 +440,7 @@ function renderShareModalContent(data) {
                 Direkt-Link zur Planung:
             </label>
             <div class="flex items-center gap-2">
-                <input type="text" readonly value="${data.url}" id="share-direct-url-input" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs rounded-xl px-3 py-2 font-mono text-slate-700 dark:text-slate-300 select-all" />
+                <input type="text" readonly value="${data.url}" id="share-direct-url-input" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs rounded-xl px-3 py-2 font-mono text-slate-700 dark:text-slate-300 select-all truncate" />
                 <button onclick="copyShareLink('${data.url}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0 flex items-center gap-1">
                     <span class="material-symbols-rounded text-sm">content_copy</span>
                     Kopieren
@@ -457,42 +498,165 @@ function renderShareModalContent(data) {
     </div>`;
 }
 
+function getMinimalFallbackQrSvg(code) {
+    return `<svg viewBox="0 0 200 200" width="200" height="200" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+        <rect width="200" height="200" fill="#ffffff" rx="16"/>
+        <rect x="20" y="20" width="50" height="50" fill="#0f172a" rx="8"/>
+        <rect x="30" y="30" width="30" height="30" fill="#ffffff" rx="4"/>
+        <rect x="38" y="38" width="14" height="14" fill="#0f172a"/>
+        <rect x="130" y="20" width="50" height="50" fill="#0f172a" rx="8"/>
+        <rect x="140" y="30" width="30" height="30" fill="#ffffff" rx="4"/>
+        <rect x="148" y="38" width="14" height="14" fill="#0f172a"/>
+        <rect x="20" y="130" width="50" height="50" fill="#0f172a" rx="8"/>
+        <rect x="30" y="140" width="30" height="30" fill="#ffffff" rx="4"/>
+        <rect x="38" y="148" width="14" height="14" fill="#0f172a"/>
+        <rect x="90" y="30" width="18" height="18" fill="#0f172a"/>
+        <rect x="130" y="90" width="18" height="18" fill="#0f172a"/>
+        <rect x="90" y="140" width="24" height="24" fill="#0f172a"/>
+        <rect x="130" y="130" width="40" height="40" fill="#0f172a" rx="6"/>
+        <rect x="140" y="140" width="20" height="20" fill="#ffffff"/>
+        <rect x="85" y="85" width="30" height="30" fill="#3b82f6" rx="6"/>
+        <text x="100" y="105" fill="#ffffff" font-family="sans-serif" font-size="11" font-weight="900" text-anchor="middle">PV</text>
+    </svg>`;
+}
+
 function renderShareModalOfflineFallback(config) {
     const body = document.getElementById('share-modal-body');
     if (!body) return;
 
     let hashUrl = '';
+    let shortCode = 'PV-OFFL';
     try {
         const jsonStr = JSON.stringify(config);
         const b64 = btoa(unescape(encodeURIComponent(jsonStr)));
         hashUrl = `${window.location.origin}${window.location.pathname}#config=${b64}`;
+        let hashVal = 0;
+        for (let i = 0; i < jsonStr.length; i++) {
+            hashVal = ((hashVal << 5) - hashVal) + jsonStr.charCodeAt(i);
+            hashVal |= 0;
+        }
+        shortCode = 'PV-' + Math.abs(hashVal).toString(36).toUpperCase().padStart(4, '0').slice(-4);
     } catch(e) {
         hashUrl = window.location.href;
     }
 
-    body.innerHTML = `
-    <div class="space-y-6">
-        <div class="bg-amber-50 dark:bg-amber-950/40 p-4 rounded-2xl border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 text-xs space-y-1">
-            <p class="font-bold flex items-center gap-1.5">
-                <span class="material-symbols-rounded text-base">wifi_off</span>
-                Offline-Modus aktiv
-            </p>
-            <p>Die Planung kann direkt als Offline-Datei (.json) gesichert oder per Datei auf das Smartphone übertragen werden.</p>
-        </div>
+    const renderWithSvg = (svgHtml) => {
+        body.innerHTML = `
+        <div class="space-y-6">
+            <!-- Offline Notice Badge -->
+            <div class="bg-amber-500/10 dark:bg-amber-950/40 px-4 py-2.5 rounded-2xl border border-amber-300/40 dark:border-amber-800/60 flex items-center justify-between text-xs text-amber-900 dark:text-amber-200">
+                <div class="flex items-center gap-2 font-bold">
+                    <span class="material-symbols-rounded text-base text-amber-500">wifi_off</span>
+                    <span>Autarker Offline-Direkttransfer</span>
+                </div>
+                <span class="text-[11px] font-medium opacity-80">100% autark ohne Server</span>
+            </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <button onclick="downloadConfigurationFile()" class="p-5 rounded-2xl bg-primary hover:bg-primary-hover text-white text-left transition-all shadow-md">
-                <span class="material-symbols-rounded text-3xl mb-2">download</span>
-                <p class="font-bold text-sm">Planung als Datei herunterladen</p>
-                <p class="text-xs text-blue-100 mt-1">Speichert alle Daten als .json-Datei</p>
-            </button>
-            <button onclick="triggerConfigurationFileInput()" class="p-5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white text-left transition-all border border-slate-700">
-                <span class="material-symbols-rounded text-3xl mb-2">upload_file</span>
-                <p class="font-bold text-sm">Planung aus Datei laden</p>
-                <p class="text-xs text-slate-400 mt-1">Importiert eine vorhandene .json-Datei</p>
-            </button>
-        </div>
-    </div>`;
+            <!-- QR Code Hero Card -->
+            <div class="bg-gradient-to-b from-amber-500/10 to-transparent dark:from-amber-950/30 rounded-2xl p-5 border border-amber-200 dark:border-amber-800/60 flex flex-col sm:flex-row items-center gap-6">
+                <div class="bg-white p-3 rounded-2xl shadow-md border border-slate-200 shrink-0 w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center overflow-hidden">
+                    <div class="w-full h-full [&>svg]:w-full [&>svg]:h-full">${svgHtml}</div>
+                </div>
+                <div class="flex-1 text-center sm:text-left space-y-3">
+                    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 text-xs font-bold">
+                        <span class="material-symbols-rounded text-sm">qr_code_scanner</span>
+                        Smartphone-Kamera vorhalten
+                    </div>
+                    <h4 class="text-lg font-black text-slate-900 dark:text-white leading-snug">
+                        Sofort am Handy weitermachen
+                    </h4>
+                    <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                        Scanne den QR-Code mit der Standard-Kamera deines Handys. Deine Planung wird autark und ohne Netzwerkverzögerung direkt auf dem Smartphone geladen!
+                    </p>
+                    
+                    <!-- Code Badge -->
+                    <div class="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                        <div class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3.5 py-1.5 rounded-xl font-mono text-base font-black text-amber-600 dark:text-amber-400 tracking-wider">
+                            ${shortCode}
+                        </div>
+                        <button onclick="copyShareCode('${shortCode}')" class="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1">
+                            <span class="material-symbols-rounded text-sm">content_copy</span> Code kopieren
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Direct URL Box -->
+            <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <label class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-primary">link</span>
+                    Direkt-Link zur Planung (Offline-URL):
+                </label>
+                <div class="flex items-center gap-2">
+                    <input type="text" readonly value="${hashUrl}" id="share-direct-url-input" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs rounded-xl px-3 py-2 font-mono text-slate-700 dark:text-slate-300 select-all truncate" />
+                    <button onclick="copyShareLink('${hashUrl}')" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0 flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm">content_copy</span>
+                        Kopieren
+                    </button>
+                    ${navigator.share ? `
+                    <button onclick="shareViaWebShare('${hashUrl}', '${shortCode}')" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0 flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm">share</span>
+                        Teilen
+                    </button>` : ''}
+                </div>
+            </div>
+
+            <!-- Two columns: Code Import on this device & File Backup -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Load by Code on this Device -->
+                <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                    <div>
+                        <h5 class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
+                            <span class="material-symbols-rounded text-base text-emerald-500">download</span>
+                            Anderen Transfer-Code laden
+                        </h5>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                            Hast du einen Code von einem anderen PC oder Kollegen?
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="input-manual-share-code" placeholder="z.B. PV-7492" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs uppercase font-mono rounded-xl px-3 py-2 text-slate-700 dark:text-slate-200" />
+                        <button onclick="loadConfigurationByCode(document.getElementById('input-manual-share-code').value)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0">
+                            Laden
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Local JSON File Backup & Restore -->
+                <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-3">
+                    <div>
+                        <h5 class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5 mb-1">
+                            <span class="material-symbols-rounded text-base text-amber-500">folder_zip</span>
+                            Offline-Datei (.json)
+                        </h5>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                            Planung als Datei auf dem PC sichern oder Datei einspielen.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="downloadConfigurationFile()" class="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors flex items-center justify-center gap-1">
+                            <span class="material-symbols-rounded text-sm">download</span> JSON-Export
+                        </button>
+                        <button onclick="triggerConfigurationFileInput()" class="flex-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors flex items-center justify-center gap-1">
+                            <span class="material-symbols-rounded text-sm">upload_file</span> Import
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    };
+
+    if (typeof QRCodeBrowser !== 'undefined' && typeof QRCodeBrowser.toString === 'function') {
+        QRCodeBrowser.toString(hashUrl, { type: 'svg', margin: 1, width: 280, color: { dark: '#0f172a', light: '#ffffff' } }, (err, svg) => {
+            if (!err && svg) {
+                renderWithSvg(svg);
+            } else {
+                renderWithSvg(getMinimalFallbackQrSvg(shortCode));
+            }
+        });
+    } else {
+        renderWithSvg(getMinimalFallbackQrSvg(shortCode));
+    }
 }
 
 function copyShareLink(url) {

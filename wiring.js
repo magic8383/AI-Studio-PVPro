@@ -932,7 +932,7 @@ function generateStringWiringSvg(str, settings) {
     `;
 
     return `
-    <svg viewBox="0 0 ${totalCanvasW} ${totalCanvasH}" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="0 0 ${totalCanvasW} ${totalCanvasH}" width="${totalCanvasW}" height="${totalCanvasH}" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
         <defs>
             <pattern id="wiringGrid" width="20" height="20" patternUnits="userSpaceOnUse">
                 <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#334155" stroke-width="0.5" opacity="0.25" />
@@ -2322,10 +2322,11 @@ function openWiringFullscreen(strId) {
 
     renderWiringFullscreenContent();
     
-    // Auto-fit to screen on opening
-    setTimeout(() => {
+    // Auto-fit to screen on opening with dual pass to ensure correct DOM metrics
+    requestAnimationFrame(() => {
         fsFitToScreen();
-    }, 60);
+        setTimeout(fsFitToScreen, 100);
+    });
 }
 
 function closeWiringFullscreen() {
@@ -2340,7 +2341,9 @@ function closeWiringFullscreen() {
 function fsSwitchString(strId) {
     fsWiringState.stringId = Number(strId);
     renderWiringFullscreenContent();
-    fsFitToScreen();
+    requestAnimationFrame(() => {
+        fsFitToScreen();
+    });
 }
 
 function renderWiringFullscreenContent() {
@@ -2407,6 +2410,28 @@ function renderWiringFullscreenContent() {
     if (stage) {
         const svgContent = generateStringWiringSvg(s, wiringSettings);
         stage.innerHTML = svgContent;
+        const svg = stage.querySelector('svg');
+        if (svg) {
+            let vb = svg.viewBox?.baseVal;
+            let w = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || 1200);
+            let h = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || 700);
+
+            // Set explicit dimensions so SVG does not collapse to 0x0 inside absolute container
+            svg.setAttribute('width', w);
+            svg.setAttribute('height', h);
+            svg.style.width = `${w}px`;
+            svg.style.height = `${h}px`;
+            svg.style.minWidth = `${w}px`;
+            svg.style.minHeight = `${h}px`;
+            svg.style.maxWidth = 'none';
+            svg.style.maxHeight = 'none';
+            svg.style.display = 'block';
+
+            stage.style.width = `${w}px`;
+            stage.style.height = `${h}px`;
+            stage.style.minWidth = `${w}px`;
+            stage.style.minHeight = `${h}px`;
+        }
     }
 
     applyFsTransform();
@@ -2424,21 +2449,21 @@ function fsFitToScreen() {
     const vpH = viewport.clientHeight || window.innerHeight;
 
     let vb = svg.viewBox?.baseVal;
-    let svgW = (vb && vb.width > 0) ? vb.width : 1000;
-    let svgH = (vb && vb.height > 0) ? vb.height : 600;
+    let svgW = (vb && vb.width > 0) ? vb.width : (parseFloat(svg.getAttribute('width')) || parseFloat(stage.style.width) || 1200);
+    let svgH = (vb && vb.height > 0) ? vb.height : (parseFloat(svg.getAttribute('height')) || parseFloat(stage.style.height) || 700);
 
     const isRot = (fsWiringState.rotation % 180 !== 0);
     const effW = isRot ? svgH : svgW;
     const effH = isRot ? svgW : svgH;
 
-    const availW = Math.max(100, vpW - 32);
-    const availH = Math.max(100, vpH - 80); // leave room for mobile bottom bar
+    const availW = Math.max(100, vpW - 48);
+    const availH = Math.max(100, vpH - 130); // leave room for top bar & mobile thumb bar
 
     const scaleX = availW / effW;
     const scaleY = availH / effH;
     const fitScale = Math.min(scaleX, scaleY);
 
-    fsWiringState.scale = Math.min(3.0, Math.max(0.15, fitScale));
+    fsWiringState.scale = Math.min(3.0, Math.max(0.12, fitScale));
     fsWiringState.panX = 0;
     fsWiringState.panY = 0;
     applyFsTransform();
