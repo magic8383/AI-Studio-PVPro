@@ -4,7 +4,46 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
-## [Version 7.5.1] – 2026-09-05
+## [Version 7.6.0] – 2026-09-07
+
+### 🎯 Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung
+
+#### 1. VDE-Dossier-Optimierung & Detaillierte Komponentenspezifikation (`dossier.js`, `index.html`)
+* **Neue Fach-Sektion 2: „Verbaute Systemkomponenten & Technische Spezifikationen“:**
+  - Normgerechte Dokumentation aller sicherheits- und leistungskritischen Kenngrößen nach **DIN EN 62446-1** und **DIN VDE 0100-712**:
+    - **Solarmodule:** N-Type ABC Dual-Glass, 2.0 mm Doppelglas (Brandschutzklasse A), Wirkungsgrad $\ge 23,1\,\%$, Temperaturkoeffizient Pmax ($-0,26\,\%/^\circ\text{C}$), Umpp / Impp STC, mechanische Belastbarkeit (5400 Pa Schnee / 2400 Pa Wind), 25/30 Jahre Leistungsgarantie.
+    - **Hybrid-Wechselrichter:** 3-phasig trafolos, MPP-Spannungsbereich (174 V – 800 V), max. DC-Eingangsspannung 1.000 V DC, Europ. Wirkungsgrad $\ge 97,9\,\%$, integrierter PV Point / Full Backup Notstrom, aktive Drehzahlkühlung, Schutzart IP66, WLAN/LAN/Modbus.
+    - **Hochvolt-Batteriespeicher:** Lithium-Eisenphosphat (LiFePO4, kobaltfrei), 100 % nutzbare Entladetiefe (DoD), modulare Erweiterbarkeit, $\ge 6.000$ Zyklen, VDE-AR-E 2510-50 zertifiziert.
+    - **DC-Leitungstechnik & Schutz:** Doppelt isolierte H1Z2Z2-K 6 mm² Solarkabel (DIN EN 50618), Stäubli MC4-Evo2 Steckverbinder (1500 V DC, IP68), 16 mm² Cu Potentialausgleich und geometrische Leiterschleifenminimierung via Leapfrog-Verfahren.
+  - Optionale Steuerung in der Dossier-Kopfleiste über die neue Checkbox `[x] Komponenten`.
+  - Kompakte Komponentenübersicht im 1-Seiten-Kurzreport zur schnellen Kunden- und Bauherrenvorlage.
+* **Ganzseitiges Querformat (A4 Landscape) für den DC-Schaltplan (`wiringLandscape`):**
+  - Dedizierte `@page landscape-section { size: A4 landscape; margin: 10mm; }` und Print-Klasse `.dossier-landscape-page`.
+  - Schaltet den hochauflösenden SVG-Vektorplan bei Ausdruck und PDF-Export automatisch in ein vollformatiges A4-Querformat, wodurch auch breite Mehrfeld-Anlagen ohne Detailverlust oder Stauchung lesbar bleiben.
+  - Interaktiver Umschalter `📐 Querformat Schaltplan` in der Dossier-Werkzeugleiste mit Live-Breitenanpassung der Vorschau (`max-w-6xl`).
+* **Seitenumbruch-Optimierung:**
+  - Tabellen und Fachsektionen sind mit `avoid-break` (`page-break-inside: avoid; break-inside: avoid;`) gegen störendes Durchtrennen im Druckbild abgesichert.
+
+#### 2. Freie Modulfeldanordnung & Dynamische SVG-Geometrie (`wiring.js`)
+* **Flexible Teilfeld-Platzierung:**
+  - Zusätzliche Felder (Gauben, Nebendächer, Carports, Traufstreifen) können jetzt wahlweise **Rechts daneben**, **Unterhalb** oder **Frei versetzt** positioniert werden (`customFieldPositions`).
+  - Feineinstellung jedes Teilfelds über Nudge-Pfeiltasten (◀ ▶ ▲ ▼) und Reset-Button direkt in der Modulfeld-Konfigurationskarte.
+* **Dynamische Bounding-Box & ViewBox-Kalkulation:**
+  - Der SVG-Schaltplan errechnet automatisch die minimale und maximale Ausdehnung (`minCanvasX`, `minCanvasY`, `maxCanvasX`, `maxCanvasY`) aller frei platzierten Module.
+  - Vollständige Vermeidung von abgeschnittenen Modulrändern; automatische Ausrichtung der String-Einspeisepunkte (Minus- und Plus-Leitungen zum WR).
+* **Flüssige Bézier-Kabelbrücken:**
+  - Zwischenfeld-Verbindungskabel passen ihren Bézier-Steuerpfad automatisch an die relative Lage der Felder an (horizontale oder vertikale S-Kurvenführung).
+
+#### 3. Erhöhte Zuverlässigkeit bei Cross-Device Sync & Sharing (`app.js`, `server.js`)
+* **Prefix-Toleranz bei Transfer-Codes:**
+  - Automatische Bereinigung und Normalisierung von Codes (akzeptiert `8RC6`, `pv-8rc6`, `PV-8RC6`).
+* **Zweistufiges Caching:**
+  - Synchrone Verfügbarkeit geteilter Konfigurationen über LocalStorage und In-Memory-Speicher garantiert sofortigen Abruf ohne Netzwerklatenz.
+
+#### 4. Vollständige Versionssynchronisation
+* Synchronisation aller Versionstags auf **7.6.0** in `package.json`, `index.html` (Title, og:title, `#app-header-version`, Script-Tags `?v=7.6.0`), `sw.js` (`pvpro-cache-v7.6.0`), `DEVELOPMENT_GUIDELINES.md`, `content.js` und `CHANGELOG.md`.
+
+---
 
 ### 🎯 Vollbild-Schaltplan Fix & Spannungsabfall-Harmonisierung
 

@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.5.1';
+        if (verEl) verEl.innerText = 'Pro 7.6.0';
 
         if (!strings || strings.length === 0) {
             addString();
@@ -170,7 +170,7 @@ function showToastNotification(message, type = 'info') {
 
 function exportFullConfiguration() {
     return {
-        version: '7.4.0',
+        version: '7.6.0',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],
@@ -402,8 +402,26 @@ function renderShareModalContent(data) {
     const body = document.getElementById('share-modal-body');
     if (!body) return;
 
+    try {
+        localStorage.setItem('pvpro_local_share_' + data.code, JSON.stringify(data));
+        let history = JSON.parse(localStorage.getItem('pvpro_shares_history') || '[]');
+        if (!history.find(h => h.code === data.code)) {
+            history.unshift({ code: data.code, name: data.name, date: new Date().toISOString() });
+            localStorage.setItem('pvpro_shares_history', JSON.stringify(history.slice(0, 10)));
+        }
+    } catch(e) {}
+
     body.innerHTML = `
     <div class="space-y-6">
+        <!-- Info Banner explaining the mechanisms -->
+        <div class="bg-indigo-50/80 dark:bg-indigo-950/40 p-3.5 rounded-2xl border border-indigo-200 dark:border-indigo-800 text-xs flex items-start gap-2.5">
+            <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 text-lg shrink-0 mt-0.5">info</span>
+            <div class="flex-1 text-slate-700 dark:text-slate-300">
+                <span class="font-extrabold text-slate-900 dark:text-white">Wie funktioniert der Transfer?</span>
+                Der Code <strong class="font-mono text-indigo-600 dark:text-indigo-400">${data.code}</strong> wird auf dem Server bereitgestellt. Alternativ kannst du jederzeit unten die <strong class="text-indigo-600 dark:text-indigo-400">JSON-Datei</strong> herunterladen oder den autarken Offline-Modus nutzen.
+            </div>
+        </div>
+
         <!-- QR Code Hero Card -->
         <div class="bg-gradient-to-b from-indigo-500/10 to-transparent dark:from-indigo-950/30 rounded-2xl p-5 border border-indigo-200 dark:border-indigo-800/60 flex flex-col sm:flex-row items-center gap-6">
             <div class="bg-white p-3 rounded-2xl shadow-md border border-slate-200 shrink-0 w-48 h-48 sm:w-52 sm:h-52 flex items-center justify-center overflow-hidden">
@@ -418,12 +436,12 @@ function renderShareModalContent(data) {
                     Sofort am Handy weitermachen
                 </h4>
                 <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Öffne einfach die Standard-Kamera deines Smartphones (iPhone / Android) und scanne diesen QR-Code. Sämtliche Strings, Dächer, Ertragsberechnungen und Kabelwege werden sofort geladen!
+                    Öffne die Kamera deines Smartphones (iPhone / Android) und scanne diesen QR-Code. Sämtliche Strings, Module, Wechselrichter und Kabelwege werden direkt geöffnet.
                 </p>
                 
                 <!-- Code Badge -->
                 <div class="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                    <div class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3.5 py-1.5 rounded-xl font-mono text-base font-black text-indigo-600 dark:text-indigo-400 tracking-wider">
+                    <div class="bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 px-3.5 py-1.5 rounded-xl font-mono text-base font-black text-indigo-600 dark:text-indigo-400 tracking-wider select-all">
                         ${data.code}
                     </div>
                     <button onclick="copyShareCode('${data.code}')" class="px-3 py-1.5 rounded-xl bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-xs font-bold text-slate-700 dark:text-slate-200 transition-colors flex items-center gap-1">
@@ -463,11 +481,11 @@ function renderShareModalContent(data) {
                         Anderen Transfer-Code laden
                     </h5>
                     <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                        Hast du einen Code von einem anderen PC oder Kollegen?
+                        Gib den 6-stelligen Code (z. B. ${data.code}) ein, um eine Planung abzurufen.
                     </p>
                 </div>
                 <div class="flex items-center gap-2">
-                    <input type="text" id="input-manual-share-code" placeholder="z.B. PV-7492" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs uppercase font-mono rounded-xl px-3 py-2 text-slate-700 dark:text-slate-200" />
+                    <input type="text" id="input-manual-share-code" placeholder="z.B. ${data.code}" class="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs uppercase font-mono rounded-xl px-3 py-2 text-slate-700 dark:text-slate-200" />
                     <button onclick="loadConfigurationByCode(document.getElementById('input-manual-share-code').value)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl transition-colors shrink-0">
                         Laden
                     </button>
@@ -482,7 +500,7 @@ function renderShareModalContent(data) {
                         Offline-Datei (.json)
                     </h5>
                     <p class="text-[11px] text-slate-500 dark:text-slate-400">
-                        Planung als Datei auf dem PC sichern oder Datei einspielen.
+                        Dauerhafte Sicherung als Datei auf dem PC sichern oder einspielen.
                     </p>
                 </div>
                 <div class="flex items-center gap-2">
@@ -749,20 +767,46 @@ async function loadConfigurationByCode(code) {
         return;
     }
     const cleanCode = code.trim().toUpperCase();
+    const normalizedCode = cleanCode.startsWith('PV-') ? cleanCode : `PV-${cleanCode}`;
+
+    // 1. Check local storage cache first
     try {
-        showToastNotification(`Suche Code ${cleanCode}...`, 'info');
-        const res = await fetch(`/api/share/${encodeURIComponent(cleanCode)}`);
+        const localCached = localStorage.getItem('pvpro_local_share_' + normalizedCode) || localStorage.getItem('pvpro_local_share_' + cleanCode);
+        if (localCached) {
+            const data = JSON.parse(localCached);
+            if (data && (data.config || data.strings)) {
+                importFullConfiguration(data.config || data, `Code ${normalizedCode} (Lokal)`);
+                closeShareModal();
+                showToastNotification(`Planung aus Zwischenspeicher geladen (${normalizedCode})`, 'success');
+                return;
+            }
+        }
+    } catch (e) {
+        console.warn('Local share cache read error:', e);
+    }
+
+    // 2. Fetch from server
+    try {
+        showToastNotification(`Suche Code ${normalizedCode}...`, 'info');
+        const res = await fetch(`/api/share/${encodeURIComponent(normalizedCode)}`);
         if (res.ok) {
             const data = await res.json();
             if (data && data.config) {
-                importFullConfiguration(data.config, `Code ${cleanCode}`);
+                try {
+                    localStorage.setItem('pvpro_local_share_' + normalizedCode, JSON.stringify(data));
+                } catch(e) {}
+                importFullConfiguration(data.config, `Code ${normalizedCode}`);
                 closeShareModal();
+                showToastNotification(`Planung erfolgreich vom Server geladen (${normalizedCode})`, 'success');
+                return;
             }
-        } else {
-            showToastNotification(`Code ${cleanCode} nicht gefunden oder abgelaufen.`, 'error');
         }
+        
+        // Not found or expired on server
+        showToastNotification(`Code ${normalizedCode} nicht auf dem Server gefunden oder abgelaufen. Nutze für geräteübergreifenden Transfer bitte den QR-Code oder die JSON-Datei!`, 'error');
     } catch (err) {
-        showToastNotification('Verbindungsfehler beim Laden des Codes.', 'error');
+        console.error('Fetch error for code:', err);
+        showToastNotification('Verbindungsfehler zum Server. Für Offline-Transfer nutze bitte den Direkt-QR-Code oder JSON.', 'error');
     }
 }
 

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.5.1 (Vollbild-Schaltplan Fix & Spannungsabfall-Harmonisierung)</title>
+    <title>PV-Planung Pro 7.6.0 (Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung)</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.5.1 (Vollbild-Schaltplan Fix & Spannungsabfall-Harmonisierung)">
+    <meta property="og:title" content="PV-Planung Pro 7.6.0 (Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung)">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings -->
@@ -128,7 +128,7 @@
             .print-page {
                 page-break-after: always;
                 break-after: page;
-                padding-bottom: 12mm;
+                padding-bottom: 10mm;
             }
             .print-page:last-child {
                 page-break-after: auto;
@@ -138,9 +138,29 @@
                 page-break-inside: avoid;
                 break-inside: avoid;
             }
+            table {
+                page-break-inside: auto;
+                width: 100% !important;
+            }
+            tr {
+                page-break-inside: avoid;
+                break-inside: avoid;
+            }
             @page {
                 size: A4 portrait;
                 margin: 10mm 12mm 12mm 12mm;
+            }
+            @page landscape-section {
+                size: A4 landscape;
+                margin: 10mm 10mm 10mm 10mm;
+            }
+            .dossier-landscape-page {
+                page: landscape-section;
+                page-break-before: always;
+                break-before: page;
+                page-break-after: always;
+                break-after: page;
+                width: 100% !important;
             }
         }
         @media screen {
@@ -160,7 +180,7 @@
                         <span class="material-symbols-rounded text-xl fill-1">solar_power</span>
                     </div>
                     <div>
-                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span id="app-header-version" class="text-primary font-black">Pro 7.5.1</span></h1>
+                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span id="app-header-version" class="text-primary font-black">Pro 7.6.0</span></h1>
                         <p class="text-slate-400 text-[10px] md:text-xs mt-0.5 font-medium flex items-center gap-1">
                             <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
                             Material Expressive Architecture • VDE 0100-712 • Sync
@@ -1010,12 +1030,12 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V7.5.1 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=7.5.1"></script>
-    <script src="database.js?v=7.5.1"></script>
-    <script src="content.js?v=7.5.1"></script>
-    <script src="app.js?v=7.5.1"></script>
-    <script src="wiring.js?v=7.5.1"></script>
-    <script src="dossier.js?v=7.5.1"></script>
+    <!-- MODULARE ARCHITEKTUR V7.6.0 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=7.6.0"></script>
+    <script src="database.js?v=7.6.0"></script>
+    <script src="content.js?v=7.6.0"></script>
+    <script src="app.js?v=7.6.0"></script>
+    <script src="wiring.js?v=7.6.0"></script>
+    <script src="dossier.js?v=7.6.0"></script>
 </body>
 </html>

@@ -51,11 +51,67 @@ function loadWiringSettings() {
     }
     if (!wiringSettings.customSequences) wiringSettings.customSequences = {};
     if (!wiringSettings.customRoofLayouts) wiringSettings.customRoofLayouts = {};
+    if (!wiringSettings.customFieldPositions) wiringSettings.customFieldPositions = {};
     if (!wiringSettings.interactiveQueue) wiringSettings.interactiveQueue = [];
     if (!wiringSettings.cableWegA) wiringSettings.cableWegA = {};
     if (!wiringSettings.cableWegB) wiringSettings.cableWegB = {};
     if (!wiringSettings.fieldBridges) wiringSettings.fieldBridges = {};
     if (!wiringSettings.panelCableRate) wiringSettings.panelCableRate = 2.0;
+}
+
+function getFieldArrangement(strId, fieldIdx) {
+    if (!wiringSettings.customFieldPositions) wiringSettings.customFieldPositions = {};
+    const strCfg = wiringSettings.customFieldPositions[strId] || wiringSettings.customFieldPositions[String(strId)] || {};
+    return strCfg[fieldIdx] || { placement: (fieldIdx === 0 ? 'side' : 'side'), offsetX: 0, offsetY: 0 };
+}
+
+function setFieldPlacement(strId, fieldIdx, placement) {
+    if (!wiringSettings.customFieldPositions) wiringSettings.customFieldPositions = {};
+    if (!wiringSettings.customFieldPositions[strId]) wiringSettings.customFieldPositions[strId] = {};
+    if (!wiringSettings.customFieldPositions[strId][fieldIdx]) {
+        wiringSettings.customFieldPositions[strId][fieldIdx] = { placement: 'side', offsetX: 0, offsetY: 0 };
+    }
+    const cur = wiringSettings.customFieldPositions[strId][fieldIdx];
+    cur.placement = placement;
+    if (placement === 'side') {
+        cur.offsetX = 0;
+        cur.offsetY = 0;
+    } else if (placement === 'below') {
+        cur.offsetX = 0;
+        cur.offsetY = 0;
+    }
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function adjustFieldOffset(strId, fieldIdx, deltaX, deltaY) {
+    if (!wiringSettings.customFieldPositions) wiringSettings.customFieldPositions = {};
+    if (!wiringSettings.customFieldPositions[strId]) wiringSettings.customFieldPositions[strId] = {};
+    if (!wiringSettings.customFieldPositions[strId][fieldIdx]) {
+        wiringSettings.customFieldPositions[strId][fieldIdx] = { placement: 'offset', offsetX: 0, offsetY: 0 };
+    }
+    const cur = wiringSettings.customFieldPositions[strId][fieldIdx];
+    cur.offsetX = (cur.offsetX || 0) + deltaX;
+    cur.offsetY = (cur.offsetY || 0) + deltaY;
+    cur.placement = 'offset';
+    saveWiringSettings();
+    renderWiringTab();
+}
+
+function resetFieldOffsetSingle(strId, fieldIdx) {
+    if (wiringSettings.customFieldPositions && wiringSettings.customFieldPositions[strId] && wiringSettings.customFieldPositions[strId][fieldIdx]) {
+        delete wiringSettings.customFieldPositions[strId][fieldIdx];
+        saveWiringSettings();
+        renderWiringTab();
+    }
+}
+
+function resetAllFieldArrangements(strId) {
+    if (wiringSettings.customFieldPositions && wiringSettings.customFieldPositions[strId]) {
+        delete wiringSettings.customFieldPositions[strId];
+        saveWiringSettings();
+        renderWiringTab();
+    }
 }
 
 function getWiringWegA(strId) {
@@ -667,8 +723,30 @@ function generateStringWiringSvg(str, settings) {
 
         const boxW = Math.max(220, contentW + (padX * 2));
         const boxH = headerH + contentH + padB;
-        const boxX = curFieldX;
-        const boxY = 40;
+
+        // Freie Anordnung: Auslesen der Positionierungs-Einstellungen
+        const strFieldPositions = (settings.customFieldPositions && (settings.customFieldPositions[str.id] || settings.customFieldPositions[String(str.id)])) || {};
+        const fPos = strFieldPositions[fIdx] || { placement: (fIdx === 0 ? 'side' : 'side'), offsetX: 0, offsetY: 0 };
+
+        let boxX = curFieldX;
+        let boxY = 40;
+
+        if (fIdx === 0) {
+            boxX = curFieldX + (fPos.offsetX || 0);
+            boxY = 40 + (fPos.offsetY || 0);
+            curFieldX = boxX + boxW + fieldBridgeGap;
+        } else {
+            const firstBox = fieldContainers[0];
+            if (fPos.placement === 'below') {
+                boxX = (firstBox ? firstBox.x : curFieldX) + (fPos.offsetX || 0);
+                const lowestY = Math.max(...fieldContainers.slice(0, fIdx).map(b => b.y + b.h));
+                boxY = lowestY + 45 + (fPos.offsetY || 0);
+            } else {
+                boxX = curFieldX + (fPos.offsetX || 0);
+                boxY = 40 + (fPos.offsetY || 0);
+                curFieldX = Math.max(curFieldX + boxW + fieldBridgeGap, boxX + boxW + fieldBridgeGap);
+            }
+        }
 
         fieldContainers.push({
             fieldIdx: fIdx,
@@ -755,13 +833,25 @@ function generateStringWiringSvg(str, settings) {
                 r++;
             }
         }
-
-        curFieldX += boxW + fieldBridgeGap;
     });
 
-    const totalCanvasW = Math.max(920, curFieldX - fieldBridgeGap + 60);
-    const maxBoxH = Math.max(...fieldContainers.map(b => b.h), invHeight);
-    const totalCanvasH = Math.max(380, maxBoxH + 110);
+    let minCanvasX = Math.min(invX, ...fieldContainers.map(b => b.x));
+    let minCanvasY = Math.min(invY, ...fieldContainers.map(b => b.y), 16);
+    let maxCanvasX = Math.max(invX + invWidth, ...fieldContainers.map(b => b.x + b.w));
+    let maxCanvasY = Math.max(invY + invHeight, ...fieldContainers.map(b => b.y + b.h));
+
+    positions.forEach(p => {
+        minCanvasX = Math.min(minCanvasX, p.x);
+        minCanvasY = Math.min(minCanvasY, p.y);
+        maxCanvasX = Math.max(maxCanvasX, p.x + p.w);
+        maxCanvasY = Math.max(maxCanvasY, p.y + p.h);
+    });
+
+    const padCanvas = 36;
+    const viewBoxX = Math.floor(minCanvasX - padCanvas);
+    const viewBoxY = Math.floor(minCanvasY - padCanvas);
+    const totalCanvasW = Math.max(860, Math.ceil(maxCanvasX - minCanvasX + padCanvas * 2));
+    const totalCanvasH = Math.max(380, Math.ceil(maxCanvasY - minCanvasY + padCanvas * 2));
 
     const dcPlusTerm = { x: invX + invWidth - 10, y: invY + 70 };
     const dcMinusTerm = { x: invX + invWidth - 10, y: invY + 115 };
@@ -845,9 +935,25 @@ function generateStringWiringSvg(str, settings) {
                 // Brücke zwischen zwei Feldern!
                 const bIdx = Math.min(fromPos.fieldIdx, toPos.fieldIdx);
                 const bLen = getWiringBridgeLength(str.id, bIdx);
-                const arch = -45;
-                d = `M ${x1} ${y1} C ${x1 + 45} ${y1 + arch}, ${x2 - 45} ${y2 + arch}, ${x2} ${y2}`;
-                midY = (y1 + y2) / 2 + arch + 10;
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                const cDist = Math.max(30, Math.min(130, dist * 0.35));
+
+                let cp1x, cp1y, cp2x, cp2y;
+                if (Math.abs(dx) >= Math.abs(dy)) {
+                    cp1x = x1 + (dx >= 0 ? cDist : -cDist);
+                    cp1y = y1 - 45;
+                    cp2x = x2 - (dx >= 0 ? cDist : -cDist);
+                    cp2y = y2 - 45;
+                } else {
+                    cp1x = x1 + (dx >= 0 ? 30 : -30);
+                    cp1y = y1 + (dy >= 0 ? cDist : -cDist);
+                    cp2x = x2 - (dx >= 0 ? 30 : -30);
+                    cp2y = y2 - (dy >= 0 ? cDist : -cDist);
+                }
+                d = `M ${x1} ${y1} C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${x2} ${y2}`;
+                midY = (y1 + y2) / 2 - 15;
 
                 wirePaths.push({
                     d,
@@ -927,7 +1033,7 @@ function generateStringWiringSvg(str, settings) {
 
     // Status / Zertifikat SVG
     let loopAreaSvg = `
-        <g transform="translate(${invX + invWidth + 80}, 16)">
+        <g transform="translate(${Math.max(viewBoxX + 20, invX + invWidth + 40)}, ${viewBoxY + 16})">
             <rect width="360" height="24" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="1.2" opacity="0.95" />
             <text x="180" y="16" text-anchor="middle" fill="#6ee7b7" font-size="10.5" font-weight="700">
                 🛡️ DIN VDE 0100-712 • ${fields.length} Modulfeld${fields.length > 1 ? 'er' : ''} • ${totalPanels} Module
@@ -936,7 +1042,7 @@ function generateStringWiringSvg(str, settings) {
     `;
 
     return `
-    <svg viewBox="0 0 ${totalCanvasW} ${totalCanvasH}" width="${totalCanvasW}" height="${totalCanvasH}" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
+    <svg viewBox="${viewBoxX} ${viewBoxY} ${totalCanvasW} ${totalCanvasH}" width="100%" height="auto" class="w-full h-auto select-none rounded-2xl bg-slate-900/90 border border-slate-800 shadow-inner" xmlns="http://www.w3.org/2000/svg">
         <defs>
             <pattern id="wiringGrid" width="20" height="20" patternUnits="userSpaceOnUse">
                 <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#334155" stroke-width="0.5" opacity="0.25" />
@@ -972,7 +1078,7 @@ function generateStringWiringSvg(str, settings) {
         </defs>
 
         <!-- Blueprint Grid Hintergrund -->
-        <rect width="100%" height="100%" fill="url(#wiringGrid)" />
+        <rect x="${viewBoxX}" y="${viewBoxY}" width="${totalCanvasW}" height="${totalCanvasH}" fill="url(#wiringGrid)" />
 
         <!-- Status / Zertifikat -->
         ${loopAreaSvg}
@@ -1609,6 +1715,32 @@ function renderWiringTab() {
                                                 <option value="${p.id}" ${parseInt(f.panelId) === p.id ? 'selected' : ''}>${p.pmax}Wp - ${p.name.slice(0, 16)}</option>
                                             `).join('')}
                                         </select>
+                                    </div>
+                                </div>
+
+                                <!-- FREIE FELDPOSITIONIERUNG -->
+                                <div class="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 text-xs">
+                                    <div class="flex items-center gap-1.5">
+                                        <span class="font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1 text-[11px]">
+                                            <span class="material-symbols-rounded text-sm text-primary">open_with</span>
+                                            Position:
+                                        </span>
+                                        <select onchange="setFieldPlacement(${s.id}, ${fIdx}, this.value)" class="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 font-bold text-slate-700 dark:text-slate-200 text-[11px] outline-none cursor-pointer">
+                                            <option value="side" ${(getFieldArrangement(s.id, fIdx).placement === 'side') ? 'selected' : ''}>➡️ Rechts daneben</option>
+                                            <option value="below" ${(getFieldArrangement(s.id, fIdx).placement === 'below') ? 'selected' : ''}>⬇️ Unter Feld 1 (z. B. Gaube/Traufe)</option>
+                                            <option value="offset" ${(getFieldArrangement(s.id, fIdx).placement === 'offset') ? 'selected' : ''}>📐 Frei verschoben</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex items-center gap-1 bg-slate-50 dark:bg-slate-950 px-2 py-1 rounded-xl border border-slate-200 dark:border-slate-800">
+                                        <span class="text-[10px] text-slate-400 font-bold mr-1">Verschieben:</span>
+                                        <button onclick="adjustFieldOffset(${s.id}, ${fIdx}, -30, 0)" class="w-6 h-6 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 text-xs shadow-2xs" title="Nach links verschieben">◀</button>
+                                        <button onclick="adjustFieldOffset(${s.id}, ${fIdx}, 30, 0)" class="w-6 h-6 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 text-xs shadow-2xs" title="Nach rechts verschieben">▶</button>
+                                        <button onclick="adjustFieldOffset(${s.id}, ${fIdx}, 0, -30)" class="w-6 h-6 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 text-xs shadow-2xs" title="Nach oben verschieben">▲</button>
+                                        <button onclick="adjustFieldOffset(${s.id}, ${fIdx}, 0, 30)" class="w-6 h-6 rounded bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 flex items-center justify-center font-bold text-slate-700 dark:text-slate-200 text-xs shadow-2xs" title="Nach unten verschieben">▼</button>
+                                        ${(getFieldArrangement(s.id, fIdx).offsetX !== 0 || getFieldArrangement(s.id, fIdx).offsetY !== 0) ? `
+                                            <span class="text-[10px] text-primary font-mono ml-1 font-extrabold">ΔX:${getFieldArrangement(s.id, fIdx).offsetX > 0 ? '+' : ''}${getFieldArrangement(s.id, fIdx).offsetX} ΔY:${getFieldArrangement(s.id, fIdx).offsetY > 0 ? '+' : ''}${getFieldArrangement(s.id, fIdx).offsetY}</span>
+                                            <button onclick="resetFieldOffsetSingle(${s.id}, ${fIdx})" class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-600 dark:text-slate-300 hover:text-rose-600 text-[10px] font-bold ml-1" title="Position zurücksetzen">⟲</button>
+                                        ` : ''}
                                     </div>
                                 </div>
                             </div>

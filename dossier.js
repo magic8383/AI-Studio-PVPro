@@ -12,8 +12,10 @@ let dossierOptions = {
     projectNumber: "PV-" + (new Date().getFullYear()) + "-" + String(Math.floor(1000 + Math.random() * 9000)),
     projectDate: new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }),
     includeSummary: true,
+    includeComponents: true,      // NEU: Verbaute Systemkomponenten mit Detail-Spezifikation
     includeStrings: true,
     includeWiring: true,
+    wiringLandscape: true,        // NEU: Vollseite Querformat für DC-Schaltplan
     includeVdeLosses: true,
     includeBom: true,
     includeFinance: true,
@@ -181,9 +183,21 @@ function ensureDossierModalDom() {
                     <!-- WEITERE FACH-SEKTIONEN (NUR IM VOLLMODUS RELEVANT) -->
                     <div id="dos_sections_container" class="flex flex-wrap items-center gap-2.5 ${dossierOptions.reportType === 'compact' ? 'opacity-40 pointer-events-none' : ''}">
                         <span class="text-[10px] uppercase font-bold text-slate-400 mr-1">Voll-Module:</span>
+                        <label class="inline-flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 cursor-pointer text-[11px]" title="Verbaute Hauptkomponenten mit Datenblatt-Highlights">
+                            <input type="checkbox" id="dos_chk_components" ${dossierOptions.includeComponents ? 'checked' : ''} onchange="setDossierOption('includeComponents', this.checked)" class="accent-primary rounded">
+                            <span>Komponenten</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 cursor-pointer text-[11px]">
+                            <input type="checkbox" ${dossierOptions.includeStrings ? 'checked' : ''} onchange="setDossierOption('includeStrings', this.checked)" class="accent-primary rounded">
+                            <span>Strings</span>
+                        </label>
                         <label class="inline-flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 cursor-pointer text-[11px]">
                             <input type="checkbox" ${dossierOptions.includeWiring ? 'checked' : ''} onchange="setDossierOption('includeWiring', this.checked)" class="accent-primary rounded">
                             <span>Schaltplan</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1 font-bold text-indigo-700 dark:text-indigo-400 cursor-pointer text-[11px] bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800" title="DC-Schaltplan als ganzseitiges Querformat (DIN A4 Landscape) exportieren">
+                            <input type="checkbox" id="dos_chk_landscape" ${dossierOptions.wiringLandscape ? 'checked' : ''} onchange="setDossierOption('wiringLandscape', this.checked)" class="accent-indigo-600 rounded">
+                            <span>📐 Querformat Schaltplan</span>
                         </label>
                         <label class="inline-flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300 cursor-pointer text-[11px]">
                             <input type="checkbox" ${dossierOptions.includeVdeLosses ? 'checked' : ''} onchange="setDossierOption('includeVdeLosses', this.checked)" class="accent-primary rounded">
@@ -207,7 +221,7 @@ function ensureDossierModalDom() {
 
             <!-- DOKUMENTENVORSCHAU CONTAINER (A4 SCROLLABLE) -->
             <div class="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-200/80 dark:bg-slate-950/80 flex justify-center">
-                <div id="dossier-preview-paper" class="bg-white text-slate-900 rounded-2xl shadow-xl w-full max-w-4xl p-6 sm:p-10 border border-slate-300 space-y-8 print:border-0 print:shadow-none print:p-0">
+                <div id="dossier-preview-paper" class="bg-white text-slate-900 rounded-2xl shadow-xl w-full ${dossierOptions.wiringLandscape ? 'max-w-6xl' : 'max-w-4xl'} p-6 sm:p-10 border border-slate-300 space-y-8 print:border-0 print:shadow-none print:p-0 transition-all">
                     <!-- Inhalt wird über renderDossierPreview() generiert -->
                 </div>
             </div>
@@ -235,6 +249,13 @@ function ensureDossierModalDom() {
 function renderDossierPreview() {
     const container = document.getElementById('dossier-preview-paper');
     if (!container) return;
+    if (dossierOptions.wiringLandscape) {
+        container.classList.remove('max-w-4xl');
+        container.classList.add('max-w-6xl');
+    } else {
+        container.classList.remove('max-w-6xl');
+        container.classList.add('max-w-4xl');
+    }
     container.innerHTML = buildDossierHtmlContent(false);
 }
 
@@ -323,6 +344,188 @@ function getUsedHardwareData() {
     } catch(e) {}
 
     return { usedPanels, usedInverters, usedBattery };
+}
+
+// Sektion für verbaute Systemkomponenten mit Detail-Spezifikation (VDE-konform)
+function buildComponentProfileSection(hardwareData, strList, batLabel, batCap) {
+    const { usedPanels, usedInverters, usedBattery } = hardwareData;
+    const inv = (usedInverters && usedInverters[0]) || null;
+    const panel = (usedPanels && usedPanels[0]) || null;
+
+    return `
+    <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200 avoid-break">
+        <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-2 flex items-center gap-2">
+            <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
+            2. Verbaute Systemkomponenten & Technische Spezifikationen
+        </h2>
+        <p class="text-xs text-slate-500 mb-4">
+            Übersicht der ausgewählten Hauptkomponenten nach VDE 0100-712 & DIN EN 62446-1 mit allen sicherheits- und leistungskritischen Kennwerten.
+        </p>
+
+        <div class="space-y-4 text-xs">
+            <!-- 1. SOLARMODULE -->
+            <div class="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-100 pb-2 mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 font-black text-xs flex items-center justify-center">PV</span>
+                        <div>
+                            <span class="text-[10px] font-bold uppercase text-slate-400">Solarmodule (Glas-Glas)</span>
+                            <h3 class="text-sm font-black text-slate-900">${escapeHtml(panel ? panel.name : 'AIKO Neostar 3S+54 Dual-Glass')}</h3>
+                        </div>
+                    </div>
+                    <span class="text-xs font-black text-primary px-2.5 py-1 rounded-full bg-primary/10 self-start sm:self-auto">
+                        ${panel ? panel.pmax : 455} Wp N-Type ABC Dual-Glass
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                    <div>
+                        <span class="text-slate-400 block font-medium">Zelltechnologie:</span>
+                        <strong class="text-slate-800">ABC N-Type (All-Back-Contact)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Glasaufbau:</span>
+                        <strong class="text-slate-800">2.0 mm + 2.0 mm Doppelglas (Brandschutz A)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Wirkungsgrad:</span>
+                        <strong class="text-slate-800">&ge; 23,1 % (High-Efficiency)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Temp.-Koeffizient Pmax:</span>
+                        <strong class="text-slate-800">-0,26 % / °C (außergewöhnlich stabil)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Spannung Umpp (STC):</span>
+                        <strong class="text-slate-800">${panel ? panel.vmp : 33.6} V</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Strom Impp (STC):</span>
+                        <strong class="text-slate-800">${panel ? panel.imp : 13.55} A</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Mechanische Belastung:</span>
+                        <strong class="text-slate-800">5400 Pa Schnee / 2400 Pa Wind</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Garantiegeber:</span>
+                        <strong class="text-slate-800">25 J. Produkt / 30 J. Linearleistung (88,85%)</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. WECHSELRICHTER -->
+            <div class="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-100 pb-2 mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="w-7 h-7 rounded-lg bg-emerald-50 text-emerald-600 font-black text-xs flex items-center justify-center">WR</span>
+                        <div>
+                            <span class="text-[10px] font-bold uppercase text-slate-400">Hybrid-Wechselrichter</span>
+                            <h3 class="text-sm font-black text-slate-900">${escapeHtml(inv ? inv.name : 'Fronius Symo GEN24 Plus SC')}</h3>
+                        </div>
+                    </div>
+                    <span class="text-xs font-black text-emerald-700 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 self-start sm:self-auto">
+                        ${inv ? ((inv.acMax || 10000) / 1000).toFixed(1) : '10.0'} kVA Dreiphasig • 2 MPPT
+                    </span>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+                    <div>
+                        <span class="text-slate-400 block font-medium">Topologie:</span>
+                        <strong class="text-slate-800">3-phasig trafolos, Hybridbetrieb</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">MPP-Spannungsbereich:</span>
+                        <strong class="text-slate-800">${inv ? inv.minMppV : 174} V – ${inv ? inv.maxMppV : 800} V</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Max. DC-Eingangsspannung:</span>
+                        <strong class="text-slate-800">${inv ? inv.maxV : 1000} V DC (DIN VDE)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Europ. Wirkungsgrad:</span>
+                        <strong class="text-slate-800">&eta; &ge; 97,9 %</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Notstromfähigkeit:</span>
+                        <strong class="text-slate-800">PV Point (integriert) & Full Backup</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Kühlung:</span>
+                        <strong class="text-slate-800">Aktive Drehzahl-Lüfterkühlung (Langlebigkeit)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Schutzart:</span>
+                        <strong class="text-slate-800">IP66 (Wandmontage Innen / Außen)</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-400 block font-medium">Schnittstellen:</span>
+                        <strong class="text-slate-800">WLAN, 2× LAN, Modbus RTU / TCP</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. BATTERIESPEICHER & LEITUNGSTECHNIK -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- SPEICHER -->
+                <div class="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs">
+                    <div class="flex items-center gap-2 border-b border-slate-100 pb-2 mb-3">
+                        <span class="w-7 h-7 rounded-lg bg-amber-50 text-amber-600 font-black text-xs flex items-center justify-center">BAT</span>
+                        <div>
+                            <span class="text-[10px] font-bold uppercase text-slate-400">Hochvolt-Batteriespeicher</span>
+                            <h3 class="text-sm font-black text-slate-900">${escapeHtml(usedBattery ? usedBattery.name : (batCap > 0 ? batLabel : 'Kein Speicher konfiguriert'))}</h3>
+                        </div>
+                    </div>
+                    <div class="space-y-2 text-[11px]">
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Zelltechnologie:</span>
+                            <strong class="text-slate-800">Lithium-Eisenphosphat (LiFePO4, kobaltfrei)</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Nutzbare Kapazität:</span>
+                            <strong class="text-slate-900 font-bold">${batCap > 0 ? `${batCap} kWh (100% Entladetiefe DoD)` : '–'}</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Modulaufbau:</span>
+                            <strong class="text-slate-800">${batCap > 0 ? `${Math.round(batCap / 2.56)} Module à 2,56 kWh` : 'Optional nachrüstbar'}</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Zyklenfestigkeit & VDE:</span>
+                            <strong class="text-slate-800">&ge; 6.000 Zyklen, VDE-AR-E 2510-50 zertifiziert</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- DC-LEITUNGS- & SCHUTZTECHNIK -->
+                <div class="p-4 rounded-xl border border-slate-200 bg-white shadow-2xs">
+                    <div class="flex items-center gap-2 border-b border-slate-100 pb-2 mb-3">
+                        <span class="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 font-black text-xs flex items-center justify-center">VDE</span>
+                        <div>
+                            <span class="text-[10px] font-bold uppercase text-slate-400">DC-Schutz- & Verbindungstechnik</span>
+                            <h3 class="text-sm font-black text-slate-900">DIN VDE 0100-712 & DIN EN 50618</h3>
+                        </div>
+                    </div>
+                    <div class="space-y-2 text-[11px]">
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Solarkabel:</span>
+                            <strong class="text-slate-800">H1Z2Z2-K 6 mm² Cu verzinnt, doppelt isoliert</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Steckverbindersystem:</span>
+                            <strong class="text-slate-800">Stäubli MC4-Evo2 (1500 V DC, IP68)</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Potentialausgleich:</span>
+                            <strong class="text-slate-800">16 mm² Cu Einzelleiter (Montagegestell ➔ HES)</strong>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-slate-500">Leiterschleifenreduktion:</span>
+                            <strong class="text-emerald-700 font-extrabold">Leapfrog-Verfahren (Blitzeinkopplung &approx; 0)</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    `;
 }
 
 // Sektion für technische Datenblätter (Kompakt oder Vollversion)
@@ -846,6 +1049,28 @@ function buildCompactReportHtml(data) {
             </div>
         </div>
 
+        <!-- VERBAUTE KERNKOMPONENTEN (KOMPAKT) -->
+        <div class="mb-5 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs avoid-break">
+            <span class="text-[10px] uppercase font-bold text-slate-500 block mb-2">Verbaute Kernkomponenten (VDE 0100-712 konform)</span>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px]">
+                <div class="bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span class="text-[9px] font-bold text-slate-400 uppercase block">PV-Module:</span>
+                    <strong class="text-slate-900 block truncate">${escapeHtml(hardwareData.usedPanels[0]?.name || 'AIKO Neostar 3S+54')}</strong>
+                    <span class="text-slate-500 text-[10px]">${hardwareData.usedPanels[0]?.pmax || 455} Wp N-Type ABC Doppelglas</span>
+                </div>
+                <div class="bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span class="text-[9px] font-bold text-slate-400 uppercase block">Wechselrichter:</span>
+                    <strong class="text-slate-900 block truncate">${escapeHtml(hardwareData.usedInverters[0]?.name || 'Fronius Symo GEN24 Plus SC')}</strong>
+                    <span class="text-slate-500 text-[10px]">${((hardwareData.usedInverters[0]?.acMax || 10000)/1000).toFixed(1)} kVA Hybrid 3-phasig</span>
+                </div>
+                <div class="bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span class="text-[9px] font-bold text-slate-400 uppercase block">Speicher / Verkabelung:</span>
+                    <strong class="text-slate-900 block truncate">${batCap > 0 ? escapeHtml(batLabel) : 'H1Z2Z2-K 6 mm² Solarkabel'}</strong>
+                    <span class="text-slate-500 text-[10px]">${batCap > 0 ? `${batCap} kWh BYD HVS+ Hochvolt` : 'Stäubli MC4-Evo2 & Leapfrog'}</span>
+                </div>
+            </div>
+        </div>
+
         <!-- STRINGS & BELEGUNG -->
         <div class="mb-5">
             <h3 class="text-xs font-black uppercase tracking-wider text-slate-800 mb-2 flex items-center gap-1.5">
@@ -1106,13 +1331,18 @@ function buildDossierHtmlContent(isPrintOnly = false) {
         </section>
 
         <!-- ========================================== -->
-        <!-- SEITE 2: STRING-KONFIGURATION & PHYSIK -->
+        <!-- SEITE 2: VERBAUTE SYSTEMKOMPONENTEN (VDE) -->
+        <!-- ========================================== -->
+        ${dossierOptions.includeComponents ? buildComponentProfileSection(hardwareData, strList, batLabel, batCap) : ''}
+
+        <!-- ========================================== -->
+        <!-- SEITE 3: STRING-KONFIGURATION & PHYSIK -->
         <!-- ========================================== -->
         ${dossierOptions.includeStrings ? `
-        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200">
+        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200 avoid-break">
             <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-2">
                 <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
-                2. String-Konfiguration, Ausrichtung & Physikalische Grenzprüfung
+                3. String-Konfiguration, Ausrichtung & Physikalische Grenzprüfung
             </h2>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200 mb-6 text-xs">
@@ -1208,22 +1438,31 @@ function buildDossierHtmlContent(isPrintOnly = false) {
         ` : ''}
 
         <!-- ========================================== -->
-        <!-- SEITE 3: DC-SCHALTPLAN & LEITUNGSFÜHRUNG -->
+        <!-- SEITE 4: DC-SCHALTPLAN & LEITUNGSFÜHRUNG -->
         <!-- ========================================== -->
         ${dossierOptions.includeWiring && primaryStr ? `
-        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200">
-            <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-1 flex items-center gap-2">
-                <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
-                3. DC-Schaltplan, Leitungsführung & Leapfrog-Blueprint
-            </h2>
-            <p class="text-xs text-slate-500 mb-4">
-                Normgerechte Verlegung nach Reißverschluss-Verfahren (DIN EN 62305-3 / VDE 0185-305) zur Vermeidung von Blitzeinkopplungen.
-            </p>
+        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200 ${dossierOptions.wiringLandscape ? 'landscape-section dossier-landscape-page' : ''}">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                <div>
+                    <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                        <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
+                        4. DC-Schaltplan, Leitungsführung & Leapfrog-Blueprint
+                    </h2>
+                    <p class="text-xs text-slate-500 mt-0.5">
+                        Normgerechte Verlegung nach Reißverschluss-Verfahren (DIN EN 62305-3 / VDE 0185-305) zur Vermeidung von Blitzeinkopplungen.
+                    </p>
+                </div>
+                ${dossierOptions.wiringLandscape ? `
+                <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 self-start no-print">
+                    📐 Ganzseitiges Querformat (A4 Landscape)
+                </span>
+                ` : ''}
+            </div>
 
             <!-- HOCHAUFLÖSENDER SVG SCHALTPLAN -->
-            <div class="rounded-xl border border-slate-300 p-2 bg-white overflow-hidden mb-4 print:border print:p-0">
+            <div class="rounded-xl border border-slate-300 p-2 bg-white overflow-hidden mb-4 print:border print:p-0 w-full flex justify-center">
                 ${(typeof generateStringWiringSvg === 'function' && typeof wiringSettings !== 'undefined')
-                    ? generateStringWiringSvg(primaryStr, Object.assign({}, wiringSettings, { isPrintView: true }))
+                    ? generateStringWiringSvg(primaryStr, Object.assign({}, wiringSettings, { isPrintView: true, isLandscapeView: !!dossierOptions.wiringLandscape }))
                     : '<div class="p-8 text-center text-slate-400 font-bold">SVG-Schaltplan wird geladen...</div>'}
             </div>
 
@@ -1250,15 +1489,15 @@ function buildDossierHtmlContent(isPrintOnly = false) {
         ` : ''}
 
         <!-- ========================================== -->
-        <!-- SEITE 4: VDE 0100-712 DC-LEITUNGSBERECHNUNG & STÜCKLISTE -->
+        <!-- SEITE 5: VDE 0100-712 DC-LEITUNGSBERECHNUNG & STÜCKLISTE -->
         <!-- ========================================== -->
         ${(dossierOptions.includeVdeLosses || dossierOptions.includeBom) ? `
-        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200">
+        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200 avoid-break">
             ${dossierOptions.includeVdeLosses && cablePhysics ? `
             <div class="mb-8">
                 <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-2">
                     <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
-                    4. DC-Leitungsberechnung & Verlustanalyse (DIN VDE 0100-712)
+                    5. DC-Leitungsberechnung & Verlustanalyse (DIN VDE 0100-712)
                 </h2>
 
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-4">
@@ -1301,7 +1540,7 @@ function buildDossierHtmlContent(isPrintOnly = false) {
             <div>
                 <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-2">
                     <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
-                    5. Material-Stückliste & Installationskomponenten (BOM)
+                    6. Material-Stückliste & Installationskomponenten (BOM)
                 </h2>
 
                 <div class="overflow-x-auto rounded-xl border border-slate-200 text-xs">
@@ -1384,13 +1623,13 @@ function buildDossierHtmlContent(isPrintOnly = false) {
         ` : ''}
 
         <!-- ========================================== -->
-        <!-- SEITE 5: WIRTSCHAFTLICHKEIT & ERTRAG -->
+        <!-- SEITE 6: WIRTSCHAFTLICHKEIT & ERTRAG -->
         <!-- ========================================== -->
         ${dossierOptions.includeFinance ? `
-        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200">
+        <section class="dossier-page print-page mb-10 pb-8 border-b-2 border-slate-200 avoid-break">
             <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-3 flex items-center gap-2">
                 <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
-                6. Wirtschaftlichkeit, Cashflow & Amortisationsprognose
+                7. Wirtschaftlichkeit, Cashflow & Amortisationsprognose
             </h2>
 
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs mb-6">
@@ -1437,13 +1676,13 @@ function buildDossierHtmlContent(isPrintOnly = false) {
         ` : ''}
 
         <!-- ========================================== -->
-        <!-- SEITE 6: DIN VDE 0100-712 ABNAHMEPROTOKOLL -->
+        <!-- SEITE 8: DIN VDE 0100-712 ABNAHMEPROTOKOLL -->
         <!-- ========================================== -->
         ${dossierOptions.includeAcceptanceProtocol ? `
         <section class="dossier-page print-page avoid-break">
             <h2 class="text-sm font-black uppercase tracking-wider text-slate-800 mb-2 flex items-center gap-2">
                 <span class="w-1.5 h-4 bg-primary rounded-full inline-block"></span>
-                7. Prüf-, Mess- & Inbetriebnahmeprotokoll nach DIN VDE 0100-712
+                8. Prüf-, Mess- & Inbetriebnahmeprotokoll nach DIN VDE 0100-712
             </h2>
             <p class="text-xs text-slate-500 mb-4">
                 Dokumentation der Erstprüfung vor Inbetriebnahme der netzgekoppelten Photovoltaikanlage.

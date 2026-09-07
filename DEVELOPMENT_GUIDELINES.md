@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 7.5.1 (Vollbild-Schaltplan Fix & Spannungsabfall-Harmonisierung)  
+**Aktuelle Version:** 7.6.0 (Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -55,13 +55,14 @@ Die Erstellung von Druckdokumenten und PDF-Exporten darf **niemals ein einfaches
 
 * **Strukturierte Fachdokumentation:** Ein professionelles PV-Auslegungs- & Installationsdossier muss mindestens folgende Sektionen umfassen:
   1. **Anlagenpass & Executive Summary:** Generatorleistung (kWp), Modulanzahl, PVGIS-Jahresertrag, Wechselrichter, Speicher, Leiterschleifenschutz-Status, CO₂-Vermeidung.
-  2. **String-Konfiguration & Physikalische Grenzprüfung:** String-Zuweisungen, Neigungen, Azimut (gradgenau mit Himmelsrichtung), Kälte-Leerlaufspannung ($U_{oc,-10^\circ\text{C}}$), Hitze-MPP ($U_{mp,+70^\circ\text{C}}$), Kurzschlussströme ($I_{sc}$) im Vergleich zu WR-Grenzwerten.
-  3. **DC-Schaltplan & Leitungsführung:** Scharfer, hochauflösender SVG-Vektor-Schaltplan mit Polaritätskennzeichnung (+/-), Modulnummerierung, Hindernissen und Leap-Frog Leitungsführung.
-  4. **VDE 0100-712 Leitungsverlust-Analyse:** Transparente Kabelwege (Weg A + Brücken + Modulkabel + Weg B zzgl. 10% VDE-Reserve), Querschnitt, Schleifenwiderstand, Spannungsabfall in Volt und %, Verlustleistung in Watt und kWh/Jahr.
-  5. **Material-Stückliste (BOM):** Alle Haupt- und Installationskomponenten mit exakten Mengenangaben.
-  6. **Wirtschaftlichkeits- & Ertragsprognose:** 20-Jahres-Cashflow, Amortisationszeit, LCOE-Stromgestehungskosten, Eigenverbrauchsquote.
-  7. **DIN VDE 0100-712 Prüf- & Inbetriebnahmeprotokoll:** Normierte Checkliste (Sichtprüfung, Potentialausgleich, Polarität, $U_{oc}$, $I_{sc}$, $R_{iso}$, SPD-Schutz) mit handschriftlichem Errichter- und Betreiber-Unterschriftenblock.
-* **Dedizierter Print-DOM:** Beim Drucken (`@media print`) werden Navigationsleisten, Header, Scrollbars und Screen-Buttons ausgeblendet. Der Druck gerät auf reinweißem Hintergrund mit perfektem typografischem Kontrast und definierten Seitenumbrüchen (`page-break-after: always`).
+  2. **Verbaute Systemkomponenten & Technische Spezifikationen:** Vollständige elektrotechnische Kennwerte und Sicherheitsfeatures für Module, Wechselrichter, Speicher und Leitungs-/Schutztechnik (DIN EN 62446-1 & DIN VDE 0100-712).
+  3. **String-Konfiguration & Physikalische Grenzprüfung:** String-Zuweisungen, Neigungen, Azimut (gradgenau mit Himmelsrichtung), Kälte-Leerlaufspannung ($U_{oc,-10^\circ\text{C}}$), Hitze-MPP ($U_{mp,+70^\circ\text{C}}$), Kurzschlussströme ($I_{sc}$) im Vergleich zu WR-Grenzwerten.
+  4. **DC-Schaltplan & Leitungsführung:** Scharfer, hochauflösender SVG-Vektor-Schaltplan mit Polaritätskennzeichnung (+/-), Modulnummerierung, Hindernissen, Leap-Frog Leitungsführung und wahlweisem A4-Querformat (Landscape) für maximale Übersicht bei komplexen Dächern.
+  5. **VDE 0100-712 Leitungsverlust-Analyse:** Transparente Kabelwege (Weg A + Brücken + Modulkabel + Weg B zzgl. 10% VDE-Reserve), Querschnitt, Schleifenwiderstand, Spannungsabfall in Volt und %, Verlustleistung in Watt und kWh/Jahr.
+  6. **Material-Stückliste (BOM):** Alle Haupt- und Installationskomponenten mit exakten Mengenangaben.
+  7. **Wirtschaftlichkeits- & Ertragsprognose:** 20-Jahres-Cashflow, Amortisationszeit, LCOE-Stromgestehungskosten, Eigenverbrauchsquote.
+  8. **DIN VDE 0100-712 Prüf- & Inbetriebnahmeprotokoll:** Normierte Checkliste (Sichtprüfung, Potentialausgleich, Polarität, $U_{oc}$, $I_{sc}$, $R_{iso}$, SPD-Schutz) mit handschriftlichem Errichter- und Betreiber-Unterschriftenblock.
+* **Dedizierter Print-DOM:** Beim Drucken (`@media print`) werden Navigationsleisten, Header, Scrollbars und Screen-Buttons ausgeblendet. Der Druck gerät auf reinweißem Hintergrund mit perfektem typografischem Kontrast, definierter Seitenumbruchsteuerung (`page-break-inside: avoid; break-inside: avoid;`) und automatischer Querformat-Umschaltung für den Schaltplan.
 
 ---
 

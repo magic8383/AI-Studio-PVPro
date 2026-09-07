@@ -140,9 +140,16 @@ app.get('/api/share/:code', (req, res) => {
   const rawCode = (req.params.code || '').trim().toUpperCase();
   const normalizedCode = rawCode.startsWith('PV-') ? rawCode : `PV-${rawCode}`;
   
-  const share = sharesMap.get(normalizedCode) || sharesMap.get(rawCode);
+  let share = sharesMap.get(normalizedCode) || sharesMap.get(rawCode);
   if (!share) {
-    return res.status(404).json({ success: false, error: 'Konfiguration nicht gefunden oder abgelaufen.' });
+    loadSharesFromFile(); // Re-check disk persistence
+    share = sharesMap.get(normalizedCode) || sharesMap.get(rawCode);
+  }
+  if (!share) {
+    return res.status(404).json({ 
+      success: false, 
+      error: `Konfiguration für Code "${rawCode}" nicht gefunden oder abgelaufen.` 
+    });
   }
 
   res.json({
