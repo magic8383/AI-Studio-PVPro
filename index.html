@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.6.0 (Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung)</title>
+    <title>PV-Planung Pro 7.7.0 (Multi-Planungs- & Variantenverwaltung)</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.6.0 (Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung)">
+    <meta property="og:title" content="PV-Planung Pro 7.7.0 (Multi-Planungs- & Variantenverwaltung)">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings -->
@@ -175,17 +175,27 @@
     <header class="bg-slate-900/95 text-white shadow-md z-20 shrink-0 relative border-b border-slate-800 backdrop-blur-md">
         <div class="max-w-7xl mx-auto px-4 py-2.5 md:py-3.5">
             <div class="flex justify-between items-center">
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2.5 sm:gap-3">
                     <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-primary to-blue-400 flex items-center justify-center text-white shadow-md shadow-primary/20 shrink-0">
                         <span class="material-symbols-rounded text-xl fill-1">solar_power</span>
                     </div>
                     <div>
-                        <h1 class="text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span id="app-header-version" class="text-primary font-black">Pro 7.6.0</span></h1>
+                        <h1 class="text-base sm:text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span id="app-header-version" class="text-primary font-black">Pro 7.7.0</span></h1>
                         <p class="text-slate-400 text-[10px] md:text-xs mt-0.5 font-medium flex items-center gap-1">
                             <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
-                            Material Expressive Architecture • VDE 0100-712 • Sync
+                            Material Expressive • Multi-Planung • VDE
                         </p>
                     </div>
+
+                    <!-- Planungs- & Varianten-Switcher direkt im Header -->
+                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="ml-1 sm:ml-2 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80 text-xs font-bold transition-all shadow-sm group cursor-pointer" title="Planung wechseln oder neue Varianten verwalten">
+                        <span class="material-symbols-rounded text-primary text-base sm:text-lg">folder_open</span>
+                        <div class="text-left flex flex-col justify-center leading-tight">
+                            <span class="text-[9px] uppercase tracking-wider text-slate-400 font-semibold hidden sm:inline">Planung</span>
+                            <span id="headerProjectName" class="max-w-[85px] sm:max-w-[130px] md:max-w-[170px] truncate font-bold text-white text-xs">Planung 1</span>
+                        </div>
+                        <span class="material-symbols-rounded text-slate-400 text-sm group-hover:text-white transition-colors">unfold_more</span>
+                    </button>
                 </div>
                 <div class="flex items-center gap-1.5 md:gap-2">
                     <button id="btnPwaInstall" onclick="installPwaApp()" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 animate-pulse">
@@ -959,6 +969,16 @@
             </button>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-2">
+            <button onclick="closeMoreSheet(); openProjectManagerModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-left transition-all">
+                <span class="material-symbols-rounded text-2xl text-primary">folder_open</span>
+                <div>
+                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
+                        Planungen & Varianten verwalten
+                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-primary/30 text-primary-light font-mono">Multi-Projekt</span>
+                    </p>
+                    <p class="text-[10px] text-slate-300">Nahtlos zwischen mehreren Planungen wechseln oder Varianten vergleichen</p>
+                </div>
+            </button>
             <button onclick="closeMoreSheet(); openShareModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-indigo-900/40 hover:bg-indigo-800/50 border border-indigo-500/40 text-left transition-all">
                 <span class="material-symbols-rounded text-2xl text-indigo-400">devices</span>
                 <div>
@@ -1027,15 +1047,84 @@
         </div>
     </div>
 
+    <!-- ========================================== -->
+    <!-- MODAL: MULTI-PLANUNGS- & VARIANTEN-MANAGER (V7.7.0) -->
+    <!-- ========================================== -->
+    <div id="modal-project-manager" class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md hidden">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+            <!-- Modal Header -->
+            <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
+                        <span class="material-symbols-rounded text-2xl">folder_open</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">Planungen & Varianten</h3>
+                            <span id="projectCountBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">1 Planung</span>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Erstelle mehrere PV-Konzepte, vergleiche Varianten und wechsle nahtlos</p>
+                    </div>
+                </div>
+                <button onclick="closeProjectManagerModal()" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer">
+                    <span class="material-symbols-rounded text-lg">close</span>
+                </button>
+            </div>
+
+            <!-- Toolbar / Action Bar -->
+            <div class="px-5 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50 flex flex-wrap items-center justify-between gap-2.5">
+                <!-- Tabs: Liste / Vergleich -->
+                <div class="flex items-center gap-1 bg-slate-200/80 dark:bg-slate-800 p-1 rounded-xl text-xs">
+                    <button id="tabBtnProjectsList" onclick="renderProjectManagerModal('list')" class="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold cursor-pointer">
+                        <span class="material-symbols-rounded text-sm">view_list</span>
+                        <span>Alle Planungen</span>
+                    </button>
+                    <button id="tabBtnProjectsCompare" onclick="renderProjectManagerModal('compare')" class="px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium cursor-pointer">
+                        <span class="material-symbols-rounded text-sm">compare_arrows</span>
+                        <span>Varianten-Vergleich</span>
+                    </button>
+                </div>
+
+                <!-- Create Buttons -->
+                <div class="flex items-center gap-2">
+                    <button onclick="createNewProjectPrompt(false)" class="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer">
+                        <span class="material-symbols-rounded text-sm">add</span>
+                        <span>Neue Planung</span>
+                    </button>
+                    <button onclick="createNewProjectPrompt(true)" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer" title="Aktuelle Planung als neue Variante duplizieren">
+                        <span class="material-symbols-rounded text-sm">copy_all</span>
+                        <span>Variante anlegen</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Modal Content Body -->
+            <div id="project-manager-modal-body" class="p-5 overflow-y-auto space-y-4 max-h-[60vh]">
+                <!-- Dynamic Content injected by renderProjectManagerModal() -->
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between text-xs text-slate-500">
+                <span class="flex items-center gap-1">
+                    <span class="material-symbols-rounded text-emerald-500 text-sm">cloud_done</span>
+                    Automatisch lokal gesichert
+                </span>
+                <button onclick="closeProjectManagerModal()" class="px-4 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold transition-colors cursor-pointer">
+                    Schließen
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V7.6.0 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=7.6.0"></script>
-    <script src="database.js?v=7.6.0"></script>
-    <script src="content.js?v=7.6.0"></script>
-    <script src="app.js?v=7.6.0"></script>
-    <script src="wiring.js?v=7.6.0"></script>
-    <script src="dossier.js?v=7.6.0"></script>
+    <!-- MODULARE ARCHITEKTUR V7.7.0 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=7.7.0"></script>
+    <script src="database.js?v=7.7.0"></script>
+    <script src="content.js?v=7.7.0"></script>
+    <script src="app.js?v=7.7.0"></script>
+    <script src="wiring.js?v=7.7.0"></script>
+    <script src="dossier.js?v=7.7.0"></script>
 </body>
 </html>

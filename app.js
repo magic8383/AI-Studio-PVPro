@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.6.0';
+        if (verEl) verEl.innerText = 'Pro 7.7.0';
 
         if (!strings || strings.length === 0) {
             addString();
@@ -114,6 +114,7 @@ function initDatabase() {
         loadWiringSettings();
         updatePhysicsOnly();
         checkUrlShareImport();
+        initProjectManager();
     } catch(e) { console.error("Init Error:", e); }
 }
 
@@ -130,12 +131,606 @@ function saveConfiguration() {
     saveConsumptionSettings();
     saveWiringSettings();
     
+    // Multi-Projekt-Sicherung synchronisieren
+    saveCurrentProjectData(false);
+    
     let btn = document.getElementById('btnHeaderSave');
     if(btn) {
         btn.classList.remove('bg-amber-500', 'animate-pulse');
         btn.classList.add('bg-primary');
     }
     showToastNotification('✅ Planung erfolgreich lokal im Browserspeicher gesichert!', 'success');
+}
+
+// ==========================================
+// 1.0 MULTI-PLANUNGEN & VARIANTEN-MANAGER (V7.7.0)
+// ==========================================
+
+const PV_PROJECTS_KEY = 'pvpro_projects';
+const PV_ACTIVE_PROJECT_KEY = 'pvpro_active_project_id';
+
+function getStoredProjects() {
+    let projects = readJsonStorage(PV_PROJECTS_KEY, null);
+    if (!Array.isArray(projects) || projects.length === 0) {
+        return null;
+    }
+    return projects;
+}
+
+function getActiveProjectId() {
+    let activeId = localStorage.getItem(PV_ACTIVE_PROJECT_KEY);
+    if (!activeId) {
+        const projects = getStoredProjects();
+        if (projects && projects.length > 0) {
+            activeId = projects[0].id;
+            localStorage.setItem(PV_ACTIVE_PROJECT_KEY, activeId);
+        }
+    }
+    return activeId;
+}
+
+function calculateProjectSummary(cfg) {
+    let kwp = 0;
+    let panelCount = 0;
+    let stringCount = 0;
+    let batteryKwh = 0;
+    let locName = cfg?.LocationData?.name || (LocationData?.name || 'Villingen-Schwenningen');
+
+    if (Array.isArray(cfg?.strings)) {
+        stringCount = cfg.strings.length;
+        cfg.strings.forEach(str => {
+            (str.fields || []).forEach(f => {
+                const count = Number(f.count) || 0;
+                panelCount += count;
+                const p = (typeof flatPanels !== 'undefined' && Array.isArray(flatPanels)) 
+                    ? flatPanels.find(x => x.id === parseInt(f.panelId)) 
+                    : null;
+                const pwp = (p && p.pmax) ? p.pmax : 440;
+                kwp += (count * pwp) / 1000;
+            });
+        });
+    }
+
+    if (cfg?.batMap && typeof cfg.batMap === 'object' && typeof flatBatteries !== 'undefined') {
+        const firstStr = cfg.strings && cfg.strings[0];
+        const invId = firstStr ? firstStr.inverterId : null;
+        const batId = invId ? cfg.batMap[invId] : null;
+        if (batId) {
+            const b = flatBatteries.find(x => x.id === parseInt(batId));
+            if (b && b.capacity) batteryKwh = b.capacity;
+        }
+    }
+
+    return {
+        kwp: parseFloat(kwp.toFixed(2)),
+        panelCount,
+        stringCount,
+        batteryKwh,
+        locationName: locName
+    };
+}
+
+function initProjectManager() {
+    let projects = getStoredProjects();
+    let activeId = getActiveProjectId();
+
+    if (!projects) {
+        // Erste Initialisierung aus bestehenden Daten im LocalStorage
+        const currentData = exportFullConfiguration();
+        const initialProject = {
+            id: 'proj_' + Date.now(),
+            name: (LocationData && LocationData.name) ? `Planung ${LocationData.name}` : 'Planung 1 (Standard)',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            data: currentData,
+            summary: calculateProjectSummary(currentData)
+        };
+        projects = [initialProject];
+        activeId = initialProject.id;
+        localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+        localStorage.setItem(PV_ACTIVE_PROJECT_KEY, activeId);
+    }
+
+    // Header-Anzeige synchronisieren
+    updateHeaderProjectIndicator();
+}
+
+function updateHeaderProjectIndicator() {
+    const projects = getStoredProjects() || [];
+    const activeId = getActiveProjectId();
+    const activeProj = projects.find(p => p.id === activeId) || projects[0];
+
+    const labelEl = document.getElementById('headerProjectName');
+    if (labelEl && activeProj) {
+        labelEl.innerText = activeProj.name;
+        labelEl.title = `Aktive Planung: ${activeProj.name}`;
+    }
+}
+
+function saveCurrentProjectData(showToast = false) {
+    let projects = getStoredProjects();
+    if (!projects || projects.length === 0) {
+        initProjectManager();
+        projects = getStoredProjects();
+    }
+    const activeId = getActiveProjectId();
+    let activeProj = projects.find(p => p.id === activeId);
+
+    const currentConfig = exportFullConfiguration();
+    const summary = calculateProjectSummary(currentConfig);
+
+    if (!activeProj) {
+        activeProj = {
+            id: activeId || ('proj_' + Date.now()),
+            name: (LocationData && LocationData.name) ? `Planung ${LocationData.name}` : 'Planung 1',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            data: currentConfig,
+            summary: summary
+        };
+        projects.unshift(activeProj);
+    } else {
+        activeProj.data = currentConfig;
+        activeProj.summary = summary;
+        activeProj.updatedAt = new Date().toISOString();
+    }
+
+    localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+    updateHeaderProjectIndicator();
+
+    if (showToast) {
+        showToastNotification(`✅ Planung "${activeProj.name}" gesichert!`, 'success');
+    }
+}
+
+function switchProject(targetProjectId) {
+    if (!targetProjectId) return;
+    const projects = getStoredProjects() || [];
+    const targetProj = projects.find(p => p.id === targetProjectId);
+    if (!targetProj) {
+        showToastNotification('Planung nicht gefunden.', 'error');
+        return;
+    }
+
+    const currentActiveId = getActiveProjectId();
+    if (currentActiveId === targetProjectId) {
+        showToastNotification(`Bereits in "${targetProj.name}".`, 'info');
+        return;
+    }
+
+    // 1. Zuerst aktuelle Daten der bisherigen Planung sichern
+    saveCurrentProjectData(false);
+
+    // 2. Aktive ID umschalten
+    localStorage.setItem(PV_ACTIVE_PROJECT_KEY, targetProjectId);
+
+    // 3. Konfiguration der Zielplanung importieren
+    importFullConfiguration(targetProj.data, targetProj.name);
+
+    // 4. Header-Label aktualisieren
+    updateHeaderProjectIndicator();
+
+    // 5. Erfolgs-Toast
+    showToastNotification(`🔄 Zu Planung "${targetProj.name}" gewechselt!`, 'success');
+
+    // 6. Falls das Modal geöffnet ist, die Ansicht aktualisieren
+    const modal = document.getElementById('modal-project-manager');
+    if (modal && !modal.classList.contains('hidden')) {
+        renderProjectManagerModal();
+    }
+}
+
+function createNewProject(name = null, cloneCurrent = false) {
+    // 1. Aktuelle Planung sichern
+    saveCurrentProjectData(false);
+
+    let projects = getStoredProjects() || [];
+    const newId = 'proj_' + Date.now();
+    let newName = name;
+
+    let projectData;
+    if (cloneCurrent) {
+        const currentActive = projects.find(p => p.id === getActiveProjectId());
+        projectData = JSON.parse(JSON.stringify(exportFullConfiguration()));
+        if (!newName) {
+            newName = currentActive ? `${currentActive.name} (Kopie)` : `Planung ${projects.length + 1}`;
+        }
+    } else {
+        if (!newName) {
+            newName = `Planung ${projects.length + 1}`;
+        }
+        // Frische Standard-Konfiguration
+        const defPanelId = (flatPanels && flatPanels[0]) ? flatPanels[0].id : 1;
+        const defInvId = (flatInverters && flatInverters[0]) ? flatInverters[0].id : 1;
+        const freshStrings = [{
+            id: Date.now(),
+            name: 'String 1',
+            inverterId: defInvId,
+            mpptId: 1,
+            azimuth: 0,
+            fields: [{
+                id: Date.now() + 1,
+                name: 'Hauptdach',
+                panelId: defPanelId,
+                count: 14,
+                tilt: 30,
+                cols: 7,
+                rows: 2
+            }]
+        }];
+        projectData = {
+            version: '7.7.0',
+            exportedAt: new Date().toISOString(),
+            appName: 'PV-Planung Pro',
+            strings: freshStrings,
+            LocationData: LocationData ? Object.assign({}, LocationData) : { lat: 48.06, lon: 8.46, name: 'Villingen-Schwenningen' },
+            consumption: JSON.parse(localStorage.getItem('pvpro_cons') || '{}'),
+            invest: JSON.parse(localStorage.getItem('pvpro_invest') || '{}'),
+            finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
+            wiring: {
+                loopProtection: true,
+                obstacleAvoidance: true,
+                selectedAlgorithm: 'leapfrog',
+                roofColor: '#1e293b',
+                dcCrossSection: 6.0,
+                cableWegA: {},
+                cableWegB: {},
+                fieldBridges: {},
+                panelCableRate: 2.0
+            },
+            batMap: JSON.parse(localStorage.getItem('pvpro_batmap') || '{}')
+        };
+    }
+
+    const newProject = {
+        id: newId,
+        name: newName,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        data: projectData,
+        summary: calculateProjectSummary(projectData)
+    };
+
+    projects.push(newProject);
+    localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+
+    // Neue Planung sofort aktivieren
+    localStorage.setItem(PV_ACTIVE_PROJECT_KEY, newId);
+    importFullConfiguration(projectData, newName);
+    updateHeaderProjectIndicator();
+
+    showToastNotification(`✨ Neue Planung "${newName}" erstellt und geöffnet!`, 'success');
+
+    const modal = document.getElementById('modal-project-manager');
+    if (modal && !modal.classList.contains('hidden')) {
+        renderProjectManagerModal();
+    }
+}
+
+function duplicateCurrentProject() {
+    createNewProject(null, true);
+}
+
+function duplicateProjectById(projectId) {
+    const projects = getStoredProjects() || [];
+    const sourceProj = projects.find(p => p.id === projectId);
+    if (!sourceProj) return;
+
+    saveCurrentProjectData(false);
+
+    const newId = 'proj_' + Date.now();
+    const newName = `${sourceProj.name} (Kopie)`;
+    const clonedData = JSON.parse(JSON.stringify(sourceProj.data));
+
+    const clonedProj = {
+        id: newId,
+        name: newName,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        data: clonedData,
+        summary: calculateProjectSummary(clonedData)
+    };
+
+    projects.push(clonedProj);
+    localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+
+    // Sofort aktivieren
+    localStorage.setItem(PV_ACTIVE_PROJECT_KEY, newId);
+    importFullConfiguration(clonedData, newName);
+    updateHeaderProjectIndicator();
+
+    showToastNotification(`📋 Kopie "${newName}" erstellt und aktiviert!`, 'success');
+
+    const modal = document.getElementById('modal-project-manager');
+    if (modal && !modal.classList.contains('hidden')) {
+        renderProjectManagerModal();
+    }
+}
+
+function renameProject(projectId, customNewName = null) {
+    const projects = getStoredProjects() || [];
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+
+    let newName = customNewName;
+    if (!newName) {
+        newName = prompt('Neuer Name für diese Planung:', proj.name);
+    }
+    if (!newName || !newName.trim() || newName.trim() === proj.name) return;
+
+    proj.name = newName.trim();
+    proj.updatedAt = new Date().toISOString();
+    localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+
+    updateHeaderProjectIndicator();
+    showToastNotification(`✏️ Planung umbenannt in "${proj.name}"`, 'info');
+
+    const modal = document.getElementById('modal-project-manager');
+    if (modal && !modal.classList.contains('hidden')) {
+        renderProjectManagerModal();
+    }
+}
+
+function deleteProject(projectId) {
+    let projects = getStoredProjects() || [];
+    if (projects.length <= 1) {
+        showToastNotification('Die letzte verbleibende Planung kann nicht gelöscht werden.', 'error');
+        return;
+    }
+
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+
+    if (!confirm(`Möchtest du die Planung "${proj.name}" wirklich unwiderruflich löschen?`)) {
+        return;
+    }
+
+    const activeId = getActiveProjectId();
+    projects = projects.filter(p => p.id !== projectId);
+    localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+
+    if (activeId === projectId) {
+        const nextProj = projects[0];
+        localStorage.setItem(PV_ACTIVE_PROJECT_KEY, nextProj.id);
+        importFullConfiguration(nextProj.data, nextProj.name);
+        showToastNotification(`🗑️ Planung gelöscht. Zu "${nextProj.name}" gewechselt.`, 'info');
+    } else {
+        showToastNotification(`🗑️ Planung "${proj.name}" gelöscht.`, 'info');
+    }
+
+    updateHeaderProjectIndicator();
+    const modal = document.getElementById('modal-project-manager');
+    if (modal && !modal.classList.contains('hidden')) {
+        renderProjectManagerModal();
+    }
+}
+
+let activeProjectManagerTab = 'list';
+
+function openProjectManagerModal(initialTab = 'list') {
+    // Vor dem Öffnen aktuellen Stand sichern
+    saveCurrentProjectData(false);
+
+    activeProjectManagerTab = initialTab;
+    const modal = document.getElementById('modal-project-manager');
+    if (!modal) return;
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+    renderProjectManagerModal(activeProjectManagerTab);
+}
+
+function closeProjectManagerModal() {
+    const modal = document.getElementById('modal-project-manager');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.classList.remove('overflow-hidden');
+    }
+}
+
+function renderProjectManagerModal(tab = null) {
+    if (tab) activeProjectManagerTab = tab;
+    const body = document.getElementById('project-manager-modal-body');
+    if (!body) return;
+
+    const projects = getStoredProjects() || [];
+    const activeId = getActiveProjectId();
+
+    // Badge aktualisieren
+    const badgeEl = document.getElementById('projectCountBadge');
+    if (badgeEl) {
+        badgeEl.innerText = `${projects.length} ${projects.length === 1 ? 'Planung' : 'Planungen'}`;
+    }
+
+    // Tab Buttons aktualisieren
+    const btnList = document.getElementById('tabBtnProjectsList');
+    const btnCompare = document.getElementById('tabBtnProjectsCompare');
+    if (btnList && btnCompare) {
+        if (activeProjectManagerTab === 'list') {
+            btnList.className = 'px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold';
+            btnCompare.className = 'px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium';
+        } else {
+            btnCompare.className = 'px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold';
+            btnList.className = 'px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium';
+        }
+    }
+
+    if (activeProjectManagerTab === 'list') {
+        body.innerHTML = `
+            <div class="space-y-3">
+                ${projects.map((proj, idx) => {
+                    const isActive = proj.id === activeId;
+                    const sm = proj.summary || calculateProjectSummary(proj.data);
+                    const dateStr = proj.updatedAt 
+                        ? new Date(proj.updatedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                        : 'Unbekannt';
+
+                    return `
+                    <div class="rounded-2xl transition-all duration-200 ${
+                        isActive 
+                            ? 'border-2 border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 shadow-md ring-2 ring-emerald-500/10' 
+                            : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm'
+                    } p-4 sm:p-5">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                            <div class="flex items-start sm:items-center gap-3">
+                                <div class="w-10 h-10 rounded-xl ${isActive ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} flex items-center justify-center shrink-0">
+                                    <span class="material-symbols-rounded text-xl">${isActive ? 'check_circle' : 'folder'}</span>
+                                </div>
+                                <div>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <h4 class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight">${proj.name}</h4>
+                                        ${isActive ? `
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500 text-white shadow-xs">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                                                Aktiv
+                                            </span>
+                                        ` : ''}
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
+                                        <span class="material-symbols-rounded text-xs">schedule</span>
+                                        Zuletzt bearbeitet: ${dateStr}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                                ${!isActive ? `
+                                    <button onclick="switchProject('${proj.id}')" class="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                                        <span class="material-symbols-rounded text-base">swap_horiz</span>
+                                        <span>Öffnen</span>
+                                    </button>
+                                ` : `
+                                    <span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/60 dark:bg-emerald-900/30">
+                                        <span class="material-symbols-rounded text-sm">edit</span> Aktuelle Bearbeitung
+                                    </span>
+                                `}
+                            </div>
+                        </div>
+
+                        <!-- Kennzahlen-Leiste -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Generator</span>
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                                    <span class="material-symbols-rounded text-amber-500 text-sm">bolt</span>
+                                    ${sm.kwp} kWp
+                                </span>
+                            </div>
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Module / Strings</span>
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                                    <span class="material-symbols-rounded text-primary text-sm">solar_power</span>
+                                    ${sm.panelCount} (${sm.stringCount} Str.)
+                                </span>
+                            </div>
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Speicher</span>
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                                    <span class="material-symbols-rounded text-emerald-500 text-sm">battery_charging_full</span>
+                                    ${sm.batteryKwh > 0 ? sm.batteryKwh + ' kWh' : 'Ohne Akku'}
+                                </span>
+                            </div>
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Standort</span>
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1" title="${sm.locationName}">
+                                    <span class="material-symbols-rounded text-rose-500 text-sm">location_on</span>
+                                    ${sm.locationName}
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- Aktions-Footer pro Karte -->
+                        <div class="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-slate-100/80 dark:border-slate-800/60 text-xs">
+                            <button onclick="duplicateProjectById('${proj.id}')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold transition-colors flex items-center gap-1" title="Planung als Kopie duplizieren">
+                                <span class="material-symbols-rounded text-sm">content_copy</span> Duplizieren
+                            </button>
+                            <button onclick="renameProject('${proj.id}')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold transition-colors flex items-center gap-1" title="Planung umbenennen">
+                                <span class="material-symbols-rounded text-sm">edit</span> Umbenennen
+                            </button>
+                            ${projects.length > 1 ? `
+                                <button onclick="deleteProject('${proj.id}')" class="px-2.5 py-1 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold transition-colors flex items-center gap-1" title="Planung löschen">
+                                    <span class="material-symbols-rounded text-sm">delete</span> Löschen
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    } else {
+        // Tab Variantenvergleich (Side-by-Side Matrix)
+        body.innerHTML = `
+            <div class="space-y-4">
+                <div class="bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 p-3.5 rounded-2xl text-xs text-blue-800 dark:text-blue-300 flex items-center gap-2.5">
+                    <span class="material-symbols-rounded text-xl shrink-0">info</span>
+                    <span>Hier siehst du alle angelegten Varianten und Planungen im direkten technischen Vergleich. Klicke auf <strong>Öffnen</strong>, um eine Variante sofort aktiv zu laden.</span>
+                </div>
+
+                <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-100/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
+                                <th class="p-3">Planung / Variante</th>
+                                <th class="p-3 text-center">Leistung (kWp)</th>
+                                <th class="p-3 text-center">Module (Strings)</th>
+                                <th class="p-3 text-center">Speicher</th>
+                                <th class="p-3 text-center">Standort</th>
+                                <th class="p-3 text-center">Status / Aktion</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                            ${projects.map(proj => {
+                                const isActive = proj.id === activeId;
+                                const sm = proj.summary || calculateProjectSummary(proj.data);
+                                return `
+                                <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${isActive ? 'bg-emerald-50/30 dark:bg-emerald-950/15 font-semibold' : ''}">
+                                    <td class="p-3">
+                                        <div class="flex items-center gap-2">
+                                            <span class="material-symbols-rounded text-sm ${isActive ? 'text-emerald-500' : 'text-slate-400'}">
+                                                ${isActive ? 'check_circle' : 'folder'}
+                                            </span>
+                                            <span class="font-bold text-slate-900 dark:text-white">${proj.name}</span>
+                                        </div>
+                                    </td>
+                                    <td class="p-3 text-center font-mono font-bold text-amber-500">${sm.kwp} kWp</td>
+                                    <td class="p-3 text-center font-mono">${sm.panelCount} (${sm.stringCount} Str.)</td>
+                                    <td class="p-3 text-center font-mono text-emerald-600 dark:text-emerald-400">
+                                        ${sm.batteryKwh > 0 ? sm.batteryKwh + ' kWh' : '–'}
+                                    </td>
+                                    <td class="p-3 text-center text-slate-500">${sm.locationName}</td>
+                                    <td class="p-3 text-center">
+                                        ${isActive ? `
+                                            <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                                                Aktiv
+                                            </span>
+                                        ` : `
+                                            <button onclick="switchProject('${proj.id}')" class="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-all shadow-xs inline-flex items-center gap-1">
+                                                <span class="material-symbols-rounded text-xs">swap_horiz</span> Öffnen
+                                            </button>
+                                        `}
+                                    </td>
+                                </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+    }
+}
+
+function createNewProjectPrompt(cloneCurrent = false) {
+    const projects = getStoredProjects() || [];
+    const defaultName = cloneCurrent 
+        ? `${document.getElementById('headerProjectName')?.innerText || 'Planung'} (Variante)` 
+        : `Planung ${projects.length + 1}`;
+
+    const name = prompt('Name für die neue Planung:', defaultName);
+    if (!name || !name.trim()) return;
+
+    createNewProject(name.trim(), cloneCurrent);
 }
 
 // ==========================================
@@ -170,7 +765,7 @@ function showToastNotification(message, type = 'info') {
 
 function exportFullConfiguration() {
     return {
-        version: '7.6.0',
+        version: '7.7.0',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],

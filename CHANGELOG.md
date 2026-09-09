@@ -4,6 +4,39 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.7.0] – 2026-09-08
+
+### 🚀 Multi-Planungs- & Variantenverwaltung (Nahtloses Wechseln ohne Datenverlust)
+
+#### 1. Multi-Projekt-Engine & Persistenz (`app.js`)
+* **Parallele Planungsspeicherung im lokalen Browserspeicher (`pvpro_projects` & `pvpro_active_project_id`):**
+  - Ermöglicht das Erstellen, Verwalten, Duplizieren und Löschen beliebig vieler unabhängiger PV-Planungen auf demselben Gerät.
+  - Automatischer Schutz bestehender Planungsdaten: Vor jedem Wechsel zu einer anderen Planung wird der aktuelle Stand im Hintergrund verlustfrei gesichert (`saveCurrentProjectData(false)`).
+  - Volle Abwärtskompatibilität: Beim ersten Start mit v7.7.0 wird der bestehende LocalStorage-Zustand automatisch als „Planung 1 (Standard)“ bzw. mit dem Standortnamen als erstes Projekt initialisiert (`initProjectManager()`).
+* **Erweiterte Projekt-Aktionen:**
+  - **Neue Planung anlegen (`createNewProject`):** Erstellt auf Wunsch eine frische Standardkonfiguration am aktuellen Standort oder ein komplett leeres Setup.
+  - **Variante duplizieren (`duplicateProjectById` / `duplicateCurrentProject`):** Erzeugt eine 1:1 Kopie der aktuellen Planung für Was-wäre-wenn-Analysen (z.B. Vergleich von 10 kWp ohne Speicher vs. 15 kWp mit 10 kWh Speicher).
+  - **Projekt umbenennen (`renameProject`):** Individuelle Namensvergabe (z.B. „Hausdach Süd“, „Variante Ost-West mit Gaube“, „Kunde Müller – Angebot A“).
+  - **Projekt löschen (`deleteProject`):** Sicherheitsabfrage vor dem Löschen; Schutz der letzten verbleibenden Planung vor versehentlichem Entfernen.
+
+#### 2. Material Design 3 Benutzeroberfläche & Schnell-Umschalter (`index.html`, `app.js`)
+* **Header-Projektanzeige & Direktzugriff (`btnHeaderProject`):**
+  - Integriertes Steuerelement in der App-Kopfleiste direkt neben dem App-Titel.
+  - Zeigt den aktuellen Projektnamen (`#headerProjectName`) sowie ein Ordner-Icon und Dropdown-Symbol.
+  - Klick öffnet unmittelbar das Verwaltungs-Modal.
+* **M3 Bottom Sheet Schnellzugriff:**
+  - Neue Schaltfläche „Planungen & Varianten verwalten (Multi-Projekt)“ im mobilen Aktionsmenü (`m3MoreSheet`).
+* **Interaktives Verwaltungs-Modal (`#modal-project-manager`):**
+  - **Tab 1: „Alle Planungen“ (Kartenansicht):**
+    - Hervorhebung der aktiven Planung mit grünem Indikator-Badge und pulsierendem Aktiv-Punkt.
+    - Schnelle Kennzahlen je Planung: Generatorleistung (kWp), Modulanzahl & String-Anzahl, Speicherkapazität (kWh), Standort und Zeitstempel der letzten Änderung.
+    - Direkte Aktionsbuttons für Öffnen/Wechseln, Duplizieren, Umbenennen und Löschen.
+  - **Tab 2: „Varianten-Vergleich“ (Side-by-Side Tabelle):**
+    - Kompakte Matrix zum direkten Gegenüberstellen aller technischen Eckdaten unterschiedlicher Varianten.
+    - Ein Klick auf „Öffnen“ lädt die gewünschte Variante sekundenschnell ohne Neuladen der Seite.
+
+---
+
 ## [Version 7.6.0] – 2026-09-07
 
 ### 🎯 Dossier-Optimierung, Querformat-Visualisierung & Freie Modulfeldanordnung
