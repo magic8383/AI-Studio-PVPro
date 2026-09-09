@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.7.0';
+        if (verEl) verEl.innerText = 'Pro 7.8.0';
 
         if (!strings || strings.length === 0) {
             addString();
@@ -139,11 +139,41 @@ function saveConfiguration() {
         btn.classList.remove('bg-amber-500', 'animate-pulse');
         btn.classList.add('bg-primary');
     }
+    let btnMobile = document.getElementById('btnHeaderSaveMobile');
+    if(btnMobile) {
+        btnMobile.classList.remove('bg-amber-500', 'animate-pulse');
+        btnMobile.classList.add('bg-primary');
+    }
     showToastNotification('✅ Planung erfolgreich lokal im Browserspeicher gesichert!', 'success');
 }
 
 // ==========================================
-// 1.0 MULTI-PLANUNGEN & VARIANTEN-MANAGER (V7.7.0)
+// HEADER SUBMENU (MOBILE OVERFLOW DROPDOWN)
+// ==========================================
+
+function toggleHeaderSubmenu() {
+    const menu = document.getElementById('headerSubmenu');
+    const backdrop = document.getElementById('headerSubmenuBackdrop');
+    if (!menu) return;
+    const isHidden = menu.classList.contains('hidden');
+    if (isHidden) {
+        menu.classList.remove('hidden');
+        if (backdrop) backdrop.classList.remove('hidden');
+    } else {
+        menu.classList.add('hidden');
+        if (backdrop) backdrop.classList.add('hidden');
+    }
+}
+
+function closeHeaderSubmenu() {
+    const menu = document.getElementById('headerSubmenu');
+    const backdrop = document.getElementById('headerSubmenuBackdrop');
+    if (menu) menu.classList.add('hidden');
+    if (backdrop) backdrop.classList.add('hidden');
+}
+
+// ==========================================
+// 1.0 MULTI-PLANUNGEN & VARIANTEN-MANAGER (V7.8.0)
 // ==========================================
 
 const PV_PROJECTS_KEY = 'pvpro_projects';
@@ -359,7 +389,7 @@ function createNewProject(name = null, cloneCurrent = false) {
             }]
         }];
         projectData = {
-            version: '7.7.0',
+            version: '7.8.0',
             exportedAt: new Date().toISOString(),
             appName: 'PV-Planung Pro',
             strings: freshStrings,
@@ -765,7 +795,7 @@ function showToastNotification(message, type = 'info') {
 
 function exportFullConfiguration() {
     return {
-        version: '7.7.0',
+        version: '7.8.0',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],
@@ -1679,6 +1709,8 @@ function updatePhysicsOnly() {
     });
     let btn = document.getElementById('btnHeaderSave');
     if(btn) { btn.classList.remove('bg-blue-600'); btn.classList.add('animate-pulse', 'bg-amber-500'); }
+    let btnMobile = document.getElementById('btnHeaderSaveMobile');
+    if(btnMobile) { btnMobile.classList.remove('bg-blue-600'); btnMobile.classList.add('animate-pulse', 'bg-amber-500'); }
     renderStringsUI(); 
     renderDatabaseUI();
     if(document.getElementById('tab-verkabelung')?.classList.contains('active')) {
@@ -1739,16 +1771,16 @@ function renderStringsUI() {
         <div class="m3-card bg-white dark:bg-slate-900 border ${safe ? 'border-slate-200 dark:border-slate-800' : 'border-rose-500/80 ring-2 ring-rose-500/20'} rounded-2xl shadow-sm mb-4 transition-all overflow-hidden">
             <div class="p-4">
                 <div class="flex justify-between items-center mb-3">
-                    <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-2.5 sm:gap-3 min-w-0 mr-2">
                         <div class="w-2.5 h-9 rounded-full shrink-0 shadow-sm" style="background-color: ${str.color}"></div>
-                        <div class="flex flex-col">
-                            <h4 class="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-1.5 leading-none">
-                                ${str.name} 
-                                <span class="font-normal text-xs text-slate-400">| ${modTotal}x Modul an ${inv.name} • <strong class="text-amber-500 font-bold">${str.azimuth ?? 180}° (${getCompassDirection(str.azimuth ?? 180).short})</strong></span>
+                        <div class="flex flex-col min-w-0">
+                            <h4 class="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 flex flex-wrap items-center gap-1 leading-tight">
+                                <span>${str.name}</span> 
+                                <span class="font-normal text-[11px] sm:text-xs text-slate-400">| ${modTotal}x Modul an ${inv.name} • <strong class="text-amber-500 font-bold">${str.azimuth ?? 180}° (${getCompassDirection(str.azimuth ?? 180).short})</strong></span>
                             </h4>
                         </div>
                     </div>
-                    <button onclick="toggleEditMode(${str.id})" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shrink-0">
+                    <button onclick="toggleEditMode(${str.id})" class="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 shrink-0 cursor-pointer">
                         <span class="material-symbols-rounded text-base">tune</span>
                         <span class="hidden md:inline">Konfigurieren</span>
                     </button>
@@ -3096,6 +3128,8 @@ window.addEventListener('beforeinstallprompt', (e) => {
     deferredPrompt = e;
     const btn = document.getElementById('btnPwaInstall');
     if (btn) btn.classList.remove('hidden');
+    const btnMobile = document.getElementById('btnPwaInstallMobile');
+    if (btnMobile) btnMobile.classList.remove('hidden');
 });
 
 function installPwaApp() {
@@ -3108,6 +3142,8 @@ function installPwaApp() {
         deferredPrompt = null;
         const btn = document.getElementById('btnPwaInstall');
         if (btn) btn.classList.add('hidden');
+        const btnMobile = document.getElementById('btnPwaInstallMobile');
+        if (btnMobile) btnMobile.classList.add('hidden');
     });
 }
 
@@ -3115,6 +3151,8 @@ window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
     const btn = document.getElementById('btnPwaInstall');
     if (btn) btn.classList.add('hidden');
+    const btnMobile = document.getElementById('btnPwaInstallMobile');
+    if (btnMobile) btnMobile.classList.add('hidden');
     console.log('PVPro erfolgreich installiert.');
 });
 

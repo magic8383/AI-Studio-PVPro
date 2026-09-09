@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.7.0 (Multi-Planungs- & Variantenverwaltung)</title>
+    <title>PV-Planung Pro 7.8.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.7.0 (Multi-Planungs- & Variantenverwaltung)">
+    <meta property="og:title" content="PV-Planung Pro 7.8.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings -->
@@ -173,55 +173,125 @@
 <body class="bg-slate-50 text-slate-800 dark:bg-slate-950 dark:text-slate-100 font-sans antialiased h-[100dvh] flex flex-col overflow-hidden transition-colors duration-300">
 
     <header class="bg-slate-900/95 text-white shadow-md z-20 shrink-0 relative border-b border-slate-800 backdrop-blur-md">
-        <div class="max-w-7xl mx-auto px-4 py-2.5 md:py-3.5">
-            <div class="flex justify-between items-center">
-                <div class="flex items-center gap-2.5 sm:gap-3">
-                    <div class="w-9 h-9 rounded-2xl bg-gradient-to-tr from-primary to-blue-400 flex items-center justify-center text-white shadow-md shadow-primary/20 shrink-0">
-                        <span class="material-symbols-rounded text-xl fill-1">solar_power</span>
+        <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2 sm:py-2.5 md:py-3.5">
+            <div class="flex justify-between items-center gap-2">
+                <!-- Left: Logo, Title & Project Switcher -->
+                <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
+                    <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-primary to-blue-400 flex items-center justify-center text-white shadow-md shadow-primary/20 shrink-0">
+                        <span class="material-symbols-rounded text-lg sm:text-xl fill-1">solar_power</span>
                     </div>
-                    <div>
-                        <h1 class="text-base sm:text-lg md:text-xl font-extrabold tracking-tight text-white leading-none">PV-Planung <span id="app-header-version" class="text-primary font-black">Pro 7.7.0</span></h1>
-                        <p class="text-slate-400 text-[10px] md:text-xs mt-0.5 font-medium flex items-center gap-1">
-                            <span class="inline-block w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
-                            Material Expressive • Multi-Planung • VDE
-                        </p>
+                    <div class="shrink-0">
+                        <h1 class="text-sm sm:text-base md:text-xl font-extrabold tracking-tight text-white leading-none flex items-center gap-1 sm:gap-1.5">
+                            <span>PV-Planung</span>
+                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 7.8.0</span>
+                        </h1>
                     </div>
 
                     <!-- Planungs- & Varianten-Switcher direkt im Header -->
-                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="ml-1 sm:ml-2 flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80 text-xs font-bold transition-all shadow-sm group cursor-pointer" title="Planung wechseln oder neue Varianten verwalten">
-                        <span class="material-symbols-rounded text-primary text-base sm:text-lg">folder_open</span>
+                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80 text-xs font-bold transition-all shadow-sm group cursor-pointer shrink-0" title="Planung wechseln oder Varianten verwalten">
+                        <span class="material-symbols-rounded text-primary text-base">folder_open</span>
                         <div class="text-left flex flex-col justify-center leading-tight">
-                            <span class="text-[9px] uppercase tracking-wider text-slate-400 font-semibold hidden sm:inline">Planung</span>
-                            <span id="headerProjectName" class="max-w-[85px] sm:max-w-[130px] md:max-w-[170px] truncate font-bold text-white text-xs">Planung 1</span>
+                            <span class="text-[8px] sm:text-[9px] uppercase tracking-wider text-slate-400 font-semibold hidden sm:inline">Planung</span>
+                            <span id="headerProjectName" class="max-w-[70px] sm:max-w-[110px] md:max-w-[160px] truncate font-bold text-white text-xs">Planung 1</span>
                         </div>
                         <span class="material-symbols-rounded text-slate-400 text-sm group-hover:text-white transition-colors">unfold_more</span>
                     </button>
                 </div>
-                <div class="flex items-center gap-1.5 md:gap-2">
+
+                <!-- Right Desktop: Full Action Buttons (Visible on md: >= 768px) -->
+                <div class="hidden md:flex items-center gap-1.5 md:gap-2 shrink-0">
                     <button id="btnPwaInstall" onclick="installPwaApp()" class="hidden bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 animate-pulse">
                         <span class="material-symbols-rounded text-base">install_mobile</span>
-                        <span class="hidden md:inline">Installieren</span>
+                        <span>Installieren</span>
                     </button>
                     <button id="btnHeaderShare" onclick="openShareModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-indigo-500/40 cursor-pointer" title="Auf Handy übertragen / Teilen (QR-Code & Link)">
                         <span class="material-symbols-rounded text-base">devices</span>
-                        <span class="hidden md:inline">Auf Handy</span>
+                        <span>Auf Handy</span>
                     </button>
-                    <button id="btnHeaderDossier" onclick="openDossierModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-emerald-500/40" title="Projektdossier & PDF erzeugen">
+                    <button id="btnHeaderDossier" onclick="openDossierModal()" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-emerald-500/40 cursor-pointer" title="Projektdossier & PDF erzeugen">
                         <span class="material-symbols-rounded text-base">picture_as_pdf</span>
-                        <span class="hidden md:inline">Dossier / PDF</span>
+                        <span>Dossier / PDF</span>
                     </button>
-                    <button id="btnHeaderSave" onclick="saveConfiguration()" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5">
+                    <button id="btnHeaderSave" onclick="saveConfiguration()" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 cursor-pointer">
                         <span class="material-symbols-rounded text-base">save</span>
-                        <span class="hidden md:inline">Speichern</span>
+                        <span>Speichern</span>
                     </button>
-                    <button onclick="toggleThemePanel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-slate-700/60">
+                    <button onclick="toggleThemePanel()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5 border border-slate-700/60 cursor-pointer">
                         <span class="material-symbols-rounded text-base">palette</span>
-                        <span class="hidden md:inline">Design</span>
+                        <span>Design</span>
                     </button>
-                    <button onclick="clearLocalStorage()" class="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold px-2.5 py-2 rounded-xl shadow transition-colors flex items-center gap-1 border border-rose-500/30">
+                    <button onclick="clearLocalStorage()" class="bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold px-2.5 py-2 rounded-xl shadow transition-colors flex items-center gap-1 border border-rose-500/30 cursor-pointer">
                         <span class="material-symbols-rounded text-base">restart_alt</span>
-                        <span class="hidden md:inline">Reset</span>
+                        <span>Reset</span>
                     </button>
+                </div>
+
+                <!-- Right Mobile: Minimalist 2-Button Control (< 768px) -->
+                <div class="flex md:hidden items-center gap-1.5 shrink-0 relative">
+                    <!-- Direkt-Speichern Button für mobile Nutzer -->
+                    <button id="btnHeaderSaveMobile" onclick="saveConfiguration()" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-2.5 py-1.5 rounded-xl shadow transition-colors flex items-center gap-1 cursor-pointer" title="Planung speichern">
+                        <span class="material-symbols-rounded text-base">save</span>
+                        <span class="text-[11px] font-bold">Speichern</span>
+                    </button>
+
+                    <!-- Untermenü-Schaltfläche (Mehr Optionen) -->
+                    <button id="btnHeaderMenuToggle" onclick="toggleHeaderSubmenu()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-1.5 rounded-xl shadow transition-colors flex items-center justify-center border border-slate-700/80 cursor-pointer" title="Weitere Aktionen anzeigen">
+                        <span class="material-symbols-rounded text-xl">more_vert</span>
+                    </button>
+
+                    <!-- Untermenü-Dropdown für Mobile -->
+                    <div id="headerSubmenuBackdrop" onclick="closeHeaderSubmenu()" class="hidden fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]"></div>
+                    <div id="headerSubmenu" class="hidden absolute right-0 top-full mt-2 w-64 bg-slate-900/98 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2 text-xs space-y-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+                        <div class="px-3 py-1.5 border-b border-slate-800/80 flex items-center justify-between text-slate-400">
+                            <span class="text-[10px] uppercase font-bold tracking-wider">Aktionen & Tools</span>
+                            <button onclick="closeHeaderSubmenu()" class="text-slate-400 hover:text-white p-0.5">
+                                <span class="material-symbols-rounded text-sm">close</span>
+                            </button>
+                        </div>
+                        <button onclick="closeHeaderSubmenu(); openProjectManagerModal();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
+                            <span class="material-symbols-rounded text-primary text-lg">folder_open</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-bold text-white text-xs">Planungen & Varianten</p>
+                                <p class="text-[10px] text-slate-400 truncate">Wechseln, Kopieren & Vergleichen</p>
+                            </div>
+                        </button>
+                        <button onclick="closeHeaderSubmenu(); openDossierModal();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
+                            <span class="material-symbols-rounded text-emerald-400 text-lg">picture_as_pdf</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-bold text-white text-xs">Projektdossier & PDF</p>
+                                <p class="text-[10px] text-slate-400 truncate">VDE 0100-712 Fachgutachten</p>
+                            </div>
+                        </button>
+                        <button onclick="closeHeaderSubmenu(); openShareModal();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
+                            <span class="material-symbols-rounded text-indigo-400 text-lg">devices</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-bold text-white text-xs">Auf Handy / Teilen</p>
+                                <p class="text-[10px] text-slate-400 truncate">QR-Code, Link & Backup</p>
+                            </div>
+                        </button>
+                        <button onclick="closeHeaderSubmenu(); toggleThemePanel();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
+                            <span class="material-symbols-rounded text-amber-400 text-lg">palette</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-bold text-white text-xs">Design & Farbschema</p>
+                                <p class="text-[10px] text-slate-400 truncate">Farben & Dark Mode wählen</p>
+                            </div>
+                        </button>
+                        <button id="btnPwaInstallMobile" onclick="closeHeaderSubmenu(); installPwaApp();" class="hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-emerald-400 hover:bg-emerald-950/40 transition-all font-semibold">
+                            <span class="material-symbols-rounded text-emerald-400 text-lg">install_mobile</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-bold text-emerald-300 text-xs">Als App installieren</p>
+                                <p class="text-[10px] text-emerald-400/80 truncate">Zum Homescreen hinzufügen</p>
+                            </div>
+                        </button>
+                        <div class="border-t border-slate-800/80 pt-1"></div>
+                        <button onclick="closeHeaderSubmenu(); clearLocalStorage();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 transition-all font-semibold">
+                            <span class="material-symbols-rounded text-rose-400 text-lg">restart_alt</span>
+                            <div class="flex-1 min-w-0">
+                                <p class="font-bold text-rose-300 text-xs">Alles zurücksetzen</p>
+                                <p class="text-[10px] text-rose-400/70 truncate">Planung auf Werkseinstellungen</p>
+                            </div>
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -282,25 +352,25 @@
         </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto p-4 md:p-6 pb-24 w-full relative">
+    <main class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 pb-28 w-full relative">
         
         <!-- TAB 1: STRINGS & ORT -->
-        <div id="tab-system" class="tab-content active max-w-4xl mx-auto space-y-6 mt-2">
+        <div id="tab-system" class="tab-content active max-w-4xl mx-auto space-y-5 sm:space-y-6 mt-1 sm:mt-2">
             
-            <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-4">
-                <div class="flex gap-3 items-center justify-between">
-                    <div class="flex gap-3 items-center">
-                        <div class="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl fill-1">location_on</span>
+            <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-3.5 sm:p-4">
+                <div class="flex gap-2.5 sm:gap-3 items-center justify-between">
+                    <div class="flex gap-2.5 sm:gap-3 items-center min-w-0">
+                        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <span class="material-symbols-rounded text-xl sm:text-2xl fill-1">location_on</span>
                         </div>
-                        <div>
-                            <p class="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Standort für PVGIS API</p>
-                            <p class="text-sm font-bold text-primary leading-none" id="locNameText">Villingen-Schwenningen</p>
+                        <div class="min-w-0">
+                            <p class="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Standort für PVGIS API</p>
+                            <p class="text-xs sm:text-sm font-bold text-primary leading-none truncate" id="locNameText">Villingen-Schwenningen</p>
                         </div>
                     </div>
-                    <button onclick="document.getElementById('locEditBox').classList.toggle('hidden')" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1">
+                    <button onclick="document.getElementById('locEditBox').classList.toggle('hidden')" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 shrink-0">
                         <span class="material-symbols-rounded text-sm">edit_location_alt</span>
-                        <span>Ändern</span>
+                        <span class="hidden sm:inline">Ändern</span>
                     </button>
                 </div>
                 <div id="locEditBox" class="hidden mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex gap-2">
@@ -768,17 +838,17 @@
             </div>
 
             <!-- EINZELTAGE (DETAIL) -->
-            <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 md:p-10 mt-8">
-                <div class="flex items-center justify-between mb-8">
-                    <h3 class="text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <div class="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-4 sm:p-6 md:p-10 mt-8">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 sm:mb-8">
+                    <h3 class="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <span class="material-symbols-rounded text-primary">calendar_month</span> Tagesgenaue Auflösung
                     </h3>
-                    <div class="flex items-center gap-2 md:gap-6 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
-                        <button onclick="changeDetailMonth(-1)" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-xl shadow-sm text-slate-700 dark:text-slate-200 font-bold hover:text-primary transition-colors flex items-center justify-center">
+                    <div class="flex items-center gap-2 sm:gap-4 md:gap-6 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-inner">
+                        <button onclick="changeDetailMonth(-1)" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-xl shadow-sm text-slate-700 dark:text-slate-200 font-bold hover:text-primary transition-colors flex items-center justify-center cursor-pointer">
                             <span class="material-symbols-rounded text-base">chevron_left</span>
                         </button>
-                        <h2 class="text-base md:text-lg font-black text-slate-800 dark:text-slate-100 w-28 text-center" id="detailMonthName">Januar</h2>
-                        <button onclick="changeDetailMonth(1)" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-xl shadow-sm text-slate-700 dark:text-slate-200 font-bold hover:text-primary transition-colors flex items-center justify-center">
+                        <h2 class="text-sm sm:text-base md:text-lg font-black text-slate-800 dark:text-slate-100 w-24 sm:w-28 text-center" id="detailMonthName">Januar</h2>
+                        <button onclick="changeDetailMonth(1)" class="w-8 h-8 bg-white dark:bg-slate-700 rounded-xl shadow-sm text-slate-700 dark:text-slate-200 font-bold hover:text-primary transition-colors flex items-center justify-center cursor-pointer">
                             <span class="material-symbols-rounded text-base">chevron_right</span>
                         </button>
                     </div>
@@ -958,90 +1028,106 @@
 
     <!-- M3 More Bottom Sheet (Mobile Dialog) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
-    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 m3-surface rounded-t-3xl border-t border-slate-700/80 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-6 m3-bottom-nav">
-        <div class="w-12 h-1.5 bg-slate-600 rounded-full mx-auto mb-5"></div>
-        <div class="flex justify-between items-center mb-4">
+    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 m3-surface rounded-t-3xl border-t border-slate-700/80 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-12 m3-bottom-nav max-h-[88vh] overflow-y-auto">
+        <div class="w-12 h-1.5 bg-slate-600 rounded-full mx-auto mb-4"></div>
+        <div class="flex justify-between items-center mb-3">
             <h3 class="text-base font-bold text-white flex items-center gap-2">
                 <span class="material-symbols-rounded text-primary">apps</span> Weitere Module & Tools
             </h3>
-            <button onclick="closeMoreSheet()" class="text-slate-400 hover:text-white p-1">
+            <button onclick="closeMoreSheet()" class="text-slate-400 hover:text-white p-1 cursor-pointer">
                 <span class="material-symbols-rounded text-xl">close</span>
             </button>
         </div>
-        <div class="grid grid-cols-2 gap-3 mb-2">
-            <button onclick="closeMoreSheet(); openProjectManagerModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-primary">folder_open</span>
-                <div>
+        <div class="grid grid-cols-2 gap-2.5 mb-2">
+            <button onclick="closeMoreSheet(); openProjectManagerModal();" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-2xl text-primary shrink-0">folder_open</span>
+                <div class="min-w-0">
                     <p class="text-xs font-bold text-white flex items-center gap-1.5">
                         Planungen & Varianten verwalten
                         <span class="text-[9px] px-1.5 py-0.5 rounded bg-primary/30 text-primary-light font-mono">Multi-Projekt</span>
                     </p>
-                    <p class="text-[10px] text-slate-300">Nahtlos zwischen mehreren Planungen wechseln oder Varianten vergleichen</p>
+                    <p class="text-[10px] text-slate-300 truncate">Nahtlos zwischen mehreren Planungen wechseln oder Varianten vergleichen</p>
                 </div>
             </button>
-            <button onclick="closeMoreSheet(); openShareModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-indigo-900/40 hover:bg-indigo-800/50 border border-indigo-500/40 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-indigo-400">devices</span>
-                <div>
+            <button onclick="closeMoreSheet(); openShareModal();" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-indigo-900/40 hover:bg-indigo-800/50 border border-indigo-500/40 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-2xl text-indigo-400 shrink-0">devices</span>
+                <div class="min-w-0">
                     <p class="text-xs font-bold text-white flex items-center gap-1.5">
                         Auf Smartphone übertragen / Teilen
                         <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">QR & Code</span>
                     </p>
-                    <p class="text-[10px] text-slate-300">Desktop-Planung sofort am Handy öffnen oder Datei sichern</p>
+                    <p class="text-[10px] text-slate-300 truncate">Desktop-Planung sofort am Handy öffnen oder Datei sichern</p>
                 </div>
             </button>
-            <button onclick="closeMoreSheet(); openDossierModal();" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-emerald-900/40 hover:bg-emerald-800/50 border border-emerald-500/40 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-emerald-400">picture_as_pdf</span>
-                <div>
+            <button onclick="closeMoreSheet(); openDossierModal();" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-emerald-900/40 hover:bg-emerald-800/50 border border-emerald-500/40 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-2xl text-emerald-400 shrink-0">picture_as_pdf</span>
+                <div class="min-w-0">
                     <p class="text-xs font-bold text-white flex items-center gap-1.5">
                         Projektdossier & PDF
                         <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">DIN VDE 0100-712</span>
                     </p>
-                    <p class="text-[10px] text-slate-300">Anlagenpass, Schaltplan, Stückliste & Protokoll</p>
+                    <p class="text-[10px] text-slate-300 truncate">Anlagenpass, Schaltplan, Stückliste & Protokoll</p>
                 </div>
             </button>
-            <button onclick="closeMoreSheet(); openWiringFullscreen('all');" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-primary">open_in_full</span>
-                <div>
+            <button onclick="closeMoreSheet(); openWiringFullscreen('all');" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-2xl text-primary shrink-0">open_in_full</span>
+                <div class="min-w-0">
                     <p class="text-xs font-bold text-white flex items-center gap-1.5">
                         Kabelplan Vollbild / Großansicht
                         <span class="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-mono">Zoom & Pan</span>
                     </p>
-                    <p class="text-[10px] text-slate-300">Schaltplan im gesamten Bildschirm betrachten (Touch-Gesten)</p>
+                    <p class="text-[10px] text-slate-300 truncate">Schaltplan im gesamten Bildschirm betrachten (Touch-Gesten)</p>
                 </div>
             </button>
-            <button onclick="switchTab('verkabelung')" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-emerald-400">cable</span>
-                <div>
+            <button onclick="switchTab('verkabelung')" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-2xl text-emerald-400 shrink-0">cable</span>
+                <div class="min-w-0">
                     <p class="text-xs font-bold text-white">Kabelwege & String-Plan</p>
-                    <p class="text-[10px] text-slate-400">Schaltplan, Leitungsführung & VDE-Verluste</p>
+                    <p class="text-[10px] text-slate-400 truncate">Schaltplan, Leitungsführung & VDE-Verluste</p>
                 </div>
             </button>
-            <button onclick="switchTab('invest')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-primary">receipt_long</span>
-                <div>
-                    <p class="text-xs font-bold text-white">Investition</p>
-                    <p class="text-[10px] text-slate-400">4 Kosten-Kategorien</p>
+            <button onclick="switchTab('invest')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-primary shrink-0">receipt_long</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Investition</p>
+                    <p class="text-[10px] text-slate-400 truncate">Kosten & Details</p>
                 </div>
             </button>
-            <button onclick="switchTab('uebersicht')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-amber-400">dashboard</span>
-                <div>
-                    <p class="text-xs font-bold text-white">Übersicht</p>
-                    <p class="text-[10px] text-slate-400">Steuererklärung & KPIs</p>
+            <button onclick="switchTab('uebersicht')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-amber-400 shrink-0">dashboard</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Übersicht</p>
+                    <p class="text-[10px] text-slate-400 truncate">Steuer & KPIs</p>
                 </div>
             </button>
-            <button onclick="switchTab('database')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-accent">database</span>
-                <div>
-                    <p class="text-xs font-bold text-white">Datenbank</p>
-                    <p class="text-[10px] text-slate-400">WR, Akkus, Module</p>
+            <button onclick="switchTab('database')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-accent shrink-0">database</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Datenbank</p>
+                    <p class="text-[10px] text-slate-400 truncate">WR & Module</p>
                 </div>
             </button>
-            <button onclick="switchTab('faq')" class="flex items-center gap-3 p-3.5 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all">
-                <span class="material-symbols-rounded text-2xl text-blue-400">menu_book</span>
-                <div>
-                    <p class="text-xs font-bold text-white">Handbuch</p>
-                    <p class="text-[10px] text-slate-400">Formeln & Changelog</p>
+            <button onclick="switchTab('faq')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-blue-400 shrink-0">menu_book</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Handbuch</p>
+                    <p class="text-[10px] text-slate-400 truncate">Formeln & Info</p>
+                </div>
+            </button>
+
+            <!-- Schnelleinstellungen im Bottom Sheet: Design & Reset -->
+            <button onclick="closeMoreSheet(); toggleThemePanel();" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-amber-400 shrink-0">palette</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Design & Farben</p>
+                    <p class="text-[10px] text-slate-400 truncate">Themes & Modus</p>
+                </div>
+            </button>
+            <button onclick="closeMoreSheet(); clearLocalStorage();" class="flex items-center gap-2.5 p-3 rounded-2xl bg-rose-950/30 hover:bg-rose-900/40 border border-rose-800/40 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-rose-400 shrink-0">restart_alt</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-rose-300 truncate">Reset</p>
+                    <p class="text-[10px] text-rose-400/80 truncate">Auf Standard</p>
                 </div>
             </button>
         </div>
@@ -1119,12 +1205,12 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V7.7.0 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=7.7.0"></script>
-    <script src="database.js?v=7.7.0"></script>
-    <script src="content.js?v=7.7.0"></script>
-    <script src="app.js?v=7.7.0"></script>
-    <script src="wiring.js?v=7.7.0"></script>
-    <script src="dossier.js?v=7.7.0"></script>
+    <!-- MODULARE ARCHITEKTUR V7.8.0 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=7.8.0"></script>
+    <script src="database.js?v=7.8.0"></script>
+    <script src="content.js?v=7.8.0"></script>
+    <script src="app.js?v=7.8.0"></script>
+    <script src="wiring.js?v=7.8.0"></script>
+    <script src="dossier.js?v=7.8.0"></script>
 </body>
 </html>

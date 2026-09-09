@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 7.7.0 (Multi-Planungs- & Variantenverwaltung)  
+**Aktuelle Version:** 7.8.0 (Header-Aufräumung & App-weite Mobile-First-Optimierung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -24,7 +24,13 @@
 4. **Keine Insellösungen (Weder bei Logik noch bei Layout):**
    * **Zentrale Berechnungslogik (Single Source of Truth):** Keine redundanten Ad-hoc-Formeln in UI-Komponenten oder Exportmodulen. Berechnungen (Spannungen, Mismatch, Leitungsverluste nach VDE 0100-712, Amortisation) werden in den Kernmodulen definiert und von allen Konsumenten (UI, Charts, Dossier) geteilt.
    * **Konsistentes Designsystem:** Alle visuellen Elemente folgen strikt dem *Material Design 3 Expressive*-Standard. Symbole werden ausnahmslos als Google Material Symbols Rounded (`.material-symbols-rounded`) gerendert. Keine Emoji-Buttons, keine uneinheitlichen Farbwelten.
-5. **Kompakt & Technisch Exakt:** Erklärungen und Commit-Beschreibungen bleiben präzise, faktenbasiert und frei von werblichem Fülltext.
+5. **Mobile-First & Responsiveness-Standard (Verbindliche Mobil-Optimierung):**  
+   Die Applikation wird von Installateuren, Planern und Endkunden intensiv auf mobilen Endgeräten (Smartphones ab 360 px Breite) direkt vor Ort auf Baustellen, Dächern oder im Kundengespräch genutzt. Jede neue Funktion, Navigationsleiste, Modalität oder Tabelle MUSS uneingeschränkt auf schmalen Bildschirmen fehler- und overflow-frei bedienbar sein:
+   * **Header & Statusleiste schlank halten:** Keine überladenen Kopfzeilen auf Mobilgeräten. Primäre Aktionen (Projektwechsel, Speichern, Teilen) bleiben direkt mit einem Tap erreichbar; sekundäre Aktionen (Design/Themes, Handbuch, Werkseinstellungen/Reset) gehören in ein klares mobiles Untermenü (`#headerSubmenu`) oder das M3 More Bottom Sheet (`#m3MoreSheet`). Keine redundanten, displayfüllenden Stil-Labels (wie „Material Expressive“).
+   * **Keine horizontalen Seiten-Overflows:** Alle Karten, Tabellen, Toolbars und Metrik-Badges müssen responsive Umbrüche (`flex-wrap`, `min-w-0`, `truncate`, `overflow-x-auto`) besitzen.
+   * **Touch-Targets & Daumen-Ergonomie:** Interaktive Schaltflächen müssen auf Mobilgeräten mindestens 40–44 px Touch-Fläche bieten.
+   * **Modale & Sheets scrollbar halten:** Alle Overlays und Bottom-Sheets müssen mit `max-h-[85vh]` bis `max-h-[92vh]` und `overflow-y-auto` abgesichert sein, damit sie auch bei geöffneter virtueller Tastatur oder auf kleinen Bildschirmen (z. B. iPhone SE) vollständig bedienbar bleiben.
+6. **Kompakt & Technisch Exakt:** Erklärungen und Commit-Beschreibungen bleiben präzise, faktenbasiert und frei von werblichem Fülltext.
 
 ---
 

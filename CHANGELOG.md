@@ -4,6 +4,36 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.8.0] – 2026-09-08
+
+### 📱 Header-Aufräumung & App-weite Mobile-First-Optimierung
+
+#### 1. Schlanker, aufgeräumter Mobile-Header & Neues Untermenü (`index.html`, `app.js`)
+* **Entfernung überflüssiger Branding-Texte:**
+  - Das nicht mehr benötigte Label „Material Expressive“ wurde vollständig aus der Kopfleiste entfernt.
+* **Ergonomische Trennung von Desktop- und Mobil-Aktionen:**
+  - Auf Smartphones (unter 768 px) zeigt der Header jetzt nur noch die essenziellen Steuerelemente: Projektwechsel (`#btnHeaderProject`), Speichern (`#btnHeaderSaveMobile`) und ein neues mobiles Menü-Icon (`#btnHeaderMenuToggle`).
+  - **Neues Header-Untermenü (`#headerSubmenu` & `#headerSubmenuBackdrop`):** Sekundäre Funktionen (Theme-/Design-Panel, PWA-Install, Handbuch, Reset auf Standard) öffnen sich in einem leichten, eleganten Dropdown-Menü direkt unter dem Header.
+  - Desktop-Ansicht (ab 768 px) behält alle direkten Schnellzugriffs-Buttons vollständig bei.
+
+#### 2. App-weites Responsiveness-Audit & Behebung von Layout-Overflows
+* **Tab 'Strings' (`index.html`, `app.js`):**
+  - Standortkarte: Auf Mobilgeräten kompakteres Icon und Kürzung von Langtexten (`truncate`), Button-Text „Ändern“ wird auf kleinen Displays platzsparend auf das Icon reduziert.
+  - String-Karten: Dynamische Titelzeile nutzt `flex-wrap` und `min-w-0`, sodass lange Modul- oder Wechselrichternamen den „Konfigurieren“-Button nicht mehr aus dem Viewport drängen.
+* **Tab 'Verkabelung' (`wiring.js`):**
+  - Toolbar mit horizontalem Scrollen (`overflow-x-auto`, `scrollbar-none`, `shrink-0` für alle Aktionsbuttons) ausgestattet, um selbst auf schmalen 360 px Displays (z. B. auf der Baustelle) flüssig bedienbar zu bleiben.
+  - String-Metrikzeile und Brücken-Statusboxen mit `flex-wrap` umbruchsicher gestaltet.
+* **Tab 'Auswertung' (`index.html`):**
+  - Sektion „Tagesgenaue Auflösung“: Titel und Monatswechsler `[ < Monat > ]` brechen auf Mobilgeräten nun sauber per `flex-col sm:flex-row` um, statt horizontal zu kollidieren.
+* **M3 More Bottom Sheet (`#m3MoreSheet` in `index.html`):**
+  - Schnelleinstellungen für Design & Farbschemata (`toggleThemePanel()`) sowie Werkseinstellungen/Reset (`clearLocalStorage()`) direkt im Bottom-Sheet ergänzt.
+  - Mit `max-h-[88vh]` und `overflow-y-auto` abgesichert, sodass auch auf kleinsten Bildschirmen (z. B. iPhone SE) alle Einträge sauber erreichbar sind.
+
+#### 3. Richtlinien-Erweiterung (`DEVELOPMENT_GUIDELINES.md`)
+* Neuer verbindlicher Grundsatz **5. Mobile-First & Responsiveness-Standard** zur permanenten Sicherstellung von Overflow-Freiheit, Touch-Targets (mind. 40–44 px) und mobiler Scrollbarkeit bei allen künftigen Features.
+
+---
+
 ## [Version 7.7.0] – 2026-09-08
 
 ### 🚀 Multi-Planungs- & Variantenverwaltung (Nahtloses Wechseln ohne Datenverlust)

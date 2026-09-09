@@ -1634,7 +1634,7 @@ function renderWiringTab() {
                         ` : ''}
                     </div>
 
-                    <div class="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
                         <span>WR: <strong class="text-slate-800 dark:text-slate-200">${inv.name.slice(0, 18)}</strong></span>
                         <span>•</span>
                         <span>MPPT: <strong class="text-slate-800 dark:text-slate-200">MPPT ${s.mpptId || 1}</strong></span>
