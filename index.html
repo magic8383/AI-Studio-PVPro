@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.8.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
+    <title>PV-Planung Pro 7.9.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.8.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
+    <meta property="og:title" content="PV-Planung Pro 7.9.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings -->
@@ -183,18 +183,18 @@
                     <div class="shrink-0">
                         <h1 class="text-sm sm:text-base md:text-xl font-extrabold tracking-tight text-white leading-none flex items-center gap-1 sm:gap-1.5">
                             <span>PV-Planung</span>
-                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 7.8.0</span>
+                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 7.9.0</span>
                         </h1>
                     </div>
 
                     <!-- Planungs- & Varianten-Switcher direkt im Header -->
-                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80 text-xs font-bold transition-all shadow-sm group cursor-pointer shrink-0" title="Planung wechseln oder Varianten verwalten">
-                        <span class="material-symbols-rounded text-primary text-base">folder_open</span>
-                        <div class="text-left flex flex-col justify-center leading-tight">
+                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80 text-xs font-bold transition-all shadow-sm group cursor-pointer shrink-0" title="Planung wechseln oder Varianten verwalten">
+                        <span class="material-symbols-rounded text-primary text-base shrink-0">folder_open</span>
+                        <div class="text-left flex flex-col justify-center leading-tight min-w-0">
                             <span class="text-[8px] sm:text-[9px] uppercase tracking-wider text-slate-400 font-semibold hidden sm:inline">Planung</span>
-                            <span id="headerProjectName" class="max-w-[70px] sm:max-w-[110px] md:max-w-[160px] truncate font-bold text-white text-xs">Planung 1</span>
+                            <span id="headerProjectName" class="max-w-[65px] sm:max-w-[110px] md:max-w-[160px] truncate font-bold text-white text-xs">Planung 1</span>
                         </div>
-                        <span class="material-symbols-rounded text-slate-400 text-sm group-hover:text-white transition-colors">unfold_more</span>
+                        <span class="material-symbols-rounded text-slate-400 text-sm group-hover:text-white transition-colors shrink-0">unfold_more</span>
                     </button>
                 </div>
 
@@ -227,71 +227,17 @@
                 </div>
 
                 <!-- Right Mobile: Minimalist 2-Button Control (< 768px) -->
-                <div class="flex md:hidden items-center gap-1.5 shrink-0 relative">
+                <div class="flex md:hidden items-center gap-1.5 shrink-0">
                     <!-- Direkt-Speichern Button für mobile Nutzer -->
-                    <button id="btnHeaderSaveMobile" onclick="saveConfiguration()" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-2.5 py-1.5 rounded-xl shadow transition-colors flex items-center gap-1 cursor-pointer" title="Planung speichern">
+                    <button id="btnHeaderSaveMobile" onclick="saveConfiguration()" class="bg-primary hover:bg-primary-hover text-white text-xs font-bold px-2.5 py-1.5 rounded-xl shadow transition-colors flex items-center gap-1 cursor-pointer shrink-0" title="Planung speichern">
                         <span class="material-symbols-rounded text-base">save</span>
                         <span class="text-[11px] font-bold">Speichern</span>
                     </button>
 
-                    <!-- Untermenü-Schaltfläche (Mehr Optionen) -->
-                    <button id="btnHeaderMenuToggle" onclick="toggleHeaderSubmenu()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-1.5 rounded-xl shadow transition-colors flex items-center justify-center border border-slate-700/80 cursor-pointer" title="Weitere Aktionen anzeigen">
+                    <!-- Mehr Optionen Button -> Öffnet ergonomisch das native M3 Bottom Sheet -->
+                    <button id="btnHeaderMenuToggle" onclick="openMoreSheet()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-1.5 rounded-xl shadow transition-colors flex items-center justify-center border border-slate-700/80 cursor-pointer shrink-0" title="Alle Module & Optionen öffnen">
                         <span class="material-symbols-rounded text-xl">more_vert</span>
                     </button>
-
-                    <!-- Untermenü-Dropdown für Mobile -->
-                    <div id="headerSubmenuBackdrop" onclick="closeHeaderSubmenu()" class="hidden fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px]"></div>
-                    <div id="headerSubmenu" class="hidden absolute right-0 top-full mt-2 w-64 bg-slate-900/98 border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2 text-xs space-y-1 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
-                        <div class="px-3 py-1.5 border-b border-slate-800/80 flex items-center justify-between text-slate-400">
-                            <span class="text-[10px] uppercase font-bold tracking-wider">Aktionen & Tools</span>
-                            <button onclick="closeHeaderSubmenu()" class="text-slate-400 hover:text-white p-0.5">
-                                <span class="material-symbols-rounded text-sm">close</span>
-                            </button>
-                        </div>
-                        <button onclick="closeHeaderSubmenu(); openProjectManagerModal();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
-                            <span class="material-symbols-rounded text-primary text-lg">folder_open</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-bold text-white text-xs">Planungen & Varianten</p>
-                                <p class="text-[10px] text-slate-400 truncate">Wechseln, Kopieren & Vergleichen</p>
-                            </div>
-                        </button>
-                        <button onclick="closeHeaderSubmenu(); openDossierModal();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
-                            <span class="material-symbols-rounded text-emerald-400 text-lg">picture_as_pdf</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-bold text-white text-xs">Projektdossier & PDF</p>
-                                <p class="text-[10px] text-slate-400 truncate">VDE 0100-712 Fachgutachten</p>
-                            </div>
-                        </button>
-                        <button onclick="closeHeaderSubmenu(); openShareModal();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
-                            <span class="material-symbols-rounded text-indigo-400 text-lg">devices</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-bold text-white text-xs">Auf Handy / Teilen</p>
-                                <p class="text-[10px] text-slate-400 truncate">QR-Code, Link & Backup</p>
-                            </div>
-                        </button>
-                        <button onclick="closeHeaderSubmenu(); toggleThemePanel();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-slate-200 hover:text-white hover:bg-slate-800/80 transition-all font-semibold">
-                            <span class="material-symbols-rounded text-amber-400 text-lg">palette</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-bold text-white text-xs">Design & Farbschema</p>
-                                <p class="text-[10px] text-slate-400 truncate">Farben & Dark Mode wählen</p>
-                            </div>
-                        </button>
-                        <button id="btnPwaInstallMobile" onclick="closeHeaderSubmenu(); installPwaApp();" class="hidden w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-emerald-400 hover:bg-emerald-950/40 transition-all font-semibold">
-                            <span class="material-symbols-rounded text-emerald-400 text-lg">install_mobile</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-bold text-emerald-300 text-xs">Als App installieren</p>
-                                <p class="text-[10px] text-emerald-400/80 truncate">Zum Homescreen hinzufügen</p>
-                            </div>
-                        </button>
-                        <div class="border-t border-slate-800/80 pt-1"></div>
-                        <button onclick="closeHeaderSubmenu(); clearLocalStorage();" class="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 transition-all font-semibold">
-                            <span class="material-symbols-rounded text-rose-400 text-lg">restart_alt</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-bold text-rose-300 text-xs">Alles zurücksetzen</p>
-                                <p class="text-[10px] text-rose-400/70 truncate">Planung auf Werkseinstellungen</p>
-                            </div>
-                        </button>
-                    </div>
                 </div>
             </div>
             
@@ -1205,12 +1151,12 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V7.8.0 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=7.8.0"></script>
-    <script src="database.js?v=7.8.0"></script>
-    <script src="content.js?v=7.8.0"></script>
-    <script src="app.js?v=7.8.0"></script>
-    <script src="wiring.js?v=7.8.0"></script>
-    <script src="dossier.js?v=7.8.0"></script>
+    <!-- MODULARE ARCHITEKTUR V7.9.0 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=7.9.0"></script>
+    <script src="database.js?v=7.9.0"></script>
+    <script src="content.js?v=7.9.0"></script>
+    <script src="app.js?v=7.9.0"></script>
+    <script src="wiring.js?v=7.9.0"></script>
+    <script src="dossier.js?v=7.9.0"></script>
 </body>
 </html>

@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.8.0';
+        if (verEl) verEl.innerText = 'Pro 7.9.0';
 
         if (!strings || strings.length === 0) {
             addString();
@@ -152,28 +152,19 @@ function saveConfiguration() {
 // ==========================================
 
 function toggleHeaderSubmenu() {
-    const menu = document.getElementById('headerSubmenu');
-    const backdrop = document.getElementById('headerSubmenuBackdrop');
-    if (!menu) return;
-    const isHidden = menu.classList.contains('hidden');
-    if (isHidden) {
-        menu.classList.remove('hidden');
-        if (backdrop) backdrop.classList.remove('hidden');
-    } else {
-        menu.classList.add('hidden');
-        if (backdrop) backdrop.classList.add('hidden');
+    if (typeof openMoreSheet === 'function') {
+        openMoreSheet();
     }
 }
 
 function closeHeaderSubmenu() {
-    const menu = document.getElementById('headerSubmenu');
-    const backdrop = document.getElementById('headerSubmenuBackdrop');
-    if (menu) menu.classList.add('hidden');
-    if (backdrop) backdrop.classList.add('hidden');
+    if (typeof closeMoreSheet === 'function') {
+        closeMoreSheet();
+    }
 }
 
 // ==========================================
-// 1.0 MULTI-PLANUNGEN & VARIANTEN-MANAGER (V7.8.0)
+// 1.0 MULTI-PLANUNGEN & VARIANTEN-MANAGER (V7.9.0)
 // ==========================================
 
 const PV_PROJECTS_KEY = 'pvpro_projects';
@@ -389,7 +380,7 @@ function createNewProject(name = null, cloneCurrent = false) {
             }]
         }];
         projectData = {
-            version: '7.8.0',
+            version: '7.9.0',
             exportedAt: new Date().toISOString(),
             appName: 'PV-Planung Pro',
             strings: freshStrings,
@@ -795,7 +786,7 @@ function showToastNotification(message, type = 'info') {
 
 function exportFullConfiguration() {
     return {
-        version: '7.8.0',
+        version: '7.9.0',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],

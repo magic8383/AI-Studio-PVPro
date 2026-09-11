@@ -4,6 +4,22 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.9.0] – 2026-09-09
+
+### 📱 Mobile Header-Bereinigung & M3 Bottom-Sheet Konsolidierung
+
+#### 1. Beseitigung des störenden schwebenden Dropdown-Menüs
+* **Fehlerbehebung:** Auf mobilen Displays (z. B. Smartphones im Hochformat) führte das vorherige Header-Submenu-Dropdown (`#headerSubmenu`) zu Überlappungen und Kollisionen mit dem Darstellungsbereich der Strings und Modulkarten (wie im Nutzerscreenshot ersichtlich).
+* **Konsolidierung mit M3 Bottom Sheet:**
+  - Das überflüssige, schwebende Dropdown wurde vollständig entfernt.
+  - Der mobile Menü-Button (`#btnHeaderMenuToggle`) öffnet nun nahtlos und ergonomisch das bestehende native Material Design 3 Bottom Sheet (`openMoreSheet()`).
+  - Alle Aktionen (Planungs-Manager, Projektdossier & PDF, Teilen/Handy-Übertragung, Vollbild-Schaltplan, Themes/Farben, Handbuch und Werkseinstellungen) sind darin zentral, großflächig und optimal mit dem Daumen erreichbar.
+
+#### 2. Synchronisation der Versionsstände
+* Vollständige Angleichung aller Projektdateien (`package.json`, `index.html`, `app.js`, `sw.js`, `DEVELOPMENT_GUIDELINES.md`, `content.js`, `CHANGELOG.md`) auf Release **7.9.0**.
+
+---
+
 ## [Version 7.8.0] – 2026-09-08
 
 ### 📱 Header-Aufräumung & App-weite Mobile-First-Optimierung
