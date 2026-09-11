@@ -4,6 +4,33 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.10.0] – 2026-09-11
+
+### ⚡ Gerätezuweisung, Hardware-Katalog, Code-Persistenz & Hoymiles HMS-2000T Integration
+
+#### 1. Neugestaltung des Tabs „Geräte & Zuweisung“
+* **Zweigeteilter Workflow:**
+  - **Oberer Bereich („Aktive System-Hardware & Zuweisung“):** Schnellauswahl der im Projekt verwendeten Primär-Hardware (Modultyp, Wechselrichter, Speicher) mit Echtzeit-KPIs (kWp-Gesamtleistung, AC-Max-Leistung, DC/AC-Verhältnis, MPP-Tracking-Fenster).
+  - Komfortable 1-Klick-Übernahme: „Auf alle Strings anwenden“ aktualisiert alle Stränge im Projekt simultan auf die neu gewählte Hardware.
+  - Zuweisung von Batteriespeichern direkt an kompatible Hybrid-Wechselrichter.
+  - **Unterer Bereich („Hardware-Katalog & Stammdatenbank“):** Durchsuchbare und filterbare Übersicht aller Solarmodule, Wechselrichter und Speicher mit elektrischen Spezifikationen und Herkunftskennzeichnung (Standard, Lokal, Fest im Server/Code).
+  - Schnelle Aktionen pro Gerät: Als Aktiv setzen, Bearbeiten / Duplizieren, Datenblätter/Zertifikate verwalten sowie Löschen.
+
+#### 2. Echte Code- & Server-Persistenz („Fest speichern“)
+* **Dauerhafte Speicherung ohne externe SQL-Datenbank:**
+  - Neue Hardware kann wahlweise **„Fest im Server / Code speichern“** oder **„Nur lokal im Browser speichern“** hinterlegt werden.
+  - Beim festen Speichern schreibt der Server die Hardware direkt in `database.js` bzw. `persistent_hardware.json`, sodass sie sofort für alle Geräte und Browser-Sitzungen dauerhaft verfügbar ist.
+  - Ebenso können komplette Planungen als eigenständige, feste Konfigurationen im Server/Code hinterlegt (`/api/plans/persist`) und geräteübergreifend synchronisiert geladen werden.
+
+#### 3. Integration des Hoymiles HMS-2000T-4T Mikrowechselrichters
+* **Vollständige elektrische Spezifikationen ab Werk hinterlegt:**
+  - Empfohlene Modulleistung: 400 bis 670+ W je Eingang.
+  - 4 unabhängige MPPTs mit jeweils 2 Moduleingängen (4T) bei extrem niedriger Startspannung von 22 V und weitem MPPT-Spannungsbereich (16–60 V).
+  - Maximale Eingangsspannung 65 V, maximaler Eingangsstrom 4 × 16 A, Isc 4 × 25 A.
+  - Maximale AC-Scheinleistung 2000 VA, CEC-Wirkungsgrad 96,5 %, integriertes Sub-1G-WLAN.
+
+---
+
 ## [Version 7.9.0] – 2026-09-09
 
 ### 📱 Mobile Header-Bereinigung & M3 Bottom-Sheet Konsolidierung

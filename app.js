@@ -99,7 +99,10 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.9.0';
+        if (verEl) verEl.innerText = 'Pro 7.10.0';
+
+        // Synchronisiere fest im Code/Server persistierte Hardware asynchron
+        syncPersistentHardwareFromServer();
 
         if (!strings || strings.length === 0) {
             addString();
@@ -678,7 +681,33 @@ function renderProjectManagerModal(tab = null) {
                     `;
                 }).join('')}
             </div>
+
+            <!-- Fest im Server/Code gespeicherte Planungen (Geräteübergreifend) -->
+            <div class="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
+                <div class="flex items-center justify-between gap-2 mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-rounded text-emerald-600 dark:text-emerald-400 text-xl">cloud_sync</span>
+                        <div>
+                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Fest im Server / Code gespeicherte Planungen</h4>
+                            <p class="text-[11px] text-slate-400">Geräteübergreifend synchronisierbar und dauerhaft hinterlegt</p>
+                        </div>
+                    </div>
+                    <button onclick="openSaveSystemPlanModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer">
+                        <span class="material-symbols-rounded text-sm">cloud_upload</span>
+                        <span>Aktuelle Planung fest speichern</span>
+                    </button>
+                </div>
+                <div id="persistentServerPlansContainer" class="space-y-2">
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
+                        <span class="material-symbols-rounded text-lg text-emerald-500 animate-spin mb-1">sync</span>
+                        <p>Lade Server-Planungen...</p>
+                    </div>
+                </div>
+            </div>
         `;
+
+        // Asynchron Server-Planungen laden
+        renderServerPlansList();
     } else {
         // Tab Variantenvergleich (Side-by-Side Matrix)
         body.innerHTML = `
@@ -740,6 +769,86 @@ function renderProjectManagerModal(tab = null) {
             </div>
         `;
     }
+}
+
+async function renderServerPlansList() {
+    const container = document.getElementById('persistentServerPlansContainer');
+    if (!container) return;
+
+    try {
+        const res = await fetch('/api/plans/persistent');
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.success && Array.isArray(data.plans)) {
+                if (data.plans.length === 0) {
+                    container.innerHTML = `
+                        <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
+                            Noch keine festen Server-Planungen hinterlegt. Klicke auf "Aktuelle Planung fest speichern", um diese Konfiguration dauerhaft im Code & Server zu sichern.
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = data.plans.map(p => {
+                    const sm = p.summary || {};
+                    const dateStr = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+                    return `
+                        <div class="p-3.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-black text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
+                                    <span class="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Server / Code</span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                    <span>${sm.kwp || '–'} kWp</span>
+                                    <span>•</span>
+                                    <span>${sm.panelCount || '–'} Module (${sm.stringCount || '–'} Str.)</span>
+                                    <span>•</span>
+                                    <span>${sm.locationName || 'Standort'}</span>
+                                    ${dateStr ? `<span>•</span><span>Gespeichert: ${dateStr}</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                                <button onclick="loadPersistentPlanFromServer('${p.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="In aktive Sitzung laden">
+                                    <span class="material-symbols-rounded text-sm">download</span>
+                                    <span>Laden & Aktivieren</span>
+                                </button>
+                                <button onclick="deletePersistentPlanFromServer('${p.id}')" class="p-1.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Vom Server löschen">
+                                    <span class="material-symbols-rounded text-sm">delete</span>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                return;
+            }
+        }
+    } catch(err) {
+        console.warn("Fehler beim Abrufen der Server-Planungen:", err);
+    }
+
+    container.innerHTML = `
+        <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 text-xs text-amber-700 dark:text-amber-300">
+            Server-Planungen konnten nicht geladen werden (Offline-Modus).
+        </div>
+    `;
+}
+
+async function deletePersistentPlanFromServer(planId) {
+    if (!confirm("Möchten Sie diese fest gespeicherte Planung wirklich vom Server löschen?")) return;
+
+    try {
+        const res = await fetch(`/api/plans/persistent/${planId}`, { method: 'DELETE' });
+        if (res.ok) {
+            showToastNotification("Planung erfolgreich vom Server gelöscht.", 'info');
+            renderServerPlansList();
+            return;
+        }
+    } catch(err) {
+        console.error("Fehler beim Löschen der Server-Planung:", err);
+    }
+    showToastNotification("Konnte Planung nicht vom Server löschen.", 'error');
 }
 
 function createNewProjectPrompt(cloneCurrent = false) {
@@ -2477,90 +2586,779 @@ function updateDetailCharts(monthIdx) {
 }
 
 // ==========================================
-// 10. EIGENE HARDWARE (CUSTOM DB)
+// 10. GERÄTEZUWEISUNG & HARDWARE-DATENBANK (AKTIV + KATALOG + PERSISTENZ)
 // ==========================================
-function toggleCustomDbForm() { 
-    let f = document.getElementById('customDbForm'); 
-    if(f) f.classList.toggle('hidden'); 
-}
-function updateCustomDbFields() {
-    let t = document.getElementById('cdb_type').value;
-    ['panel', 'inv', 'bat'].forEach(x => { let el = document.getElementById(`cdb_fields_${x}`); if(el) el.classList.add('hidden'); });
-    let tEl = document.getElementById(`cdb_fields_${t}`); if(tEl) tEl.classList.remove('hidden');
-}
-function saveCustomDevice() {
-    let t = document.getElementById('cdb_type').value;
-    let name = document.getElementById('cdb_name')?.value?.trim();
-    if(!name) return alert("Bitte Gerätenamen eingeben.");
-    
-    let userDB = JSON.parse(localStorage.getItem('pvpro_user_db')) || { panels: [], batteries: [], inverters: [] };
-    let newId = Date.now() % 100000;
 
-    if(t==='panel') {
-        userDB.panels.push({ 
-            id: newId, 
-            name, 
-            pmax: parseFloat(document.getElementById('cdb_pmax').value)||440, 
-            voc: parseFloat(document.getElementById('cdb_voc').value)||40.5, 
-            vmp: parseFloat(document.getElementById('cdb_vmp').value)||34.0, 
-            isc: parseFloat(document.getElementById('cdb_isc').value)||14.5, 
-            tempVoc: -0.25,
-            isCustom: true
-        });
-    }
-    if(t==='inv') {
-        let mppts = []; let count = parseInt(document.getElementById('cdb_mppts').value)||2;
-        for(let i=1; i<=count; i++) mppts.push({id:i, name:`MPPT ${i}`, maxIsc:25, maxI:15});
-        userDB.inverters.push({ 
-            id: newId, 
-            name, 
-            acMax: parseFloat(document.getElementById('cdb_acmax').value)||5000, 
-            startV: parseFloat(document.getElementById('cdb_startv').value)||80, 
-            maxV: parseFloat(document.getElementById('cdb_maxv').value)||1000, 
-            minMppV: (parseFloat(document.getElementById('cdb_startv').value)||80) + 40, 
-            maxMppV: 800, 
-            mppts,
-            isCustom: true
-        });
-    }
-    if(t==='bat') {
-        userDB.batteries.push({ 
-            id: newId, 
-            name, 
-            cap: parseFloat(document.getElementById('cdb_cap').value)||5.0, 
-            power: parseFloat(document.getElementById('cdb_power').value)||5000, 
-            eff: 0.95,
-            isCustom: true
-        });
-    }
+let catalogCategoryFilter = 'all'; // 'all' | 'panel' | 'inv' | 'bat'
+let catalogSearchQuery = '';
+let activeHardwarePanelId = null;
+let activeHardwareInverterId = null;
+let activeHardwareBatteryId = null;
 
-    localStorage.setItem('pvpro_user_db', JSON.stringify(userDB));
-
-    // Optional: Erstes Dokument / Zertifikat direkt mitspeichern
-    const docTitle = document.getElementById('cdb_doc_title')?.value?.trim();
-    const docCat = document.getElementById('cdb_doc_cat')?.value || 'datenblatt';
-    const docStandard = document.getElementById('cdb_doc_standard')?.value?.trim() || '';
-    const docUrl = document.getElementById('cdb_doc_url')?.value?.trim() || '';
-    const docFileInput = document.getElementById('cdb_doc_file');
-    const docFile = docFileInput && docFileInput.files ? docFileInput.files[0] : null;
-
-    const finishSave = () => {
-        toggleCustomDbForm();
-        if (typeof showToastNotification === 'function') {
-            showToastNotification(`Gerät "${name}" erfolgreich angelegt!`, 'success');
-        } else {
-            alert(`Gerät "${name}" gespeichert!`);
+// Synchronisiere dauerhaft im Code & Server persistierte Hardware
+async function syncPersistentHardwareFromServer() {
+    try {
+        const res = await fetch('/api/hardware/persistent');
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.success && data.hardware) {
+                if (typeof window !== 'undefined') {
+                    window.CodePersistedHardware = data.hardware;
+                }
+                if (typeof mergeCodePersistedHardware === 'function') {
+                    mergeCodePersistedHardware();
+                }
+                flatPanels = DB.panels.flatMap(s => s.models || []);
+                flatInverters = DB.inverters.flatMap(s => s.models || []);
+                flatBatteries = DB.batteries.flatMap(s => s.models || []);
+                renderDatabaseUI();
+            }
         }
-        location.reload();
-    };
+    } catch(err) {
+        console.warn("Konnte persistierte Hardware nicht synchronisieren:", err);
+    }
+}
 
-    if (docTitle && typeof HardwareDocManager !== 'undefined') {
+function setCatalogCategoryFilter(cat) {
+    catalogCategoryFilter = cat;
+    ['all', 'panel', 'inv', 'bat'].forEach(c => {
+        const btn = document.getElementById(`btn-cat-${c}`);
+        if (btn) {
+            if (c === cat) {
+                btn.className = 'px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 text-primary shadow-xs font-bold transition-all';
+            } else {
+                btn.className = 'px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all';
+            }
+        }
+    });
+    renderHardwareCatalogUI();
+}
+
+function onCatalogSearchInput(val) {
+    catalogSearchQuery = (val || '').toLowerCase().trim();
+    renderHardwareCatalogUI();
+}
+
+function renderDatabaseUI() {
+    renderActiveHardwareUI();
+    renderHardwareCatalogUI();
+}
+
+// ----------------------------------------------------
+// 10.1 AKTIVE PROJEKT-HARDWARE (SEKTION 1)
+// ----------------------------------------------------
+function renderActiveHardwareUI() {
+    // 1. Aktives Modul ermitteln
+    let panelId = activeHardwarePanelId;
+    if (!panelId && strings && strings.length > 0 && strings[0].fields && strings[0].fields.length > 0) {
+        panelId = strings[0].fields[0].panelId;
+    }
+    let currentPanel = flatPanels.find(p => p.id === parseInt(panelId)) || flatPanels[0];
+    if (currentPanel) activeHardwarePanelId = currentPanel.id;
+
+    // 2. Aktiven Wechselrichter ermitteln
+    let invId = activeHardwareInverterId;
+    if (!invId && strings && strings.length > 0) {
+        invId = strings[0].inverterId;
+    }
+    let currentInv = flatInverters.find(i => i.id === parseInt(invId)) || flatInverters[0];
+    if (currentInv) activeHardwareInverterId = currentInv.id;
+
+    // 3. Aktive Batterie ermitteln
+    let batId = activeHardwareBatteryId || (currentInv ? currentInv.batteryId : null);
+    let currentBat = flatBatteries.find(b => b.id === parseInt(batId)) || flatBatteries[0];
+    if (currentBat) activeHardwareBatteryId = currentBat.id;
+
+    // Statistik ermitteln: Wie viele Module/Stränge sind verbaut?
+    let totalPanelsInstalled = 0;
+    let currentPanelInstalled = 0;
+    (strings || []).forEach(s => {
+        (s.fields || []).forEach(f => {
+            const cnt = parseInt(f.count) || 0;
+            totalPanelsInstalled += cnt;
+            if (f.panelId === currentPanel.id) currentPanelInstalled += cnt;
+        });
+    });
+
+    let assignedStringsCount = (strings || []).filter(s => s.inverterId === currentInv.id).length;
+    let totalGeneratorWp = (strings || []).reduce((acc, s) => {
+        return acc + (s.fields || []).reduce((fAcc, f) => {
+            const p = flatPanels.find(x => x.id === f.panelId) || currentPanel;
+            return fAcc + ((f.count || 0) * (p.pmax || 440));
+        }, 0);
+    }, 0);
+    let totalGeneratorKwp = (totalGeneratorWp / 1000).toFixed(2);
+    let invAcKw = ((currentInv.acMax || 0) / 1000).toFixed(1);
+    let dcAcRatio = currentInv.acMax ? Math.round((totalGeneratorWp / currentInv.acMax) * 100) : 100;
+
+    // 1.1 Modul-Karte rendern
+    const panelCard = document.getElementById('activePanelCard');
+    if (panelCard && currentPanel) {
+        const panelOptions = DB.panels.map(s => `
+            <optgroup label="${s.series}">
+                ${(s.models || []).map(m => `<option value="${m.id}" ${m.id === currentPanel.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.pmax} W)</option>`).join('')}
+            </optgroup>
+        `).join('');
+
+        const vmpFormatted = typeof currentPanel.vmp === 'number' ? currentPanel.vmp.toFixed(1) : parseFloat(currentPanel.vmp || 0).toFixed(1);
+
+        panelCard.innerHTML = `
+            <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Aktives Solarmodul
+                    </span>
+                    <span class="text-xs font-black text-primary">${currentPanel.pmax} Wp</span>
+                </div>
+
+                <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modellauswahl</label>
+                <select onchange="onSelectActivePanel(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary mb-3">
+                    ${panelOptions}
+                </select>
+
+                <div class="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                    <div class="flex justify-between">
+                        <span>Leerlaufspannung (Voc):</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentPanel.voc} V</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>MPP-Spannung (Vmp):</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${vmpFormatted} V</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Kurzschlussstrom (Isc):</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentPanel.isc} A</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Temperatur-Koeffizient:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentPanel.tempVoc || -0.26} %/°C</strong>
+                    </div>
+                </div>
+
+                <div class="mt-3 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-primary">solar_power</span>
+                    <span><strong>${currentPanelInstalled}</strong> von ${totalPanelsInstalled} Modulen im aktuellen Projekt</span>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button onclick="applyActivePanelToAllStrings(${currentPanel.id})" class="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-base">format_paint</span>
+                    <span>Auf alle Stränge anwenden</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="openHardwareDocModal('panel', ${currentPanel.id}, '${escapeHtml(currentPanel.name)}')" class="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
+                        <span class="material-symbols-rounded text-sm text-primary">description</span>
+                        <span>Datenblatt</span>
+                    </button>
+                    <button onclick="openHardwareEditModal('panel', ${currentPanel.id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Modul bearbeiten">
+                        <span class="material-symbols-rounded text-sm">edit</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // 1.2 Wechselrichter-Karte rendern
+    const invCard = document.getElementById('activeInverterCard');
+    if (invCard && currentInv) {
+        const invOptions = DB.inverters.map(s => `
+            <optgroup label="${s.series}">
+                ${(s.models || []).map(m => `<option value="${m.id}" ${m.id === currentInv.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.acMax} W)</option>`).join('')}
+            </optgroup>
+        `).join('');
+
+        const isMicro = currentInv.type === 'micro' || (currentInv.name || '').toLowerCase().includes('hms') || (currentInv.name || '').toLowerCase().includes('hoymiles');
+        const mpptCount = (currentInv.mppts || []).length;
+
+        invCard.innerHTML = `
+            <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${isMicro ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-primary/10 text-primary'}">
+                        <span class="w-1.5 h-1.5 rounded-full ${isMicro ? 'bg-indigo-500' : 'bg-primary'}"></span>
+                        ${isMicro ? 'Aktiver Mikrowechselrichter' : 'Aktiver Wechselrichter'}
+                    </span>
+                    <span class="text-xs font-black text-primary">${currentInv.acMax} W</span>
+                </div>
+
+                <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modellauswahl</label>
+                <select onchange="onSelectActiveInverter(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary mb-3">
+                    ${invOptions}
+                </select>
+
+                <div class="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                    <div class="flex justify-between">
+                        <span>AC-Nennleistung:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentInv.acMax} W</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>MPPT-Eingänge:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${mpptCount} MPPT (${currentInv.minMppV} – ${currentInv.maxMppV} V)</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Start- / Max. Spannung:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentInv.startV} V / ${currentInv.maxV} V</strong>
+                    </div>
+                    ${isMicro ? `
+                        <div class="text-[10px] text-indigo-600 dark:text-indigo-300 font-semibold pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                            ✓ 4 unabhängige Eingänge bis 16A / 25A Isc • Integrierter NA-Schutz (VDE-AR-N 4105)
+                        </div>
+                    ` : `
+                        <div class="flex justify-between">
+                            <span>Max. DC-Generator:</span>
+                            <strong class="text-slate-800 dark:text-slate-200">${currentInv.maxDcWp ? currentInv.maxDcWp + ' Wp' : '–'}</strong>
+                        </div>
+                    `}
+                </div>
+
+                <div class="mt-3 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-primary">settings_input_component</span>
+                    <span>Zugeordnet zu <strong>${assignedStringsCount}</strong> von ${strings.length} Strängen</span>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button onclick="applyActiveInverterToAllStrings(${currentInv.id})" class="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-base">alt_route</span>
+                    <span>Allen Strängen zuweisen</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="openHardwareDocModal('inv', ${currentInv.id}, '${escapeHtml(currentInv.name)}')" class="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
+                        <span class="material-symbols-rounded text-sm text-primary">verified</span>
+                        <span>Datenblatt & VDE-AR-N 4105</span>
+                    </button>
+                    <button onclick="openHardwareEditModal('inv', ${currentInv.id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Wechselrichter bearbeiten">
+                        <span class="material-symbols-rounded text-sm">edit</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    // 1.3 Batteriespeicher-Karte rendern
+    const batCard = document.getElementById('activeBatteryCard');
+    if (batCard && currentBat) {
+        const batOptions = DB.batteries.map(s => `
+            <optgroup label="${s.series}">
+                ${(s.models || []).map(m => `<option value="${m.id}" ${m.id === currentBat.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.cap} kWh)</option>`).join('')}
+            </optgroup>
+        `).join('');
+
+        const isNone = currentBat.id === 1 || currentBat.cap === 0;
+
+        batCard.innerHTML = `
+            <div>
+                <div class="flex items-center justify-between gap-2 mb-2">
+                    <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${isNone ? 'bg-slate-500/10 text-slate-600 dark:text-slate-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}">
+                        <span class="w-1.5 h-1.5 rounded-full ${isNone ? 'bg-slate-400' : 'bg-amber-500'}"></span>
+                        ${isNone ? 'Kein Speicher aktiv' : 'Aktiver Batteriespeicher'}
+                    </span>
+                    <span class="text-xs font-black text-accent">${currentBat.cap || 0} kWh</span>
+                </div>
+
+                <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modellauswahl</label>
+                <select onchange="onSelectActiveBattery(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary mb-3">
+                    ${batOptions}
+                </select>
+
+                <div class="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                    <div class="flex justify-between">
+                        <span>Nutzbare Kapazität:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentBat.cap || 0} kWh</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Max. Ladeleistung:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentBat.power ? currentBat.power + ' W' : '–'}</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Roundtrip-Wirkungsgrad:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${Math.round((currentBat.eff || 0.95) * 100)} %</strong>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Zelltechnologie:</span>
+                        <strong class="text-slate-800 dark:text-slate-200">${currentBat.chem || 'LiFePO4 (LFP)'}</strong>
+                    </div>
+                </div>
+
+                <div class="mt-3 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-accent">battery_charging_full</span>
+                    <span>${isNone ? 'System arbeitet als reine Netzeinspeisung' : `Zugewiesen zu: ${escapeHtml(currentInv.name)}`}</span>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button onclick="assignActiveBatteryToInverter(${currentInv.id}, ${currentBat.id})" class="w-full py-2 px-3 rounded-xl bg-accent hover:opacity-90 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-base">link</span>
+                    <span>Wechselrichter zuordnen</span>
+                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="openHardwareDocModal('bat', ${currentBat.id}, '${escapeHtml(currentBat.name)}')" class="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
+                        <span class="material-symbols-rounded text-sm text-accent">description</span>
+                        <span>Datenblatt</span>
+                    </button>
+                    ${!isNone ? `
+                        <button onclick="openHardwareEditModal('bat', ${currentBat.id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Batterie bearbeiten">
+                            <span class="material-symbols-rounded text-sm">edit</span>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    // 1.4 System KPI Ribbon rendern
+    const ribbon = document.getElementById('activeHardwareKpiRibbon');
+    if (ribbon) {
+        ribbon.innerHTML = `
+            <div>
+                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">DC-Generatorleistung</span>
+                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                    <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
+                    ${totalGeneratorKwp} kWp
+                </span>
+            </div>
+            <div>
+                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">WR AC-Leistung</span>
+                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                    <span class="material-symbols-rounded text-primary text-base">settings_input_component</span>
+                    ${invAcKw} kW
+                </span>
+            </div>
+            <div>
+                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Auslegungsverhältnis</span>
+                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                    <span class="material-symbols-rounded text-emerald-500 text-base">balance</span>
+                    ${dcAcRatio} %
+                </span>
+            </div>
+            <div>
+                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Speicherkapazität</span>
+                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                    <span class="material-symbols-rounded text-accent text-base">battery_charging_full</span>
+                    ${currentBat.cap || 0} kWh
+                </span>
+            </div>
+            <div class="w-full sm:w-auto mt-2 sm:mt-0">
+                <button onclick="openSaveSystemPlanModal()" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-base">cloud_upload</span>
+                    <span>Konfiguration fest im Server speichern</span>
+                </button>
+            </div>
+        `;
+    }
+}
+
+function onSelectActivePanel(val) {
+    activeHardwarePanelId = parseInt(val);
+    renderActiveHardwareUI();
+}
+
+function onSelectActiveInverter(val) {
+    activeHardwareInverterId = parseInt(val);
+    renderActiveHardwareUI();
+}
+
+function onSelectActiveBattery(val) {
+    activeHardwareBatteryId = parseInt(val);
+    renderActiveHardwareUI();
+}
+
+function applyActivePanelToAllStrings(panelId) {
+    const idNum = parseInt(panelId);
+    const p = flatPanels.find(x => x.id === idNum);
+    if (!p) return;
+
+    (strings || []).forEach(s => {
+        (s.fields || []).forEach(f => {
+            f.panelId = idNum;
+        });
+    });
+
+    localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    if (typeof updateStringsUI === 'function') updateStringsUI();
+    if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+    renderActiveHardwareUI();
+    showToastNotification(`Solarmodul "${p.name}" auf alle Stränge angewendet!`, 'success');
+}
+
+function applyActiveInverterToAllStrings(inverterId) {
+    const idNum = parseInt(inverterId);
+    const inv = flatInverters.find(x => x.id === idNum);
+    if (!inv) return;
+
+    const mppts = inv.mppts || [{ id: 1 }];
+    (strings || []).forEach((s, sIdx) => {
+        s.inverterId = idNum;
+        s.mpptId = mppts[sIdx % mppts.length]?.id || 1;
+    });
+
+    localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    if (typeof updateStringsUI === 'function') updateStringsUI();
+    if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+    renderActiveHardwareUI();
+    showToastNotification(`Wechselrichter "${inv.name}" allen Strängen zugewiesen!`, 'success');
+}
+
+function assignActiveBatteryToInverter(invId, batId) {
+    updateInverterBattery(invId, batId);
+    renderActiveHardwareUI();
+    const b = flatBatteries.find(x => x.id === parseInt(batId));
+    showToastNotification(`Batterie "${b ? b.name : ''}" dem Wechselrichter zugewiesen!`, 'success');
+}
+
+function selectHardwareAsActive(type, id) {
+    const idNum = parseInt(id);
+    if (type === 'panel') {
+        activeHardwarePanelId = idNum;
+        applyActivePanelToAllStrings(idNum);
+    } else if (type === 'inv') {
+        activeHardwareInverterId = idNum;
+        applyActiveInverterToAllStrings(idNum);
+    } else if (type === 'bat') {
+        activeHardwareBatteryId = idNum;
+        if (activeHardwareInverterId) {
+            assignActiveBatteryToInverter(activeHardwareInverterId, idNum);
+        }
+    }
+    renderActiveHardwareUI();
+    const el = document.getElementById('activeProjectHardwareSection');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ----------------------------------------------------
+// 10.2 HARDWARE-DATENBANK & KATALOG (SEKTION 2)
+// ----------------------------------------------------
+function renderHardwareCatalogUI() {
+    const container = document.getElementById('hardwareCatalogGrid');
+    if (!container) return;
+
+    let items = [];
+
+    if (catalogCategoryFilter === 'all' || catalogCategoryFilter === 'panel') {
+        flatPanels.forEach(p => items.push({ type: 'panel', data: p }));
+    }
+    if (catalogCategoryFilter === 'all' || catalogCategoryFilter === 'inv') {
+        flatInverters.forEach(i => items.push({ type: 'inv', data: i }));
+    }
+    if (catalogCategoryFilter === 'all' || catalogCategoryFilter === 'bat') {
+        flatBatteries.forEach(b => items.push({ type: 'bat', data: b }));
+    }
+
+    if (catalogSearchQuery) {
+        items = items.filter(item => {
+            const name = (item.data.name || '').toLowerCase();
+            const series = (item.data.series || '').toLowerCase();
+            return name.includes(catalogSearchQuery) || series.includes(catalogSearchQuery);
+        });
+    }
+
+    const badgeEl = document.getElementById('hardwareCatalogCountBadge');
+    if (badgeEl) badgeEl.innerText = `${items.length} ${items.length === 1 ? 'Eintrag' : 'Einträge'}`;
+
+    if (items.length === 0) {
+        container.innerHTML = `
+            <div class="col-span-full p-8 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 text-center text-slate-500">
+                <span class="material-symbols-rounded text-3xl mb-1 text-slate-400">inventory_2</span>
+                <p class="text-xs font-bold">Keine Hardware gefunden</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">Versuche einen anderen Suchbegriff oder lege neue Hardware an.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Persistierte Hardware prüfen
+    const persistedHw = (typeof window !== 'undefined' && window.CodePersistedHardware) ? window.CodePersistedHardware : null;
+
+    container.innerHTML = items.map(item => {
+        const { type, data } = item;
+        const id = data.id;
+        const name = data.name;
+
+        // Prüfen, woher das Gerät stammt
+        let isPersistedInCode = false;
+        if (persistedHw) {
+            if (type === 'panel' && (persistedHw.panels || []).some(x => x.id === id)) isPersistedInCode = true;
+            if (type === 'inv' && (persistedHw.inverters || []).some(x => x.id === id)) isPersistedInCode = true;
+            if (type === 'bat' && (persistedHw.batteries || []).some(x => x.id === id)) isPersistedInCode = true;
+        }
+        const isCustomLocal = !!data.isCustom && !isPersistedInCode;
+
+        // Origin-Badge
+        let originBadge = '';
+        if (isPersistedInCode) {
+            originBadge = `<span class="text-[9px] font-black px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Fest im Server / Code</span>`;
+        } else if (isCustomLocal) {
+            originBadge = `<span class="text-[9px] font-black px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">Lokal (Browser)</span>`;
+        } else {
+            originBadge = `<span class="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">Standard (Code)</span>`;
+        }
+
+        // Dokumente zählen
+        const docs = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.getDocsForDevice(type, id) : [];
+        const hasVde = docs.some(d => (d.standard || '').includes('4105') || (d.title || '').includes('4105'));
+
+        // Spezifische HTML-Blöcke
+        let typeIcon = 'solar_power';
+        let typeColor = 'text-primary';
+        let highlightValue = '';
+        let chipsHtml = '';
+
+        if (type === 'panel') {
+            typeIcon = 'solar_power';
+            typeColor = 'text-primary';
+            highlightValue = `${data.pmax} W`;
+            chipsHtml = `
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Voc: ${data.voc}V</span>
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Vmp: ${data.vmp}V</span>
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Isc: ${data.isc}A</span>
+            `;
+        } else if (type === 'inv') {
+            typeIcon = 'settings_input_component';
+            typeColor = 'text-primary';
+            highlightValue = `${data.acMax} W`;
+            chipsHtml = `
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">${(data.mppts || []).length} MPPTs</span>
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Start: ${data.startV}V</span>
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Max: ${data.maxV}V</span>
+            `;
+        } else if (type === 'bat') {
+            typeIcon = 'battery_charging_full';
+            typeColor = 'text-accent';
+            highlightValue = `${data.cap} kWh`;
+            chipsHtml = `
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Power: ${data.power || 0}W</span>
+                <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded font-medium">Eff: ${Math.round((data.eff || 0.95) * 100)}%</span>
+            `;
+        }
+
+        return `
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+                <div>
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <div class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
+                                <span class="material-symbols-rounded ${typeColor} text-lg">${typeIcon}</span>
+                            </div>
+                            <div class="min-w-0">
+                                <h5 class="text-xs font-black text-slate-900 dark:text-white truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</h5>
+                                <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    ${originBadge}
+                                    ${hasVde ? `<span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">VDE 4105</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <span class="text-xs font-black ${typeColor}">${highlightValue}</span>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-1 text-[10px] text-slate-500 dark:text-slate-400 mt-2 mb-3">
+                        ${chipsHtml}
+                    </div>
+
+                    <div class="text-[10px] text-slate-400 mb-3 flex items-center gap-1">
+                        <span class="material-symbols-rounded text-xs">attach_file</span>
+                        <span>${docs.length} ${docs.length === 1 ? 'Dokument' : 'Dokumente'} hinterlegt</span>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                    <button onclick="selectHardwareAsActive('${type}', ${id})" class="flex-1 py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white dark:hover:bg-primary text-slate-800 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Als aktive Hardware auswählen">
+                        <span class="material-symbols-rounded text-xs">check</span>
+                        <span>Wählen</span>
+                    </button>
+                    <button onclick="openHardwareDocModal('${type}', ${id}, '${escapeHtml(name)}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Datenblätter & Zertifikate">
+                        <span class="material-symbols-rounded text-sm">description</span>
+                    </button>
+                    <button onclick="openHardwareEditModal('${type}', ${id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Hardware bearbeiten">
+                        <span class="material-symbols-rounded text-sm">edit</span>
+                    </button>
+                    ${(isPersistedInCode || isCustomLocal) ? `
+                        <button onclick="deleteHardware('${type}', ${id}, ${isPersistedInCode})" class="py-1.5 px-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Hardware löschen">
+                            <span class="material-symbols-rounded text-sm">delete</span>
+                        </button>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ----------------------------------------------------
+// 10.3 HARDWARE EDITOR MODAL (NEU / BEARBEITEN)
+// ----------------------------------------------------
+function openHardwareEditModal(type = 'panel', id = null) {
+    const modal = document.getElementById('modal-hardware-editor');
+    if (!modal) return;
+
+    const titleEl = document.getElementById('hwEditorTitle');
+    const saveBtnLabel = document.getElementById('hwe_save_btn_label');
+    const idInput = document.getElementById('hwe_id');
+    const isEditInput = document.getElementById('hwe_is_edit');
+    const typeSelect = document.getElementById('hwe_type');
+
+    if (id) {
+        // Bearbeiten-Modus
+        titleEl.innerText = "Hardware bearbeiten";
+        saveBtnLabel.innerText = "Änderungen speichern";
+        idInput.value = id;
+        isEditInput.value = "1";
+        typeSelect.value = type;
+        typeSelect.disabled = true;
+
+        // Werte aus DB vorbefüllen
+        let item = null;
+        if (type === 'panel') item = flatPanels.find(p => p.id === parseInt(id));
+        if (type === 'inv') item = flatInverters.find(i => i.id === parseInt(id));
+        if (type === 'bat') item = flatBatteries.find(b => b.id === parseInt(id));
+
+        if (item) {
+            document.getElementById('hwe_name').value = item.name || '';
+            document.getElementById('hwe_series').value = item.series || '';
+
+            if (type === 'panel') {
+                document.getElementById('hwe_pmax').value = item.pmax || '';
+                document.getElementById('hwe_voc').value = item.voc || '';
+                document.getElementById('hwe_vmp').value = item.vmp || '';
+                document.getElementById('hwe_isc').value = item.isc || '';
+                document.getElementById('hwe_imp').value = item.imp || '';
+                document.getElementById('hwe_tempvoc').value = item.tempVoc || -0.26;
+                document.getElementById('hwe_eff').value = item.eff || '';
+                document.getElementById('hwe_cell').value = item.cell || 'N-Type TOPCon';
+            } else if (type === 'inv') {
+                document.getElementById('hwe_acmax').value = item.acMax || '';
+                document.getElementById('hwe_startv').value = item.startV || '';
+                document.getElementById('hwe_minmppv').value = item.minMppV || '';
+                document.getElementById('hwe_maxmppv').value = item.maxMppV || '';
+                document.getElementById('hwe_maxv').value = item.maxV || 1000;
+                document.getElementById('hwe_mppts').value = (item.mppts || []).length || 2;
+                document.getElementById('hwe_inv_type').value = item.type || 'hybrid';
+                document.getElementById('hwe_maxdcwp').value = item.maxDcWp || '';
+            } else if (type === 'bat') {
+                document.getElementById('hwe_cap').value = item.cap || '';
+                document.getElementById('hwe_power').value = item.power || '';
+                document.getElementById('hwe_bateff').value = Math.round((item.eff || 0.95) * 100);
+                document.getElementById('hwe_batchem').value = item.chem || 'Lithium-Eisenphosphat (LFP)';
+            }
+        }
+    } else {
+        // Neu anlegen-Modus
+        titleEl.innerText = "Hardware neu anlegen";
+        saveBtnLabel.innerText = "Hardware speichern";
+        idInput.value = "";
+        isEditInput.value = "0";
+        typeSelect.value = type;
+        typeSelect.disabled = false;
+
+        document.getElementById('hwe_name').value = '';
+        document.getElementById('hwe_series').value = '';
+        document.getElementById('hwe_pmax').value = '';
+        document.getElementById('hwe_voc').value = '';
+        document.getElementById('hwe_vmp').value = '';
+        document.getElementById('hwe_isc').value = '';
+        document.getElementById('hwe_acmax').value = '';
+        document.getElementById('hwe_startv').value = '';
+        document.getElementById('hwe_cap').value = '';
+        document.getElementById('hwe_power').value = '';
+        document.getElementById('hwe_doc_title').value = '';
+        document.getElementById('hwe_doc_standard').value = '';
+        document.getElementById('hwe_doc_url').value = '';
+        if (document.getElementById('hwe_doc_file')) document.getElementById('hwe_doc_file').value = '';
+    }
+
+    onHardwareEditorTypeChange();
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeHardwareEditModal() {
+    const modal = document.getElementById('modal-hardware-editor');
+    if (modal) modal.classList.add('hidden');
+    document.body.classList.remove('overflow-hidden');
+}
+
+function onHardwareEditorTypeChange() {
+    const type = document.getElementById('hwe_type').value;
+    ['panel', 'inv', 'bat'].forEach(t => {
+        const el = document.getElementById(`hwe_fields_${t}`);
+        if (el) {
+            if (t === type) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
+    });
+}
+
+async function saveHardwareFromEditor() {
+    const type = document.getElementById('hwe_type').value;
+    const name = document.getElementById('hwe_name')?.value?.trim();
+    if (!name) {
+        showToastNotification("Bitte Modellbezeichnung eingeben.", 'error');
+        return;
+    }
+
+    const series = document.getElementById('hwe_series')?.value?.trim() || 'Eigene Hardware';
+    const isEdit = document.getElementById('hwe_is_edit')?.value === "1";
+    const existingId = document.getElementById('hwe_id')?.value;
+    const storageMode = document.querySelector('input[name="hwe_storage_mode"]:checked')?.value || 'code';
+
+    let newId = isEdit ? parseInt(existingId) : (Date.now() % 100000) + 100000;
+    let hardwareItem = { id: newId, name, series };
+
+    if (type === 'panel') {
+        const pmax = parseFloat(document.getElementById('hwe_pmax')?.value) || 440;
+        const voc = parseFloat(document.getElementById('hwe_voc')?.value) || 39.0;
+        const vmp = parseFloat(document.getElementById('hwe_vmp')?.value) || 33.0;
+        const isc = parseFloat(document.getElementById('hwe_isc')?.value) || 14.0;
+        const imp = parseFloat(document.getElementById('hwe_imp')?.value) || (pmax / (vmp || 1));
+        const tempVoc = parseFloat(document.getElementById('hwe_tempvoc')?.value) || -0.26;
+        const eff = parseFloat(document.getElementById('hwe_eff')?.value) || 22.0;
+        const cell = document.getElementById('hwe_cell')?.value || 'N-Type TOPCon';
+
+        hardwareItem = { ...hardwareItem, pmax, voc, vmp, isc, imp, tempVoc, eff, cell, isCustom: true };
+    } else if (type === 'inv') {
+        const acMax = parseFloat(document.getElementById('hwe_acmax')?.value) || 5000;
+        const startV = parseFloat(document.getElementById('hwe_startv')?.value) || 80;
+        const minMppV = parseFloat(document.getElementById('hwe_minmppv')?.value) || (startV + 20);
+        const maxMppV = parseFloat(document.getElementById('hwe_maxmppv')?.value) || 800;
+        const maxV = parseFloat(document.getElementById('hwe_maxv')?.value) || 1000;
+        const mpptsCount = parseInt(document.getElementById('hwe_mppts')?.value) || 2;
+        const invType = document.getElementById('hwe_inv_type')?.value || 'hybrid';
+        const maxDcWp = parseFloat(document.getElementById('hwe_maxdcwp')?.value) || Math.round(acMax * 1.5);
+
+        let mppts = [];
+        for (let i = 1; i <= mpptsCount; i++) {
+            mppts.push({ id: i, name: `MPPT ${i}`, maxIsc: 25, maxI: 16 });
+        }
+
+        hardwareItem = { ...hardwareItem, acMax, startV, minMppV, maxMppV, maxV, mppts, type: invType, maxDcWp, isCustom: true };
+    } else if (type === 'bat') {
+        const cap = parseFloat(document.getElementById('hwe_cap')?.value) || 5.0;
+        const power = parseFloat(document.getElementById('hwe_power')?.value) || 5000;
+        const eff = (parseFloat(document.getElementById('hwe_bateff')?.value) || 95) / 100;
+        const chem = document.getElementById('hwe_batchem')?.value || 'Lithium-Eisenphosphat (LFP)';
+
+        hardwareItem = { ...hardwareItem, cap, power, eff, chem, isCustom: true };
+    }
+
+    // Optionales Dokument / Zertifikat erfassen
+    const docTitle = document.getElementById('hwe_doc_title')?.value?.trim();
+    const docCat = document.getElementById('hwe_doc_cat')?.value || 'datenblatt';
+    const docStandard = document.getElementById('hwe_doc_standard')?.value?.trim() || '';
+    const docUrl = document.getElementById('hwe_doc_url')?.value?.trim() || '';
+    const docFile = document.getElementById('hwe_doc_file')?.files?.[0];
+
+    const attachDocIfPresent = (doneCallback) => {
+        if (!docTitle || typeof HardwareDocManager === 'undefined') {
+            doneCallback();
+            return;
+        }
+
         if (docFile) {
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
                     HardwareDocManager.addDoc({
-                        deviceType: t,
+                        deviceType: type,
                         deviceId: newId,
                         deviceName: name,
                         category: docCat,
@@ -2572,16 +3370,15 @@ function saveCustomDevice() {
                         url: e.target.result
                     });
                 } catch(err) {
-                    console.warn("Dokument konnte nicht lokal gesichert werden:", err);
+                    console.warn("Konnte Dokumentdatei nicht sichern:", err);
                 }
-                finishSave();
+                doneCallback();
             };
             reader.readAsDataURL(docFile);
-            return;
         } else if (docUrl) {
             try {
                 HardwareDocManager.addDoc({
-                    deviceType: t,
+                    deviceType: type,
                     deviceId: newId,
                     deviceName: name,
                     category: docCat,
@@ -2590,139 +3387,239 @@ function saveCustomDevice() {
                     url: docUrl
                 });
             } catch(err) {
-                console.warn("Dokument-URL Fehler:", err);
+                console.warn("Konnte Dokument-URL nicht sichern:", err);
             }
+            doneCallback();
+        } else {
+            doneCallback();
+        }
+    };
+
+    if (storageMode === 'code') {
+        // Dauerhaft im Quellcode & Server ablegen
+        try {
+            const endpoint = isEdit ? '/api/hardware/update' : '/api/hardware/persist';
+            const method = isEdit ? 'PUT' : 'POST';
+            const res = await fetch(endpoint, {
+                method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ type, hardware: hardwareItem })
+            });
+
+            if (res.ok) {
+                const resData = await res.json();
+                if (resData.success) {
+                    attachDocIfPresent(() => {
+                        closeHardwareEditModal();
+                        showToastNotification(`Hardware "${name}" dauerhaft fest im Code & Server gespeichert!`, 'success');
+                        syncPersistentHardwareFromServer();
+                    });
+                    return;
+                }
+            }
+        } catch(err) {
+            console.warn("Server-Persistenz fehlgeschlagen, speichere lokal als Fallback:", err);
         }
     }
 
-    finishSave();
+    // Lokaler Speicher (LocalStorage)
+    let userDB = JSON.parse(localStorage.getItem('pvpro_user_db')) || { panels: [], batteries: [], inverters: [] };
+    const prop = type === 'panel' ? 'panels' : (type === 'inv' ? 'inverters' : 'batteries');
+    userDB[prop] = userDB[prop] || [];
+
+    if (isEdit) {
+        userDB[prop] = userDB[prop].map(x => x.id === newId ? hardwareItem : x);
+    } else {
+        userDB[prop].push(hardwareItem);
+    }
+    localStorage.setItem('pvpro_user_db', JSON.stringify(userDB));
+
+    // Auch in in-memory DB einpflegen
+    const dbTarget = type === 'panel' ? DB.panels : (type === 'inv' ? DB.inverters : DB.batteries);
+    let ownSeries = dbTarget.find(s => s.series === "Eigene Hardware" || s.series.includes("Eigene"));
+    if (!ownSeries) {
+        ownSeries = { series: "Eigene Hardware", models: [] };
+        dbTarget.push(ownSeries);
+    }
+    if (isEdit) {
+        ownSeries.models = ownSeries.models.map(x => x.id === newId ? hardwareItem : x);
+    } else {
+        ownSeries.models.push(hardwareItem);
+    }
+
+    flatPanels = DB.panels.flatMap(s => s.models || []);
+    flatInverters = DB.inverters.flatMap(s => s.models || []);
+    flatBatteries = DB.batteries.flatMap(s => s.models || []);
+
+    attachDocIfPresent(() => {
+        closeHardwareEditModal();
+        showToastNotification(`Hardware "${name}" lokal gespeichert!`, 'success');
+        renderDatabaseUI();
+    });
 }
 
-function deleteCustomDevice(type, id) {
-    if (!confirm("Möchten Sie dieses eigene Gerät wirklich aus der Datenbank entfernen?")) return;
-
-    let userDB = JSON.parse(localStorage.getItem('pvpro_user_db')) || { panels: [], batteries: [], inverters: [] };
+async function deleteHardware(type, id, isPersisted) {
+    if (!confirm("Möchten Sie diese Hardware wirklich aus der Datenbank entfernen?")) return;
     const idNum = parseInt(id);
 
+    if (isPersisted) {
+        try {
+            const res = await fetch(`/api/hardware/${type}/${idNum}`, { method: 'DELETE' });
+            if (res.ok) {
+                showToastNotification("Hardware erfolgreich vom Server und aus dem Code entfernt.", 'info');
+                await syncPersistentHardwareFromServer();
+                return;
+            }
+        } catch(err) {
+            console.warn("Fehler beim Löschen vom Server:", err);
+        }
+    }
+
+    // Lokalen Speicher bereinigen
+    let userDB = JSON.parse(localStorage.getItem('pvpro_user_db')) || { panels: [], batteries: [], inverters: [] };
     if (type === 'panel') userDB.panels = (userDB.panels || []).filter(p => p.id !== idNum);
     if (type === 'inv') userDB.inverters = (userDB.inverters || []).filter(i => i.id !== idNum);
     if (type === 'bat') userDB.batteries = (userDB.batteries || []).filter(b => b.id !== idNum);
-
     localStorage.setItem('pvpro_user_db', JSON.stringify(userDB));
 
-    // Zugehörige Benutzerdokumente ebenfalls aufräumen
+    // Aus Memory-Arrays entfernen
+    const dbTarget = type === 'panel' ? DB.panels : (type === 'inv' ? DB.inverters : DB.batteries);
+    dbTarget.forEach(series => {
+        series.models = (series.models || []).filter(m => m.id !== idNum);
+    });
+
+    flatPanels = DB.panels.flatMap(s => s.models || []);
+    flatInverters = DB.inverters.flatMap(s => s.models || []);
+    flatBatteries = DB.batteries.flatMap(s => s.models || []);
+
     if (typeof HardwareDocManager !== 'undefined') {
         let allDocs = HardwareDocManager.getAllUserDocs();
         allDocs = allDocs.filter(d => !(d.deviceType === type && String(d.deviceId) === String(id)));
         localStorage.setItem(HardwareDocManager.STORAGE_KEY, JSON.stringify(allDocs));
     }
 
-    if (typeof showToastNotification === 'function') {
-        showToastNotification("Gerät gelöscht.", 'info');
-    }
-    location.reload();
+    showToastNotification("Hardware gelöscht.", 'info');
+    renderDatabaseUI();
 }
+
+// ----------------------------------------------------
+// 10.4 SYSTEM-PLANUNG FEST IM SERVER / CODE SPEICHERN
+// ----------------------------------------------------
+function openSaveSystemPlanModal() {
+    const modal = document.getElementById('modal-save-system-plan');
+    if (!modal) return;
+
+    const input = document.getElementById('savePlanNameInput');
+    const summaryBox = document.getElementById('savePlanSummaryBox');
+
+    const totalPanels = (strings || []).reduce((acc, s) => acc + (s.fields || []).reduce((fAcc, f) => fAcc + (f.count || 0), 0), 0);
+    const activeInv = flatInverters.find(i => i.id === (strings[0]?.inverterId || activeHardwareInverterId)) || flatInverters[0];
+    const totalKwp = ((totalPanels * (flatPanels[0]?.pmax || 440)) / 1000).toFixed(2);
+
+    if (input) {
+        input.value = `${LocationData.name} - ${activeInv ? activeInv.name : 'PV'} ${totalKwp} kWp`;
+    }
+
+    if (summaryBox) {
+        summaryBox.innerHTML = `
+            <div class="flex justify-between font-medium"><span>Standort:</span> <strong>${LocationData.name}</strong></div>
+            <div class="flex justify-between font-medium"><span>Leistung:</span> <strong>${totalKwp} kWp (${totalPanels} Module)</strong></div>
+            <div class="flex justify-between font-medium"><span>Wechselrichter:</span> <strong>${activeInv ? activeInv.name : 'Standard'}</strong></div>
+            <div class="flex justify-between font-medium"><span>Stränge:</span> <strong>${(strings || []).length} Stränge</strong></div>
+        `;
+    }
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeSaveSystemPlanModal() {
+    const modal = document.getElementById('modal-save-system-plan');
+    if (modal) modal.classList.add('hidden');
+    document.body.classList.remove('overflow-hidden');
+}
+
+async function submitSaveSystemPlanToServer() {
+    const nameInput = document.getElementById('savePlanNameInput');
+    const name = nameInput?.value?.trim() || `Planung ${new Date().toLocaleDateString('de-DE')}`;
+
+    const planData = {
+        strings: strings,
+        location: LocationData,
+        batMap: JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'),
+        cableParams: JSON.parse(localStorage.getItem('pvpro_cable_params') || '{}'),
+        costs: JSON.parse(localStorage.getItem('pvpro_costs') || '{}')
+    };
+
+    try {
+        const res = await fetch('/api/plans/persist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, data: planData })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+                closeSaveSystemPlanModal();
+                showToastNotification(`Planung "${name}" erfolgreich fest im Server & Code gespeichert!`, 'success');
+                return;
+            }
+        }
+    } catch(err) {
+        console.error("Fehler beim Speichern der Planung auf dem Server:", err);
+    }
+    showToastNotification("Konnte Planung nicht auf dem Server speichern. Bitte Netzwerk prüfen.", 'error');
+}
+
+async function loadPersistentPlanFromServer(planId) {
+    try {
+        const res = await fetch('/api/plans/persistent');
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.success && Array.isArray(data.plans)) {
+                const plan = data.plans.find(p => p.id === planId);
+                if (plan && plan.data) {
+                    if (plan.data.strings) {
+                        strings = plan.data.strings;
+                        localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+                    }
+                    if (plan.data.location) {
+                        LocationData = plan.data.location;
+                        localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
+                    }
+                    if (plan.data.batMap) {
+                        localStorage.setItem('pvpro_batmap', JSON.stringify(plan.data.batMap));
+                    }
+                    if (typeof updateStringsUI === 'function') updateStringsUI();
+                    if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+                    renderDatabaseUI();
+                    showToastNotification(`Planung "${plan.name}" erfolgreich geladen!`, 'success');
+                    closeProjectManagerModal();
+                    return;
+                }
+            }
+        }
+    } catch(err) {
+        console.error("Fehler beim Laden der Planung:", err);
+    }
+    showToastNotification("Planung konnte nicht geladen werden.", 'error');
+}
+
+// Rückwärtskompatible Hilfsfunktionen
+function toggleCustomDbForm() { openHardwareEditModal(); }
+function updateCustomDbFields() { onHardwareEditorTypeChange(); }
+function saveCustomDevice() { saveHardwareFromEditor(); }
+function deleteCustomDevice(type, id) { deleteHardware(type, id, false); }
 
 function updateInverterBattery(invId, batId) {
     const inv = flatInverters.find(x => x.id === parseInt(invId));
-    if(inv) {
+    if (inv) {
         inv.batteryId = parseInt(batId);
         let batMap = JSON.parse(localStorage.getItem('pvpro_batmap') || '{}');
         batMap[invId] = parseInt(batId);
         localStorage.setItem('pvpro_batmap', JSON.stringify(batMap));
         updatePhysicsOnly();
-    }
-}
-
-function renderDatabaseUI() {
-    let batOptions = MasterDB.batteries.map(s => `<optgroup label="${s.series}">${(s.models||[]).map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</optgroup>`).join('');
-    
-    let wrCard = document.getElementById('wrCardGrid');
-    if(wrCard) {
-        wrCard.innerHTML = flatInverters.map(w => {
-            let currentBatOpt = batOptions.replace(`value="${w.batteryId}"`, `value="${w.batteryId}" selected`);
-            const isCustom = !!w.isCustom;
-            
-            return `
-            <div class="m3-card bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
-                <div>
-                    <div class="flex items-start justify-between gap-2 mb-2">
-                        <div class="flex items-center gap-2">
-                            <span class="material-symbols-rounded text-primary text-xl">settings_input_component</span>
-                            <h4 class="font-bold text-slate-800 dark:text-slate-100 text-sm">${escapeHtml(w.name)}</h4>
-                        </div>
-                        ${isCustom ? `
-                            <button onclick="deleteCustomDevice('inv', ${w.id})" class="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer" title="Gerät löschen">
-                                <span class="material-symbols-rounded text-base">delete</span>
-                            </button>` : ''}
-                    </div>
-                    <div class="flex flex-wrap gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 mt-1 mb-4">
-                        <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">AC Max: ${w.acMax}W</span>
-                        <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">Start: ${w.startV}V</span>
-                        <span class="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium">${(w.mppts||[]).length} MPPTs</span>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Zugewiesene Batterie</label>
-                    <select onchange="updateInverterBattery(${w.id}, this.value)" class="w-full text-xs font-medium border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary">${currentBatOpt}</select>
-                </div>
-            </div>`;
-        }).join('');
-    }
-
-    let pCard = document.getElementById('panelCardGrid');
-    if(pCard) {
-        pCard.innerHTML = flatPanels.map(p => {
-            const isCustom = !!p.isCustom;
-            const vmpFormatted = typeof p.vmp === 'number' ? p.vmp.toFixed(1) : (parseFloat(p.vmp) || 0).toFixed(1);
-
-            return `
-            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm gap-2">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                            <span class="material-symbols-rounded text-sm text-primary">solar_power</span> ${escapeHtml(p.name)}
-                        </h4>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Voc: ${p.voc}V | Vmp: ${vmpFormatted}V | Isc: ${p.isc}A</p>
-                    </div>
-                    <div class="text-right flex items-center gap-1.5">
-                        <span class="text-xs font-black text-primary">${p.pmax} W</span>
-                        ${isCustom ? `
-                            <button onclick="deleteCustomDevice('panel', ${p.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950 cursor-pointer" title="Modul löschen">
-                                <span class="material-symbols-rounded text-sm">delete</span>
-                            </button>` : ''}
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
-    }
-    
-    let bCard = document.getElementById('batCardGrid');
-    if(bCard) {
-        bCard.innerHTML = flatBatteries.map(b => {
-            const isCustom = !!b.isCustom;
-            const capFormatted = typeof b.cap === 'number' ? b.cap.toFixed(2) : (parseFloat(b.cap) || 0).toFixed(2);
-
-            return `
-            <div class="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col justify-between shadow-sm gap-2">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h4 class="font-bold text-xs text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                            <span class="material-symbols-rounded text-sm text-accent">battery_charging_full</span> ${escapeHtml(b.name)}
-                        </h4>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Max. P: ${b.power}W | Eff: ${Math.round((b.eff || 1) * 100)}%</p>
-                    </div>
-                    <div class="text-right flex items-center gap-1.5">
-                        <span class="text-xs font-black text-accent">${capFormatted} kWh</span>
-                        ${isCustom ? `
-                            <button onclick="deleteCustomDevice('bat', ${b.id})" class="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950 cursor-pointer" title="Batterie löschen">
-                                <span class="material-symbols-rounded text-sm">delete</span>
-                            </button>` : ''}
-                    </div>
-                </div>
-            </div>`;
-        }).join('');
     }
 }
 
@@ -2972,6 +3869,32 @@ window.closeHardwareDocModal = closeHardwareDocModal;
 window.addHardwareDocFromModal = addHardwareDocFromModal;
 window.deleteHardwareDocFromModal = deleteHardwareDocFromModal;
 window.deleteCustomDevice = deleteCustomDevice;
+
+// Neue Hardware-, Katalog- & Persistenz-Funktionen
+window.setCatalogCategoryFilter = setCatalogCategoryFilter;
+window.onCatalogSearchInput = onCatalogSearchInput;
+window.renderDatabaseUI = renderDatabaseUI;
+window.renderActiveHardwareUI = renderActiveHardwareUI;
+window.renderHardwareCatalogUI = renderHardwareCatalogUI;
+window.onSelectActivePanel = onSelectActivePanel;
+window.onSelectActiveInverter = onSelectActiveInverter;
+window.onSelectActiveBattery = onSelectActiveBattery;
+window.applyActivePanelToAllStrings = applyActivePanelToAllStrings;
+window.applyActiveInverterToAllStrings = applyActiveInverterToAllStrings;
+window.assignActiveBatteryToInverter = assignActiveBatteryToInverter;
+window.selectHardwareAsActive = selectHardwareAsActive;
+window.openHardwareEditModal = openHardwareEditModal;
+window.closeHardwareEditModal = closeHardwareEditModal;
+window.onHardwareEditorTypeChange = onHardwareEditorTypeChange;
+window.saveHardwareFromEditor = saveHardwareFromEditor;
+window.deleteHardware = deleteHardware;
+window.openSaveSystemPlanModal = openSaveSystemPlanModal;
+window.closeSaveSystemPlanModal = closeSaveSystemPlanModal;
+window.submitSaveSystemPlanToServer = submitSaveSystemPlanToServer;
+window.loadPersistentPlanFromServer = loadPersistentPlanFromServer;
+window.deletePersistentPlanFromServer = deletePersistentPlanFromServer;
+window.renderServerPlansList = renderServerPlansList;
+window.syncPersistentHardwareFromServer = syncPersistentHardwareFromServer;
 
 
 // ==========================================

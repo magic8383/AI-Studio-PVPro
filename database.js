@@ -32,9 +32,42 @@ const MasterDB = {
             { id: 14, name: "GEN24 8.0 Plus SC", acMax: 8000, startV: 80, minMppV: 197, maxMppV: 800, maxV: 1000, maxDcWp: 12000, maxChargePower: 8260, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
             { id: 15, name: "GEN24 10.0 Plus SC", acMax: 10000, startV: 80, minMppV: 246, maxMppV: 800, maxV: 1000, maxDcWp: 15000, maxChargePower: 10300, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
             { id: 16, name: "GEN24 12.0 Plus SC", acMax: 12000, startV: 80, minMppV: 295, maxMppV: 800, maxV: 1000, maxDcWp: 18000, maxChargePower: 11682, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] }
+        ]},
+        { series: "Hoymiles Mikrowechselrichter", models: [
+            { id: 200, name: "Hoymiles HMS-2000T-4T", acMax: 2000, startV: 22, minMppV: 16, maxMppV: 60, maxV: 65, maxDcWp: 2680, maxChargePower: 0, weight: 4.7, batteryId: 1, type: "micro", dim: "331 × 218 × 36.6 mm", ip: "IP67", mppts: [
+                {id: 1, name: "MPPT 1 (Eingang 1)", maxIsc: 25, maxI: 16},
+                {id: 2, name: "MPPT 2 (Eingang 2)", maxIsc: 25, maxI: 16},
+                {id: 3, name: "MPPT 3 (Eingang 3)", maxIsc: 25, maxI: 16},
+                {id: 4, name: "MPPT 4 (Eingang 4)", maxIsc: 25, maxI: 16}
+            ]}
         ]}
     ]
 };
+
+// ==========================================
+// VOM NUTZER FEST IM CODE GESPEICHERTE HARDWARE
+// Wird serverseitig in database.js aktualisiert
+// ==========================================
+const CodePersistedHardware = {
+    panels: [],
+    inverters: [],
+    batteries: []
+};
+
+// Zusammenführen der im Code gespeicherten Hardware in MasterDB
+(function mergeCodePersistedHardware() {
+    if (typeof CodePersistedHardware !== 'undefined') {
+        if (CodePersistedHardware.panels && CodePersistedHardware.panels.length > 0) {
+            MasterDB.panels.push({ series: "Code-gespeicherte Module", models: CodePersistedHardware.panels });
+        }
+        if (CodePersistedHardware.inverters && CodePersistedHardware.inverters.length > 0) {
+            MasterDB.inverters.push({ series: "Code-gespeicherte WR", models: CodePersistedHardware.inverters });
+        }
+        if (CodePersistedHardware.batteries && CodePersistedHardware.batteries.length > 0) {
+            MasterDB.batteries.push({ series: "Code-gespeicherte Batterien", models: CodePersistedHardware.batteries });
+        }
+    }
+})();
 
 // ==========================================
 // SICHERER HTML-ESCAPING-HELPER (GLOBAL)
@@ -113,6 +146,29 @@ const MasterHardwareDocs = {
             ipProtection: 'IP55 Schutzart',
             scalability: 'Bis zu 3 identische Türme parallel (max. 38,4 kWh)'
         }
+    },
+    inv_hoymiles: {
+        id: 'doc_master_hoymiles',
+        title: 'Original-Datenblatt Hoymiles HMS-1600 / HMS-1800 / HMS-2000-4T',
+        category: 'datenblatt',
+        standard: 'VDE-AR-N 4105:2018-11 / EN 50549-1:2019 / IEC 62109-1/-2 / IEC 61000-6-1/-2/-3/-4',
+        issuer: 'Hoymiles Power Electronics Inc.',
+        fileName: 'Hoymiles-HMS-1600-1800-2000-Datasheet.pdf',
+        description: 'Leistungsstarker 4-in-1 Modul-Mikrowechselrichter mit bis zu 2000 VA AC-Ausgangsleistung, 4 unabhängigen MPPTs, Sub-1G-Funkverbindung (S-Miles Cloud) und galvanisch getrenntem HF-Transformator.',
+        specs: {
+            acPower: '2000 VA (8,7 A bei 230 V AC, 50 Hz)',
+            mppRange: '16 – 60 V (Einschaltspannung: 22 V)',
+            maxDcVoltage: '65 V DC',
+            maxDcCurrent: '4 × 16 A (Kurzschlussstrom Isc: 4 × 25 A)',
+            mpptCount: '4 unabhängige MPPT-Tracker (1 Eingang pro MPPT)',
+            maxEfficiency: '96,5 % CEC Wirkungsgrad (99,8 % nominaler MPPT-Wirkungsgrad)',
+            powerFactor: '> 0,99 (einstellbar 0,8 kapazitiv bis 0,8 induktiv)',
+            nightConsumption: '< 50 mW',
+            cooling: 'Natürliche Konvektion (lüfterlos)',
+            dimensions: '331 × 218 × 36,6 mm, Gewicht: 4,7 kg',
+            ipProtection: 'IP67 (Outdoor-Einsatz, NEMA 6)',
+            gridCompliance: 'VDE-AR-N 4105:2018, EN 50549-1:2019, VFR2019, IEC/EN 62109'
+        }
     }
 };
 
@@ -156,17 +212,19 @@ const HardwareDocManager = {
                 isMaster: true
             }];
         } else if (deviceType === 'inv') {
+            const isHoymiles = String(deviceId) === '200' || (typeof flatInverters !== 'undefined' && flatInverters.find(i => String(i.id) === String(deviceId))?.name?.toLowerCase().includes('hoymiles'));
+            const docInfo = isHoymiles ? MasterHardwareDocs.inv_hoymiles : MasterHardwareDocs.inv_fronius;
             return [{
-                id: 'master_doc_inv',
+                id: isHoymiles ? 'master_doc_inv_hoymiles' : 'master_doc_inv_fronius',
                 deviceType: 'inv',
                 deviceId: String(deviceId),
                 category: 'datenblatt',
-                title: MasterHardwareDocs.inv_fronius.title,
-                standard: MasterHardwareDocs.inv_fronius.standard,
-                issuer: MasterHardwareDocs.inv_fronius.issuer,
-                fileName: MasterHardwareDocs.inv_fronius.fileName,
-                notes: MasterHardwareDocs.inv_fronius.description,
-                specs: MasterHardwareDocs.inv_fronius.specs,
+                title: docInfo.title,
+                standard: docInfo.standard,
+                issuer: docInfo.issuer,
+                fileName: docInfo.fileName,
+                notes: docInfo.description,
+                specs: docInfo.specs,
                 url: '',
                 isMaster: true
             }];
@@ -243,4 +301,5 @@ window.MasterDB = MasterDB;
 window.escapeHtml = escapeHtml;
 window.MasterHardwareDocs = MasterHardwareDocs;
 window.HardwareDocManager = HardwareDocManager;
+window.CodePersistedHardware = typeof CodePersistedHardware !== 'undefined' ? CodePersistedHardware : { panels: [], inverters: [], batteries: [] };
 

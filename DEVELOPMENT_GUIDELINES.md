@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 7.9.0 (Mobile Header-Bereinigung & M3 Bottom-Sheet Konsolidierung)  
+**Aktuelle Version:** 7.10.0 (Gerätezuweisung, Hardware-Katalog, Code-Persistenz & Hoymiles HMS-2000T)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
