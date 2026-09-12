@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.12.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
+    <title>PV-Planung Pro 8.0.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.12.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
+    <meta property="og:title" content="PV-Planung Pro 8.0.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
@@ -185,7 +185,7 @@
                     <div class="shrink-0">
                         <h1 class="text-sm sm:text-base md:text-xl font-extrabold tracking-tight text-white leading-none flex items-center gap-1 sm:gap-1.5">
                             <span>PV-Planung</span>
-                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 7.12.0</span>
+                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 8.0.0</span>
                         </h1>
                     </div>
 
@@ -902,7 +902,7 @@
                                     Hardware-Katalog & Stammdatenbank
                                 </h4>
                                 <span id="hardwareCatalogCountBadge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"></span>
-                                <span id="catalogStateBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200/60 dark:bg-slate-800 text-slate-500">Zugeklappt</span>
+                                <span id="catalogStateBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">Ausgeklappt</span>
                             </div>
                             <p class="text-xs text-slate-400 mt-0.5 truncate sm:whitespace-normal">
                                 Gesamte Hersteller-Bibliothek für Solarmodule, Wechselrichter und Speicher durchsuchen oder neue Geräte anlegen.
@@ -911,13 +911,13 @@
                     </div>
 
                     <button type="button" id="btnToggleCatalog" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0">
-                        <span id="catalogToggleText">Katalog ausklappen</span>
-                        <span id="catalogToggleIcon" class="material-symbols-rounded text-base transition-transform duration-200">expand_more</span>
+                        <span id="catalogToggleText">Katalog einklappen</span>
+                        <span id="catalogToggleIcon" class="material-symbols-rounded text-base transition-transform duration-200">expand_less</span>
                     </button>
                 </div>
 
-                <!-- Collapsible Content (hidden by default) -->
-                <div id="hardwareCatalogContent" class="hidden mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                <!-- Collapsible Content (visible by default) -->
+                <div id="hardwareCatalogContent" class="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div class="text-xs text-slate-500 dark:text-slate-400">
                             Klicke bei einer Komponente auf <strong>„+ Zum Projekt hinzufügen“</strong>, um sie in deinen Gerätepool aufzunehmen.
@@ -1455,12 +1455,12 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V7.12.0 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=7.12.0"></script>
-    <script src="database.js?v=7.12.0"></script>
-    <script src="content.js?v=7.12.0"></script>
-    <script src="app.js?v=7.12.0"></script>
-    <script src="wiring.js?v=7.12.0"></script>
-    <script src="dossier.js?v=7.12.0"></script>
+    <!-- MODULARE ARCHITEKTUR V8.0.0 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=8.0.0"></script>
+    <script src="database.js?v=8.0.0"></script>
+    <script src="content.js?v=8.0.0"></script>
+    <script src="app.js?v=8.0.0"></script>
+    <script src="wiring.js?v=8.0.0"></script>
+    <script src="dossier.js?v=8.0.0"></script>
 </body>
 </html>

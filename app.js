@@ -99,7 +99,7 @@ function initDatabase() {
         let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 7.10.0';
+        if (verEl) verEl.innerText = 'Pro 8.0.0';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -776,14 +776,21 @@ async function renderServerPlansList() {
     if (!container) return;
 
     try {
-        const res = await fetch('/api/plans/persistent');
+        const res = await fetch('/api/plans/persistent', { cache: 'no-store' });
         if (res.ok) {
             const data = await res.json();
             if (data && data.success && Array.isArray(data.plans)) {
+                // In localStorage als Offline-Puffer spiegeln
+                try {
+                    localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(data.plans));
+                } catch(e) {}
+
                 if (data.plans.length === 0) {
                     container.innerHTML = `
-                        <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
-                            Noch keine festen Server-Planungen hinterlegt. Klicke auf "Aktuelle Planung fest speichern", um diese Konfiguration dauerhaft im Code & Server zu sichern.
+                        <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-900/30">
+                            <span class="material-symbols-rounded text-xl text-emerald-500 mb-1 block">cloud_done</span>
+                            <span class="font-bold text-slate-700 dark:text-slate-200 block">Server-Synchronisation bereit</span>
+                            <span class="text-[11px] text-slate-400 mt-0.5 block">Noch keine zusätzlichen Planungen fest gespeichert. Klicke oben auf <strong class="text-emerald-600 dark:text-emerald-400 font-bold">„Aktuelle Planung fest speichern“</strong>, um deine Konfiguration dauerhaft im Code & Server zu sichern.</span>
                         </div>
                     `;
                     return;
@@ -825,12 +832,46 @@ async function renderServerPlansList() {
             }
         }
     } catch(err) {
-        console.warn("Fehler beim Abrufen der Server-Planungen:", err);
+        console.warn("Server-Planungen konnten im Netzwerk nicht abgefragt werden:", err);
+    }
+
+    // Offline / Cache-Fallback
+    let cached = [];
+    try {
+        cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+    } catch(e) {}
+
+    if (Array.isArray(cached) && cached.length > 0) {
+        container.innerHTML = `
+            <div class="mb-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
+                <span>Lokaler Zwischenspeicher (${cached.length} Planungen verfügbar)</span>
+                <button onclick="renderServerPlansList()" class="underline font-bold text-primary">Aktualisieren</button>
+            </div>
+        ` + cached.map(p => {
+            const sm = p.summary || {};
+            return `
+                <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                        <span class="text-xs font-black text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
+                        <div class="text-[10px] text-slate-400 mt-1">${sm.kwp || '–'} kWp • ${sm.locationName || 'Standort'}</div>
+                    </div>
+                    <button onclick="loadPersistentPlanFromServer('${p.id}')" class="px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-bold">Laden</button>
+                </div>
+            `;
+        }).join('');
+        return;
     }
 
     container.innerHTML = `
-        <div class="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 text-xs text-amber-700 dark:text-amber-300">
-            Server-Planungen konnten nicht geladen werden (Offline-Modus).
+        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div class="flex items-center gap-2">
+                <span class="material-symbols-rounded text-slate-400 text-base">sync</span>
+                <span>Server-Synchronisation bereit (Keine entfernten Daten).</span>
+            </div>
+            <button onclick="renderServerPlansList()" class="px-3 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 self-start sm:self-auto">
+                <span class="material-symbols-rounded text-sm">refresh</span>
+                <span>Aktualisieren</span>
+            </button>
         </div>
     `;
 }
@@ -1639,6 +1680,7 @@ function switchTab(tabId) {
     }
     if(tabId === 'auswertung' && currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
     if(tabId === 'verkabelung') renderWiringTab();
+    if(tabId === 'database') renderDatabaseUI();
 }
 
 function openMoreSheet() {
@@ -2649,7 +2691,7 @@ function updateDetailCharts(monthIdx) {
 
 let catalogCategoryFilter = 'all'; // 'all' | 'panel' | 'inv' | 'bat'
 let catalogSearchQuery = '';
-let isHardwareCatalogOpen = false;
+let isHardwareCatalogOpen = true;
 let projectInverterIds = [];
 let projectPanelIds = [];
 let activeHardwareBatteryId = null;
@@ -2725,7 +2767,9 @@ function syncProjectHardwareState() {
             }
         } catch(e) {}
         if (!projectInverterIds || projectInverterIds.length === 0) {
-            projectInverterIds = stringInvIds.length > 0 ? [...new Set(stringInvIds)] : [flatInverters[0]?.id || 10];
+            const defaultInvCandidates = [16, 200, 10]; // Fronius Symo GEN24 12.0, Hoymiles HMS-2000, GEN24 6.0
+            const matchedInv = defaultInvCandidates.filter(id => flatInverters.some(i => i.id === id));
+            projectInverterIds = stringInvIds.length > 0 ? [...new Set(stringInvIds)] : (matchedInv.length > 0 ? matchedInv : [flatInverters[0]?.id || 10]);
         }
     }
     stringInvIds.forEach(id => {
@@ -2740,7 +2784,9 @@ function syncProjectHardwareState() {
             }
         } catch(e) {}
         if (!projectPanelIds || projectPanelIds.length === 0) {
-            projectPanelIds = stringPanelIds.length > 0 ? [...new Set(stringPanelIds)] : [flatPanels[0]?.id || 101];
+            const defaultPanelCandidates = [104, 103, 101]; // AIKO Neostar 2S+ 475W, 470W, 460W
+            const matchedPanels = defaultPanelCandidates.filter(id => flatPanels.some(p => p.id === id));
+            projectPanelIds = stringPanelIds.length > 0 ? [...new Set(stringPanelIds)] : (matchedPanels.length > 0 ? matchedPanels : [flatPanels[0]?.id || 101]);
         }
     }
     stringPanelIds.forEach(id => {
@@ -2889,10 +2935,9 @@ function onCatalogSearchInput(val) {
 }
 
 function renderDatabaseUI() {
+    syncProjectHardwareState();
     renderActiveHardwareUI();
-    if (isHardwareCatalogOpen) {
-        renderHardwareCatalogUI();
-    }
+    renderHardwareCatalogUI();
 }
 
 // ----------------------------------------------------
@@ -3347,9 +3392,9 @@ function renderHardwareCatalogUI() {
         const name = data.name;
 
         // Prüfen, ob bereits im Projekt-Pool
-        const isInProjectPool = (type === 'inv' && projectInverterIds.includes(id)) || 
-                                (type === 'panel' && projectPanelIds.includes(id)) ||
-                                (type === 'bat' && activeHardwareBatteryId === id);
+        const isInProjectPool = (type === 'inv' && (projectInverterIds || []).map(Number).includes(Number(id))) || 
+                                (type === 'panel' && (projectPanelIds || []).map(Number).includes(Number(id))) ||
+                                (type === 'bat' && Number(activeHardwareBatteryId) === Number(id));
 
         // Prüfen, woher das Gerät stammt
         let isPersistedInCode = false;
@@ -3490,7 +3535,7 @@ function renderHardwareCatalogUI() {
 
                 <div class="flex items-center gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
                     ${actionBtnHtml}
-                    <button onclick="openHardwareDocModal('${type}', ${id}, '${escapeHtml(name)}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Datenblätter & Zertifikate">
+                    <button onclick="openHardwareDocModal('${type}', '${id}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Datenblätter & Zertifikate">
                         <span class="material-symbols-rounded text-sm">description</span>
                     </button>
                     <button onclick="openHardwareEditModal('${type}', ${id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Hardware bearbeiten">
@@ -3998,6 +4043,13 @@ function openHardwareDocModal(deviceType, deviceId, deviceName) {
         modal.id = 'modal-hardware-docs';
         modal.className = 'fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden';
         document.body.appendChild(modal);
+    }
+
+    if (!deviceName) {
+        if (deviceType === 'panel') deviceName = (flatPanels.find(p => String(p.id) === String(deviceId)) || {}).name || 'Solarmodul';
+        else if (deviceType === 'inv') deviceName = (flatInverters.find(i => String(i.id) === String(deviceId)) || {}).name || 'Wechselrichter';
+        else if (deviceType === 'bat') deviceName = (flatBatteries.find(b => String(b.id) === String(deviceId)) || {}).name || 'Batteriespeicher';
+        else deviceName = 'Hardware';
     }
 
     const typeLabels = { panel: 'Solarmodul', inv: 'Wechselrichter', bat: 'Batteriespeicher' };

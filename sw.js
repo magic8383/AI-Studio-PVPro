@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pvpro-cache-v7.12.0';
+const CACHE_NAME = 'pvpro-cache-v8.0.0';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -46,6 +46,12 @@ self.addEventListener('activate', (event) => {
 // Fetch: Network-first for dynamic API calls (PVGIS, Nominatim), Cache-first / Stale-While-Revalidate for app assets
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
+
+    // Bypass service worker entirely for all local API requests (/api/*)
+    // This prevents caching dynamic persistent plans or hardware APIs and prevents false offline alerts
+    if (url.pathname.startsWith('/api/')) {
+        return;
+    }
 
     // Bypass cache for non-GET requests
     if (event.request.method !== 'GET') return;

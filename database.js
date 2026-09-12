@@ -34,6 +34,18 @@ const MasterDB = {
             { id: 16, name: "GEN24 12.0 Plus SC", acMax: 12000, startV: 80, minMppV: 295, maxMppV: 800, maxV: 1000, maxDcWp: 18000, maxChargePower: 11682, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] }
         ]},
         { series: "Hoymiles Mikrowechselrichter", models: [
+            { id: 198, name: "Hoymiles HMS-1600-4T", acMax: 1600, startV: 22, minMppV: 16, maxMppV: 60, maxV: 65, maxDcWp: 2160, maxChargePower: 0, weight: 4.7, batteryId: 1, type: "micro", dim: "331 × 218 × 36.6 mm", ip: "IP67", mppts: [
+                {id: 1, name: "MPPT 1 (Eingang 1)", maxIsc: 25, maxI: 14},
+                {id: 2, name: "MPPT 2 (Eingang 2)", maxIsc: 25, maxI: 14},
+                {id: 3, name: "MPPT 3 (Eingang 3)", maxIsc: 25, maxI: 14},
+                {id: 4, name: "MPPT 4 (Eingang 4)", maxIsc: 25, maxI: 14}
+            ]},
+            { id: 199, name: "Hoymiles HMS-1800-4T", acMax: 1800, startV: 22, minMppV: 16, maxMppV: 60, maxV: 65, maxDcWp: 2400, maxChargePower: 0, weight: 4.7, batteryId: 1, type: "micro", dim: "331 × 218 × 36.6 mm", ip: "IP67", mppts: [
+                {id: 1, name: "MPPT 1 (Eingang 1)", maxIsc: 25, maxI: 15},
+                {id: 2, name: "MPPT 2 (Eingang 2)", maxIsc: 25, maxI: 15},
+                {id: 3, name: "MPPT 3 (Eingang 3)", maxIsc: 25, maxI: 15},
+                {id: 4, name: "MPPT 4 (Eingang 4)", maxIsc: 25, maxI: 15}
+            ]},
             { id: 200, name: "Hoymiles HMS-2000T-4T", acMax: 2000, startV: 22, minMppV: 16, maxMppV: 60, maxV: 65, maxDcWp: 2680, maxChargePower: 0, weight: 4.7, batteryId: 1, type: "micro", dim: "331 × 218 × 36.6 mm", ip: "IP67", mppts: [
                 {id: 1, name: "MPPT 1 (Eingang 1)", maxIsc: 25, maxI: 16},
                 {id: 2, name: "MPPT 2 (Eingang 2)", maxIsc: 25, maxI: 16},
@@ -55,19 +67,27 @@ const CodePersistedHardware = {
 };
 
 // Zusammenführen der im Code gespeicherten Hardware in MasterDB
-(function mergeCodePersistedHardware() {
-    if (typeof CodePersistedHardware !== 'undefined') {
-        if (CodePersistedHardware.panels && CodePersistedHardware.panels.length > 0) {
-            MasterDB.panels.push({ series: "Code-gespeicherte Module", models: CodePersistedHardware.panels });
-        }
-        if (CodePersistedHardware.inverters && CodePersistedHardware.inverters.length > 0) {
-            MasterDB.inverters.push({ series: "Code-gespeicherte WR", models: CodePersistedHardware.inverters });
-        }
-        if (CodePersistedHardware.batteries && CodePersistedHardware.batteries.length > 0) {
-            MasterDB.batteries.push({ series: "Code-gespeicherte Batterien", models: CodePersistedHardware.batteries });
-        }
+function mergeCodePersistedHardware() {
+    const persisted = (typeof window !== 'undefined' && window.CodePersistedHardware) 
+        ? window.CodePersistedHardware 
+        : (typeof CodePersistedHardware !== 'undefined' ? CodePersistedHardware : null);
+    if (!persisted) return;
+
+    MasterDB.panels = MasterDB.panels.filter(s => s.series !== "Code-gespeicherte Module");
+    MasterDB.inverters = MasterDB.inverters.filter(s => s.series !== "Code-gespeicherte WR");
+    MasterDB.batteries = MasterDB.batteries.filter(s => s.series !== "Code-gespeicherte Batterien");
+
+    if (persisted.panels && persisted.panels.length > 0) {
+        MasterDB.panels.push({ series: "Code-gespeicherte Module", models: persisted.panels });
     }
-})();
+    if (persisted.inverters && persisted.inverters.length > 0) {
+        MasterDB.inverters.push({ series: "Code-gespeicherte WR", models: persisted.inverters });
+    }
+    if (persisted.batteries && persisted.batteries.length > 0) {
+        MasterDB.batteries.push({ series: "Code-gespeicherte Batterien", models: persisted.batteries });
+    }
+}
+mergeCodePersistedHardware();
 
 // ==========================================
 // SICHERER HTML-ESCAPING-HELPER (GLOBAL)
@@ -212,7 +232,7 @@ const HardwareDocManager = {
                 isMaster: true
             }];
         } else if (deviceType === 'inv') {
-            const isHoymiles = String(deviceId) === '200' || (typeof flatInverters !== 'undefined' && flatInverters.find(i => String(i.id) === String(deviceId))?.name?.toLowerCase().includes('hoymiles'));
+            const isHoymiles = ['198', '199', '200'].includes(String(deviceId)) || (typeof flatInverters !== 'undefined' && flatInverters.find(i => String(i.id) === String(deviceId))?.name?.toLowerCase().includes('hoymiles'));
             const docInfo = isHoymiles ? MasterHardwareDocs.inv_hoymiles : MasterHardwareDocs.inv_fronius;
             return [{
                 id: isHoymiles ? 'master_doc_inv_hoymiles' : 'master_doc_inv_fronius',
@@ -302,4 +322,5 @@ window.escapeHtml = escapeHtml;
 window.MasterHardwareDocs = MasterHardwareDocs;
 window.HardwareDocManager = HardwareDocManager;
 window.CodePersistedHardware = typeof CodePersistedHardware !== 'undefined' ? CodePersistedHardware : { panels: [], inverters: [], batteries: [] };
+window.mergeCodePersistedHardware = mergeCodePersistedHardware;
 

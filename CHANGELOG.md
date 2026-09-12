@@ -4,6 +4,31 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.0.0] – 2026-09-12
+
+### 🚀 Master-Hardware-Katalog (AIKO, Fronius, Hoymiles), Beseitigung falscher Offline-Meldungen & Robuste Server-Synchronisation
+
+#### 1. Fester Startpunkt des Hardware-Katalogs (Master-Hardware)
+* **Vollständige Standard-Bibliothek ab Werk vorbefüllt:**
+  - **AIKO Neostar 2S+ Solarmodule:** Vollständige N-Type ABC Hochleistungs-Modulserie (460 Wp, 465 Wp, 470 Wp, 475 Wp) mit 23,8 % Modulwirkungsgrad, Glas-Glas-Konstruktion und 30 Jahren Leistungsgarantie fest im Master-Katalog integriert.
+  - **Fronius Symo GEN24 Plus SC Hybrid-Wechselrichter:** Alle Leistungsstufen (3.0, 4.0, 5.0, 6.0, 8.0, 10.0 und 12.0 kW) mit 2 MPPTs, dynamischem Peak-Manager und integrierter Notstromfunktion fest im Master-Katalog.
+  - **Hoymiles Mikrowechselrichter-Serie:** Volles Spektrum an 4-Kanal-Mikrowechselrichtern: **HMS-1600-4T** (1600 VA), **HMS-1800-4T** (1800 VA) und **HMS-2000T-4T** (2000 VA) mit jeweils 4 unabhängigen MPPT-Trackern für anspruchsvolle Gauben-, Balkon- oder Fassadendächer.
+  - **BYD Battery-Box Premium HVS+ Speicher:** Hochvolt-Lithium-Eisenphosphat (LiFePO4) Speicher (5.1, 7.7, 10.2 und 12.8 kWh) mit 95 % Wirkungsgrad.
+* **Keine leeren Katalogzustände mehr:**
+  - Bereinigung und Entflechtung der `mergeCodePersistedHardware()`-Logik: Benutzerdefinierte und Server-Hardware werden idempotent und sauber zusammengeführt, ohne den Master-Katalog zu überschreiben oder zu leeren.
+  - Der Hardware-Katalog öffnet sich aufgeräumt und standardmäßig aktiv; die Gerätekarten werden zuverlässig initialisiert und gerendert.
+
+#### 2. Behebung des persistenten „Offline-Modus“
+* **Service Worker API-Bypass:**
+  - `sw.js` leitet alle Anfragen an `/api/` konsequent am Service Worker Cache vorbei direkt an das Netzwerk. Dynamische Planungs- und Hardware-Abrufe werden dadurch niemals mehr mit veralteten oder leeren Cache-Antworten blockiert.
+* **Resiliente Server-Planungsverwaltung:**
+  - Beseitigung der irreführenden gelben Warnmeldung „Offline-Modus“, wenn lediglich noch keine zusätzlichen Server-Planungen gespeichert wurden.
+  - Informative Bereit-Statuskarte mit Hinweisen zum Sichern von Planungen.
+  - Lokaler Offline-Puffer (`localStorage`-Spiegelung) sowie manueller Aktualisierungs-Button (`renderServerPlansList`) für maximale Stabilität auch bei kurzzeitigen Verbindungspausen.
+  - CORS-Middleware im Node.js Server um `PUT` und `DELETE` erweitert für uneingeschränkte REST-Funktionalität.
+
+---
+
 ## [Version 7.12.0] – 2026-09-11
 
 ### ⚡ Multi-Wechselrichter & Multi-Modul-Ausstattungspool, Einklappbarer Katalog, Code-Persistenz & High-Tech App-Icon
