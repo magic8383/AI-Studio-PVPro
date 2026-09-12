@@ -4,6 +4,26 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.0.3] – 2026-09-12
+
+### 🛡️ Globale HTML-Escaping-Sicherheit & Robuste SVG-Schaltplan-Resilienz
+
+#### 1. Globale HTML-Escaping-Sicherheitsfunktion (`escapeHtml`)
+* **Beseitigung von Referenzfehlern (`ReferenceError: escapeHtml is not defined`):**
+  - Definition einer globalen, defensiven `escapeHtml()`-Implementierung am Kopf von `app.js` sowie Bereitstellung im globalen Kontext (`window.escapeHtml`), um jegliche Laufzeitfehler in dynamisch gerenderten Modalen, Datenblatt-Ansichten und Tabellen zuverlässig abzufangen.
+  - Sichere Behandlung von `null`, `undefined` und String-Sonderzeichen (`&`, `<`, `>`, `"`, `'`).
+
+#### 2. Robuste SVG-Schaltplan-Resilienz in `wiring.js`
+* **Defensive Wechselrichter- und String-Werte:**
+  - Absicherung der Wechselrichter-Namensauflösung im interaktiven SVG-Schaltplan (`generateStringWiringSvg`) gegen unvollständige oder asynchron geladene Datenmodelle mit sicherem Fallback auf `flatInverters[0]` und XML-konformer Textbereinigung.
+  - Saubere String-Spannungsanzeige ($U_{mpp,hot}$) im Wechselrichter-Display des Schaltplans auch bei initialen oder editierten Strang-Zuständen.
+
+#### 3. Konsistente Versionierung & PWA-Cache-Erneuerung
+* **PWA-Cache `pvpro-cache-v8.0.3`:**
+  - Cache-Busting für alle modularen Skripte (`database.js`, `app.js`, `wiring.js`, `dossier.js`, `content.js`) und Icons zur sofortigen fehlerfreien Aktualisierung auf allen Endgeräten.
+
+---
+
 ## [Version 8.0.2] – 2026-09-12
 
 ### 🔍 AIKO Neostar 3S+ Korrektur, Vollwertiger Datenblatt-Viewer & Robuste String-Physik (Spannung & Strom)

@@ -208,7 +208,7 @@ function addFieldInWiring(strId) {
     str.fields.push({
         id: Date.now() + Math.floor(Math.random() * 1000),
         name: defaultName,
-        panelId: str.fields[0]?.panelId || flatPanels[0]?.id || 1,
+        panelId: str.fields[0]?.panelId || flatPanels[0]?.id || 101,
         count: 4,
         tilt: 30,
         cols: 4,
@@ -680,7 +680,7 @@ function generateStringWiringSvg(str, settings) {
     const gapX = 24;
     const gapY = 32;
 
-    const invWidth = 145;
+    const invWidth = 175;
     const invHeight = 220;
     const invX = 30;
     const invY = 50;
@@ -875,7 +875,7 @@ function generateStringWiringSvg(str, settings) {
         sequence = getMultiFieldSequence(str, 'simple');
     }
 
-    const inverter = flatInverters.find(i => i.id === parseInt(str.inverterId)) || { name: 'Wechselrichter' };
+    const inverter = flatInverters.find(i => i.id === parseInt(str.inverterId)) || flatInverters[0] || { name: 'Wechselrichter' };
     const stringColor = str.color || '#3b82f6';
     const isAnim = settings.showCurrentAnimation;
 
@@ -1094,7 +1094,7 @@ function generateStringWiringSvg(str, settings) {
             <text x="32" y="23" fill="#f8fafc" font-size="11" font-weight="800" letter-spacing="0.5">WECHSELRICHTER</text>
 
             <rect x="12" y="48" width="${invWidth - 24}" height="76" rx="8" fill="#020617" stroke="#1e293b" stroke-width="1.5" />
-            <text x="20" y="66" fill="#38bdf8" font-size="9.5" font-weight="700">${inverter.name.slice(0, 16)}</text>
+            <text x="20" y="66" fill="#38bdf8" font-size="9.5" font-weight="700">${(inverter?.name ? String(inverter.name) : 'Wechselrichter').slice(0, 16).replace(/[<>&]/g, '')}</text>
             <text x="20" y="82" fill="#94a3b8" font-size="9">Eingang: <tspan fill="#f8fafc" font-weight="700">MPPT ${str.mpptId || 1}</tspan></text>
             <text x="20" y="98" fill="#94a3b8" font-size="9">Spannung: <tspan fill="#34d399" font-weight="700">${Math.round(str._phys?.vmpHot || 380)} V</tspan></text>
             <text x="20" y="114" fill="#94a3b8" font-size="8.5">Status: <tspan fill="#38bdf8">TRACKING</tspan></text>

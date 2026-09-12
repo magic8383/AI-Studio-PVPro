@@ -10,6 +10,31 @@ const MasterDB = {
             { id: 102, name: "AIKO Neostar 3S+ 465W (MCE54Db)", pmax: 465, voc: 40.60, vmp: 34.20, isc: 14.69, imp: 13.60, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.233 },
             { id: 103, name: "AIKO Neostar 3S+ 470W (MCE54Db)", pmax: 470, voc: 40.70, vmp: 34.30, isc: 14.72, imp: 13.71, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.235 },
             { id: 104, name: "AIKO Neostar 3S+ 475W (MCE54Db)", pmax: 475, voc: 40.80, vmp: 34.40, isc: 14.76, imp: 13.81, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.238 }
+        ]},
+        { series: "Jolywood JW-HD108N-R2 (Black Series)", models: [
+            { id: 111, name: "Jolywood JW-HD108N-R2 485W (Black Series)", pmax: 485, voc: 38.43, vmp: 32.96, isc: 15.60, imp: 14.71, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.218, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 112, name: "Jolywood JW-HD108N-R2 490W (Black Series)", pmax: 490, voc: 38.63, vmp: 33.14, isc: 15.66, imp: 14.78, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.220, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 113, name: "Jolywood JW-HD108N-R2 495W (Black Series)", pmax: 495, voc: 38.83, vmp: 33.32, isc: 15.72, imp: 14.85, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.223, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 114, name: "Jolywood JW-HD108N-R2 500W (Black Series)", pmax: 500, voc: 39.03, vmp: 33.50, isc: 15.78, imp: 14.92, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.225, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 115, name: "Jolywood JW-HD108N-R2 505W (Black Series)", pmax: 505, voc: 39.23, vmp: 33.68, isc: 15.84, imp: 14.99, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.227, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 116, name: "Jolywood JW-HD108N-R2 510W (Black Series)", pmax: 510, voc: 39.43, vmp: 33.86, isc: 15.90, imp: 15.06, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.229, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 117, name: "Jolywood JW-HD108N-R2 515W (Black Series)", pmax: 515, voc: 39.63, vmp: 34.04, isc: 15.96, imp: 15.13, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1960, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 108, eff: 0.232, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" }
+        ]},
+        { series: "Jolywood JW-HD120N-R3 (Black Series)", models: [
+            { id: 121, name: "Jolywood JW-HD120N-R3 485W (Black Series)", pmax: 485, voc: 42.98, vmp: 36.93, isc: 13.94, imp: 13.13, tempVoc: -0.250, tempPmax: -0.300, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1950, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 120, eff: 0.219, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 122, name: "Jolywood JW-HD120N-R3 490W (Black Series)", pmax: 490, voc: 43.18, vmp: 37.11, isc: 14.00, imp: 13.20, tempVoc: -0.250, tempPmax: -0.300, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1950, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 120, eff: 0.222, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 123, name: "Jolywood JW-HD120N-R3 495W (Black Series)", pmax: 495, voc: 43.38, vmp: 37.29, isc: 14.06, imp: 13.27, tempVoc: -0.250, tempPmax: -0.300, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1950, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 120, eff: 0.224, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 124, name: "Jolywood JW-HD120N-R3 500W (Black Series)", pmax: 500, voc: 43.58, vmp: 37.47, isc: 14.12, imp: 13.34, tempVoc: -0.250, tempPmax: -0.300, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1950, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 120, eff: 0.226, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 125, name: "Jolywood JW-HD120N-R3 505W (Black Series)", pmax: 505, voc: 43.78, vmp: 37.65, isc: 14.18, imp: 13.41, tempVoc: -0.250, tempPmax: -0.300, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1950, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 120, eff: 0.228, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 126, name: "Jolywood JW-HD120N-R3 510W (Black Series)", pmax: 510, voc: 43.98, vmp: 37.83, isc: 14.24, imp: 13.48, tempVoc: -0.250, tempPmax: -0.300, tempIsc: 0.045, weight: 27.3, width: 1134, length: 1950, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 120, eff: 0.231, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" }
+        ]},
+        { series: "Jolywood JW-HD96N-R2 (Black Series)", models: [
+            { id: 131, name: "Jolywood JW-HD96N-R2 435W (Black Series)", pmax: 435, voc: 34.31, vmp: 29.44, isc: 15.65, imp: 14.78, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 24.6, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 96, eff: 0.218, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 132, name: "Jolywood JW-HD96N-R2 440W (Black Series)", pmax: 440, voc: 34.51, vmp: 29.62, isc: 15.72, imp: 14.85, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 24.6, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 96, eff: 0.220, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 133, name: "Jolywood JW-HD96N-R2 445W (Black Series)", pmax: 445, voc: 34.71, vmp: 29.80, isc: 15.79, imp: 14.93, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 24.6, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 96, eff: 0.223, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 134, name: "Jolywood JW-HD96N-R2 450W (Black Series)", pmax: 450, voc: 34.91, vmp: 29.98, isc: 15.86, imp: 15.01, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 24.6, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 96, eff: 0.225, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 135, name: "Jolywood JW-HD96N-R2 455W (Black Series)", pmax: 455, voc: 35.11, vmp: 30.16, isc: 15.93, imp: 15.09, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 24.6, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 96, eff: 0.228, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" },
+            { id: 136, name: "Jolywood JW-HD96N-R2 460W (Black Series)", pmax: 460, voc: 35.31, vmp: 30.34, isc: 16.00, imp: 15.16, tempVoc: -0.250, tempPmax: -0.280, tempIsc: 0.045, weight: 24.6, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ TOPCon (Bifazial)", cells: 96, eff: 0.230, bifacial: 0.80, warranty: "25 Jahre Produkt / 30 Jahre lineare Leistung" }
         ]}
     ],
     batteries: [
@@ -130,6 +155,75 @@ const MasterHardwareDocs = {
             fireClass: 'Klasse A (IEC 61730)'
         }
     },
+    panel_jolywood_108: {
+        id: 'doc_master_jolywood_108',
+        title: 'Original-Datenblatt Jolywood JW-HD108N-R2 (485 - 515 W)',
+        category: 'datenblatt',
+        standard: 'IEC 61215:2021 / IEC 61730:2023 / TÜV SÜD / Munich RE',
+        issuer: 'Jolywood (Taizhou) Solar Technology Co., Ltd.',
+        fileName: 'Jolywood-JW-HD108N-R2-Black-Series-Datasheet.pdf',
+        description: 'Bifaziales N-Typ TOPCon Doppelglas-Solarmodul in transparenter Black-Optik (108 Halbzellen). 10–30% zusätzlicher bifazialer Mehrertrag, Zero LID (lichtinduzierte Degradation), 25 Jahre Produkt- & 30 Jahre lineare Leistungsgarantie (mind. 87,4% nach 30 Jahren).',
+        specs: {
+            cellType: 'N-Typ TOPCon (Bifazial), 108 Halbzellen (M10R)',
+            dimensions: '1960 × 1134 × 30 mm',
+            weight: '27,3 kg',
+            glass: '2,0 + 2,0 mm hochtransparentes, hitzeverstärktes AR-Doppelglas',
+            frame: 'Schwarz eloxierte Aluminiumlegierung',
+            junctionBox: 'IP68, 3 Bypass-Dioden',
+            cable: '4 mm² Cu (1400 mm Länge), MC4 / MC4-EVO2A kompatibel',
+            tempPmax: '-0,280 %/°C',
+            tempVoc: '-0,250 %/°C',
+            tempIsc: '+0,045 %/°C',
+            maxSystemVoltage: 'DC 1500 V',
+            fireClass: 'Klasse A (IEC 61730)'
+        }
+    },
+    panel_jolywood_120: {
+        id: 'doc_master_jolywood_120',
+        title: 'Original-Datenblatt Jolywood JW-HD120N-R3 (485 - 510 W)',
+        category: 'datenblatt',
+        standard: 'IEC 61215:2021 / IEC 61730:2023 / TÜV SÜD / Munich RE',
+        issuer: 'Jolywood (Taizhou) Solar Technology Co., Ltd.',
+        fileName: 'Jolywood-JW-HD120N-R3-Black-Series-Datasheet.pdf',
+        description: 'Bifaziales N-Typ TOPCon Doppelglas-Solarmodul in transparenter Black-Optik (120 Halbzellen). Höhere MPP-Spannungslage (~37 V), extrem geringer Temperaturkoeffizient (-0,30%/°C), 25 Jahre Produkt- & 30 Jahre lineare Leistungsgarantie (mind. 87,4% nach 30 Jahren).',
+        specs: {
+            cellType: 'N-Typ TOPCon (Bifazial), 120 Halbzellen (M10R)',
+            dimensions: '1950 × 1134 × 30 mm',
+            weight: '27,3 kg',
+            glass: '2,0 + 2,0 mm hochtransparentes, hitzeverstärktes AR-Doppelglas',
+            frame: 'Schwarz eloxierte Aluminiumlegierung',
+            junctionBox: 'IP68, 3 Bypass-Dioden',
+            cable: '4 mm² Cu (1400 mm Länge), MC4 / MC4-EVO2A kompatibel',
+            tempPmax: '-0,300 %/°C',
+            tempVoc: '-0,250 %/°C',
+            tempIsc: '+0,045 %/°C',
+            maxSystemVoltage: 'DC 1500 V',
+            fireClass: 'Klasse A (IEC 61730)'
+        }
+    },
+    panel_jolywood_96: {
+        id: 'doc_master_jolywood_96',
+        title: 'Original-Datenblatt Jolywood JW-HD96N-R2 (435 - 460 W)',
+        category: 'datenblatt',
+        standard: 'IEC 61215:2021 / IEC 61730:2023 / TÜV SÜD / Munich RE',
+        issuer: 'Jolywood (Taizhou) Solar Technology Co., Ltd.',
+        fileName: 'Jolywood-JW-HD96N-R2-Black-Series-Datasheet.pdf',
+        description: 'Kompaktes bifaziales N-Typ TOPCon Doppelglas-Solarmodul in transparenter Black-Optik (96 Halbzellen). Ideal für Wohngebäude mit begrenzter Dachlast (nur 24,6 kg und 1762 mm Länge). 25 Jahre Produkt- & 30 Jahre lineare Leistungsgarantie (mind. 87,4% nach 30 Jahren).',
+        specs: {
+            cellType: 'N-Typ TOPCon (Bifazial), 96 Halbzellen (M10R)',
+            dimensions: '1762 × 1134 × 30 mm',
+            weight: '24,6 kg',
+            glass: '2,0 + 2,0 mm hochtransparentes, hitzeverstärktes AR-Doppelglas',
+            frame: 'Schwarz eloxierte Aluminiumlegierung',
+            junctionBox: 'IP68, 3 Bypass-Dioden',
+            cable: '4 mm² Cu (1200 mm Länge), MC4 / MC4-EVO2A kompatibel',
+            tempPmax: '-0,280 %/°C',
+            tempVoc: '-0,250 %/°C',
+            tempIsc: '+0,045 %/°C',
+            maxSystemVoltage: 'DC 1500 V',
+            fireClass: 'Klasse A (IEC 61730)'
+        }
+    },
     inv_fronius: {
         id: 'doc_master_fronius',
         title: 'Original-Datenblatt Fronius Symo GEN24 Plus SC (3.0 - 12.0 kW)',
@@ -217,18 +311,39 @@ const HardwareDocManager = {
 
     getMasterDocsForDevice(deviceType, deviceId) {
         if (deviceType === 'panel') {
+            const devIdStr = String(deviceId);
+            const devIdNum = parseInt(devIdStr);
+            const p = (typeof flatPanels !== 'undefined' && Array.isArray(flatPanels)) 
+                ? flatPanels.find(x => String(x.id) === devIdStr) 
+                : null;
+            const name = p?.name || '';
+
+            let docInfo = MasterHardwareDocs.panel_aiko;
+            let docUrl = 'https://aikosolar.com/de/all-black-double-glass/';
+
+            if (name.includes('JW-HD108N') || (devIdNum >= 111 && devIdNum <= 117)) {
+                docInfo = MasterHardwareDocs.panel_jolywood_108;
+                docUrl = 'https://www.jolywood.cn/en/product/detail/47.html';
+            } else if (name.includes('JW-HD120N') || (devIdNum >= 121 && devIdNum <= 126)) {
+                docInfo = MasterHardwareDocs.panel_jolywood_120;
+                docUrl = 'https://www.jolywood.cn/en/product/detail/48.html';
+            } else if (name.includes('JW-HD96N') || (devIdNum >= 131 && devIdNum <= 136)) {
+                docInfo = MasterHardwareDocs.panel_jolywood_96;
+                docUrl = 'https://www.jolywood.cn/en/product/detail/49.html';
+            }
+
             return [{
-                id: 'master_doc_panel',
+                id: 'master_doc_panel_' + devIdStr,
                 deviceType: 'panel',
-                deviceId: String(deviceId),
+                deviceId: devIdStr,
                 category: 'datenblatt',
-                title: MasterHardwareDocs.panel_aiko.title,
-                standard: MasterHardwareDocs.panel_aiko.standard,
-                issuer: MasterHardwareDocs.panel_aiko.issuer,
-                fileName: MasterHardwareDocs.panel_aiko.fileName,
-                notes: MasterHardwareDocs.panel_aiko.description,
-                specs: MasterHardwareDocs.panel_aiko.specs,
-                url: 'https://aikosolar.com/de/all-black-double-glass/',
+                title: docInfo.title,
+                standard: docInfo.standard,
+                issuer: docInfo.issuer,
+                fileName: docInfo.fileName,
+                notes: docInfo.description,
+                specs: docInfo.specs,
+                url: docUrl,
                 isMaster: true
             }];
         } else if (deviceType === 'inv') {

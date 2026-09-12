@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.0.2 (AIKO Neostar 3S+ Naming, Vollwertiger Technischer Datenblatt-Viewer, String-Spannungs- & Strom-Berechnung)  
+**Aktuelle Version:** 8.0.3 (Globale HTML-Escaping-Sicherheit, robuster Datenblatt- & Dokumenten-Manager, optimierte SVG-Schaltplan-Resilienz)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

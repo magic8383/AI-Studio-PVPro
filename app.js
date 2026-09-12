@@ -1,6 +1,19 @@
 // ==========================================
-// GLOBALE STATE VARIABLEN
+// GLOBALE STATE VARIABLEN & SICHERER HTML-ESCAPER
 // ==========================================
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+if (typeof window !== 'undefined') {
+    window.escapeHtml = escapeHtml;
+}
+
 let DB = {
     panels: (typeof MasterDB !== 'undefined' && MasterDB.panels) ? [...MasterDB.panels] : [],
     batteries: (typeof MasterDB !== 'undefined' && MasterDB.batteries) ? [...MasterDB.batteries] : [],
@@ -243,6 +256,7 @@ function calculateProjectSummary(cfg) {
     let panelCount = 0;
     let stringCount = 0;
     let batteryKwh = 0;
+    let batteryName = 'Ohne Akku';
     let locName = cfg?.LocationData?.name || (LocationData?.name || 'Villingen-Schwenningen');
 
     if (Array.isArray(cfg?.strings)) {
@@ -252,7 +266,7 @@ function calculateProjectSummary(cfg) {
                 const count = Number(f.count) || 0;
                 panelCount += count;
                 const p = (typeof flatPanels !== 'undefined' && Array.isArray(flatPanels)) 
-                    ? flatPanels.find(x => x.id === parseInt(f.panelId)) 
+                    ? flatPanels.find(x => String(x.id) === String(f.panelId) || x.id == f.panelId) 
                     : null;
                 const pwp = (p && p.pmax) ? p.pmax : 440;
                 kwp += (count * pwp) / 1000;
@@ -260,13 +274,38 @@ function calculateProjectSummary(cfg) {
         });
     }
 
-    if (cfg?.batMap && typeof cfg.batMap === 'object' && typeof flatBatteries !== 'undefined') {
+    // Batteriespeicher auflösen
+    let batId = null;
+    if (cfg?.batMap && typeof cfg.batMap === 'object') {
         const firstStr = cfg.strings && cfg.strings[0];
         const invId = firstStr ? firstStr.inverterId : null;
-        const batId = invId ? cfg.batMap[invId] : null;
-        if (batId) {
-            const b = flatBatteries.find(x => x.id === parseInt(batId));
-            if (b && b.capacity) batteryKwh = b.capacity;
+        if (invId && cfg.batMap[invId] !== undefined) {
+            batId = cfg.batMap[invId];
+        }
+        if (!batId) {
+            const vals = Object.values(cfg.batMap);
+            if (vals.length > 0 && vals[0]) batId = vals[0];
+        }
+    }
+    if (!batId && typeof activeHardwareBatteryId !== 'undefined' && activeHardwareBatteryId) {
+        batId = activeHardwareBatteryId;
+    }
+    if (!batId) {
+        try {
+            const localBatMap = JSON.parse(localStorage.getItem('pvpro_batmap') || '{}');
+            const vals = Object.values(localBatMap);
+            if (vals.length > 0 && vals[0]) batId = vals[0];
+        } catch(e) {}
+    }
+
+    if (batId && typeof flatBatteries !== 'undefined' && Array.isArray(flatBatteries)) {
+        const b = flatBatteries.find(x => String(x.id) === String(batId) || x.id == batId);
+        if (b && String(b.id) !== '1') {
+            const cap = (b.cap !== undefined && b.cap !== null) ? Number(b.cap) : ((b.capacity !== undefined && b.capacity !== null) ? Number(b.capacity) : 0);
+            if (cap > 0) {
+                batteryKwh = cap;
+                batteryName = b.name || `${cap} kWh`;
+            }
         }
     }
 
@@ -275,6 +314,7 @@ function calculateProjectSummary(cfg) {
         panelCount,
         stringCount,
         batteryKwh,
+        batteryName,
         locationName: locName
     };
 }
@@ -853,9 +893,11 @@ async function renderServerPlansList() {
                                     <span class="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Server / Code</span>
                                 </div>
                                 <div class="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                    <span>${sm.kwp || '–'} kWp</span>
+                                    <span class="font-bold text-slate-700 dark:text-slate-200">${sm.kwp || '–'} kWp</span>
                                     <span>•</span>
                                     <span>${sm.panelCount || '–'} Module (${sm.stringCount || '–'} Str.)</span>
+                                    <span>•</span>
+                                    <span>${(sm.batteryKwh > 0 || (sm.batteryName && sm.batteryName !== 'Ohne Akku')) ? `<span class="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold"><span class="material-symbols-rounded text-xs">battery_charging_full</span> ${sm.batteryName || sm.batteryKwh + ' kWh'}</span>` : 'Ohne Akku'}</span>
                                     <span>•</span>
                                     <span>${sm.locationName || 'Standort'}</span>
                                     ${dateStr ? `<span>•</span><span>Gespeichert: ${dateStr}</span>` : ''}
@@ -4021,11 +4063,32 @@ function openSaveSystemPlanModal() {
     const summaryBox = document.getElementById('savePlanSummaryBox');
 
     const totalPanels = (strings || []).reduce((acc, s) => acc + (s.fields || []).reduce((fAcc, f) => fAcc + (f.count || 0), 0), 0);
-    const activeInv = flatInverters.find(i => i.id === (strings[0]?.inverterId || activeHardwareInverterId)) || flatInverters[0];
-    const totalKwp = ((totalPanels * (flatPanels[0]?.pmax || 440)) / 1000).toFixed(2);
+    const activeInv = (typeof flatInverters !== 'undefined' && Array.isArray(flatInverters))
+        ? (flatInverters.find(i => String(i.id) === String(strings[0]?.inverterId || activeHardwareInverterId)) || flatInverters[0])
+        : null;
+    const defaultPanel = (typeof flatPanels !== 'undefined' && flatPanels[0]) ? flatPanels[0] : null;
+    const totalKwp = ((totalPanels * (defaultPanel?.pmax || 440)) / 1000).toFixed(2);
+
+    // Batterie-Ermittlung über Single Source of Truth
+    let batId = (typeof activeHardwareBatteryId !== 'undefined' && activeHardwareBatteryId) ? activeHardwareBatteryId : null;
+    let batMap = {};
+    try { batMap = JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'); } catch(e) {}
+    if (!batId && activeInv && batMap[activeInv.id]) {
+        batId = batMap[activeInv.id];
+    }
+    if (!batId && Object.values(batMap).length > 0) {
+        batId = Object.values(batMap)[0];
+    }
+    const currentBat = (batId && typeof flatBatteries !== 'undefined' && Array.isArray(flatBatteries))
+        ? flatBatteries.find(b => String(b.id) === String(batId))
+        : null;
+    const hasBat = currentBat && String(currentBat.id) !== '1' && (((currentBat.cap !== undefined && currentBat.cap > 0)) || ((currentBat.capacity !== undefined && currentBat.capacity > 0)));
+    const batCap = hasBat ? (currentBat.cap !== undefined ? currentBat.cap : currentBat.capacity) : 0;
+    const batText = hasBat ? `${currentBat.name} (${batCap} kWh)` : 'Kein Speicher (Ohne Akku)';
 
     if (input) {
-        input.value = `${LocationData.name} - ${activeInv ? activeInv.name : 'PV'} ${totalKwp} kWp`;
+        const batSuffix = hasBat ? ` + ${batCap}kWh` : '';
+        input.value = `${LocationData.name} - ${activeInv ? activeInv.name : 'PV'} ${totalKwp} kWp${batSuffix}`;
     }
 
     if (summaryBox) {
@@ -4033,6 +4096,7 @@ function openSaveSystemPlanModal() {
             <div class="flex justify-between font-medium"><span>Standort:</span> <strong>${LocationData.name}</strong></div>
             <div class="flex justify-between font-medium"><span>Leistung:</span> <strong>${totalKwp} kWp (${totalPanels} Module)</strong></div>
             <div class="flex justify-between font-medium"><span>Wechselrichter:</span> <strong>${activeInv ? activeInv.name : 'Standard'}</strong></div>
+            <div class="flex justify-between font-medium"><span>Batteriespeicher:</span> <strong class="${hasBat ? 'text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-bold' : 'text-slate-500'}">${hasBat ? '<span class="material-symbols-rounded text-sm">battery_charging_full</span>' : ''}${batText}</strong></div>
             <div class="flex justify-between font-medium"><span>Stränge:</span> <strong>${(strings || []).length} Stränge</strong></div>
         `;
     }
@@ -4052,14 +4116,36 @@ async function submitSaveSystemPlanToServer() {
     const name = nameInput?.value?.trim() || `Planung ${new Date().toLocaleDateString('de-DE')}`;
 
     const totalPanels = (strings || []).reduce((acc, s) => acc + (s.fields || []).reduce((fAcc, f) => fAcc + (f.count || 0), 0), 0);
-    const activeInv = flatInverters.find(i => i.id === (strings[0]?.inverterId || (projectInverterIds && projectInverterIds[0]))) || flatInverters[0];
-    const totalKwp = ((totalPanels * (flatPanels[0]?.pmax || 440)) / 1000).toFixed(2);
+    const activeInv = (typeof flatInverters !== 'undefined' && Array.isArray(flatInverters))
+        ? (flatInverters.find(i => String(i.id) === String(strings[0]?.inverterId || (projectInverterIds && projectInverterIds[0]))) || flatInverters[0])
+        : null;
+    const defaultPanel = (typeof flatPanels !== 'undefined' && flatPanels[0]) ? flatPanels[0] : null;
+    const totalKwp = ((totalPanels * (defaultPanel?.pmax || 440)) / 1000).toFixed(2);
+
+    let batId = (typeof activeHardwareBatteryId !== 'undefined' && activeHardwareBatteryId) ? activeHardwareBatteryId : null;
+    let batMap = {};
+    try { batMap = JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'); } catch(e) {}
+    if (!batId && activeInv && batMap[activeInv.id]) {
+        batId = batMap[activeInv.id];
+    }
+    if (!batId && Object.values(batMap).length > 0) {
+        batId = Object.values(batMap)[0];
+    }
+    const currentBat = (batId && typeof flatBatteries !== 'undefined' && Array.isArray(flatBatteries))
+        ? flatBatteries.find(b => String(b.id) === String(batId))
+        : null;
+    const hasBat = currentBat && String(currentBat.id) !== '1' && (((currentBat.cap !== undefined && currentBat.cap > 0)) || ((currentBat.capacity !== undefined && currentBat.capacity > 0)));
+    const batCap = hasBat ? (currentBat.cap !== undefined ? currentBat.cap : currentBat.capacity) : 0;
+
     const summary = {
         kwp: totalKwp,
         panelCount: totalPanels,
         stringCount: (strings || []).length,
         locationName: LocationData.name || 'Projekt-Standort',
-        inverterName: activeInv ? activeInv.name : 'Wechselrichter'
+        inverterName: activeInv ? activeInv.name : 'Wechselrichter',
+        batteryId: hasBat ? currentBat.id : 1,
+        batteryName: hasBat ? (currentBat.name || `${batCap} kWh`) : 'Ohne Akku',
+        batteryKwh: batCap
     };
 
     const planData = {
@@ -4068,6 +4154,7 @@ async function submitSaveSystemPlanToServer() {
         projectInverterIds: typeof projectInverterIds !== 'undefined' ? projectInverterIds : [],
         projectPanelIds: typeof projectPanelIds !== 'undefined' ? projectPanelIds : [],
         batMap: JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'),
+        activeHardwareBatteryId: batId,
         cableParams: JSON.parse(localStorage.getItem('pvpro_cable_params') || '{}'),
         costs: JSON.parse(localStorage.getItem('pvpro_costs') || '{}')
     };
