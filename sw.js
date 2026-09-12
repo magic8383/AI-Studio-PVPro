@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pvpro-cache-v7.10.0';
+const CACHE_NAME = 'pvpro-cache-v7.12.0';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -9,8 +9,11 @@ const STATIC_ASSETS = [
     './database.js',
     './content.js',
     './manifest.json',
+    './icon.svg',
     './icon-192.png',
     './icon-512.png',
+    './apple-touch-icon.png',
+    './favicon-32.png',
     'https://cdn.tailwindcss.com',
     'https://cdn.jsdelivr.net/npm/chart.js',
     'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap'

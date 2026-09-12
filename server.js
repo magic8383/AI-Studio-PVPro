@@ -271,7 +271,8 @@ app.get('/api/hardware/persistent', (req, res) => {
 // POST /api/hardware/persist: Add new hardware directly into code and server store
 app.post('/api/hardware/persist', (req, res) => {
   try {
-    const { type, item } = req.body;
+    const { type } = req.body;
+    const item = req.body.item || req.body.hardware;
     if (!type || !item || !item.name) {
       return res.status(400).json({ success: false, error: 'Ungültige Hardwaredaten' });
     }
@@ -311,7 +312,9 @@ app.post('/api/hardware/persist', (req, res) => {
 // PUT /api/hardware/update: Update existing hardware
 app.put('/api/hardware/update', (req, res) => {
   try {
-    const { type, id, item } = req.body;
+    const { type } = req.body;
+    const item = req.body.item || req.body.hardware;
+    const id = req.body.id || item?.id;
     if (!type || !id || !item) {
       return res.status(400).json({ success: false, error: 'Typ, ID und Daten erforderlich' });
     }

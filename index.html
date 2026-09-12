@@ -3,18 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 7.10.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
+    <title>PV-Planung Pro 7.12.0 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 7.10.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
+    <meta property="og:title" content="PV-Planung Pro 7.12.0 - Professionelle Photovoltaik-Planung & VDE 0100-712">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
-    <!-- PWA Settings -->
+    <!-- PWA Settings & Premium High-Quality App Icons -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="icon" type="image/svg+xml" href="icon.svg">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
@@ -177,13 +179,13 @@
             <div class="flex justify-between items-center gap-2">
                 <!-- Left: Logo, Title & Project Switcher -->
                 <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
-                    <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl bg-gradient-to-tr from-primary to-blue-400 flex items-center justify-center text-white shadow-md shadow-primary/20 shrink-0">
-                        <span class="material-symbols-rounded text-lg sm:text-xl fill-1">solar_power</span>
+                    <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-2xl p-0.5 bg-slate-900 border border-slate-700/80 shadow-md shadow-primary/20 shrink-0 flex items-center justify-center overflow-hidden" title="PV-Planung Pro Engineering">
+                        <img src="icon.svg" alt="PV-Planung Pro Logo" class="w-full h-full object-contain rounded-xl">
                     </div>
                     <div class="shrink-0">
                         <h1 class="text-sm sm:text-base md:text-xl font-extrabold tracking-tight text-white leading-none flex items-center gap-1 sm:gap-1.5">
                             <span>PV-Planung</span>
-                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 7.10.0</span>
+                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 7.12.0</span>
                         </h1>
                     </div>
 
@@ -841,27 +843,36 @@
                 </div>
             </div>
 
-            <!-- SEKTION 1: MEINE PROJEKT-HARDWARE (AKTIVE KOMPONENTEN) -->
+            <!-- SEKTION 1: MEINE PROJEKT-HARDWARE (AUSSTATTUNGS-POOL FÜR STRÄNGE) -->
             <div id="activeProjectHardwareSection" class="space-y-4">
-                <div class="flex items-center justify-between">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
                         <span class="flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black text-xs">1</span>
-                        <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                            Meine Projekt-Hardware (Aktive Systemkomponenten)
-                        </h4>
+                        <div>
+                            <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                                <span>Projekt-Hardware (Ausstattungs-Pool)</span>
+                                <span id="projectHwSummaryBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary lowercase"></span>
+                            </h4>
+                        </div>
                     </div>
-                    <span class="text-[11px] text-slate-400 hidden sm:inline">Auswahl wirkt direkt auf Stränge & Physikberechnung</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-[11px] text-slate-400 hidden sm:inline">Mehrere WR & Modultypen im Pool möglich</span>
+                        <button onclick="switchTab('system')" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer">
+                            <span>Zu Stränge & Auslegung</span>
+                            <span class="material-symbols-rounded text-sm">arrow_forward</span>
+                        </button>
+                    </div>
                 </div>
 
-                <!-- 3 Interactive Cards Grid: Modul, Wechselrichter, Speicher -->
+                <!-- 3 Interactive Columns: Wechselrichter-Pool, Modultypen-Pool, Batteriespeicher -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                    <!-- 1.1 Solarmodul -->
-                    <div id="activePanelCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
+                    <!-- 1.1 Wechselrichter-Pool -->
+                    <div id="activeInverterCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
                         <!-- Dynamic content filled by renderActiveHardwareUI() -->
                     </div>
 
-                    <!-- 1.2 Wechselrichter -->
-                    <div id="activeInverterCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
+                    <!-- 1.2 Modultypen-Pool -->
+                    <div id="activePanelCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
                         <!-- Dynamic content filled by renderActiveHardwareUI() -->
                     </div>
 
@@ -871,44 +882,69 @@
                     </div>
                 </div>
 
-                <!-- System KPI Ribbon -->
+                <!-- System KPI Ribbon & Auslegungs-Hinweis -->
                 <div id="activeHardwareKpiRibbon" class="bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/80 rounded-2xl p-4 flex flex-wrap items-center justify-around gap-4 text-center">
                     <!-- Dynamic KPIs filled by renderActiveHardwareUI() -->
                 </div>
             </div>
 
-            <!-- SEKTION 2: HARDWARE-DATENBANK & KATALOG -->
-            <div id="hardwareCatalogSection" class="space-y-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="flex items-center justify-center w-7 h-7 rounded-lg bg-primary/10 text-primary font-black text-xs">2</span>
-                        <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">
-                            Hardware-Katalog & Datenbank
-                        </h4>
-                        <span id="hardwareCatalogCountBadge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"></span>
+            <!-- SEKTION 2: HARDWARE-DATENBANK & KATALOG (STANDARDMÄSSIG ZUGEKLAPPT) -->
+            <div id="hardwareCatalogSection" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs transition-all">
+                <div class="flex items-center justify-between gap-3 cursor-pointer select-none" onclick="toggleHardwareCatalog()">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <span class="material-symbols-rounded text-xl">inventory_2</span>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="flex items-center justify-center w-6 h-6 rounded-md bg-primary/10 text-primary font-black text-xs">2</span>
+                                <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider">
+                                    Hardware-Katalog & Stammdatenbank
+                                </h4>
+                                <span id="hardwareCatalogCountBadge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"></span>
+                                <span id="catalogStateBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200/60 dark:bg-slate-800 text-slate-500">Zugeklappt</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-0.5 truncate sm:whitespace-normal">
+                                Gesamte Hersteller-Bibliothek für Solarmodule, Wechselrichter und Speicher durchsuchen oder neue Geräte anlegen.
+                            </p>
+                        </div>
                     </div>
 
-                    <!-- Filter & Search Toolbar -->
-                    <div class="flex items-center gap-2.5 flex-wrap">
-                        <!-- Search input -->
-                        <div class="relative min-w-[200px]">
-                            <span class="material-symbols-rounded absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
-                            <input type="text" id="catalogSearchInput" oninput="onCatalogSearchInput(this.value)" placeholder="Hardware suchen (Modell, Pmax, Serie)..." class="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-primary">
-                        </div>
-                        
-                        <!-- Category pills -->
-                        <div class="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
-                            <button onclick="setCatalogCategoryFilter('all')" id="btn-cat-all" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 text-primary shadow-xs font-bold transition-all">Alle</button>
-                            <button onclick="setCatalogCategoryFilter('panel')" id="btn-cat-panel" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">Module</button>
-                            <button onclick="setCatalogCategoryFilter('inv')" id="btn-cat-inv" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">Wechselrichter</button>
-                            <button onclick="setCatalogCategoryFilter('bat')" id="btn-cat-bat" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">Speicher</button>
-                        </div>
-                    </div>
+                    <button type="button" id="btnToggleCatalog" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 shrink-0">
+                        <span id="catalogToggleText">Katalog ausklappen</span>
+                        <span id="catalogToggleIcon" class="material-symbols-rounded text-base transition-transform duration-200">expand_more</span>
+                    </button>
                 </div>
 
-                <!-- Hardware Cards Grid -->
-                <div id="hardwareCatalogGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <!-- Dynamic cards filled by renderHardwareCatalogUI() -->
+                <!-- Collapsible Content (hidden by default) -->
+                <div id="hardwareCatalogContent" class="hidden mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div class="text-xs text-slate-500 dark:text-slate-400">
+                            Klicke bei einer Komponente auf <strong>„+ Zum Projekt hinzufügen“</strong>, um sie in deinen Gerätepool aufzunehmen.
+                        </div>
+
+                        <!-- Filter & Search Toolbar -->
+                        <div class="flex items-center gap-2.5 flex-wrap">
+                            <!-- Search input -->
+                            <div class="relative min-w-[200px]">
+                                <span class="material-symbols-rounded absolute left-3 top-2.5 text-slate-400 text-sm">search</span>
+                                <input type="text" id="catalogSearchInput" oninput="onCatalogSearchInput(this.value)" placeholder="Hardware suchen (Modell, Pmax, Serie)..." class="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:border-primary">
+                            </div>
+                            
+                            <!-- Category pills -->
+                            <div class="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 text-xs font-semibold">
+                                <button onclick="setCatalogCategoryFilter('all')" id="btn-cat-all" class="px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 text-primary shadow-xs font-bold transition-all">Alle</button>
+                                <button onclick="setCatalogCategoryFilter('panel')" id="btn-cat-panel" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">Module</button>
+                                <button onclick="setCatalogCategoryFilter('inv')" id="btn-cat-inv" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">Wechselrichter</button>
+                                <button onclick="setCatalogCategoryFilter('bat')" id="btn-cat-bat" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-all">Speicher</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hardware Cards Grid -->
+                    <div id="hardwareCatalogGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <!-- Dynamic cards filled by renderHardwareCatalogUI() -->
+                    </div>
                 </div>
             </div>
         </div>
@@ -1419,12 +1455,12 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V7.10.0 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=7.10.0"></script>
-    <script src="database.js?v=7.10.0"></script>
-    <script src="content.js?v=7.10.0"></script>
-    <script src="app.js?v=7.10.0"></script>
-    <script src="wiring.js?v=7.10.0"></script>
-    <script src="dossier.js?v=7.10.0"></script>
+    <!-- MODULARE ARCHITEKTUR V7.12.0 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=7.12.0"></script>
+    <script src="database.js?v=7.12.0"></script>
+    <script src="content.js?v=7.12.0"></script>
+    <script src="app.js?v=7.12.0"></script>
+    <script src="wiring.js?v=7.12.0"></script>
+    <script src="dossier.js?v=7.12.0"></script>
 </body>
 </html>

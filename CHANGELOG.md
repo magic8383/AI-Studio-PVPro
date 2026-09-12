@@ -4,6 +4,42 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 7.12.0] – 2026-09-11
+
+### ⚡ Multi-Wechselrichter & Multi-Modul-Ausstattungspool, Einklappbarer Katalog, Code-Persistenz & High-Tech App-Icon
+
+#### 1. Multi-Hardware-Ausstattungspool (Mehrere Wechselrichter & Modultypen)
+* **Projekt-Pool für Hardware-Kombinationen:**
+  - Im Tab „Geräte & Zuweisung“ können nun mehrere Wechselrichter (z. B. Hoymiles Mikrowechselrichter kombiniert mit Hybrid-Wechselrichtern) und mehrere Modultypen parallel ausgewählt und als aktiver Ausstattungs-Pool vorgehalten werden.
+  - Übersichtliche 2-Spalten-Struktur für Wechselrichter-Pool und PV-Modul-Pool mit Schnellauswahl-Dropdowns, Entfernen-Buttons und Kennzahlen (kWp, Zelltechnologie, AC-Leistung, MPPT-Anzahl).
+  - Dynamische Statusanzeige mit Verknüpfung zu den zugewiesenen Strängen (`Strang 1`, `Strang 2` usw.) und direktem Sprung zu den Datenblättern.
+* **Finale Zuweisung in den Strings:**
+  - Die endgültige Zuordnung erfolgt strangspezifisch im Tab „Strings“.
+  - Die Dropdown-Auswahl priorisiert optisch hervorgehoben die im Projekt-Pool hinterlegten Geräte (`(Im Projekt-Pool)`), erlaubt jedoch auch den Zugriff auf die gesamte Datenbank.
+  - Beim Auswählen einer neuen Komponente an einem Strang wird diese automatisch in den Projekt-Pool aufgenommen.
+
+#### 2. Einklappbarer Hardware-Katalog
+* **Aufgeräumter Workflow:**
+  - Der gesamte untere Bereich „Hardware-Katalog & Stammdatenbank“ ist standardmäßig zugeklappt (`<details>`), sodass der Fokus unmittelbar auf der Projektplanung und dem Gerätepool liegt.
+  - Mit einem Klick öffnet sich die vollständige Katalogverwaltung mit Suchfeld, Typenfiltern (Module, Wechselrichter, Speicher), Detailkarten, Neuanlage und Bearbeitung.
+
+#### 3. Echte Code- & Server-Persistenz („Fest im Server / Code speichern“)
+* **Hardware- & Datenblatt-Persistenz:**
+  - Beim Hinzufügen oder Bearbeiten von Hardware (z. B. Datenblätter, Zertifikate, elektrische Parameter) steht die Option „Fest im Server / Code speichern“ bereit.
+  - Die Daten werden dauerhaft in `database.js` und `persistent_hardware.json` geschrieben und sind sofort für alle Sitzungen und Geräte verfügbar.
+  - Beim Öffnen des Bearbeiten-Modals werden hinterlegte Datenblatt-URLs, Normen und Kategorien vorbefüllt.
+* **Planungs-Persistenz im Code:**
+  - Komplette Planungen können über den Button „Planung fest speichern“ dauerhaft als synchronisierbare Vorlage im Quellcode und Server hinterlegt werden (`/api/plans/persist`).
+  - Beim Laden einer Server-Planung werden alle Stränge, Hardware-Pools (`projectInverterIds`, `projectPanelIds`), Speicherzuweisungen und Kabeldimensionierungen wiederhergestellt.
+
+#### 4. High-End Engineering App-Icon
+* **Professionelles deutsches Solar-Engineering App-Icon:**
+  - Ersetzung des vorherigen Standard-Icons durch ein maßgeschneidertes, hochmodernes Icon-Set.
+  - Dunkler Obsidian- und Saphir-Squircle mit feiner metallischer Fase, isometrischer monokristalliner Silizium-Wafer-Matrix (9BB Silber-Busbars), goldenen Leiterbahnen, dynamischem Hochspannungs-Energieblitz-Impuls und Doppelglas-Lichtreflexion.
+  - Automatische Generierung und Einbindung für PWA (192×192, 512×512), Apple Touch (180×180), Favicon (32×32) und Vektorgrafik (`icon.svg`).
+
+---
+
 ## [Version 7.10.0] – 2026-09-11
 
 ### ⚡ Gerätezuweisung, Hardware-Katalog, Code-Persistenz & Hoymiles HMS-2000T Integration

@@ -1761,7 +1761,12 @@ function updateStringData(id, key, val) {
     const str = strings.find(s => s.id === id); 
     if(str) { 
         if (['name', 'group', 'color'].includes(key)) str[key] = val; else str[key] = Number(val);
-        if(key === 'inverterId') str.mpptId = 1; 
+        if(key === 'inverterId') {
+            str.mpptId = 1;
+            if (typeof addInverterToProject === 'function') {
+                addInverterToProject(val, false);
+            }
+        }
         updatePhysicsOnly(); 
         const editEl = document.getElementById('edit-' + id);
         if (editEl) editEl.classList.remove('hidden');
@@ -1774,7 +1779,13 @@ function updateStringData(id, key, val) {
 function updateFieldData(sId, fId, key, val) { 
     const str = strings.find(s => s.id === sId); 
     if(str) { 
-        const f = str.fields.find(f => f.id === fId); if(f) f[key] = Number(val); 
+        const f = str.fields.find(f => f.id === fId); 
+        if(f) {
+            f[key] = Number(val);
+            if (key === 'panelId' && typeof addPanelToProject === 'function') {
+                addPanelToProject(val, false);
+            }
+        }
         updatePhysicsOnly(); 
         document.getElementById('edit-' + sId).classList.remove('hidden');
     } 
@@ -1818,6 +1829,56 @@ function updatePhysicsOnly() {
     }
 }
 
+function buildInverterOptionsHtml(selectedId) {
+    if (typeof syncProjectHardwareState === 'function') syncProjectHardwareState();
+    const projInvs = (typeof getProjectInverters === 'function') ? getProjectInverters() : flatInverters;
+    let optHtml = '';
+    const selIdNum = parseInt(selectedId);
+    
+    if (projInvs && projInvs.length > 0) {
+        optHtml += `<optgroup label="⭐ Projekt-Wechselrichter (${projInvs.length})">`;
+        projInvs.forEach(i => {
+            optHtml += `<option value="${i.id}" ${selIdNum === i.id ? 'selected' : ''}>★ ${escapeHtml(i.name)} (${i.acMax} W, ${(i.mppts||[]).length} MPPT)</option>`;
+        });
+        optHtml += `</optgroup>`;
+    }
+    
+    const otherInvs = flatInverters.filter(i => !projInvs.some(pi => pi.id === i.id));
+    if (otherInvs.length > 0) {
+        optHtml += `<optgroup label="Katalog: Weitere Wechselrichter">`;
+        otherInvs.forEach(i => {
+            optHtml += `<option value="${i.id}" ${selIdNum === i.id ? 'selected' : ''}>${escapeHtml(i.name)} (${i.acMax} W)</option>`;
+        });
+        optHtml += `</optgroup>`;
+    }
+    return optHtml;
+}
+
+function buildPanelOptionsHtml(selectedId) {
+    if (typeof syncProjectHardwareState === 'function') syncProjectHardwareState();
+    const projPanels = (typeof getProjectPanels === 'function') ? getProjectPanels() : flatPanels;
+    let optHtml = '';
+    const selIdNum = parseInt(selectedId);
+
+    if (projPanels && projPanels.length > 0) {
+        optHtml += `<optgroup label="⭐ Projekt-Modultypen (${projPanels.length})">`;
+        projPanels.forEach(p => {
+            optHtml += `<option value="${p.id}" ${selIdNum === p.id ? 'selected' : ''}>★ ${escapeHtml(p.name)} (${p.pmax} Wp, Vmp ${p.vmp}V)</option>`;
+        });
+        optHtml += `</optgroup>`;
+    }
+
+    const otherPanels = flatPanels.filter(p => !projPanels.some(pp => pp.id === p.id));
+    if (otherPanels.length > 0) {
+        optHtml += `<optgroup label="Katalog: Weitere Modultypen">`;
+        otherPanels.forEach(p => {
+            optHtml += `<option value="${p.id}" ${selIdNum === p.id ? 'selected' : ''}>${escapeHtml(p.name)} (${p.pmax} Wp)</option>`;
+        });
+        optHtml += `</optgroup>`;
+    }
+    return optHtml;
+}
+
 function renderStringsUI() {
     const container = document.getElementById('stringsList');
     let emptyMsg = document.getElementById('emptyStringMessage');
@@ -1829,13 +1890,10 @@ function renderStringsUI() {
     }
     if(emptyMsg) emptyMsg.classList.add('hidden');
 
-    let panelOptions = DB.panels.map(s => `<optgroup label="${s.series}">${(s.models||[]).map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</optgroup>`).join('');
-    let invOptions = DB.inverters.map(s => `<optgroup label="${s.series}">${(s.models||[]).map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</optgroup>`).join('');
-
     container.innerHTML = strings.map(str => {
         const p = str._phys || { isVocSafe: true, isIscSafe: true, vocCold: 0, vmpHot: 0, isc: 0, limitMaxV: 1000, limitMaxI: 20, minMppV: 0, maxMppV: 0, invStartV: 0, mismatchPct: 0 };
         const inv = flatInverters.find(i => i.id === parseInt(str.inverterId)) || {name: 'Kein WR', mppts: []};
-        let wOpt = invOptions.replace(`value="${str.inverterId}"`, `value="${str.inverterId}" selected`);
+        let wOpt = buildInverterOptionsHtml(str.inverterId);
         let mOpt = (inv.mppts || []).map(m => `<option value="${m.id}" ${str.mpptId == m.id ? 'selected':''}>${m.name}</option>`).join('');
         
         const safe = p.isVocSafe && p.isIscSafe;
@@ -1971,7 +2029,7 @@ function renderStringsUI() {
                     </div>
                     <div class="p-3 space-y-2">
                         ${(str.fields || []).map(f => {
-                            let currPOpt = panelOptions.replace(`value="${f.panelId}"`, `value="${f.panelId}" selected`);
+                            let currPOpt = buildPanelOptionsHtml(f.panelId);
                             return `
                             <div class="flex flex-col md:flex-row items-center gap-2 bg-slate-50 dark:bg-slate-950 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <select onchange="updateFieldData(${str.id}, ${f.id}, 'panelId', this.value)" class="w-full md:flex-1 border border-slate-200 dark:border-slate-700 dark:bg-slate-900 rounded-lg px-2.5 py-1.5 outline-none text-xs font-medium">${currPOpt}</select>
@@ -2591,8 +2649,9 @@ function updateDetailCharts(monthIdx) {
 
 let catalogCategoryFilter = 'all'; // 'all' | 'panel' | 'inv' | 'bat'
 let catalogSearchQuery = '';
-let activeHardwarePanelId = null;
-let activeHardwareInverterId = null;
+let isHardwareCatalogOpen = false;
+let projectInverterIds = [];
+let projectPanelIds = [];
 let activeHardwareBatteryId = null;
 
 // Synchronisiere dauerhaft im Code & Server persistierte Hardware
@@ -2619,6 +2678,196 @@ async function syncPersistentHardwareFromServer() {
     }
 }
 
+function toggleHardwareCatalog(forceState = null) {
+    if (typeof forceState === 'boolean') {
+        isHardwareCatalogOpen = forceState;
+    } else {
+        isHardwareCatalogOpen = !isHardwareCatalogOpen;
+    }
+    const content = document.getElementById('hardwareCatalogContent');
+    const toggleText = document.getElementById('catalogToggleText');
+    const toggleIcon = document.getElementById('catalogToggleIcon');
+    const stateBadge = document.getElementById('catalogStateBadge');
+
+    if (content) {
+        if (isHardwareCatalogOpen) {
+            content.classList.remove('hidden');
+        } else {
+            content.classList.add('hidden');
+        }
+    }
+    if (toggleText) toggleText.innerText = isHardwareCatalogOpen ? 'Katalog einklappen' : 'Katalog ausklappen';
+    if (toggleIcon) {
+        toggleIcon.innerText = isHardwareCatalogOpen ? 'expand_less' : 'expand_more';
+    }
+    if (stateBadge) {
+        stateBadge.innerText = isHardwareCatalogOpen ? 'Ausgeklappt' : 'Zugeklappt';
+        stateBadge.className = isHardwareCatalogOpen 
+            ? 'text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+            : 'text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200/60 dark:bg-slate-800 text-slate-500';
+    }
+    if (isHardwareCatalogOpen) {
+        renderHardwareCatalogUI();
+    }
+}
+
+function syncProjectHardwareState() {
+    // 1. Strings durchsuchen
+    const stringInvIds = (strings || []).map(s => parseInt(s.inverterId)).filter(Boolean);
+    const stringPanelIds = (strings || []).flatMap(s => (s.fields || []).map(f => parseInt(f.panelId))).filter(Boolean);
+
+    // 2. LocalStorage prüfen falls noch nicht gesetzt
+    if (!projectInverterIds || projectInverterIds.length === 0) {
+        try {
+            const stored = JSON.parse(localStorage.getItem('pvpro_project_inverters') || 'null');
+            if (Array.isArray(stored) && stored.length > 0) {
+                projectInverterIds = stored.map(Number);
+            }
+        } catch(e) {}
+        if (!projectInverterIds || projectInverterIds.length === 0) {
+            projectInverterIds = stringInvIds.length > 0 ? [...new Set(stringInvIds)] : [flatInverters[0]?.id || 10];
+        }
+    }
+    stringInvIds.forEach(id => {
+        if (!projectInverterIds.includes(id)) projectInverterIds.push(id);
+    });
+
+    if (!projectPanelIds || projectPanelIds.length === 0) {
+        try {
+            const stored = JSON.parse(localStorage.getItem('pvpro_project_panels') || 'null');
+            if (Array.isArray(stored) && stored.length > 0) {
+                projectPanelIds = stored.map(Number);
+            }
+        } catch(e) {}
+        if (!projectPanelIds || projectPanelIds.length === 0) {
+            projectPanelIds = stringPanelIds.length > 0 ? [...new Set(stringPanelIds)] : [flatPanels[0]?.id || 101];
+        }
+    }
+    stringPanelIds.forEach(id => {
+        if (!projectPanelIds.includes(id)) projectPanelIds.push(id);
+    });
+
+    // Validieren gegen flatInverters & flatPanels
+    projectInverterIds = [...new Set(projectInverterIds)].filter(id => flatInverters.some(i => i.id === id));
+    if (projectInverterIds.length === 0 && flatInverters[0]) projectInverterIds.push(flatInverters[0].id);
+
+    projectPanelIds = [...new Set(projectPanelIds)].filter(id => flatPanels.some(p => p.id === id));
+    if (projectPanelIds.length === 0 && flatPanels[0]) projectPanelIds.push(flatPanels[0].id);
+
+    try {
+        localStorage.setItem('pvpro_project_inverters', JSON.stringify(projectInverterIds));
+        localStorage.setItem('pvpro_project_panels', JSON.stringify(projectPanelIds));
+    } catch(e) {}
+}
+
+function getProjectInverters() {
+    syncProjectHardwareState();
+    return flatInverters.filter(i => projectInverterIds.includes(i.id));
+}
+
+function getProjectPanels() {
+    syncProjectHardwareState();
+    return flatPanels.filter(p => projectPanelIds.includes(p.id));
+}
+
+function addInverterToProject(invId, showToast = true) {
+    const id = parseInt(invId);
+    if (!id || !flatInverters.some(i => i.id === id)) return;
+    syncProjectHardwareState();
+    if (!projectInverterIds.includes(id)) {
+        projectInverterIds.push(id);
+        localStorage.setItem('pvpro_project_inverters', JSON.stringify(projectInverterIds));
+        const inv = flatInverters.find(i => i.id === id);
+        if (showToast) showToastNotification(`Wechselrichter "${inv?.name}" zum Projekt-Pool hinzugefügt!`, 'success');
+    }
+    renderActiveHardwareUI();
+    if (typeof updateStringsUI === 'function') updateStringsUI();
+    if (typeof renderWiringTab === 'function' && document.getElementById('tab-verkabelung')?.classList.contains('active')) renderWiringTab();
+}
+
+function removeInverterFromProject(invId) {
+    const id = parseInt(invId);
+    syncProjectHardwareState();
+    if (projectInverterIds.length <= 1) {
+        showToastNotification("Es muss mindestens ein Wechselrichter im Projekt-Pool verbleiben!", "warning");
+        return;
+    }
+    const affectedStrings = (strings || []).filter(s => parseInt(s.inverterId) === id);
+    const replacementId = projectInverterIds.find(x => x !== id);
+    const replInv = flatInverters.find(i => i.id === replacementId);
+
+    if (affectedStrings.length > 0) {
+        affectedStrings.forEach(s => {
+            s.inverterId = replacementId;
+            s.mpptId = (replInv?.mppts || [{ id: 1 }])[0].id;
+        });
+        localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    }
+
+    projectInverterIds = projectInverterIds.filter(x => x !== id);
+    localStorage.setItem('pvpro_project_inverters', JSON.stringify(projectInverterIds));
+    renderActiveHardwareUI();
+    if (typeof updateStringsUI === 'function') updateStringsUI();
+    if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+    showToastNotification("Wechselrichter aus Projekt-Pool entfernt.", "info");
+}
+
+function addPanelToProject(panelId, showToast = true) {
+    const id = parseInt(panelId);
+    if (!id || !flatPanels.some(p => p.id === id)) return;
+    syncProjectHardwareState();
+    if (!projectPanelIds.includes(id)) {
+        projectPanelIds.push(id);
+        localStorage.setItem('pvpro_project_panels', JSON.stringify(projectPanelIds));
+        const p = flatPanels.find(x => x.id === id);
+        if (showToast) showToastNotification(`Solarmodul "${p?.name}" zum Projekt-Pool hinzugefügt!`, 'success');
+    }
+    renderActiveHardwareUI();
+    if (typeof updateStringsUI === 'function') updateStringsUI();
+}
+
+function removePanelFromProject(panelId) {
+    const id = parseInt(panelId);
+    syncProjectHardwareState();
+    if (projectPanelIds.length <= 1) {
+        showToastNotification("Es muss mindestens ein Modultyp im Projekt-Pool verbleiben!", "warning");
+        return;
+    }
+    const replacementId = projectPanelIds.find(x => x !== id);
+    let countChanged = 0;
+    (strings || []).forEach(s => {
+        (s.fields || []).forEach(f => {
+            if (parseInt(f.panelId) === id) {
+                f.panelId = replacementId;
+                countChanged++;
+            }
+        });
+    });
+    if (countChanged > 0) {
+        localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+    }
+    projectPanelIds = projectPanelIds.filter(x => x !== id);
+    localStorage.setItem('pvpro_project_panels', JSON.stringify(projectPanelIds));
+    renderActiveHardwareUI();
+    if (typeof updateStringsUI === 'function') updateStringsUI();
+    if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+    showToastNotification("Modultyp aus Projekt-Pool entfernt.", "info");
+}
+
+function addSelectedInverterToProject() {
+    const sel = document.getElementById('quickAddInverterSelect');
+    if (sel && sel.value) {
+        addInverterToProject(sel.value);
+    }
+}
+
+function addSelectedPanelToProject() {
+    const sel = document.getElementById('quickAddPanelSelect');
+    if (sel && sel.value) {
+        addPanelToProject(sel.value);
+    }
+}
+
 function setCatalogCategoryFilter(cat) {
     catalogCategoryFilter = cat;
     ['all', 'panel', 'inv', 'bat'].forEach(c => {
@@ -2641,196 +2890,237 @@ function onCatalogSearchInput(val) {
 
 function renderDatabaseUI() {
     renderActiveHardwareUI();
-    renderHardwareCatalogUI();
+    if (isHardwareCatalogOpen) {
+        renderHardwareCatalogUI();
+    }
 }
 
 // ----------------------------------------------------
-// 10.1 AKTIVE PROJEKT-HARDWARE (SEKTION 1)
+// 10.1 AKTIVE PROJEKT-HARDWARE (SEKTION 1 - AUSSTATTUNGS-POOL)
 // ----------------------------------------------------
 function renderActiveHardwareUI() {
-    // 1. Aktives Modul ermitteln
-    let panelId = activeHardwarePanelId;
-    if (!panelId && strings && strings.length > 0 && strings[0].fields && strings[0].fields.length > 0) {
-        panelId = strings[0].fields[0].panelId;
-    }
-    let currentPanel = flatPanels.find(p => p.id === parseInt(panelId)) || flatPanels[0];
-    if (currentPanel) activeHardwarePanelId = currentPanel.id;
+    syncProjectHardwareState();
 
-    // 2. Aktiven Wechselrichter ermitteln
-    let invId = activeHardwareInverterId;
-    if (!invId && strings && strings.length > 0) {
-        invId = strings[0].inverterId;
-    }
-    let currentInv = flatInverters.find(i => i.id === parseInt(invId)) || flatInverters[0];
-    if (currentInv) activeHardwareInverterId = currentInv.id;
+    const projInvs = getProjectInverters();
+    const projPanels = getProjectPanels();
 
-    // 3. Aktive Batterie ermitteln
-    let batId = activeHardwareBatteryId || (currentInv ? currentInv.batteryId : null);
+    // Summary Badge
+    const summaryBadge = document.getElementById('projectHwSummaryBadge');
+    if (summaryBadge) {
+        summaryBadge.innerText = `${projInvs.length} WR • ${projPanels.length} ${projPanels.length === 1 ? 'Modultyp' : 'Modultypen'}`;
+    }
+
+    // Aktive Batterie ermitteln
+    let batId = activeHardwareBatteryId;
+    if (!batId && projInvs[0]) {
+        batId = projInvs[0].batteryId;
+    }
     let currentBat = flatBatteries.find(b => b.id === parseInt(batId)) || flatBatteries[0];
     if (currentBat) activeHardwareBatteryId = currentBat.id;
 
-    // Statistik ermitteln: Wie viele Module/Stränge sind verbaut?
+    // Gesamt-Kennzahlen berechnen
     let totalPanelsInstalled = 0;
-    let currentPanelInstalled = 0;
     (strings || []).forEach(s => {
         (s.fields || []).forEach(f => {
-            const cnt = parseInt(f.count) || 0;
-            totalPanelsInstalled += cnt;
-            if (f.panelId === currentPanel.id) currentPanelInstalled += cnt;
+            totalPanelsInstalled += (parseInt(f.count) || 0);
         });
     });
 
-    let assignedStringsCount = (strings || []).filter(s => s.inverterId === currentInv.id).length;
     let totalGeneratorWp = (strings || []).reduce((acc, s) => {
         return acc + (s.fields || []).reduce((fAcc, f) => {
-            const p = flatPanels.find(x => x.id === f.panelId) || currentPanel;
-            return fAcc + ((f.count || 0) * (p.pmax || 440));
+            const p = flatPanels.find(x => x.id === parseInt(f.panelId)) || projPanels[0];
+            return fAcc + ((parseInt(f.count) || 0) * (p?.pmax || 440));
         }, 0);
     }, 0);
     let totalGeneratorKwp = (totalGeneratorWp / 1000).toFixed(2);
-    let invAcKw = ((currentInv.acMax || 0) / 1000).toFixed(1);
-    let dcAcRatio = currentInv.acMax ? Math.round((totalGeneratorWp / currentInv.acMax) * 100) : 100;
 
-    // 1.1 Modul-Karte rendern
-    const panelCard = document.getElementById('activePanelCard');
-    if (panelCard && currentPanel) {
-        const panelOptions = DB.panels.map(s => `
-            <optgroup label="${s.series}">
-                ${(s.models || []).map(m => `<option value="${m.id}" ${m.id === currentPanel.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.pmax} W)</option>`).join('')}
-            </optgroup>
-        `).join('');
+    // Aktive Wechselrichter in Strings
+    const activeStringInvIds = [...new Set((strings || []).map(s => parseInt(s.inverterId)).filter(Boolean))];
+    const totalActiveInvAc = activeStringInvIds.reduce((sum, invId) => {
+        const inv = flatInverters.find(i => i.id === invId);
+        return sum + (inv?.acMax || 0);
+    }, 0);
+    let invAcKw = (totalActiveInvAc / 1000).toFixed(1);
+    let dcAcRatio = totalActiveInvAc > 0 ? Math.round((totalGeneratorWp / totalActiveInvAc) * 100) : 100;
 
-        const vmpFormatted = typeof currentPanel.vmp === 'number' ? currentPanel.vmp.toFixed(1) : parseFloat(currentPanel.vmp || 0).toFixed(1);
+    // 1.1 Wechselrichter-Pool rendern
+    const invCard = document.getElementById('activeInverterCard');
+    if (invCard) {
+        const otherInvs = flatInverters.filter(i => !projectInverterIds.includes(i.id));
 
-        panelCard.innerHTML = `
-            <div>
-                <div class="flex items-center justify-between gap-2 mb-2">
-                    <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Aktives Solarmodul
-                    </span>
-                    <span class="text-xs font-black text-primary">${currentPanel.pmax} Wp</span>
+        const invListHtml = projInvs.map(inv => {
+            const isMicro = inv.type === 'micro' || (inv.name || '').toLowerCase().includes('hms') || (inv.name || '').toLowerCase().includes('hoymiles');
+            const mpptCount = (inv.mppts || []).length;
+            const assignedStrings = (strings || []).filter(s => parseInt(s.inverterId) === inv.id);
+
+            return `
+                <div class="p-3.5 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5 transition-all">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full ${isMicro ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-primary/10 text-primary'}">
+                                    <span class="w-1.5 h-1.5 rounded-full ${isMicro ? 'bg-indigo-500' : 'bg-primary'}"></span>
+                                    ${isMicro ? 'Mikro-WR' : 'Hybrid-WR'}
+                                </span>
+                                <h5 class="text-xs font-black text-slate-900 dark:text-white truncate" title="${escapeHtml(inv.name)}">${escapeHtml(inv.name)}</h5>
+                            </div>
+                        </div>
+                        <span class="text-xs font-black text-primary shrink-0">${inv.acMax} W</span>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60">
+                        <div>MPPTs: <strong class="text-slate-800 dark:text-slate-200">${mpptCount} Tracker</strong></div>
+                        <div>Start / Max: <strong class="text-slate-800 dark:text-slate-200">${inv.startV} / ${inv.maxV} V</strong></div>
+                        <div class="col-span-2">MPP-Bereich: <strong class="text-slate-800 dark:text-slate-200">${inv.minMppV} – ${inv.maxMppV} V</strong></div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[11px]">
+                        ${assignedStrings.length > 0 
+                            ? `<span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold"><span class="material-symbols-rounded text-sm">check_circle</span> ${assignedStrings.length} ${assignedStrings.length === 1 ? 'Strang zugewiesen' : 'Stränge zugewiesen'}</span>`
+                            : `<span class="inline-flex items-center gap-1 text-amber-500 font-bold"><span class="material-symbols-rounded text-sm">info</span> Im Pool (noch frei)</span>`
+                        }
+                    </div>
+
+                    <div class="flex items-center gap-1.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                        <button onclick="applyActiveInverterToAllStrings(${inv.id})" class="flex-1 py-1.5 px-2 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Diesen Wechselrichter allen aktuellen Strängen zuweisen">
+                            <span class="material-symbols-rounded text-sm">alt_route</span>
+                            <span>Allen zuweisen</span>
+                        </button>
+                        <button onclick="openHardwareDocModal('inv', ${inv.id}, '${escapeHtml(inv.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Datenblatt">
+                            <span class="material-symbols-rounded text-sm text-primary">description</span>
+                        </button>
+                        <button onclick="openHardwareEditModal('inv', ${inv.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Bearbeiten">
+                            <span class="material-symbols-rounded text-sm">edit</span>
+                        </button>
+                        ${projInvs.length > 1 ? `
+                            <button onclick="removeInverterFromProject(${inv.id})" class="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/40 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Aus Projekt-Pool entfernen">
+                                <span class="material-symbols-rounded text-sm">close</span>
+                            </button>
+                        ` : ''}
+                    </div>
                 </div>
+            `;
+        }).join('');
 
-                <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modellauswahl</label>
-                <select onchange="onSelectActivePanel(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary mb-3">
-                    ${panelOptions}
-                </select>
-
-                <div class="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
-                    <div class="flex justify-between">
-                        <span>Leerlaufspannung (Voc):</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentPanel.voc} V</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>MPP-Spannung (Vmp):</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${vmpFormatted} V</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Kurzschlussstrom (Isc):</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentPanel.isc} A</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Temperatur-Koeffizient:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentPanel.tempVoc || -0.26} %/°C</strong>
-                    </div>
-                </div>
-
-                <div class="mt-3 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-primary">solar_power</span>
-                    <span><strong>${currentPanelInstalled}</strong> von ${totalPanelsInstalled} Modulen im aktuellen Projekt</span>
+        const quickAddHtml = otherInvs.length > 0 ? `
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">+ Weiteren Wechselrichter in Pool aufnehmen</label>
+                <div class="flex gap-1.5">
+                    <select id="quickAddInverterSelect" class="flex-1 text-xs border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-2.5 py-1.5 outline-none font-medium text-slate-800 dark:text-slate-200">
+                        ${otherInvs.map(i => `<option value="${i.id}">${escapeHtml(i.name)} (${i.acMax} W)</option>`).join('')}
+                    </select>
+                    <button onclick="addSelectedInverterToProject()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm">add</span>
+                        <span>Pool</span>
+                    </button>
                 </div>
             </div>
+        ` : '';
 
-            <div class="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button onclick="applyActivePanelToAllStrings(${currentPanel.id})" class="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-rounded text-base">format_paint</span>
-                    <span>Auf alle Stränge anwenden</span>
-                </button>
-                <div class="flex items-center gap-2">
-                    <button onclick="openHardwareDocModal('panel', ${currentPanel.id}, '${escapeHtml(currentPanel.name)}')" class="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
-                        <span class="material-symbols-rounded text-sm text-primary">description</span>
-                        <span>Datenblatt</span>
-                    </button>
-                    <button onclick="openHardwareEditModal('panel', ${currentPanel.id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Modul bearbeiten">
-                        <span class="material-symbols-rounded text-sm">edit</span>
-                    </button>
+        invCard.innerHTML = `
+            <div class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-primary/10 text-primary">
+                        <span class="material-symbols-rounded text-sm">settings_input_component</span> Wechselrichter-Pool (${projInvs.length})
+                    </span>
+                    <span class="text-xs font-black text-slate-700 dark:text-slate-300">${(projInvs.reduce((acc, i) => acc + (i.acMax || 0), 0) / 1000).toFixed(1)} kW Nennleistung</span>
                 </div>
+                <div class="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
+                    ${invListHtml}
+                </div>
+                ${quickAddHtml}
             </div>
         `;
     }
 
-    // 1.2 Wechselrichter-Karte rendern
-    const invCard = document.getElementById('activeInverterCard');
-    if (invCard && currentInv) {
-        const invOptions = DB.inverters.map(s => `
-            <optgroup label="${s.series}">
-                ${(s.models || []).map(m => `<option value="${m.id}" ${m.id === currentInv.id ? 'selected' : ''}>${escapeHtml(m.name)} (${m.acMax} W)</option>`).join('')}
-            </optgroup>
-        `).join('');
+    // 1.2 Modultypen-Pool rendern
+    const panelCard = document.getElementById('activePanelCard');
+    if (panelCard) {
+        const otherPanels = flatPanels.filter(p => !projectPanelIds.includes(p.id));
 
-        const isMicro = currentInv.type === 'micro' || (currentInv.name || '').toLowerCase().includes('hms') || (currentInv.name || '').toLowerCase().includes('hoymiles');
-        const mpptCount = (currentInv.mppts || []).length;
+        const panelListHtml = projPanels.map(p => {
+            let countInstalled = (strings || []).reduce((acc, s) => {
+                return acc + (s.fields || []).filter(f => parseInt(f.panelId) === p.id).reduce((sAcc, f) => sAcc + (parseInt(f.count) || 0), 0);
+            }, 0);
+            const vmpFormatted = typeof p.vmp === 'number' ? p.vmp.toFixed(1) : parseFloat(p.vmp || 0).toFixed(1);
 
-        invCard.innerHTML = `
-            <div>
-                <div class="flex items-center justify-between gap-2 mb-2">
-                    <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${isMicro ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400' : 'bg-primary/10 text-primary'}">
-                        <span class="w-1.5 h-1.5 rounded-full ${isMicro ? 'bg-indigo-500' : 'bg-primary'}"></span>
-                        ${isMicro ? 'Aktiver Mikrowechselrichter' : 'Aktiver Wechselrichter'}
-                    </span>
-                    <span class="text-xs font-black text-primary">${currentInv.acMax} W</span>
-                </div>
-
-                <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modellauswahl</label>
-                <select onchange="onSelectActiveInverter(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary mb-3">
-                    ${invOptions}
-                </select>
-
-                <div class="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
-                    <div class="flex justify-between">
-                        <span>AC-Nennleistung:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentInv.acMax} W</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>MPPT-Eingänge:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${mpptCount} MPPT (${currentInv.minMppV} – ${currentInv.maxMppV} V)</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Start- / Max. Spannung:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentInv.startV} V / ${currentInv.maxV} V</strong>
-                    </div>
-                    ${isMicro ? `
-                        <div class="text-[10px] text-indigo-600 dark:text-indigo-300 font-semibold pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
-                            ✓ 4 unabhängige Eingänge bis 16A / 25A Isc • Integrierter NA-Schutz (VDE-AR-N 4105)
+            return `
+                <div class="p-3.5 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5 transition-all">
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                    ${p.tech || 'Solarmodul'}
+                                </span>
+                                <h5 class="text-xs font-black text-slate-900 dark:text-white truncate" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</h5>
+                            </div>
                         </div>
-                    ` : `
-                        <div class="flex justify-between">
-                            <span>Max. DC-Generator:</span>
-                            <strong class="text-slate-800 dark:text-slate-200">${currentInv.maxDcWp ? currentInv.maxDcWp + ' Wp' : '–'}</strong>
-                        </div>
-                    `}
-                </div>
+                        <span class="text-xs font-black text-primary shrink-0">${p.pmax} Wp</span>
+                    </div>
 
-                <div class="mt-3 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-primary">settings_input_component</span>
-                    <span>Zugeordnet zu <strong>${assignedStringsCount}</strong> von ${strings.length} Strängen</span>
+                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60">
+                        <div>Voc: <strong class="text-slate-800 dark:text-slate-200">${p.voc} V</strong></div>
+                        <div>Vmp: <strong class="text-slate-800 dark:text-slate-200">${vmpFormatted} V</strong></div>
+                        <div>Isc: <strong class="text-slate-800 dark:text-slate-200">${p.isc} A</strong></div>
+                        <div>TempVoc: <strong class="text-slate-800 dark:text-slate-200">${p.tempVoc || -0.26}%/°C</strong></div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-[11px]">
+                        ${countInstalled > 0 
+                            ? `<span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold"><span class="material-symbols-rounded text-sm">solar_power</span> ${countInstalled}x verbaut (${((countInstalled * p.pmax) / 1000).toFixed(2)} kWp)</span>`
+                            : `<span class="inline-flex items-center gap-1 text-amber-500 font-bold"><span class="material-symbols-rounded text-sm">info</span> Im Pool (noch keinem Feld zugewiesen)</span>`
+                        }
+                    </div>
+
+                    <div class="flex items-center gap-1.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                        <button onclick="applyActivePanelToAllStrings(${p.id})" class="flex-1 py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Dieses Modul auf alle Felder aller Stränge anwenden">
+                            <span class="material-symbols-rounded text-sm">format_paint</span>
+                            <span>Auf alle anwenden</span>
+                        </button>
+                        <button onclick="openHardwareDocModal('panel', ${p.id}, '${escapeHtml(p.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Datenblatt">
+                            <span class="material-symbols-rounded text-sm text-primary">description</span>
+                        </button>
+                        <button onclick="openHardwareEditModal('panel', ${p.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Bearbeiten">
+                            <span class="material-symbols-rounded text-sm">edit</span>
+                        </button>
+                        ${projPanels.length > 1 ? `
+                            <button onclick="removePanelFromProject(${p.id})" class="p-1.5 rounded-lg border border-rose-200 dark:border-rose-900/40 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Aus Projekt-Pool entfernen">
+                                <span class="material-symbols-rounded text-sm">close</span>
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const quickAddHtml = otherPanels.length > 0 ? `
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">+ Weiteren Modultyp in Pool aufnehmen</label>
+                <div class="flex gap-1.5">
+                    <select id="quickAddPanelSelect" class="flex-1 text-xs border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-2.5 py-1.5 outline-none font-medium text-slate-800 dark:text-slate-200">
+                        ${otherPanels.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.pmax} Wp)</option>`).join('')}
+                    </select>
+                    <button onclick="addSelectedPanelToProject()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1">
+                        <span class="material-symbols-rounded text-sm">add</span>
+                        <span>Pool</span>
+                    </button>
                 </div>
             </div>
+        ` : '';
 
-            <div class="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button onclick="applyActiveInverterToAllStrings(${currentInv.id})" class="w-full py-2 px-3 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-rounded text-base">alt_route</span>
-                    <span>Allen Strängen zuweisen</span>
-                </button>
-                <div class="flex items-center gap-2">
-                    <button onclick="openHardwareDocModal('inv', ${currentInv.id}, '${escapeHtml(currentInv.name)}')" class="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
-                        <span class="material-symbols-rounded text-sm text-primary">verified</span>
-                        <span>Datenblatt & VDE-AR-N 4105</span>
-                    </button>
-                    <button onclick="openHardwareEditModal('inv', ${currentInv.id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Wechselrichter bearbeiten">
-                        <span class="material-symbols-rounded text-sm">edit</span>
-                    </button>
+        panelCard.innerHTML = `
+            <div class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <span class="material-symbols-rounded text-sm">solar_power</span> Modultypen-Pool (${projPanels.length})
+                    </span>
+                    <span class="text-xs font-black text-slate-700 dark:text-slate-300">${totalPanelsInstalled} Module verbaut</span>
                 </div>
+                <div class="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
+                    ${panelListHtml}
+                </div>
+                ${quickAddHtml}
             </div>
         `;
     }
@@ -2847,60 +3137,44 @@ function renderActiveHardwareUI() {
         const isNone = currentBat.id === 1 || currentBat.cap === 0;
 
         batCard.innerHTML = `
-            <div>
-                <div class="flex items-center justify-between gap-2 mb-2">
-                    <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${isNone ? 'bg-slate-500/10 text-slate-600 dark:text-slate-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}">
-                        <span class="w-1.5 h-1.5 rounded-full ${isNone ? 'bg-slate-400' : 'bg-amber-500'}"></span>
-                        ${isNone ? 'Kein Speicher aktiv' : 'Aktiver Batteriespeicher'}
+            <div class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded-full ${isNone ? 'bg-slate-500/10 text-slate-600 dark:text-slate-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'}">
+                        <span class="material-symbols-rounded text-sm">battery_charging_full</span>
+                        ${isNone ? 'Kein Speicher aktiv' : 'Batteriespeicher'}
                     </span>
                     <span class="text-xs font-black text-accent">${currentBat.cap || 0} kWh</span>
                 </div>
 
-                <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Modellauswahl</label>
-                <select onchange="onSelectActiveBattery(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary mb-3">
-                    ${batOptions}
-                </select>
+                <div class="p-3.5 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Modellauswahl</label>
+                    <select onchange="onSelectActiveBattery(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary">
+                        ${batOptions}
+                    </select>
 
-                <div class="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
-                    <div class="flex justify-between">
-                        <span>Nutzbare Kapazität:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentBat.cap || 0} kWh</strong>
+                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60">
+                        <div>Kapazität: <strong class="text-slate-800 dark:text-slate-200">${currentBat.cap || 0} kWh</strong></div>
+                        <div>Ladeleistung: <strong class="text-slate-800 dark:text-slate-200">${currentBat.power ? currentBat.power + ' W' : '–'}</strong></div>
+                        <div>Wirkungsgrad: <strong class="text-slate-800 dark:text-slate-200">${Math.round((currentBat.eff || 0.95) * 100)} %</strong></div>
+                        <div>Zelltyp: <strong class="text-slate-800 dark:text-slate-200">${currentBat.chem || 'LiFePO4'}</strong></div>
                     </div>
-                    <div class="flex justify-between">
-                        <span>Max. Ladeleistung:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentBat.power ? currentBat.power + ' W' : '–'}</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Roundtrip-Wirkungsgrad:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${Math.round((currentBat.eff || 0.95) * 100)} %</strong>
-                    </div>
-                    <div class="flex justify-between">
-                        <span>Zelltechnologie:</span>
-                        <strong class="text-slate-800 dark:text-slate-200">${currentBat.chem || 'LiFePO4 (LFP)'}</strong>
-                    </div>
-                </div>
 
-                <div class="mt-3 text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-accent">battery_charging_full</span>
-                    <span>${isNone ? 'System arbeitet als reine Netzeinspeisung' : `Zugewiesen zu: ${escapeHtml(currentInv.name)}`}</span>
-                </div>
-            </div>
+                    <div class="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 pt-1">
+                        <span class="material-symbols-rounded text-sm text-accent">link</span>
+                        <span>${isNone ? 'Reine Netzeinspeisung ohne Speicher' : `Gekoppelt an: ${escapeHtml(projInvs[0]?.name || 'Wechselrichter')}`}</span>
+                    </div>
 
-            <div class="space-y-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button onclick="assignActiveBatteryToInverter(${currentInv.id}, ${currentBat.id})" class="w-full py-2 px-3 rounded-xl bg-accent hover:opacity-90 text-white text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-rounded text-base">link</span>
-                    <span>Wechselrichter zuordnen</span>
-                </button>
-                <div class="flex items-center gap-2">
-                    <button onclick="openHardwareDocModal('bat', ${currentBat.id}, '${escapeHtml(currentBat.name)}')" class="flex-1 py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
-                        <span class="material-symbols-rounded text-sm text-accent">description</span>
-                        <span>Datenblatt</span>
-                    </button>
-                    ${!isNone ? `
-                        <button onclick="openHardwareEditModal('bat', ${currentBat.id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Batterie bearbeiten">
-                            <span class="material-symbols-rounded text-sm">edit</span>
+                    <div class="flex items-center gap-1.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
+                        <button onclick="openHardwareDocModal('bat', ${currentBat.id}, '${escapeHtml(currentBat.name)}')" class="flex-1 py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
+                            <span class="material-symbols-rounded text-sm text-accent">description</span>
+                            <span>Datenblatt</span>
                         </button>
-                    ` : ''}
+                        ${!isNone ? `
+                            <button onclick="openHardwareEditModal('bat', ${currentBat.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Batterie bearbeiten">
+                                <span class="material-symbols-rounded text-sm">edit</span>
+                            </button>
+                        ` : ''}
+                    </div>
                 </div>
             </div>
         `;
@@ -2910,52 +3184,48 @@ function renderActiveHardwareUI() {
     const ribbon = document.getElementById('activeHardwareKpiRibbon');
     if (ribbon) {
         ribbon.innerHTML = `
-            <div>
-                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">DC-Generatorleistung</span>
-                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
-                    <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
-                    ${totalGeneratorKwp} kWp
-                </span>
+            <div class="w-full flex flex-wrap items-center justify-around gap-4">
+                <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">DC-Generatorleistung</span>
+                    <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                        <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
+                        ${totalGeneratorKwp} kWp
+                    </span>
+                </div>
+                <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">WR AC-Leistung (aktiv)</span>
+                    <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                        <span class="material-symbols-rounded text-primary text-base">settings_input_component</span>
+                        ${invAcKw} kW
+                    </span>
+                </div>
+                <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Auslegungsverhältnis</span>
+                    <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                        <span class="material-symbols-rounded text-emerald-500 text-base">balance</span>
+                        ${dcAcRatio} %
+                    </span>
+                </div>
+                <div>
+                    <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Speicherkapazität</span>
+                    <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
+                        <span class="material-symbols-rounded text-accent text-base">battery_charging_full</span>
+                        ${currentBat.cap || 0} kWh
+                    </span>
+                </div>
+                <div class="w-full sm:w-auto mt-2 sm:mt-0">
+                    <button onclick="openSaveSystemPlanModal()" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer">
+                        <span class="material-symbols-rounded text-base">cloud_upload</span>
+                        <span>Planung fest im Server speichern</span>
+                    </button>
+                </div>
             </div>
-            <div>
-                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">WR AC-Leistung</span>
-                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
-                    <span class="material-symbols-rounded text-primary text-base">settings_input_component</span>
-                    ${invAcKw} kW
-                </span>
-            </div>
-            <div>
-                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Auslegungsverhältnis</span>
-                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
-                    <span class="material-symbols-rounded text-emerald-500 text-base">balance</span>
-                    ${dcAcRatio} %
-                </span>
-            </div>
-            <div>
-                <span class="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">Speicherkapazität</span>
-                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center justify-center gap-1">
-                    <span class="material-symbols-rounded text-accent text-base">battery_charging_full</span>
-                    ${currentBat.cap || 0} kWh
-                </span>
-            </div>
-            <div class="w-full sm:w-auto mt-2 sm:mt-0">
-                <button onclick="openSaveSystemPlanModal()" class="w-full sm:w-auto px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-rounded text-base">cloud_upload</span>
-                    <span>Konfiguration fest im Server speichern</span>
-                </button>
+            <div class="w-full mt-2 pt-2 border-t border-slate-200/60 dark:border-slate-800/60 text-[11px] text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2">
+                <span class="material-symbols-rounded text-primary text-sm">info</span>
+                <span><strong>Ausstattungs-Pool:</strong> Komponenten im Pool stehen bei der Konfiguration jedes Strangs zur Verfügung. Die konkrete Zuweisung erfolgt im Tab <em>Stränge & Auslegung</em>.</span>
             </div>
         `;
     }
-}
-
-function onSelectActivePanel(val) {
-    activeHardwarePanelId = parseInt(val);
-    renderActiveHardwareUI();
-}
-
-function onSelectActiveInverter(val) {
-    activeHardwareInverterId = parseInt(val);
-    renderActiveHardwareUI();
 }
 
 function onSelectActiveBattery(val) {
@@ -2967,6 +3237,8 @@ function applyActivePanelToAllStrings(panelId) {
     const idNum = parseInt(panelId);
     const p = flatPanels.find(x => x.id === idNum);
     if (!p) return;
+
+    addPanelToProject(idNum, false);
 
     (strings || []).forEach(s => {
         (s.fields || []).forEach(f => {
@@ -2985,6 +3257,8 @@ function applyActiveInverterToAllStrings(inverterId) {
     const idNum = parseInt(inverterId);
     const inv = flatInverters.find(x => x.id === idNum);
     if (!inv) return;
+
+    addInverterToProject(idNum, false);
 
     const mppts = inv.mppts || [{ id: 1 }];
     (strings || []).forEach((s, sIdx) => {
@@ -3009,15 +3283,13 @@ function assignActiveBatteryToInverter(invId, batId) {
 function selectHardwareAsActive(type, id) {
     const idNum = parseInt(id);
     if (type === 'panel') {
-        activeHardwarePanelId = idNum;
-        applyActivePanelToAllStrings(idNum);
+        addPanelToProject(idNum, true);
     } else if (type === 'inv') {
-        activeHardwareInverterId = idNum;
-        applyActiveInverterToAllStrings(idNum);
+        addInverterToProject(idNum, true);
     } else if (type === 'bat') {
         activeHardwareBatteryId = idNum;
-        if (activeHardwareInverterId) {
-            assignActiveBatteryToInverter(activeHardwareInverterId, idNum);
+        if (projectInverterIds[0]) {
+            assignActiveBatteryToInverter(projectInverterIds[0], idNum);
         }
     }
     renderActiveHardwareUI();
@@ -3074,6 +3346,11 @@ function renderHardwareCatalogUI() {
         const id = data.id;
         const name = data.name;
 
+        // Prüfen, ob bereits im Projekt-Pool
+        const isInProjectPool = (type === 'inv' && projectInverterIds.includes(id)) || 
+                                (type === 'panel' && projectPanelIds.includes(id)) ||
+                                (type === 'bat' && activeHardwareBatteryId === id);
+
         // Prüfen, woher das Gerät stammt
         let isPersistedInCode = false;
         if (persistedHw) {
@@ -3090,8 +3367,13 @@ function renderHardwareCatalogUI() {
         } else if (isCustomLocal) {
             originBadge = `<span class="text-[9px] font-black px-2 py-0.5 rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">Lokal (Browser)</span>`;
         } else {
-            originBadge = `<span class="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">Standard (Code)</span>`;
+            originBadge = `<span class="text-[9px] font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500">Standard</span>`;
         }
+
+        // Pool-Badge
+        const poolBadge = isInProjectPool 
+            ? `<span class="text-[9px] font-black px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-0.5"><span class="material-symbols-rounded text-xs">check</span> Im Projekt-Pool</span>` 
+            : '';
 
         // Dokumente zählen
         const docs = typeof HardwareDocManager !== 'undefined' ? HardwareDocManager.getDocsForDevice(type, id) : [];
@@ -3131,8 +3413,51 @@ function renderHardwareCatalogUI() {
             `;
         }
 
+        // Action Button: Im Pool vs + Zum Projekt
+        let actionBtnHtml = '';
+        if (type === 'inv') {
+            if (isInProjectPool) {
+                actionBtnHtml = `
+                    <button onclick="applyActiveInverterToAllStrings(${id})" class="flex-1 py-1.5 px-2 rounded-xl bg-primary/10 hover:bg-primary hover:text-white text-primary text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Allen Strängen zuweisen">
+                        <span class="material-symbols-rounded text-xs">alt_route</span>
+                        <span>Allen zuweisen</span>
+                    </button>
+                `;
+            } else {
+                actionBtnHtml = `
+                    <button onclick="addInverterToProject(${id})" class="flex-1 py-1.5 px-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Zum Projekt-Pool hinzufügen">
+                        <span class="material-symbols-rounded text-xs">add</span>
+                        <span>+ Zum Pool</span>
+                    </button>
+                `;
+            }
+        } else if (type === 'panel') {
+            if (isInProjectPool) {
+                actionBtnHtml = `
+                    <button onclick="applyActivePanelToAllStrings(${id})" class="flex-1 py-1.5 px-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-600 hover:text-white text-emerald-600 dark:text-emerald-400 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Auf alle Stränge anwenden">
+                        <span class="material-symbols-rounded text-xs">format_paint</span>
+                        <span>Auf alle</span>
+                    </button>
+                `;
+            } else {
+                actionBtnHtml = `
+                    <button onclick="addPanelToProject(${id})" class="flex-1 py-1.5 px-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Zum Projekt-Pool hinzufügen">
+                        <span class="material-symbols-rounded text-xs">add</span>
+                        <span>+ Zum Pool</span>
+                    </button>
+                `;
+            }
+        } else if (type === 'bat') {
+            actionBtnHtml = `
+                <button onclick="selectHardwareAsActive('bat', ${id})" class="flex-1 py-1.5 px-2 rounded-xl ${isInProjectPool ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'bg-slate-100 dark:bg-slate-800 hover:bg-accent hover:text-white text-slate-800 dark:text-slate-200'} text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Als aktiven Speicher wählen">
+                    <span class="material-symbols-rounded text-xs">${isInProjectPool ? 'check' : 'touch_app'}</span>
+                    <span>${isInProjectPool ? 'Aktiv' : 'Wählen'}</span>
+                </button>
+            `;
+        }
+
         return `
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-2xs flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border ${isInProjectPool ? 'border-primary/40 dark:border-primary/40 ring-1 ring-primary/20' : 'border-slate-200 dark:border-slate-800'} p-4 shadow-2xs flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all">
                 <div>
                     <div class="flex items-start justify-between gap-2 mb-2">
                         <div class="flex items-center gap-2 min-w-0">
@@ -3143,6 +3468,7 @@ function renderHardwareCatalogUI() {
                                 <h5 class="text-xs font-black text-slate-900 dark:text-white truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</h5>
                                 <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                     ${originBadge}
+                                    ${poolBadge}
                                     ${hasVde ? `<span class="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400">VDE 4105</span>` : ''}
                                 </div>
                             </div>
@@ -3163,10 +3489,7 @@ function renderHardwareCatalogUI() {
                 </div>
 
                 <div class="flex items-center gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
-                    <button onclick="selectHardwareAsActive('${type}', ${id})" class="flex-1 py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white dark:hover:bg-primary text-slate-800 dark:text-slate-200 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Als aktive Hardware auswählen">
-                        <span class="material-symbols-rounded text-xs">check</span>
-                        <span>Wählen</span>
-                    </button>
+                    ${actionBtnHtml}
                     <button onclick="openHardwareDocModal('${type}', ${id}, '${escapeHtml(name)}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Datenblätter & Zertifikate">
                         <span class="material-symbols-rounded text-sm">description</span>
                     </button>
@@ -3215,6 +3538,22 @@ function openHardwareEditModal(type = 'panel', id = null) {
         if (item) {
             document.getElementById('hwe_name').value = item.name || '';
             document.getElementById('hwe_series').value = item.series || '';
+
+            // Vorhandene Datenblätter & Dokumente für dieses Gerät vorbefüllen
+            if (typeof HardwareDocManager !== 'undefined') {
+                const existingDocs = HardwareDocManager.getDocsForDevice(type, item.id);
+                if (existingDocs && existingDocs.length > 0) {
+                    const firstDoc = existingDocs[0];
+                    if (document.getElementById('hwe_doc_title')) document.getElementById('hwe_doc_title').value = firstDoc.title || 'Datenblatt';
+                    if (document.getElementById('hwe_doc_url')) document.getElementById('hwe_doc_url').value = firstDoc.url || '';
+                    if (document.getElementById('hwe_doc_standard')) document.getElementById('hwe_doc_standard').value = firstDoc.standard || '';
+                    if (document.getElementById('hwe_doc_cat')) document.getElementById('hwe_doc_cat').value = firstDoc.category || 'datenblatt';
+                } else {
+                    if (document.getElementById('hwe_doc_title')) document.getElementById('hwe_doc_title').value = '';
+                    if (document.getElementById('hwe_doc_url')) document.getElementById('hwe_doc_url').value = '';
+                    if (document.getElementById('hwe_doc_standard')) document.getElementById('hwe_doc_standard').value = '';
+                }
+            }
 
             if (type === 'panel') {
                 document.getElementById('hwe_pmax').value = item.pmax || '';
@@ -3403,7 +3742,7 @@ async function saveHardwareFromEditor() {
             const res = await fetch(endpoint, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, hardware: hardwareItem })
+                body: JSON.stringify({ type, id: newId, item: hardwareItem, hardware: hardwareItem })
             });
 
             if (res.ok) {
@@ -3543,9 +3882,22 @@ async function submitSaveSystemPlanToServer() {
     const nameInput = document.getElementById('savePlanNameInput');
     const name = nameInput?.value?.trim() || `Planung ${new Date().toLocaleDateString('de-DE')}`;
 
+    const totalPanels = (strings || []).reduce((acc, s) => acc + (s.fields || []).reduce((fAcc, f) => fAcc + (f.count || 0), 0), 0);
+    const activeInv = flatInverters.find(i => i.id === (strings[0]?.inverterId || (projectInverterIds && projectInverterIds[0]))) || flatInverters[0];
+    const totalKwp = ((totalPanels * (flatPanels[0]?.pmax || 440)) / 1000).toFixed(2);
+    const summary = {
+        kwp: totalKwp,
+        panelCount: totalPanels,
+        stringCount: (strings || []).length,
+        locationName: LocationData.name || 'Projekt-Standort',
+        inverterName: activeInv ? activeInv.name : 'Wechselrichter'
+    };
+
     const planData = {
         strings: strings,
         location: LocationData,
+        projectInverterIds: typeof projectInverterIds !== 'undefined' ? projectInverterIds : [],
+        projectPanelIds: typeof projectPanelIds !== 'undefined' ? projectPanelIds : [],
         batMap: JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'),
         cableParams: JSON.parse(localStorage.getItem('pvpro_cable_params') || '{}'),
         costs: JSON.parse(localStorage.getItem('pvpro_costs') || '{}')
@@ -3555,7 +3907,7 @@ async function submitSaveSystemPlanToServer() {
         const res = await fetch('/api/plans/persist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, data: planData })
+            body: JSON.stringify({ name, data: planData, summary })
         });
 
         if (res.ok) {
@@ -3563,6 +3915,7 @@ async function submitSaveSystemPlanToServer() {
             if (data.success) {
                 closeSaveSystemPlanModal();
                 showToastNotification(`Planung "${name}" erfolgreich fest im Server & Code gespeichert!`, 'success');
+                if (typeof renderServerPlansList === 'function') renderServerPlansList();
                 return;
             }
         }
@@ -3588,11 +3941,23 @@ async function loadPersistentPlanFromServer(planId) {
                         LocationData = plan.data.location;
                         localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
                     }
+                    if (plan.data.projectInverterIds && Array.isArray(plan.data.projectInverterIds)) {
+                        projectInverterIds = plan.data.projectInverterIds;
+                        localStorage.setItem('pvpro_project_inverters', JSON.stringify(projectInverterIds));
+                    }
+                    if (plan.data.projectPanelIds && Array.isArray(plan.data.projectPanelIds)) {
+                        projectPanelIds = plan.data.projectPanelIds;
+                        localStorage.setItem('pvpro_project_panels', JSON.stringify(projectPanelIds));
+                    }
                     if (plan.data.batMap) {
                         localStorage.setItem('pvpro_batmap', JSON.stringify(plan.data.batMap));
                     }
+                    if (typeof syncProjectHardwareState === 'function') {
+                        syncProjectHardwareState();
+                    }
                     if (typeof updateStringsUI === 'function') updateStringsUI();
                     if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+                    if (typeof renderActiveHardwareUI === 'function') renderActiveHardwareUI();
                     renderDatabaseUI();
                     showToastNotification(`Planung "${plan.name}" erfolgreich geladen!`, 'success');
                     closeProjectManagerModal();
