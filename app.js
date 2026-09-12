@@ -1,7 +1,22 @@
 // ==========================================
 // GLOBALE STATE VARIABLEN
 // ==========================================
-let flatPanels = [], flatInverters = [], flatBatteries = [];
+let DB = {
+    panels: (typeof MasterDB !== 'undefined' && MasterDB.panels) ? [...MasterDB.panels] : [],
+    batteries: (typeof MasterDB !== 'undefined' && MasterDB.batteries) ? [...MasterDB.batteries] : [],
+    inverters: (typeof MasterDB !== 'undefined' && MasterDB.inverters) ? [...MasterDB.inverters] : []
+};
+let flatPanels = DB.panels.flatMap(s => s.models || []);
+let flatInverters = DB.inverters.flatMap(s => s.models || []);
+let flatBatteries = DB.batteries.flatMap(s => s.models || []);
+
+if (typeof window !== 'undefined') {
+    window.DB = DB;
+    window.flatPanels = flatPanels;
+    window.flatInverters = flatInverters;
+    window.flatBatteries = flatBatteries;
+}
+
 const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#84cc16'];
 let LocationData = { lat: 48.06, lon: 8.46, name: "Villingen-Schwenningen" };
 let YieldDataCache = null, ConsumptionCache = null, FlowCache = null, activeGroupIndex = null;
@@ -40,13 +55,16 @@ function getThemeSettings() {
 // ==========================================
 function initDatabase() {
     try {
-        // Theme laden
-        loadThemeSettings();
-        
-        DB = { panels: [], batteries: [], inverters: [] };
-        DB.panels = [...MasterDB.panels]; 
-        DB.batteries = [...MasterDB.batteries]; 
-        DB.inverters = [...MasterDB.inverters];
+        // 1. Hardware-Stammdaten sicher aus MasterDB befüllen
+        if (typeof MasterDB !== 'undefined') {
+            DB = {
+                panels: Array.isArray(MasterDB.panels) ? [...MasterDB.panels] : [],
+                batteries: Array.isArray(MasterDB.batteries) ? [...MasterDB.batteries] : [],
+                inverters: Array.isArray(MasterDB.inverters) ? [...MasterDB.inverters] : []
+            };
+        } else {
+            DB = { panels: [], batteries: [], inverters: [] };
+        }
         
         try {
             const userDB = readJsonStorage('pvpro_user_db', { panels: [], batteries: [], inverters: [] });
@@ -60,16 +78,26 @@ function initDatabase() {
         flatPanels = DB.panels.flatMap(s => s.models || []); 
         flatInverters = DB.inverters.flatMap(s => s.models || []); 
         flatBatteries = DB.batteries.flatMap(s => s.models || []);
+        if (typeof window !== 'undefined') {
+            window.flatPanels = flatPanels;
+            window.flatInverters = flatInverters;
+            window.flatBatteries = flatBatteries;
+        }
 
-        let batMap = readJsonStorage('pvpro_batmap', {});
-        flatInverters.forEach(inv => { if(batMap[inv.id] !== undefined) inv.batteryId = parseInt(batMap[inv.id]); });
+        try {
+            let batMap = readJsonStorage('pvpro_batmap', {});
+            flatInverters.forEach(inv => { if(batMap[inv.id] !== undefined) inv.batteryId = parseInt(batMap[inv.id]); });
+        } catch(e) {}
+
+        // Theme laden (geschützt)
+        try { loadThemeSettings(); } catch(e) { console.warn("Theme konnte nicht initialisiert werden:", e); }
 
         if(localStorage.getItem('pvpro_strings')) {
             try {
                 let loaded = readJsonStorage('pvpro_strings', []);
                 if (Array.isArray(loaded)) {
                     strings = loaded.map(s => { 
-                        if(!s.fields) s.fields = [{ id: Date.now()+Math.random(), name: 'Hauptdach', panelId: flatPanels[0]?.id||1, count: s.panels||1, tilt: 30, cols: Math.min(s.panels||1, 4)||4, rows: Math.ceil((s.panels||1)/(Math.min(s.panels||1, 4)||1)) }]; 
+                        if(!s.fields) s.fields = [{ id: Date.now()+Math.random(), name: 'Hauptdach', panelId: flatPanels[0]?.id||101, count: s.panels||1, tilt: 30, cols: Math.min(s.panels||1, 4)||4, rows: Math.ceil((s.panels||1)/(Math.min(s.panels||1, 4)||1)) }]; 
                         s.fields.forEach((f, fIdx) => {
                             if (!f.name) f.name = fIdx === 0 ? 'Hauptdach' : (fIdx === 1 ? 'Gaube' : `Feld ${fIdx + 1}`);
                             if (!f.cols) f.cols = Math.min(f.count || 4, 4) || 4;
@@ -86,20 +114,22 @@ function initDatabase() {
             }
         }
         
-        const storedLocation = readJsonStorage('pvpro_loc', null);
-        if (storedLocation && Number.isFinite(Number(storedLocation.lat)) && Number.isFinite(Number(storedLocation.lon))) {
-            LocationData = {
-                lat: Number(storedLocation.lat),
-                lon: Number(storedLocation.lon),
-                name: typeof storedLocation.name === 'string' && storedLocation.name.trim() ? storedLocation.name : LocationData.name
-            };
-        }
-        
-        let locInp = document.getElementById('locSearchInput'); if(locInp) locInp.value = LocationData.name;
-        let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
+        try {
+            const storedLocation = readJsonStorage('pvpro_loc', null);
+            if (storedLocation && Number.isFinite(Number(storedLocation.lat)) && Number.isFinite(Number(storedLocation.lon))) {
+                LocationData = {
+                    lat: Number(storedLocation.lat),
+                    lon: Number(storedLocation.lon),
+                    name: typeof storedLocation.name === 'string' && storedLocation.name.trim() ? storedLocation.name : LocationData.name
+                };
+            }
+            
+            let locInp = document.getElementById('locSearchInput'); if(locInp) locInp.value = LocationData.name;
+            let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
+        } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.0.0';
+        if (verEl) verEl.innerText = 'Pro 8.0.1';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -108,16 +138,18 @@ function initDatabase() {
             addString();
         }
         
-        let faqTab = document.getElementById('tab-faq');
-        if(faqTab && typeof HandbuchHTML !== 'undefined') faqTab.innerHTML = HandbuchHTML;
+        try {
+            let faqTab = document.getElementById('tab-faq');
+            if(faqTab && typeof HandbuchHTML !== 'undefined') faqTab.innerHTML = HandbuchHTML;
+        } catch(e) {}
 
-        loadConsumptionSettings(); 
-        loadFinanceSettings();
-        loadInvestSettings();
-        loadWiringSettings();
-        updatePhysicsOnly();
-        checkUrlShareImport();
-        initProjectManager();
+        try { loadConsumptionSettings(); } catch(e) {}
+        try { loadFinanceSettings(); } catch(e) {}
+        try { loadInvestSettings(); } catch(e) {}
+        try { loadWiringSettings(); } catch(e) {}
+        try { updatePhysicsOnly(); } catch(e) {}
+        try { checkUrlShareImport(); } catch(e) {}
+        try { initProjectManager(); } catch(e) {}
     } catch(e) { console.error("Init Error:", e); }
 }
 
@@ -2935,6 +2967,9 @@ function onCatalogSearchInput(val) {
 }
 
 function renderDatabaseUI() {
+    if (!flatPanels || flatPanels.length === 0 || !flatInverters || flatInverters.length === 0) {
+        initDatabase();
+    }
     syncProjectHardwareState();
     renderActiveHardwareUI();
     renderHardwareCatalogUI();
@@ -3348,6 +3383,14 @@ function selectHardwareAsActive(type, id) {
 function renderHardwareCatalogUI() {
     const container = document.getElementById('hardwareCatalogGrid');
     if (!container) return;
+
+    if (!flatPanels || flatPanels.length === 0 || !flatInverters || flatInverters.length === 0) {
+        if (typeof MasterDB !== 'undefined') {
+            flatPanels = (MasterDB.panels || []).flatMap(s => s.models || []);
+            flatInverters = (MasterDB.inverters || []).flatMap(s => s.models || []);
+            flatBatteries = (MasterDB.batteries || []).flatMap(s => s.models || []);
+        }
+    }
 
     let items = [];
 
@@ -4288,11 +4331,22 @@ window.deleteHardwareDocFromModal = deleteHardwareDocFromModal;
 window.deleteCustomDevice = deleteCustomDevice;
 
 // Neue Hardware-, Katalog- & Persistenz-Funktionen
+function onSelectActivePanel(id) {
+    if (typeof addPanelToProject === 'function') addPanelToProject(id);
+}
+function onSelectActiveInverter(id) {
+    if (typeof addInverterToProject === 'function') addInverterToProject(id);
+}
+
 window.setCatalogCategoryFilter = setCatalogCategoryFilter;
 window.onCatalogSearchInput = onCatalogSearchInput;
 window.renderDatabaseUI = renderDatabaseUI;
 window.renderActiveHardwareUI = renderActiveHardwareUI;
 window.renderHardwareCatalogUI = renderHardwareCatalogUI;
+window.addInverterToProject = addInverterToProject;
+window.removeInverterFromProject = removeInverterFromProject;
+window.addPanelToProject = addPanelToProject;
+window.removePanelFromProject = removePanelFromProject;
 window.onSelectActivePanel = onSelectActivePanel;
 window.onSelectActiveInverter = onSelectActiveInverter;
 window.onSelectActiveBattery = onSelectActiveBattery;
@@ -4487,7 +4541,20 @@ window.addEventListener('appinstalled', () => {
     console.log('PVPro erfolgreich installiert.');
 });
 
-window.onload = initDatabase;
+// Direkte Ausführung falls DOM bereits geladen, sonst DOMContentLoaded & load Listener
+if (typeof document !== 'undefined') {
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+        initDatabase();
+    } else {
+        document.addEventListener('DOMContentLoaded', initDatabase);
+    }
+    window.addEventListener('load', () => {
+        if (!flatPanels || flatPanels.length === 0) {
+            initDatabase();
+        }
+    });
+}
+window.initDatabase = initDatabase;
 
 function generateHourlyFromPVGISMonthly(monthlyKWh, lat, tilt, azimuth, peakPower) {
     let hourly = [];

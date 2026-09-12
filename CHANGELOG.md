@@ -4,6 +4,30 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.0.1] – 2026-09-12
+
+### 🛠️ Hardware-Katalog Initialisierung, Ausstattungs-Pool Handlers & PWA-Icon Cache-Invalidierung
+
+#### 1. Unmittelbare Vorinitialisierung & Ausfallsicherheit des Hardware-Katalogs
+* **Sofortige Datenverfügbarkeit ohne Verzögerung:**
+  - `DB`, `flatPanels`, `flatInverters` und `flatBatteries` werden in `app.js` sofort bei Modulladezeit mit den Stammdaten aus `MasterDB` befüllt und an `window` exponiert.
+  - Doppelte defensive Absicherung: Sowohl `renderDatabaseUI()` als auch `renderHardwareCatalogUI()` prüfen beim Aufruf auf gefüllte Arrays und greifen im Bedarfsfall automatisch und transparent auf `MasterDB` zurück.
+  - Einbettung aller Teilschritte in `initDatabase()` (Themes, Strings, Geo-Standort, FAQ, Verbrauchs- und Finanzprofile) in separate `try/catch`-Blöcke, damit kein Teilausfall das Laden der Hardware-Listen behindern kann.
+  - Etablierung eines robusten Mehrstufen-DOM-Ready-Triggers (`document.readyState`, `DOMContentLoaded` und `load`), der die Initialisierung zuverlässig auch bei aggressivem Browser-Script-Caching anstößt.
+
+#### 2. Ausstattungs-Pool Handler & Global Scope Export
+* **Vollständige Funktionsverknüpfung:**
+  - Bereitstellung und Export der Handler `onSelectActivePanel(id)`, `onSelectActiveInverter(id)`, `addPanelToProject`, `removePanelFromProject`, `addInverterToProject` und `removeInverterFromProject` im globalen `window`-Scope.
+  - Dadurch funktionieren alle Klick-Aktionen im Ausstattungs-Pool und Hardware-Katalog ohne unauffällige Konsolenfehler.
+
+#### 3. PWA-Icon Cache-Invalidierung & Update-Verhalten
+* **Aktualisierung von PWA-Icons auf Endgeräten:**
+  - Cache-Buster `?v=8.0.1` für `manifest.json`, `icon.svg`, `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` und `favicon-32.png` im HTML-Header eingepflegt.
+  - Service Worker Cache auf `pvpro-cache-v8.0.1` hochgestuft; alter Cache wird automatisch bei `activate` bereinigt.
+  - **Hinweis zum Betriebssystem-PWA-Icon:** Bereits auf dem Homescreen/Desktop installierte PWAs speichern das Icon im OS-Anwendungs-Cache (Android/Windows/iOS). Um das neue High-Tech Engineering Icon sofort zu sehen, reicht meist ein Leeren des Browser-Caches (oder Abrufen via `Strg + F5`). Wurde die PWA bereits als native Verknüpfung installiert, aktualisiert das Betriebssystem das Icon entweder beim nächsten Hintergrund-Sync oder sofort durch kurzes Löschen und Neu-Hinzufügen der App zum Startbildschirm.
+
+---
+
 ## [Version 8.0.0] – 2026-09-12
 
 ### 🚀 Master-Hardware-Katalog (AIKO, Fronius, Hoymiles), Beseitigung falscher Offline-Meldungen & Robuste Server-Synchronisation

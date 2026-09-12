@@ -5,11 +5,11 @@
 // ==========================================
 const MasterDB = {
     panels: [
-        { series: "AIKO Neostar 3S+54", models: [
-            { id: 101, name: "AIKO-A460-MCE54Db", pmax: 460, voc: 40.50, vmp: 34.10, isc: 14.66, imp: 13.50, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.230 },
-            { id: 102, name: "AIKO-A465-MCE54Db", pmax: 465, voc: 40.60, vmp: 34.20, isc: 14.69, imp: 13.60, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.233 },
-            { id: 103, name: "AIKO-A470-MCE54Db", pmax: 470, voc: 40.70, vmp: 34.30, isc: 14.72, imp: 13.71, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.235 },
-            { id: 104, name: "AIKO-A475-MCE54Db", pmax: 475, voc: 40.80, vmp: 34.40, isc: 14.76, imp: 13.81, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.238 }
+        { series: "AIKO Neostar 2S+ (N-Typ ABC)", models: [
+            { id: 101, name: "AIKO Neostar 2S+ 460W (MCE54Db)", pmax: 460, voc: 40.50, vmp: 34.10, isc: 14.66, imp: 13.50, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.230 },
+            { id: 102, name: "AIKO Neostar 2S+ 465W (MCE54Db)", pmax: 465, voc: 40.60, vmp: 34.20, isc: 14.69, imp: 13.60, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.233 },
+            { id: 103, name: "AIKO Neostar 2S+ 470W (MCE54Db)", pmax: 470, voc: 40.70, vmp: 34.30, isc: 14.72, imp: 13.71, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.235 },
+            { id: 104, name: "AIKO Neostar 2S+ 475W (MCE54Db)", pmax: 475, voc: 40.80, vmp: 34.40, isc: 14.76, imp: 13.81, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.238 }
         ]}
     ],
     batteries: [
@@ -17,21 +17,21 @@ const MasterDB = {
             { id: 1, name: "Keine Batterie", cap: 0, power: 0, eff: 1.0 }
         ]},
         { series: "BYD Battery-Box HVS+ (Hochvolt)", models: [
-            { id: 302, name: "HVS+ 5.1 (2 Module)", cap: 5.12, modules: 2, nomV: 204.8, minV: 160.0, maxV: 230.4, maxI: 25.0, peakI: 55.0, power: 5120, eff: 0.95, weight: 91.1, dim: "747 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" },
-            { id: 303, name: "HVS+ 7.7 (3 Module)", cap: 7.68, modules: 3, nomV: 307.2, minV: 240.0, maxV: 345.6, maxI: 25.0, peakI: 55.0, power: 7680, eff: 0.95, weight: 129.6, dim: "987 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" },
-            { id: 304, name: "HVS+ 10.2 (4 Module)", cap: 10.24, modules: 4, nomV: 409.6, minV: 320.0, maxV: 460.8, maxI: 25.0, peakI: 55.0, power: 10240, eff: 0.95, weight: 168.1, dim: "1227 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" },
-            { id: 305, name: "HVS+ 12.8 (5 Module)", cap: 12.80, modules: 5, nomV: 512.0, minV: 400.0, maxV: 576.0, maxI: 25.0, peakI: 55.0, power: 12800, eff: 0.95, weight: 206.6, dim: "1467 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" }
+            { id: 302, name: "BYD Battery-Box HVS+ 5.1 (2 Module)", cap: 5.12, modules: 2, nomV: 204.8, minV: 160.0, maxV: 230.4, maxI: 25.0, peakI: 55.0, power: 5120, eff: 0.95, weight: 91.1, dim: "747 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" },
+            { id: 303, name: "BYD Battery-Box HVS+ 7.7 (3 Module)", cap: 7.68, modules: 3, nomV: 307.2, minV: 240.0, maxV: 345.6, maxI: 25.0, peakI: 55.0, power: 7680, eff: 0.95, weight: 129.6, dim: "987 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" },
+            { id: 304, name: "BYD Battery-Box HVS+ 10.2 (4 Module)", cap: 10.24, modules: 4, nomV: 409.6, minV: 320.0, maxV: 460.8, maxI: 25.0, peakI: 55.0, power: 10240, eff: 0.95, weight: 168.1, dim: "1227 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" },
+            { id: 305, name: "BYD Battery-Box HVS+ 12.8 (5 Module)", cap: 12.80, modules: 5, nomV: 512.0, minV: 400.0, maxV: 576.0, maxI: 25.0, peakI: 55.0, power: 12800, eff: 0.95, weight: 206.6, dim: "1467 x 610 x 282 mm", ip: "IP55", tech: "LiFePO4" }
         ]}
     ],
     inverters: [
         { series: "Fronius Symo GEN24 Plus SC", models: [
-            { id: 10, name: "GEN24 3.0 Plus SC", acMax: 3000, startV: 80, minMppV: 115, maxMppV: 800, maxV: 1000, maxDcWp: 4500, maxChargePower: 3300, weight: 15.3, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 20, maxI: 14}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
-            { id: 11, name: "GEN24 4.0 Plus SC", acMax: 4000, startV: 80, minMppV: 150, maxMppV: 800, maxV: 1000, maxDcWp: 6000, maxChargePower: 4300, weight: 15.3, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 20, maxI: 14}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
-            { id: 12, name: "GEN24 5.0 Plus SC", acMax: 5000, startV: 80, minMppV: 190, maxMppV: 800, maxV: 1000, maxDcWp: 7500, maxChargePower: 5300, weight: 15.3, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 20, maxI: 14}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
-            { id: 13, name: "GEN24 6.0 Plus SC", acMax: 6000, startV: 80, minMppV: 148, maxMppV: 800, maxV: 1000, maxDcWp: 9000, maxChargePower: 6220, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
-            { id: 14, name: "GEN24 8.0 Plus SC", acMax: 8000, startV: 80, minMppV: 197, maxMppV: 800, maxV: 1000, maxDcWp: 12000, maxChargePower: 8260, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
-            { id: 15, name: "GEN24 10.0 Plus SC", acMax: 10000, startV: 80, minMppV: 246, maxMppV: 800, maxV: 1000, maxDcWp: 15000, maxChargePower: 10300, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
-            { id: 16, name: "GEN24 12.0 Plus SC", acMax: 12000, startV: 80, minMppV: 295, maxMppV: 800, maxV: 1000, maxDcWp: 18000, maxChargePower: 11682, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] }
+            { id: 10, name: "Fronius Symo GEN24 3.0 Plus SC", acMax: 3000, startV: 80, minMppV: 115, maxMppV: 800, maxV: 1000, maxDcWp: 4500, maxChargePower: 3300, weight: 15.3, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 20, maxI: 14}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
+            { id: 11, name: "Fronius Symo GEN24 4.0 Plus SC", acMax: 4000, startV: 80, minMppV: 150, maxMppV: 800, maxV: 1000, maxDcWp: 6000, maxChargePower: 4300, weight: 15.3, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 20, maxI: 14}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
+            { id: 12, name: "Fronius Symo GEN24 5.0 Plus SC", acMax: 5000, startV: 80, minMppV: 190, maxMppV: 800, maxV: 1000, maxDcWp: 7500, maxChargePower: 5300, weight: 15.3, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 20, maxI: 14}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
+            { id: 13, name: "Fronius Symo GEN24 6.0 Plus SC", acMax: 6000, startV: 80, minMppV: 148, maxMppV: 800, maxV: 1000, maxDcWp: 9000, maxChargePower: 6220, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
+            { id: 14, name: "Fronius Symo GEN24 8.0 Plus SC", acMax: 8000, startV: 80, minMppV: 197, maxMppV: 800, maxV: 1000, maxDcWp: 12000, maxChargePower: 8260, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
+            { id: 15, name: "Fronius Symo GEN24 10.0 Plus SC", acMax: 10000, startV: 80, minMppV: 246, maxMppV: 800, maxV: 1000, maxDcWp: 15000, maxChargePower: 10300, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] },
+            { id: 16, name: "Fronius Symo GEN24 12.0 Plus SC", acMax: 12000, startV: 80, minMppV: 295, maxMppV: 800, maxV: 1000, maxDcWp: 18000, maxChargePower: 11682, weight: 22.8, batteryId: 1, mppts: [{id:1, name:"MPPT 1", maxIsc: 40, maxI: 28}, {id:2, name:"MPPT 2", maxIsc: 20, maxI: 14}] }
         ]},
         { series: "Hoymiles Mikrowechselrichter", models: [
             { id: 198, name: "Hoymiles HMS-1600-4T", acMax: 1600, startV: 22, minMppV: 16, maxMppV: 60, maxV: 65, maxDcWp: 2160, maxChargePower: 0, weight: 4.7, batteryId: 1, type: "micro", dim: "331 × 218 × 36.6 mm", ip: "IP67", mppts: [
