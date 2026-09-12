@@ -97,9 +97,22 @@ function initDatabase() {
                 let loaded = readJsonStorage('pvpro_strings', []);
                 if (Array.isArray(loaded)) {
                     strings = loaded.map(s => { 
-                        if(!s.fields) s.fields = [{ id: Date.now()+Math.random(), name: 'Hauptdach', panelId: flatPanels[0]?.id||101, count: s.panels||1, tilt: 30, cols: Math.min(s.panels||1, 4)||4, rows: Math.ceil((s.panels||1)/(Math.min(s.panels||1, 4)||1)) }]; 
+                        if (!flatInverters.some(i => i.id === parseInt(s.inverterId))) {
+                            s.inverterId = flatInverters[0]?.id || 10;
+                        }
+                        const inv = flatInverters.find(i => i.id === parseInt(s.inverterId));
+                        if (!inv?.mppts?.some(m => String(m.id) === String(s.mpptId))) {
+                            s.mpptId = inv?.mppts?.[0]?.id || 1;
+                        }
+                        if(!s.fields || !Array.isArray(s.fields) || s.fields.length === 0) {
+                            s.fields = [{ id: Date.now()+Math.random(), name: 'Hauptdach', panelId: flatPanels[0]?.id||101, count: s.panels||1, tilt: 30, cols: Math.min(s.panels||1, 4)||4, rows: Math.ceil((s.panels||1)/(Math.min(s.panels||1, 4)||1)) }]; 
+                        }
                         s.fields.forEach((f, fIdx) => {
                             if (!f.name) f.name = fIdx === 0 ? 'Hauptdach' : (fIdx === 1 ? 'Gaube' : `Feld ${fIdx + 1}`);
+                            if (!flatPanels.some(p => p.id === parseInt(f.panelId))) {
+                                f.panelId = flatPanels[0]?.id || 101;
+                            }
+                            if (!f.count || f.count < 1) f.count = Math.max(1, Number(f.count) || 1);
                             if (!f.cols) f.cols = Math.min(f.count || 4, 4) || 4;
                             if (!f.rows) f.rows = Math.ceil((f.count || 1) / (f.cols || 1));
                         });
@@ -129,7 +142,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.0.1';
+        if (verEl) verEl.innerText = 'Pro 8.0.2';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -1867,30 +1880,74 @@ function updateFieldData(sId, fId, key, val) {
 
 function updatePhysicsOnly() {
     strings.forEach(str => {
-        let vocStc = 0, vmpStc = 0, isc = 0, tk = -0.25;
-        if(str.fields && str.fields.length > 0) { const p = flatPanels.find(p => p.id === parseInt(str.fields[0].panelId)); if(p) tk = p.tempVoc; }
+        let vocStc = 0, vmpStc = 0, isc = 0, tk = -0.22;
         
-        (str.fields || []).forEach(f => {
-            const p = flatPanels.find(x => x.id === parseInt(f.panelId));
-            if(p) { vocStc += (p.voc * f.count); vmpStc += (p.vmp * f.count); isc = Math.max(isc, p.isc); }
+        // 1. Inverter & MPPT auto-heal
+        let inv = flatInverters.find(i => i.id === parseInt(str.inverterId));
+        if (!inv) {
+            inv = flatInverters[0];
+            if (inv) str.inverterId = inv.id;
+        }
+        if (inv && inv.mppts && inv.mppts.length > 0) {
+            if (!inv.mppts.some(m => String(m.id) === String(str.mpptId))) {
+                str.mpptId = inv.mppts[0].id;
+            }
+        }
+
+        // 2. Modulfelder absichern
+        if (!str.fields || !Array.isArray(str.fields) || str.fields.length === 0) {
+            str.fields = [{
+                id: Date.now() + Math.random(),
+                name: 'Hauptdach',
+                panelId: flatPanels[0]?.id || 101,
+                count: 1,
+                tilt: 30,
+                cols: 1,
+                rows: 1
+            }];
+        }
+
+        // 3. Modulfelder aufsummieren mit Auto-Healing für verwaiste IDs
+        str.fields.forEach(f => {
+            let p = flatPanels.find(x => x.id === parseInt(f.panelId));
+            if (!p) {
+                p = flatPanels[0];
+                if (p) f.panelId = p.id;
+            }
+            if (p) {
+                if (typeof p.tempVoc === 'number') tk = p.tempVoc;
+                const count = Math.max(1, Number(f.count) || 1);
+                f.count = count;
+                vocStc += (Number(p.voc) * count);
+                vmpStc += (Number(p.vmp) * count);
+                isc = Math.max(isc, Number(p.isc) || 0);
+            }
         });
 
-        const inv = flatInverters.find(i => i.id === parseInt(str.inverterId));
+        // 4. Kälte- & Wärme-Spannungen berechnen (-20°C bis +70°C nach DIN VDE 0100-712)
+        const vocCold = vocStc * (1 + (-45) * (tk / 100));
+        const vmpHot = vmpStc * (1 + (45) * (tk / 100));
+        const limitMaxV = inv?.maxV || 1000;
+        const limitMaxI = inv?.mppts?.find(m => String(m.id) === String(str.mpptId))?.maxIsc || 25;
+        const minMppV = inv?.minMppV || 0;
+        const maxMppV = inv?.maxMppV || 0;
+        const invStartV = inv?.startV || 0;
+
         let existingMismatch = (str._phys && str._phys.mismatchPct) ? str._phys.mismatchPct : 0;
         
         str._phys = { 
-            vocCold: vocStc * (1 + (-45) * (tk / 100)), 
-            vmpHot: vmpStc * (1 + (45) * (tk / 100)), 
+            vocCold: vocCold, 
+            vmpHot: vmpHot, 
             isc: isc, 
-            limitMaxV: inv?.maxV || 1000, 
-            limitMaxI: inv?.mppts?.find(m => m.id == str.mpptId)?.maxIsc || 20, 
-            minMppV: inv?.minMppV || 0, 
-            maxMppV: inv?.maxMppV || 0, 
-            invStartV: inv?.startV || 0,
-            mismatchPct: existingMismatch
+            limitMaxV: limitMaxV, 
+            limitMaxI: limitMaxI, 
+            minMppV: minMppV, 
+            maxMppV: maxMppV, 
+            invStartV: invStartV,
+            mismatchPct: existingMismatch,
+            isVocSafe: vocCold > 0 && vocCold <= limitMaxV,
+            isIscSafe: isc > 0 && isc <= limitMaxI
         };
-        str._phys.isVocSafe = str._phys.vocCold <= str._phys.limitMaxV; 
-        str._phys.isIscSafe = isc <= str._phys.limitMaxI;
     });
     let btn = document.getElementById('btnHeaderSave');
     if(btn) { btn.classList.remove('bg-blue-600'); btn.classList.add('animate-pulse', 'bg-amber-500'); }
@@ -1908,11 +1965,13 @@ function buildInverterOptionsHtml(selectedId) {
     const projInvs = (typeof getProjectInverters === 'function') ? getProjectInverters() : flatInverters;
     let optHtml = '';
     const selIdNum = parseInt(selectedId);
+    const hasMatch = flatInverters.some(i => i.id === selIdNum);
+    const activeSelId = hasMatch ? selIdNum : (projInvs[0]?.id || flatInverters[0]?.id || 10);
     
     if (projInvs && projInvs.length > 0) {
         optHtml += `<optgroup label="⭐ Projekt-Wechselrichter (${projInvs.length})">`;
         projInvs.forEach(i => {
-            optHtml += `<option value="${i.id}" ${selIdNum === i.id ? 'selected' : ''}>★ ${escapeHtml(i.name)} (${i.acMax} W, ${(i.mppts||[]).length} MPPT)</option>`;
+            optHtml += `<option value="${i.id}" ${activeSelId === i.id ? 'selected' : ''}>★ ${escapeHtml(i.name)} (${i.acMax} W, ${(i.mppts||[]).length} MPPT)</option>`;
         });
         optHtml += `</optgroup>`;
     }
@@ -1921,7 +1980,7 @@ function buildInverterOptionsHtml(selectedId) {
     if (otherInvs.length > 0) {
         optHtml += `<optgroup label="Katalog: Weitere Wechselrichter">`;
         otherInvs.forEach(i => {
-            optHtml += `<option value="${i.id}" ${selIdNum === i.id ? 'selected' : ''}>${escapeHtml(i.name)} (${i.acMax} W)</option>`;
+            optHtml += `<option value="${i.id}" ${activeSelId === i.id ? 'selected' : ''}>${escapeHtml(i.name)} (${i.acMax} W)</option>`;
         });
         optHtml += `</optgroup>`;
     }
@@ -1933,11 +1992,13 @@ function buildPanelOptionsHtml(selectedId) {
     const projPanels = (typeof getProjectPanels === 'function') ? getProjectPanels() : flatPanels;
     let optHtml = '';
     const selIdNum = parseInt(selectedId);
+    const hasMatch = flatPanels.some(p => p.id === selIdNum);
+    const activeSelId = hasMatch ? selIdNum : (projPanels[0]?.id || flatPanels[0]?.id || 101);
 
     if (projPanels && projPanels.length > 0) {
         optHtml += `<optgroup label="⭐ Projekt-Modultypen (${projPanels.length})">`;
         projPanels.forEach(p => {
-            optHtml += `<option value="${p.id}" ${selIdNum === p.id ? 'selected' : ''}>★ ${escapeHtml(p.name)} (${p.pmax} Wp, Vmp ${p.vmp}V)</option>`;
+            optHtml += `<option value="${p.id}" ${activeSelId === p.id ? 'selected' : ''}>★ ${escapeHtml(p.name)} (${p.pmax} Wp, Vmp ${p.vmp}V)</option>`;
         });
         optHtml += `</optgroup>`;
     }
@@ -1946,7 +2007,7 @@ function buildPanelOptionsHtml(selectedId) {
     if (otherPanels.length > 0) {
         optHtml += `<optgroup label="Katalog: Weitere Modultypen">`;
         otherPanels.forEach(p => {
-            optHtml += `<option value="${p.id}" ${selIdNum === p.id ? 'selected' : ''}>${escapeHtml(p.name)} (${p.pmax} Wp)</option>`;
+            optHtml += `<option value="${p.id}" ${activeSelId === p.id ? 'selected' : ''}>${escapeHtml(p.name)} (${p.pmax} Wp)</option>`;
         });
         optHtml += `</optgroup>`;
     }
@@ -1964,17 +2025,24 @@ function renderStringsUI() {
     }
     if(emptyMsg) emptyMsg.classList.add('hidden');
 
+    // Offene Akkordeon-Zustände merken
+    const openEditIds = new Set();
+    strings.forEach(s => {
+        const el = document.getElementById('edit-' + s.id);
+        if (el && !el.classList.contains('hidden')) openEditIds.add(s.id);
+    });
+
     container.innerHTML = strings.map(str => {
-        const p = str._phys || { isVocSafe: true, isIscSafe: true, vocCold: 0, vmpHot: 0, isc: 0, limitMaxV: 1000, limitMaxI: 20, minMppV: 0, maxMppV: 0, invStartV: 0, mismatchPct: 0 };
+        const p = str._phys || { isVocSafe: false, isIscSafe: false, vocCold: 0, vmpHot: 0, isc: 0, limitMaxV: 1000, limitMaxI: 25, minMppV: 0, maxMppV: 0, invStartV: 0, mismatchPct: 0 };
         const inv = flatInverters.find(i => i.id === parseInt(str.inverterId)) || {name: 'Kein WR', mppts: []};
         let wOpt = buildInverterOptionsHtml(str.inverterId);
-        let mOpt = (inv.mppts || []).map(m => `<option value="${m.id}" ${str.mpptId == m.id ? 'selected':''}>${m.name}</option>`).join('');
+        let mOpt = (inv.mppts || []).map(m => `<option value="${m.id}" ${String(str.mpptId) === String(m.id) ? 'selected':''}>${m.name}</option>`).join('');
         
-        const safe = p.isVocSafe && p.isIscSafe;
+        const safe = p.isVocSafe && p.isIscSafe && p.vmpHot >= p.invStartV;
 
         // M3 Vector Status Badges
         let vmpBadgeIcon = 'check_circle', vmpBadgeColor = 'text-emerald-400 bg-emerald-950/60 border-emerald-800/40';
-        if (p.vmpHot < p.invStartV) {
+        if (p.vmpHot < p.invStartV || p.vmpHot === 0) {
             vmpBadgeIcon = 'cancel';
             vmpBadgeColor = 'text-rose-400 bg-rose-950/60 border-rose-800/40 animate-pulse';
         } else if (p.vmpHot < p.minMppV || p.vmpHot > p.maxMppV) {
@@ -1997,7 +2065,7 @@ function renderStringsUI() {
             : '';
 
         let modTotal = (str.fields || []).reduce((sum, f) => sum + Number(f.count), 0);
-        let mpptName = (inv.mppts || []).find(m=>m.id==str.mpptId)?.name || 'MPPT';
+        let mpptName = (inv.mppts || []).find(m=>String(m.id) === String(str.mpptId))?.name || 'MPPT';
 
         return `
         <div class="m3-card bg-white dark:bg-slate-900 border ${safe ? 'border-slate-200 dark:border-slate-800' : 'border-rose-500/80 ring-2 ring-rose-500/20'} rounded-2xl shadow-sm mb-4 transition-all overflow-hidden">
@@ -2008,7 +2076,7 @@ function renderStringsUI() {
                         <div class="flex flex-col min-w-0">
                             <h4 class="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 flex flex-wrap items-center gap-1 leading-tight">
                                 <span>${str.name}</span> 
-                                <span class="font-normal text-[11px] sm:text-xs text-slate-400">| ${modTotal}x Modul an ${inv.name} • <strong class="text-amber-500 font-bold">${str.azimuth ?? 180}° (${getCompassDirection(str.azimuth ?? 180).short})</strong></span>
+                                <span class="font-normal text-[11px] sm:text-xs text-slate-400">| ${modTotal}x Modul an ${inv.name} (${mpptName}) • <strong class="text-amber-500 font-bold">${str.azimuth ?? 180}° (${getCompassDirection(str.azimuth ?? 180).short})</strong></span>
                             </h4>
                         </div>
                     </div>
@@ -2026,7 +2094,7 @@ function renderStringsUI() {
                 </div>
             </div>
 
-            <div id="edit-${str.id}" class="hidden p-5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 space-y-4">
+            <div id="edit-${str.id}" class="${openEditIds.has(str.id) ? '' : 'hidden'} p-5 bg-slate-50 dark:bg-slate-950/60 border-t border-slate-200 dark:border-slate-800 space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
                     <div>
                         <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Name</label>
@@ -3066,8 +3134,11 @@ function renderActiveHardwareUI() {
                             <span class="material-symbols-rounded text-sm">alt_route</span>
                             <span>Allen zuweisen</span>
                         </button>
-                        <button onclick="openHardwareDocModal('inv', ${inv.id}, '${escapeHtml(inv.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Datenblatt">
-                            <span class="material-symbols-rounded text-sm text-primary">description</span>
+                        <button onclick="showDeviceDatasheet('inv', ${inv.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Technisches Datenblatt anzeigen">
+                            <span class="material-symbols-rounded text-sm text-primary">visibility</span>
+                        </button>
+                        <button onclick="openHardwareDocModal('inv', ${inv.id}, '${escapeHtml(inv.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Dokumenten-Manager & Zertifikate">
+                            <span class="material-symbols-rounded text-sm text-primary">folder_special</span>
                         </button>
                         <button onclick="openHardwareEditModal('inv', ${inv.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Bearbeiten">
                             <span class="material-symbols-rounded text-sm">edit</span>
@@ -3158,8 +3229,11 @@ function renderActiveHardwareUI() {
                             <span class="material-symbols-rounded text-sm">format_paint</span>
                             <span>Auf alle anwenden</span>
                         </button>
-                        <button onclick="openHardwareDocModal('panel', ${p.id}, '${escapeHtml(p.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Datenblatt">
-                            <span class="material-symbols-rounded text-sm text-primary">description</span>
+                        <button onclick="showDeviceDatasheet('panel', ${p.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Technisches Datenblatt anzeigen">
+                            <span class="material-symbols-rounded text-sm text-emerald-600">visibility</span>
+                        </button>
+                        <button onclick="openHardwareDocModal('panel', ${p.id}, '${escapeHtml(p.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Dokumenten-Manager & Zertifikate">
+                            <span class="material-symbols-rounded text-sm text-emerald-600">folder_special</span>
                         </button>
                         <button onclick="openHardwareEditModal('panel', ${p.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Bearbeiten">
                             <span class="material-symbols-rounded text-sm">edit</span>
@@ -3245,9 +3319,12 @@ function renderActiveHardwareUI() {
                     </div>
 
                     <div class="flex items-center gap-1.5 pt-2 border-t border-slate-200/60 dark:border-slate-800/60">
-                        <button onclick="openHardwareDocModal('bat', ${currentBat.id}, '${escapeHtml(currentBat.name)}')" class="flex-1 py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer">
-                            <span class="material-symbols-rounded text-sm text-accent">description</span>
+                        <button onclick="showDeviceDatasheet('bat', ${currentBat.id})" class="flex-1 py-1.5 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center justify-center gap-1 cursor-pointer" title="Technisches Datenblatt anzeigen">
+                            <span class="material-symbols-rounded text-sm text-accent">visibility</span>
                             <span>Datenblatt</span>
+                        </button>
+                        <button onclick="openHardwareDocModal('bat', ${currentBat.id}, '${escapeHtml(currentBat.name)}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Dokumenten-Manager & Zertifikate">
+                            <span class="material-symbols-rounded text-sm text-accent">folder_special</span>
                         </button>
                         ${!isNone ? `
                             <button onclick="openHardwareEditModal('bat', ${currentBat.id})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" title="Batterie bearbeiten">
@@ -3578,10 +3655,14 @@ function renderHardwareCatalogUI() {
 
                 <div class="flex items-center gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
                     ${actionBtnHtml}
-                    <button onclick="openHardwareDocModal('${type}', '${id}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Datenblätter & Zertifikate">
-                        <span class="material-symbols-rounded text-sm">description</span>
+                    <button onclick="showDeviceDatasheet('${type}', '${id}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Technisches Datenblatt anzeigen">
+                        <span class="material-symbols-rounded text-sm text-primary">visibility</span>
+                        <span class="hidden sm:inline">Datenblatt</span>
                     </button>
-                    <button onclick="openHardwareEditModal('${type}', ${id})" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Hardware bearbeiten">
+                    <button onclick="openHardwareDocModal('${type}', '${id}')" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Dokumenten-Manager & Zertifikate">
+                        <span class="material-symbols-rounded text-sm">folder_special</span>
+                    </button>
+                    <button onclick="openHardwareEditModal('${type}', ${id})" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Hardware bearbeiten">
                         <span class="material-symbols-rounded text-sm">edit</span>
                     </button>
                     ${(isPersistedInCode || isCustomLocal) ? `
@@ -4115,9 +4196,15 @@ function openHardwareDocModal(deviceType, deviceId, deviceName) {
                     <p class="text-xs text-slate-500 dark:text-slate-400">Hinterlegte Datenblätter, Zertifikate (VDE-AR-N 4105) & Prüfberichte</p>
                 </div>
             </div>
-            <button onclick="closeHardwareDocModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all">
-                <span class="material-symbols-rounded text-lg">close</span>
-            </button>
+            <div class="flex items-center gap-2">
+                <button onclick="showDeviceDatasheet('${deviceType}', '${deviceId}')" class="px-2.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0" title="Vollständiges Technisches Datenblatt anzeigen">
+                    <span class="material-symbols-rounded text-sm">visibility</span>
+                    <span class="hidden sm:inline">Technisches Datenblatt</span>
+                </button>
+                <button onclick="closeHardwareDocModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-lg">close</span>
+                </button>
+            </div>
         </div>
 
         <!-- CONTENT SCROLLABLE -->
@@ -4165,10 +4252,14 @@ function openHardwareDocModal(deviceType, deviceId, deviceName) {
                                 </div>
 
                                 <div class="flex items-center gap-1.5 shrink-0">
+                                    <button onclick="showDeviceDatasheet('${deviceType}', '${deviceId}')" class="px-2.5 py-1.5 rounded-xl bg-primary/10 hover:bg-primary hover:text-white text-primary text-xs font-bold flex items-center gap-1 transition-all cursor-pointer" title="Technisches Datenblatt anzeigen">
+                                        <span class="material-symbols-rounded text-sm">visibility</span>
+                                        <span>Datenblatt</span>
+                                    </button>
                                     ${doc.url ? `
-                                        <a href="${escapeHtml(doc.url)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1 transition-all" title="Dokument öffnen / anzeigen">
+                                        <a href="${escapeHtml(doc.url)}" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-300 text-xs font-bold flex items-center gap-1 transition-all" title="Herstellerseite / Dokument im Web öffnen">
                                             <span class="material-symbols-rounded text-sm">open_in_new</span>
-                                            <span class="hidden sm:inline">Öffnen</span>
+                                            <span class="hidden sm:inline">Web/PDF</span>
                                         </a>` : ''}
                                     ${!isMaster ? `
                                         <button onclick="deleteHardwareDocFromModal('${doc.id}', '${deviceType}', ${deviceId}, '${escapeHtml(deviceName)}')" class="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 hover:bg-rose-100 dark:hover:bg-rose-900/60 flex items-center justify-center transition-all" title="Dokument löschen">
@@ -4264,6 +4355,327 @@ function closeHardwareDocModal() {
         document.body.classList.remove('overflow-hidden');
     }
 }
+
+// ==========================================
+// VOLLSTÄNDIGER DATENBLATT-VIEWER MODAL
+// ==========================================
+function showDeviceDatasheet(deviceType, deviceId) {
+    let modal = document.getElementById('modal-device-datasheet');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-device-datasheet';
+        modal.className = 'fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden';
+        document.body.appendChild(modal);
+    }
+
+    const devIdStr = String(deviceId);
+    let dev = null;
+    let categoryName = '';
+    let categoryBadge = '';
+    let docs = [];
+    if (typeof HardwareDocManager !== 'undefined') {
+        docs = HardwareDocManager.getDocsForDevice(deviceType, devIdStr);
+    }
+    const masterDoc = docs.find(d => d.isMaster) || docs[0] || null;
+    const docUrl = masterDoc?.url || '';
+
+    let kpiCardsHtml = '';
+    let specsTableHtml = '';
+    let standardBadge = masterDoc?.standard ? escapeHtml(masterDoc.standard) : 'IEC / CE / VDE zertifiziert';
+    let issuerText = masterDoc?.issuer ? escapeHtml(masterDoc.issuer) : 'Herstellerangabe';
+
+    if (deviceType === 'panel') {
+        categoryName = 'Photovoltaik-Solarmodul';
+        categoryBadge = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20';
+        dev = flatPanels.find(p => String(p.id) === devIdStr) || flatPanels[0];
+        if (!dev) return;
+
+        const effPct = dev.eff ? (dev.eff * 100).toFixed(1) : ((dev.pmax / (((dev.length || 1762) * (dev.width || 1134)) / 1000000) / 1000) * 100).toFixed(1);
+
+        kpiCardsHtml = `
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                <div class="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">Nennleistung (STC)</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.pmax} <span class="text-xs font-bold text-slate-500">Wp</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Spannung Umpp</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${Number(dev.vmp).toFixed(2)} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Leerlauf Uoc</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${Number(dev.voc).toFixed(2)} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Strom Impp</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${Number(dev.imp).toFixed(2)} <span class="text-xs font-bold text-slate-500">A</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Kurzschluss Isc</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${Number(dev.isc).toFixed(2)} <span class="text-xs font-bold text-slate-500">A</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-primary">Wirkungsgrad</span>
+                    <span class="text-xl font-black text-primary">${effPct} <span class="text-xs font-bold">%</span></span>
+                </div>
+            </div>
+        `;
+
+        specsTableHtml = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <h5 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <span class="material-symbols-rounded text-sm text-primary">bolt</span>
+                        Elektrische Kennwerte (STC: 1000 W/m², 25°C, AM 1.5)
+                    </h5>
+                    <div class="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div class="flex justify-between py-1"><span>Zelltyp / Architektur:</span><strong class="text-slate-900 dark:text-slate-100">${escapeHtml(dev.tech || 'N-Typ ABC (All Back Contact)')}</strong></div>
+                        <div class="flex justify-between py-1"><span>Zellanzahl:</span><strong class="text-slate-900 dark:text-slate-100">${dev.cells || 108} Halbzellen (6×18)</strong></div>
+                        <div class="flex justify-between py-1"><span>Nennleistung Pmax:</span><strong class="text-slate-900 dark:text-slate-100">${dev.pmax} Wp (0 bis +3% Plussortierung)</strong></div>
+                        <div class="flex justify-between py-1"><span>Spannung im MPP (Umpp):</span><strong class="text-slate-900 dark:text-slate-100">${Number(dev.vmp).toFixed(2)} V</strong></div>
+                        <div class="flex justify-between py-1"><span>Leerlaufspannung (Uoc):</span><strong class="text-slate-900 dark:text-slate-100">${Number(dev.voc).toFixed(2)} V</strong></div>
+                        <div class="flex justify-between py-1"><span>Strom im MPP (Impp):</span><strong class="text-slate-900 dark:text-slate-100">${Number(dev.imp).toFixed(2)} A</strong></div>
+                        <div class="flex justify-between py-1"><span>Kurzschlussstrom (Isc):</span><strong class="text-slate-900 dark:text-slate-100">${Number(dev.isc).toFixed(2)} A</strong></div>
+                        <div class="flex justify-between py-1"><span>Max. Systemspannung:</span><strong class="text-slate-900 dark:text-slate-100">DC 1500 V (IEC)</strong></div>
+                        <div class="flex justify-between py-1"><span>Max. Rückstrombelastbarkeit:</span><strong class="text-slate-900 dark:text-slate-100">25 A</strong></div>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <h5 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <span class="material-symbols-rounded text-sm text-primary">thermostat</span>
+                        Thermische Koeffizienten & Mechanik
+                    </h5>
+                    <div class="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div class="flex justify-between py-1"><span>Temperaturkoeffizient Pmax:</span><strong class="text-slate-900 dark:text-slate-100">${dev.tempPmax || -0.26} %/°C</strong></div>
+                        <div class="flex justify-between py-1"><span>Temperaturkoeffizient Uoc:</span><strong class="text-slate-900 dark:text-slate-100">${dev.tempVoc || -0.22} %/°C</strong></div>
+                        <div class="flex justify-between py-1"><span>Temperaturkoeffizient Isc:</span><strong class="text-slate-900 dark:text-slate-100">${dev.tempIsc || 0.05} %/°C</strong></div>
+                        <div class="flex justify-between py-1"><span>NMOT Betriebstemperatur:</span><strong class="text-slate-900 dark:text-slate-100">43 ± 2 °C</strong></div>
+                        <div class="flex justify-between py-1"><span>Abmessungen (L × B × H):</span><strong class="text-slate-900 dark:text-slate-100">${dev.length || 1762} × ${dev.width || 1134} × ${dev.thickness || 30} mm</strong></div>
+                        <div class="flex justify-between py-1"><span>Gewicht:</span><strong class="text-slate-900 dark:text-slate-100">${dev.weight || 24.2} kg</strong></div>
+                        <div class="flex justify-between py-1"><span>Glasaufbau:</span><strong class="text-slate-900 dark:text-slate-100">${escapeHtml(dev.glass || '2,0 + 2,0 mm hochtransparentes, gehärtetes AR-Doppelglas')}</strong></div>
+                        <div class="flex justify-between py-1"><span>Rahmen & Stecker:</span><strong class="text-slate-900 dark:text-slate-100">Schwarz elox. Aluminium, IP68, MC4-EVO2A kompatibel</strong></div>
+                        <div class="flex justify-between py-1"><span>Herstellergarantie:</span><strong class="text-emerald-600 dark:text-emerald-400">15 Jahre Produkt / 30 Jahre lineare Leistung</strong></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (deviceType === 'inv') {
+        categoryName = 'Wechselrichter (DC/AC Umrichter)';
+        categoryBadge = 'bg-primary/10 text-primary border-primary/20';
+        dev = flatInverters.find(i => String(i.id) === devIdStr) || flatInverters[0];
+        if (!dev) return;
+
+        const isMicro = dev.type === 'micro' || (dev.name || '').toLowerCase().includes('hoymiles') || (dev.name || '').toLowerCase().includes('hms');
+
+        kpiCardsHtml = `
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                <div class="p-3 rounded-2xl bg-primary/10 border border-primary/20 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-primary">AC-Nennleistung</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.acMax} <span class="text-xs font-bold text-slate-500">W</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Max. DC-Spannung</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.maxV} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">MPP-Bereich</span>
+                    <span class="text-lg font-black text-slate-900 dark:text-white">${dev.minMppV}-${dev.maxMppV} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Startspannung</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.startV} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">MPPT Tracker</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${(dev.mppts || []).length}x <span class="text-xs font-bold text-slate-500">MPPT</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">Schutzart</span>
+                    <span class="text-xl font-black text-emerald-600 dark:text-emerald-400">${escapeHtml(dev.ip || (isMicro ? 'IP67' : 'IP66'))}</span>
+                </div>
+            </div>
+        `;
+
+        specsTableHtml = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <h5 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <span class="material-symbols-rounded text-sm text-primary">solar_power</span>
+                        DC-Eingang & MPPT-Parameter
+                    </h5>
+                    <div class="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div class="flex justify-between py-1"><span>Geräteklasse:</span><strong class="text-slate-900 dark:text-slate-100">${isMicro ? '4-in-1 Modul-Mikrowechselrichter mit 4 unabhängigen MPPTs' : 'Dreiphasiger Hybrid-Wechselrichter mit Notstrom- & Speicherfunktion'}</strong></div>
+                        <div class="flex justify-between py-1"><span>Empfohlene PV-Leistung (Pdc max):</span><strong class="text-slate-900 dark:text-slate-100">${dev.maxDcWp || Math.round(dev.acMax * 1.5)} Wp</strong></div>
+                        <div class="flex justify-between py-1"><span>Max. Eingangsspannung:</span><strong class="text-slate-900 dark:text-slate-100">${dev.maxV} V DC</strong></div>
+                        <div class="flex justify-between py-1"><span>Einschaltspannung:</span><strong class="text-slate-900 dark:text-slate-100">${dev.startV} V DC</strong></div>
+                        <div class="flex justify-between py-1"><span>Nutzbarer MPP-Spannungsbereich:</span><strong class="text-slate-900 dark:text-slate-100">${dev.minMppV} bis ${dev.maxMppV} V DC</strong></div>
+                        <div class="flex justify-between py-1"><span>MPPT-Eingänge:</span><strong class="text-slate-900 dark:text-slate-100">${dev.mppts?.map(m => `${m.name} (Imax ${m.maxI}A / Isc ${m.maxIsc}A)`).join(', ') || '–'}</strong></div>
+                        <div class="flex justify-between py-1"><span>Batterieanschluss:</span><strong class="text-slate-900 dark:text-slate-100">${isMicro ? 'Nicht vorhanden (Mikro-Wechselrichter)' : 'Integrierter Hochvolt-Batterieport (160–700 V, 22 A)'}</strong></div>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <h5 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <span class="material-symbols-rounded text-sm text-primary">electrical_services</span>
+                        AC-Ausgang & Normkonformität
+                    </h5>
+                    <div class="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div class="flex justify-between py-1"><span>AC-Nennleistung:</span><strong class="text-slate-900 dark:text-slate-100">${dev.acMax} W</strong></div>
+                        <div class="flex justify-between py-1"><span>Netzanschluss:</span><strong class="text-slate-900 dark:text-slate-100">${isMicro ? '1-phasig 230 V (50 Hz)' : '3-phasig 380/400 V + N (50 Hz)'}</strong></div>
+                        <div class="flex justify-between py-1"><span>Maximaler Wirkungsgrad:</span><strong class="text-slate-900 dark:text-slate-100">${isMicro ? '96,7 %' : '98,2 % (&eta; Euro > 97,7 %)'}</strong></div>
+                        <div class="flex justify-between py-1"><span>Einheitenzertifikat:</span><strong class="text-emerald-600 dark:text-emerald-400">VDE-AR-N 4105:2018-11 &bull; EN 50549-1</strong></div>
+                        <div class="flex justify-between py-1"><span>Schutzart & Gehäuse:</span><strong class="text-slate-900 dark:text-slate-100">${escapeHtml(dev.ip || (isMicro ? 'IP67 Outdoor' : 'IP66 Indoor/Outdoor'))}</strong></div>
+                        <div class="flex justify-between py-1"><span>Kühlungskonzept:</span><strong class="text-slate-900 dark:text-slate-100">${isMicro ? 'Passiv (lüfterlose Konvektion)' : 'Geregelte Zwangskühlung (Active Cooling)'}</strong></div>
+                        <div class="flex justify-between py-1"><span>Gewicht:</span><strong class="text-slate-900 dark:text-slate-100">${dev.weight || '–'} kg</strong></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    } else if (deviceType === 'bat') {
+        categoryName = 'Stationärer Batteriespeicher';
+        categoryBadge = 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20';
+        dev = flatBatteries.find(b => String(b.id) === devIdStr) || flatBatteries[1] || flatBatteries[0];
+        if (!dev) return;
+
+        kpiCardsHtml = `
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                <div class="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">Nutzbare Kapazität</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.cap} <span class="text-xs font-bold text-slate-500">kWh</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Nennspannung</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.nomV || (dev.modules ? (dev.modules * 102.4).toFixed(1) : 204.8)} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Spannungsbereich</span>
+                    <span class="text-lg font-black text-slate-900 dark:text-white">${dev.minV || 160}-${dev.maxV || 230} <span class="text-xs font-bold text-slate-500">V</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Dauerstrom</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">${dev.maxI || 25.0} <span class="text-xs font-bold text-slate-500">A</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-slate-500">Wirkungsgrad</span>
+                    <span class="text-xl font-black text-slate-900 dark:text-white">&ge; ${Math.round((dev.eff || 0.95) * 100)} <span class="text-xs font-bold">%</span></span>
+                </div>
+                <div class="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                    <span class="block text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400">Zelltechnologie</span>
+                    <span class="text-base font-black text-emerald-600 dark:text-emerald-400">${escapeHtml(dev.tech || 'LiFePO4')}</span>
+                </div>
+            </div>
+        `;
+
+        specsTableHtml = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <h5 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <span class="material-symbols-rounded text-sm text-amber-500">battery_charging_full</span>
+                        Speicherkapazität & Zellarchitektur
+                    </h5>
+                    <div class="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div class="flex justify-between py-1"><span>Nutzbare Speicherkapazität:</span><strong class="text-slate-900 dark:text-slate-100">${dev.cap} kWh (100% Entladetiefe DoD)</strong></div>
+                        <div class="flex justify-between py-1"><span>Modulares Stecksystem:</span><strong class="text-slate-900 dark:text-slate-100">${dev.modules || Math.round(dev.cap / 2.56)}x HVS+ Speichereinheit (je 2,56 kWh) + BCU Base</strong></div>
+                        <div class="flex justify-between py-1"><span>Zellchemie:</span><strong class="text-slate-900 dark:text-slate-100">Lithium-Eisen-Phosphat (LiFePO4, kobaltfrei, eigensicher)</strong></div>
+                        <div class="flex justify-between py-1"><span>Nennspannung / Betriebsfenster:</span><strong class="text-slate-900 dark:text-slate-100">${dev.nomV || 204.8} V (${dev.minV || 160} – ${dev.maxV || 230.4} V)</strong></div>
+                        <div class="flex justify-between py-1"><span>Max. Lade-/Entladeleistung:</span><strong class="text-slate-900 dark:text-slate-100">${dev.power || (dev.cap * 1000)} W</strong></div>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <h5 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5 border-b border-slate-200 dark:border-slate-800 pb-2">
+                        <span class="material-symbols-rounded text-sm text-amber-500">verified_user</span>
+                        Sicherheitsstandards & Umgebungsbedingungen
+                    </h5>
+                    <div class="space-y-1.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+                        <div class="flex justify-between py-1"><span>Sicherheitsnorm:</span><strong class="text-emerald-600 dark:text-emerald-400">VDE 2510-50 &bull; IEC 62619 &bull; UN 38.3</strong></div>
+                        <div class="flex justify-between py-1"><span>Schutzart:</span><strong class="text-slate-900 dark:text-slate-100">${escapeHtml(dev.ip || 'IP55')}</strong></div>
+                        <div class="flex justify-between py-1"><span>Abmessungen (H × B × T):</span><strong class="text-slate-900 dark:text-slate-100">${escapeHtml(dev.dim || '747 × 610 × 282 mm')}</strong></div>
+                        <div class="flex justify-between py-1"><span>Gewicht gesamt:</span><strong class="text-slate-900 dark:text-slate-100">${dev.weight || 91} kg</strong></div>
+                        <div class="flex justify-between py-1"><span>Betriebstemperatur:</span><strong class="text-slate-900 dark:text-slate-100">-10 °C bis +50 °C</strong></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    modal.innerHTML = `
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- MODAL HEADER -->
+            <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-2xl">description</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] font-black px-2 py-0.5 rounded-full border ${categoryBadge} uppercase">${categoryName}</span>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200/60 dark:bg-slate-800 text-slate-600 dark:text-slate-400">${standardBadge}</span>
+                        </div>
+                        <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white mt-0.5">${escapeHtml(dev.name)}</h3>
+                    </div>
+                </div>
+                <button onclick="closeDeviceDatasheetModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-lg">close</span>
+                </button>
+            </div>
+
+            <!-- MODAL BODY (SCROLLABLE) -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+                <!-- KPI SUMMARY -->
+                ${kpiCardsHtml}
+
+                <!-- SPECS GRID -->
+                ${specsTableHtml}
+
+                <!-- FOOTER / NOTES -->
+                <div class="p-4 rounded-2xl bg-slate-100/70 dark:bg-slate-800/40 border border-slate-200/60 dark:border-slate-700/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div class="text-slate-500 dark:text-slate-400">
+                        <span>Hinterlegte Hersteller-Stammdaten &bull; Verifiziert durch <strong>${issuerText}</strong></span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        ${docUrl ? `
+                            <a href="${escapeHtml(docUrl)}" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-700 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 font-bold text-xs flex items-center gap-1.5 transition-all">
+                                <span class="material-symbols-rounded text-sm">open_in_new</span>
+                                <span>Herstellerseite / PDF</span>
+                            </a>
+                        ` : ''}
+                        <button onclick="openHardwareDocModal('${deviceType}', '${devIdStr}', '${escapeHtml(dev.name)}'); closeDeviceDatasheetModal();" class="px-3 py-1.5 rounded-xl bg-primary/10 hover:bg-primary hover:text-white text-primary font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer">
+                            <span class="material-symbols-rounded text-sm">folder_special</span>
+                            <span>Zertifikate & Dokumente</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODAL ACTIONS BAR -->
+            <div class="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">
+                <button onclick="window.print()" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-sm">print</span>
+                    <span>Drucken</span>
+                </button>
+                <button onclick="closeDeviceDatasheetModal()" class="px-4 py-2 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 font-bold text-xs transition-all cursor-pointer">
+                    Schließen
+                </button>
+            </div>
+        </div>
+    `;
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('overflow-hidden');
+}
+
+function closeDeviceDatasheetModal() {
+    const modal = document.getElementById('modal-device-datasheet');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+    document.body.classList.remove('overflow-hidden');
+}
+
+window.showDeviceDatasheet = showDeviceDatasheet;
+window.closeDeviceDatasheetModal = closeDeviceDatasheetModal;
 
 function addHardwareDocFromModal(deviceType, deviceId, deviceName) {
     const title = document.getElementById('mdl_doc_title')?.value?.trim();

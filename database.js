@@ -5,11 +5,11 @@
 // ==========================================
 const MasterDB = {
     panels: [
-        { series: "AIKO Neostar 2S+ (N-Typ ABC)", models: [
-            { id: 101, name: "AIKO Neostar 2S+ 460W (MCE54Db)", pmax: 460, voc: 40.50, vmp: 34.10, isc: 14.66, imp: 13.50, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.230 },
-            { id: 102, name: "AIKO Neostar 2S+ 465W (MCE54Db)", pmax: 465, voc: 40.60, vmp: 34.20, isc: 14.69, imp: 13.60, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.233 },
-            { id: 103, name: "AIKO Neostar 2S+ 470W (MCE54Db)", pmax: 470, voc: 40.70, vmp: 34.30, isc: 14.72, imp: 13.71, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.235 },
-            { id: 104, name: "AIKO Neostar 2S+ 475W (MCE54Db)", pmax: 475, voc: 40.80, vmp: 34.40, isc: 14.76, imp: 13.81, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.238 }
+        { series: "AIKO Neostar 3S+ (N-Typ ABC)", models: [
+            { id: 101, name: "AIKO Neostar 3S+ 460W (MCE54Db)", pmax: 460, voc: 40.50, vmp: 34.10, isc: 14.66, imp: 13.50, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.230 },
+            { id: 102, name: "AIKO Neostar 3S+ 465W (MCE54Db)", pmax: 465, voc: 40.60, vmp: 34.20, isc: 14.69, imp: 13.60, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.233 },
+            { id: 103, name: "AIKO Neostar 3S+ 470W (MCE54Db)", pmax: 470, voc: 40.70, vmp: 34.30, isc: 14.72, imp: 13.71, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.235 },
+            { id: 104, name: "AIKO Neostar 3S+ 475W (MCE54Db)", pmax: 475, voc: 40.80, vmp: 34.40, isc: 14.76, imp: 13.81, tempVoc: -0.22, tempPmax: -0.26, tempIsc: 0.05, weight: 24.2, width: 1134, length: 1762, thickness: 30, glass: "2.0+2.0 mm Doppelglas", tech: "N-Typ ABC", cells: 108, eff: 0.238 }
         ]}
     ],
     batteries: [
@@ -228,12 +228,13 @@ const HardwareDocManager = {
                 fileName: MasterHardwareDocs.panel_aiko.fileName,
                 notes: MasterHardwareDocs.panel_aiko.description,
                 specs: MasterHardwareDocs.panel_aiko.specs,
-                url: '',
+                url: 'https://aikosolar.com/de/all-black-double-glass/',
                 isMaster: true
             }];
         } else if (deviceType === 'inv') {
             const isHoymiles = ['198', '199', '200'].includes(String(deviceId)) || (typeof flatInverters !== 'undefined' && flatInverters.find(i => String(i.id) === String(deviceId))?.name?.toLowerCase().includes('hoymiles'));
             const docInfo = isHoymiles ? MasterHardwareDocs.inv_hoymiles : MasterHardwareDocs.inv_fronius;
+            const url = isHoymiles ? 'https://www.hoymiles.com/de/product/microinverter/hms-1600-1800-2000-4t/' : 'https://www.fronius.com/de-de/germany/solarenergie/installateure-partner/produkte-loesungen/wechselrichter/symo-gen24-plus';
             return [{
                 id: isHoymiles ? 'master_doc_inv_hoymiles' : 'master_doc_inv_fronius',
                 deviceType: 'inv',
@@ -245,7 +246,7 @@ const HardwareDocManager = {
                 fileName: docInfo.fileName,
                 notes: docInfo.description,
                 specs: docInfo.specs,
-                url: '',
+                url: url,
                 isMaster: true
             }];
         } else if (deviceType === 'bat') {
@@ -261,7 +262,7 @@ const HardwareDocManager = {
                 fileName: MasterHardwareDocs.bat_byd.fileName,
                 notes: MasterHardwareDocs.bat_byd.description,
                 specs: MasterHardwareDocs.bat_byd.specs,
-                url: '',
+                url: 'https://www.bydbatterybox.com/de/product/battery-box-premium-hvs/',
                 isMaster: true
             }];
         }

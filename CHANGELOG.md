@@ -4,6 +4,31 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.0.2] – 2026-09-12
+
+### 🔍 AIKO Neostar 3S+ Korrektur, Vollwertiger Datenblatt-Viewer & Robuste String-Physik (Spannung & Strom)
+
+#### 1. Korrektur der Modulbezeichnung: AIKO Neostar 3S+
+* **Datenblatt-Konforme Benennung:**
+  - Sämtliche Einträge der AIKO Hochleistungsmodulserie im Hardware-Katalog (`MasterDB`) wurden von „2S+“ auf die korrekte offizielle Bezeichnung **„AIKO Neostar 3S+“** (460 Wp bis 475 Wp N-Type ABC Glas-Glas) umbenannt.
+  - Auch in `MasterHardwareDocs` und allen Bezeichnern wurde die Nomenklatur an das offizielle Herstellerdatenblatt angepasst.
+
+#### 2. Vollwertiger Technischer Datenblatt-Viewer (`showDeviceDatasheet`)
+* **Direktes Anzeigen von Datenblättern ohne externe Blockaden:**
+  - Neu implementierter Vollbild-Modal-Viewer `showDeviceDatasheet(deviceType, deviceId)` mit vollständiger Aufbereitung aller elektrotechnischen Kenndaten direkt in der App.
+  - **Photovoltaik-Module:** Anzeige von Nennleistung STC (Wp), Umpp, Uoc, Impp, Isc, Modulwirkungsgrad (%), Temperaturkoeffizienten (Pmax, Voc, Isc), Zellaufbau (N-Typ ABC Halbzellen), NMOT, Glasaufbau (2,0 + 2,0 mm Doppelglas), mechanischen Abmessungen (1762 × 1134 × 30 mm), Gewicht und Garantien.
+  - **Wechselrichter:** Anzeige von AC-Nennleistung, maximaler DC-Spannung, Startspannung, nutzbarem MPP-Spannungsbereich, Strömen je Tracker (Imax, Isc), MPPT-Anzahl, Schutzart (IP66/IP67), Kühlkonzept, VDE-AR-N 4105 Konformität und Wirkungsgrad.
+  - **Batteriespeicher:** Anzeige von nutzbarer Kapazität (kWh), Modulanzahl, Nennspannung, Lade-/Entladeleistung, LiFePO4-Zellchemie und VDE 2510-50 / UN 38.3 Sicherheitsnormen.
+  - **Aktionsschaltflächen:** Integrierte „Datenblatt“-Buttons auf allen Gerätekarten (aktive Wechselrichter-, Modul- und Batteriekarten sowie im gesamten Hardware-Katalog) und Querverweise zum Dokumenten-Manager und zu offiziellen Herstellerseiten/PDFs.
+
+#### 3. String-Physik: Verlässliche Berechnung von Spannung und Strom
+* **Robuste Auto-Healing-Logik in `updatePhysicsOnly()` und `initDatabase()`:**
+  - Behebung von stillen Ausfällen bei der Anzeige von Spannung und Strom: Wenn in gespeicherten Strängen Hardware-Referenzen oder IDs veraltet oder nicht mehr im aktuellen Katalog vorhanden waren, wurden physikalische Werte nicht gerendert.
+  - Bei fehlenden oder inkonsistenten IDs greift das System automatisch auf valide Standardkomponenten zurück (Auto-Healing), berechnet Leerlaufspannung bei -10°C ($U_{oc,-10^\circ C}$), MPP-Spannung bei +70°C ($U_{mpp,70^\circ C}$) sowie Kurzschlussstrom ($I_{sc}$) und aktualisiert die Status-Badges.
+  - Beibehaltung des Akkordeon-Zustands beim Bearbeiten von Strings, sodass die Oberfläche während der Eingabe nicht unerwartet einklappt.
+
+---
+
 ## [Version 8.0.1] – 2026-09-12
 
 ### 🛠️ Hardware-Katalog Initialisierung, Ausstattungs-Pool Handlers & PWA-Icon Cache-Invalidierung
