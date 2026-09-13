@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 8.0.3 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
+    <title>PV-Planung Pro 8.1 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 8.0.3 - Professionelle Photovoltaik-Planung & VDE 0100-712">
+    <meta property="og:title" content="PV-Planung Pro 8.1 - Professionelle Photovoltaik-Planung & VDE 0100-712">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=8.0.3">
+    <link rel="manifest" href="manifest.json?v=8.1">
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.0.3">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.0.3">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.0.3">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.0.3">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.1">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.1">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.1">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.1">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -185,7 +185,7 @@
                     <div class="shrink-0">
                         <h1 class="text-sm sm:text-base md:text-xl font-extrabold tracking-tight text-white leading-none flex items-center gap-1 sm:gap-1.5">
                             <span>PV-Planung</span>
-                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 8.0.3</span>
+                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 8.1</span>
                         </h1>
                     </div>
 
@@ -454,16 +454,32 @@
                     <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <span class="material-symbols-rounded text-amber-500">solar_power</span> 1. Module & Unterkonstruktion
                     </h3>
-                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat1">0 €</span>
-                </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Solarmodule Gesamt (€)</label>
-                        <input type="number" step="10" id="inv_cost_panels" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <button type="button" onclick="addCustomInvestItem(1)" class="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="Zusätzliche Position hinzufügen">
+                            <span class="material-symbols-rounded text-sm">add</span>
+                            <span class="hidden xs:inline">Position</span>
+                        </button>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat1">0 €</span>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Unterkonstruktion / Schienen (€)</label>
-                        <input type="number" step="10" id="inv_cost_mounting" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                </div>
+                <div class="p-5">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Solarmodule Gesamt (€)</label>
+                            <input type="number" step="10" id="inv_cost_panels" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Unterkonstruktion / Schienen (€)</label>
+                            <input type="number" step="10" id="inv_cost_mounting" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                    </div>
+                    <!-- Dynamische Zusatzpositionen für Kategorie 1 -->
+                    <div id="custom_invest_cat1_container" class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5 hidden"></div>
+                    <div class="mt-3 flex justify-start">
+                        <button type="button" onclick="addCustomInvestItem(1)" class="text-xs text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer transition-colors">
+                            <span class="material-symbols-rounded text-base">add_circle</span>
+                            <span>+ Position hinzufügen</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -474,20 +490,36 @@
                     <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <span class="material-symbols-rounded text-primary">bolt</span> 2. Leistungselektronik & Speicher
                     </h3>
-                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat2">0 €</span>
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <button type="button" onclick="addCustomInvestItem(2)" class="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="Zusätzliche Position hinzufügen">
+                            <span class="material-symbols-rounded text-sm">add</span>
+                            <span class="hidden xs:inline">Position</span>
+                        </button>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat2">0 €</span>
+                    </div>
                 </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Wechselrichter (€)</label>
-                        <input type="number" step="10" id="inv_cost_inverter" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                <div class="p-5">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Wechselrichter (€)</label>
+                            <input type="number" step="10" id="inv_cost_inverter" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Batteriespeicher (€)</label>
+                            <input type="number" step="10" id="inv_cost_battery" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Smart Meter / Backup Box (€)</label>
+                            <input type="number" step="10" id="inv_cost_smartmeter" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Batteriespeicher (€)</label>
-                        <input type="number" step="10" id="inv_cost_battery" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Smart Meter / Backup Box (€)</label>
-                        <input type="number" step="10" id="inv_cost_smartmeter" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                    <!-- Dynamische Zusatzpositionen für Kategorie 2 -->
+                    <div id="custom_invest_cat2_container" class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5 hidden"></div>
+                    <div class="mt-3 flex justify-start">
+                        <button type="button" onclick="addCustomInvestItem(2)" class="text-xs text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer transition-colors">
+                            <span class="material-symbols-rounded text-base">add_circle</span>
+                            <span>+ Position hinzufügen</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -498,20 +530,36 @@
                     <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <span class="material-symbols-rounded text-amber-500">electrical_services</span> 3. Elektroinstallation & Zubehör
                     </h3>
-                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat3">0 €</span>
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <button type="button" onclick="addCustomInvestItem(3)" class="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="Zusätzliche Position hinzufügen">
+                            <span class="material-symbols-rounded text-sm">add</span>
+                            <span class="hidden xs:inline">Position</span>
+                        </button>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat3">0 €</span>
+                    </div>
                 </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">DC-Kabel & Stecker (€)</label>
-                        <input type="number" step="10" id="inv_cost_cables" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                <div class="p-5">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">DC-Kabel & Stecker (€)</label>
+                            <input type="number" step="10" id="inv_cost_cables" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Überspannungsschutz / GAK (€)</label>
+                            <input type="number" step="10" id="inv_cost_gak" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Zählerschrank / AC-Material (€)</label>
+                            <input type="number" step="10" id="inv_cost_acmat" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Überspannungsschutz / GAK (€)</label>
-                        <input type="number" step="10" id="inv_cost_gak" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Zählerschrank / AC-Material (€)</label>
-                        <input type="number" step="10" id="inv_cost_acmat" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                    <!-- Dynamische Zusatzpositionen für Kategorie 3 -->
+                    <div id="custom_invest_cat3_container" class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5 hidden"></div>
+                    <div class="mt-3 flex justify-start">
+                        <button type="button" onclick="addCustomInvestItem(3)" class="text-xs text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer transition-colors">
+                            <span class="material-symbols-rounded text-base">add_circle</span>
+                            <span>+ Position hinzufügen</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -522,20 +570,36 @@
                     <h3 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                         <span class="material-symbols-rounded text-blue-500">construction</span> 4. Montage, Abnahme & Sonstiges
                     </h3>
-                    <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat4">0 €</span>
+                    <div class="flex items-center gap-2 sm:gap-3">
+                        <button type="button" onclick="addCustomInvestItem(4)" class="px-2.5 py-1 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="Zusätzliche Position hinzufügen">
+                            <span class="material-symbols-rounded text-sm">add</span>
+                            <span class="hidden xs:inline">Position</span>
+                        </button>
+                        <span class="text-xs font-bold text-slate-600 dark:text-slate-300 font-mono" id="sub_invest_cat4">0 €</span>
+                    </div>
                 </div>
-                <div class="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Dachmontage / Gerüst (€)</label>
-                        <input type="number" step="10" id="inv_cost_scaffold" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                <div class="p-5">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Dachmontage / Gerüst (€)</label>
+                            <input type="number" step="10" id="inv_cost_scaffold" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Elektriker-Abnahme / IBN (€)</label>
+                            <input type="number" step="10" id="inv_cost_electrician" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Sonstiges / Puffer (€)</label>
+                            <input type="number" step="10" id="inv_cost_misc" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                        </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Elektriker-Abnahme / IBN (€)</label>
-                        <input type="number" step="10" id="inv_cost_electrician" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 mb-1 uppercase">Sonstiges / Puffer (€)</label>
-                        <input type="number" step="10" id="inv_cost_misc" value="0" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 text-sm outline-none focus:border-primary" oninput="calcInvestTotal()">
+                    <!-- Dynamische Zusatzpositionen für Kategorie 4 -->
+                    <div id="custom_invest_cat4_container" class="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 space-y-2.5 hidden"></div>
+                    <div class="mt-3 flex justify-start">
+                        <button type="button" onclick="addCustomInvestItem(4)" class="text-xs text-primary hover:text-primary-hover font-semibold flex items-center gap-1 cursor-pointer transition-colors">
+                            <span class="material-symbols-rounded text-base">add_circle</span>
+                            <span>+ Position hinzufügen</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1455,12 +1519,12 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V8.0.3 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=8.0.3"></script>
-    <script src="database.js?v=8.0.3"></script>
-    <script src="content.js?v=8.0.3"></script>
-    <script src="app.js?v=8.0.3"></script>
-    <script src="wiring.js?v=8.0.3"></script>
-    <script src="dossier.js?v=8.0.3"></script>
+    <!-- MODULARE ARCHITEKTUR V8.1 (Separation of Concerns & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=8.1"></script>
+    <script src="database.js?v=8.1"></script>
+    <script src="content.js?v=8.1"></script>
+    <script src="app.js?v=8.1"></script>
+    <script src="wiring.js?v=8.1"></script>
+    <script src="dossier.js?v=8.1"></script>
 </body>
 </html>

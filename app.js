@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.0.2';
+        if (verEl) verEl.innerText = 'Pro 8.1';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -2338,6 +2338,15 @@ function build8760ConsumptionArray(pvProfile = null) {
 // ==========================================
 // 5. INVESTITIONSKOSTEN-LOGIK
 // ==========================================
+// INVESTITIONSKOSTEN & DYNAMISCHE POSITIONEN
+// ==========================================
+let customInvestPositions = {
+    1: [],
+    2: [],
+    3: [],
+    4: []
+};
+
 function parseCost(val) {
     if (!val) return 0;
     let n = parseFloat(String(val).replace(',', '.'));
@@ -2356,16 +2365,23 @@ function getInvestConfig() {
         acmat: parseCost(document.getElementById('inv_cost_acmat')?.value),
         scaffold: parseCost(document.getElementById('inv_cost_scaffold')?.value),
         electrician: parseCost(document.getElementById('inv_cost_electrician')?.value),
-        misc: parseCost(document.getElementById('inv_cost_misc')?.value)
+        misc: parseCost(document.getElementById('inv_cost_misc')?.value),
+        customItems: JSON.parse(JSON.stringify(customInvestPositions))
     };
 }
 
 function calcInvestTotal() {
     let inv = getInvestConfig();
-    let cat1 = inv.panels + inv.mounting;
-    let cat2 = inv.inverter + inv.battery + inv.smartmeter;
-    let cat3 = inv.cables + inv.gak + inv.acmat;
-    let cat4 = inv.scaffold + inv.electrician + inv.misc;
+
+    let cat1Custom = (customInvestPositions[1] || []).reduce((sum, item) => sum + parseCost(item.cost), 0);
+    let cat2Custom = (customInvestPositions[2] || []).reduce((sum, item) => sum + parseCost(item.cost), 0);
+    let cat3Custom = (customInvestPositions[3] || []).reduce((sum, item) => sum + parseCost(item.cost), 0);
+    let cat4Custom = (customInvestPositions[4] || []).reduce((sum, item) => sum + parseCost(item.cost), 0);
+
+    let cat1 = inv.panels + inv.mounting + cat1Custom;
+    let cat2 = inv.inverter + inv.battery + inv.smartmeter + cat2Custom;
+    let cat3 = inv.cables + inv.gak + inv.acmat + cat3Custom;
+    let cat4 = inv.scaffold + inv.electrician + inv.misc + cat4Custom;
     let total = cat1 + cat2 + cat3 + cat4;
 
     let c1El = document.getElementById('sub_invest_cat1'); if(c1El) c1El.innerText = Math.round(cat1).toLocaleString('de-DE') + " €";
@@ -2379,7 +2395,100 @@ function calcInvestTotal() {
         if(sysCostEl) sysCostEl.value = Math.round(total);
     }
     localStorage.setItem('pvpro_invest', JSON.stringify(inv));
+    return total;
 }
+
+function renderAllCustomInvestItems() {
+    [1, 2, 3, 4].forEach(cat => renderCustomInvestCategory(cat));
+}
+
+function renderCustomInvestCategory(cat) {
+    const container = document.getElementById(`custom_invest_cat${cat}_container`);
+    if (!container) return;
+
+    const items = customInvestPositions[cat] || [];
+    if (items.length === 0) {
+        container.innerHTML = '';
+        container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    container.innerHTML = items.map((item) => `
+        <div id="custom_inv_row_${item.id}" class="flex items-center gap-2 sm:gap-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80 transition-all">
+            <div class="flex-1 min-w-0">
+                <input type="text" value="${escapeHtml(item.name || '')}" placeholder="Bezeichnung der Position..."
+                       class="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg px-3 py-1.5 text-xs sm:text-sm font-medium outline-none focus:border-primary text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                       oninput="updateCustomInvestItemName(${cat}, '${item.id}', this.value)">
+            </div>
+            <div class="w-28 sm:w-36 shrink-0 flex items-center gap-1.5">
+                <input type="number" step="10" value="${item.cost !== undefined && item.cost !== null ? item.cost : ''}" placeholder="0"
+                       class="w-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 rounded-lg px-2.5 py-1.5 text-xs sm:text-sm font-bold text-right outline-none focus:border-primary text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+                       oninput="updateCustomInvestItemCost(${cat}, '${item.id}', this.value)">
+                <span class="text-xs font-bold text-slate-500 shrink-0">€</span>
+            </div>
+            <button type="button" onclick="removeCustomInvestItem(${cat}, '${item.id}')" 
+                    class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0" 
+                    title="Position entfernen">
+                <span class="material-symbols-rounded text-base sm:text-lg">delete</span>
+            </button>
+        </div>
+    `).join('');
+}
+
+function addCustomInvestItem(cat) {
+    if (!customInvestPositions[cat]) customInvestPositions[cat] = [];
+    const newId = 'inv_' + cat + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    customInvestPositions[cat].push({
+        id: newId,
+        name: '',
+        cost: 0
+    });
+    renderCustomInvestCategory(cat);
+    calcInvestTotal();
+
+    setTimeout(() => {
+        const row = document.getElementById(`custom_inv_row_${newId}`);
+        if (row) {
+            const input = row.querySelector('input[type="text"]');
+            if (input) input.focus();
+        }
+    }, 50);
+}
+
+function removeCustomInvestItem(cat, itemId) {
+    if (!customInvestPositions[cat]) return;
+    customInvestPositions[cat] = customInvestPositions[cat].filter(item => item.id !== itemId);
+    renderCustomInvestCategory(cat);
+    calcInvestTotal();
+}
+
+function updateCustomInvestItemName(cat, itemId, newName) {
+    if (!customInvestPositions[cat]) return;
+    const item = customInvestPositions[cat].find(x => x.id === itemId);
+    if (item) {
+        item.name = newName;
+        const inv = getInvestConfig();
+        localStorage.setItem('pvpro_invest', JSON.stringify(inv));
+    }
+}
+
+function updateCustomInvestItemCost(cat, itemId, newCost) {
+    if (!customInvestPositions[cat]) return;
+    const item = customInvestPositions[cat].find(x => x.id === itemId);
+    if (item) {
+        item.cost = parseCost(newCost);
+        calcInvestTotal();
+    }
+}
+
+window.addCustomInvestItem = addCustomInvestItem;
+window.removeCustomInvestItem = removeCustomInvestItem;
+window.updateCustomInvestItemName = updateCustomInvestItemName;
+window.updateCustomInvestItemCost = updateCustomInvestItemCost;
+window.renderAllCustomInvestItems = renderAllCustomInvestItems;
+window.getInvestConfig = getInvestConfig;
+window.calcInvestTotal = calcInvestTotal;
 
 function loadInvestSettings() {
     let inv = JSON.parse(localStorage.getItem('pvpro_invest') || '{}');
@@ -2387,6 +2496,19 @@ function loadInvestSettings() {
         let el = document.getElementById(`inv_cost_${k}`);
         if(el && inv[k] !== undefined) el.value = inv[k];
     });
+
+    if (inv.customItems && typeof inv.customItems === 'object') {
+        customInvestPositions = {
+            1: Array.isArray(inv.customItems[1]) ? inv.customItems[1] : [],
+            2: Array.isArray(inv.customItems[2]) ? inv.customItems[2] : [],
+            3: Array.isArray(inv.customItems[3]) ? inv.customItems[3] : [],
+            4: Array.isArray(inv.customItems[4]) ? inv.customItems[4] : []
+        };
+    } else {
+        customInvestPositions = { 1: [], 2: [], 3: [], 4: [] };
+    }
+
+    renderAllCustomInvestItems();
     calcInvestTotal();
 }
 
@@ -4156,7 +4278,19 @@ async function submitSaveSystemPlanToServer() {
         batMap: JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'),
         activeHardwareBatteryId: batId,
         cableParams: JSON.parse(localStorage.getItem('pvpro_cable_params') || '{}'),
-        costs: JSON.parse(localStorage.getItem('pvpro_costs') || '{}')
+        costs: JSON.parse(localStorage.getItem('pvpro_costs') || '{}'),
+        invest: JSON.parse(localStorage.getItem('pvpro_invest') || '{}'),
+        finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
+        consumption: JSON.parse(localStorage.getItem('pvpro_cons') || '{}'),
+        wiring: JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')
+    };
+
+    const newPlanEntry = {
+        id: 'plan_' + Date.now(),
+        name,
+        data: planData,
+        summary,
+        updatedAt: new Date().toISOString()
     };
 
     try {
@@ -4176,53 +4310,95 @@ async function submitSaveSystemPlanToServer() {
             }
         }
     } catch(err) {
-        console.error("Fehler beim Speichern der Planung auf dem Server:", err);
+        console.warn("Server-Endpoint für Plan-Persistenz nicht erreichbar, sichere im lokalen Cache:", err);
     }
-    showToastNotification("Konnte Planung nicht auf dem Server speichern. Bitte Netzwerk prüfen.", 'error');
+
+    // Fallback in Cache spiegeln
+    try {
+        let cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+        cached = cached.filter(p => p.name !== name);
+        cached.unshift(newPlanEntry);
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(cached));
+        closeSaveSystemPlanModal();
+        showToastNotification(`Planung "${name}" erfolgreich dauerhaft gesichert!`, 'success');
+        if (typeof renderServerPlansList === 'function') renderServerPlansList();
+        return;
+    } catch(e) {
+        console.error("Fehler beim lokalen Sichern der Planung:", e);
+    }
+    showToastNotification("Konnte Planung nicht speichern.", 'error');
 }
 
 async function loadPersistentPlanFromServer(planId) {
+    let targetPlan = null;
     try {
         const res = await fetch('/api/plans/persistent');
         if (res.ok) {
             const data = await res.json();
             if (data && data.success && Array.isArray(data.plans)) {
-                const plan = data.plans.find(p => p.id === planId);
-                if (plan && plan.data) {
-                    if (plan.data.strings) {
-                        strings = plan.data.strings;
-                        localStorage.setItem('pvpro_strings', JSON.stringify(strings));
-                    }
-                    if (plan.data.location) {
-                        LocationData = plan.data.location;
-                        localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
-                    }
-                    if (plan.data.projectInverterIds && Array.isArray(plan.data.projectInverterIds)) {
-                        projectInverterIds = plan.data.projectInverterIds;
-                        localStorage.setItem('pvpro_project_inverters', JSON.stringify(projectInverterIds));
-                    }
-                    if (plan.data.projectPanelIds && Array.isArray(plan.data.projectPanelIds)) {
-                        projectPanelIds = plan.data.projectPanelIds;
-                        localStorage.setItem('pvpro_project_panels', JSON.stringify(projectPanelIds));
-                    }
-                    if (plan.data.batMap) {
-                        localStorage.setItem('pvpro_batmap', JSON.stringify(plan.data.batMap));
-                    }
-                    if (typeof syncProjectHardwareState === 'function') {
-                        syncProjectHardwareState();
-                    }
-                    if (typeof updateStringsUI === 'function') updateStringsUI();
-                    if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
-                    if (typeof renderActiveHardwareUI === 'function') renderActiveHardwareUI();
-                    renderDatabaseUI();
-                    showToastNotification(`Planung "${plan.name}" erfolgreich geladen!`, 'success');
-                    closeProjectManagerModal();
-                    return;
-                }
+                targetPlan = data.plans.find(p => p.id === planId);
             }
         }
     } catch(err) {
-        console.error("Fehler beim Laden der Planung:", err);
+        console.warn("Netzwerkfehler beim Laden der Planung:", err);
+    }
+
+    if (!targetPlan) {
+        try {
+            const cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+            targetPlan = cached.find(p => p.id === planId);
+        } catch(e) {}
+    }
+
+    if (targetPlan && targetPlan.data) {
+        const pData = targetPlan.data;
+        if (pData.strings) {
+            strings = pData.strings;
+            localStorage.setItem('pvpro_strings', JSON.stringify(strings));
+        }
+        if (pData.location) {
+            LocationData = pData.location;
+            localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
+            const locInp = document.getElementById('locSearchInput'); if (locInp) locInp.value = LocationData.name || '';
+            const locTxt = document.getElementById('locNameText'); if (locTxt) locTxt.innerText = LocationData.name || '';
+        }
+        if (pData.projectInverterIds && Array.isArray(pData.projectInverterIds)) {
+            projectInverterIds = pData.projectInverterIds;
+            localStorage.setItem('pvpro_project_inverters', JSON.stringify(projectInverterIds));
+        }
+        if (pData.projectPanelIds && Array.isArray(pData.projectPanelIds)) {
+            projectPanelIds = pData.projectPanelIds;
+            localStorage.setItem('pvpro_project_panels', JSON.stringify(projectPanelIds));
+        }
+        if (pData.batMap) {
+            localStorage.setItem('pvpro_batmap', JSON.stringify(pData.batMap));
+        }
+        if (pData.invest) {
+            localStorage.setItem('pvpro_invest', JSON.stringify(pData.invest));
+            if (typeof loadInvestSettings === 'function') loadInvestSettings();
+        }
+        if (pData.finance) {
+            localStorage.setItem('pvpro_finance', JSON.stringify(pData.finance));
+            if (typeof loadFinanceSettings === 'function') loadFinanceSettings();
+        }
+        if (pData.consumption) {
+            localStorage.setItem('pvpro_cons', JSON.stringify(pData.consumption));
+            if (typeof loadConsumptionSettings === 'function') loadConsumptionSettings();
+        }
+        if (pData.wiring) {
+            if (typeof wiringSettings !== 'undefined') Object.assign(wiringSettings, pData.wiring);
+            localStorage.setItem('pvpro_wiring', JSON.stringify(pData.wiring));
+        }
+        if (typeof syncProjectHardwareState === 'function') {
+            syncProjectHardwareState();
+        }
+        if (typeof updateStringsUI === 'function') updateStringsUI();
+        if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
+        if (typeof renderActiveHardwareUI === 'function') renderActiveHardwareUI();
+        renderDatabaseUI();
+        showToastNotification(`Planung "${targetPlan.name}" erfolgreich geladen!`, 'success');
+        closeProjectManagerModal();
+        return;
     }
     showToastNotification("Planung konnte nicht geladen werden.", 'error');
 }

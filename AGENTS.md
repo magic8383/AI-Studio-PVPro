@@ -9,8 +9,8 @@
    Always inspect `/DEVELOPMENT_GUIDELINES.md` as the primary source of truth for architecture, standards, and workflow.
 
 2. **Increment Version on Every Single Change:**  
-   Every time any code or logic is modified, you **MUST** increment the version number (`MAJOR.MINOR.PATCH`). Never keep the version unchanged across edits.
-   - Synchronize the version across `package.json`, `index.html` (title, og:title, script tags), `sw.js` (`CACHE_NAME`), `DEVELOPMENT_GUIDELINES.md`, and `content.js`.
+   Every time any code or logic is modified, you **MUST** increment the version number by exactly 0.1 (e.g., 8.0 -> 8.1 -> 8.2 -> 8.3 ...). Never keep the version unchanged across edits, and never use patch suffixes.
+   - Synchronize the version across `package.json`, `index.html` (title, og:title, script tags, `#app-header-version`), `sw.js` (`CACHE_NAME`), `DEVELOPMENT_GUIDELINES.md`, and `content.js`.
 
 3. **Maintain Changelog with Newest on Top:**  
    Whenever a version is incremented, add the full release notes at the **very top** of `CHANGELOG.md` (chronologically descending).

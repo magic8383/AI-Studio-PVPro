@@ -1,0 +1,41 @@
+[
+  {
+    "id": "plan_sys_1789219794019_lre7q",
+    "name": "Test",
+    "data": {
+      "strings": []
+    },
+    "summary": null,
+    "isSystemPlan": true,
+    "updatedAt": "2026-09-12T13:29:54.019Z",
+    "createdAt": "2026-09-12T13:29:54.019Z"
+  },
+  {
+    "id": "plan_sys_1789284789177_4338n",
+    "name": "Test Plan",
+    "data": {
+      "strings": [],
+      "location": {
+        "name": "Villingen-Schwenningen"
+      },
+      "projectInverterIds": [
+        1
+      ],
+      "projectPanelIds": [
+        101
+      ],
+      "batMap": {},
+      "activeHardwareBatteryId": null,
+      "cableParams": {},
+      "costs": {}
+    },
+    "summary": {
+      "kwp": "15.98",
+      "panelCount": 34,
+      "stringCount": 6
+    },
+    "isSystemPlan": true,
+    "updatedAt": "2026-09-13T07:33:09.177Z",
+    "createdAt": "2026-09-13T07:33:09.177Z"
+  }
+]

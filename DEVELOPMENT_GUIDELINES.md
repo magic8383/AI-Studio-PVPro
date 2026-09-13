@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.0.3 (Globale HTML-Escaping-Sicherheit, robuster Datenblatt- & Dokumenten-Manager, optimierte SVG-Schaltplan-Resilienz)  
+**Aktuelle Version:** 8.1 (Investitionskosten-Erweiterung mit dynamisch hinzufügbaren Positionen je Unterkategorie, verbesserte Server-Persistenz & Resilienz, verbindliche 0.1-Schritt-Versionierung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -14,9 +14,9 @@
 
 1. **Primat der Guidelines (Read First):**  
    Bevor irgendeine Code-Datei angefasst wird, MUSS dieser Leitfaden konsultiert werden.
-2. **Versionierungs-Pflicht nach JEDER Änderung:**  
-   Nach **jeder** funktionalen oder architektonischen Anpassung **MUSS zwingend eine neue Version angelegt werden** (Semantic Versioning: `MAJOR.MINOR.PATCH`). Ein Stillstand der Versionsnummer bei Code-Änderungen ist untersagt.
-   * **Kopfzeilen-Synchronisation:** Die in der App-Kopfzeile sichtbare Versionsnummer (`#app-header-version` in `index.html` sowie im Starter in `app.js`) **MUSS** bei jedem Versionswechsel zwingend synchron mitgeführt und aktualisiert werden.
+2. **Versionierungs-Pflicht nach JEDER Änderung (0.1-Schritte):**  
+   Nach **jeder** funktionalen oder architektonischen Anpassung **MUSS zwingend eine neue Version angelegt werden**. Die Versionsnummer wird dabei **IMMER um genau 0.1 inkrementiert** (z. B. 8.0 -> 8.1 -> 8.2 -> 8.3 ...). Niemals Zwischen- oder Patch-Suffixe wie 8.0.x verwenden, sondern ausnahmslos 0.1-Schritte. Ein Stillstand der Versionsnummer bei Code-Änderungen ist untersagt.
+   * **Kopfzeilen-Synchronisation:** Die in der App-Kopfzeile sichtbare Versionsnummer (`#app-header-version` in `index.html` sowie im Starter in `app.js`) **MUSS** bei jedem Versionswechsel zwingend synchron mitgeführt und aktualisiert werden (z. B. `Pro 8.1`).
 3. **Changelog-Synchronisationspflicht:**  
    Zu jeder neuen Version **MUSS** parallel der `CHANGELOG.md` aktualisiert werden.  
    **Strikte Regel:** Die neuesten Versionen stehen **IMMER ganz oben** (chronologisch absteigend).  

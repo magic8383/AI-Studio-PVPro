@@ -1158,7 +1158,7 @@ function buildCompactReportHtml(data) {
 
         <!-- FOOTER -->
         <footer class="mt-6 pt-3 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-            <span>PV Pro Studio v7.0.0 • Kompaktbericht</span>
+            <span>PV Pro Studio v8.1 • Kompaktbericht</span>
             <span>Erstellt am: ${escapeHtml(dossierOptions.projectDate)}</span>
         </footer>
     </div>
@@ -1216,6 +1216,34 @@ function buildDossierHtmlContent(isPrintOnly = false) {
     const estYieldKwh = Math.round(totalKwp * 980);
     const estYieldSpec = 980;
     
+    // Investitionskosten aus Speicher / Konfiguration
+    let totalInvestSum = 0;
+    let investDetails = null;
+    try {
+        if (typeof getInvestConfig === 'function') {
+            investDetails = getInvestConfig();
+        } else {
+            investDetails = JSON.parse(localStorage.getItem('pvpro_invest') || '{}');
+        }
+        if (investDetails) {
+            const custom = investDetails.customItems || {};
+            const c1 = (custom[1] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
+            const c2 = (custom[2] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
+            const c3 = (custom[3] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
+            const c4 = (custom[4] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
+
+            const sum = (investDetails.panels || 0) + (investDetails.mounting || 0) + c1 +
+                        (investDetails.inverter || 0) + (investDetails.battery || 0) + (investDetails.smartmeter || 0) + c2 +
+                        (investDetails.cables || 0) + (investDetails.gak || 0) + (investDetails.acmat || 0) + c3 +
+                        (investDetails.scaffold || 0) + (investDetails.electrician || 0) + (investDetails.misc || 0) + c4;
+            if (sum > 0) totalInvestSum = sum;
+        }
+    } catch(e) {}
+    if (!totalInvestSum) {
+        const finCost = parseFloat(document.getElementById('fin_sys_cost')?.value) || 0;
+        if (finCost > 0) totalInvestSum = finCost;
+    }
+
     // Hardware-Daten für Anhänge / Tabellen
     const hardwareData = getUsedHardwareData();
 
@@ -1226,7 +1254,8 @@ function buildDossierHtmlContent(isPrintOnly = false) {
             strList, totalPanels, totalKwp,
             invLabel, batLabel, batCap,
             estYieldKwh, estYieldSpec,
-            hardwareData, isPrintOnly
+            hardwareData, isPrintOnly,
+            totalInvestSum
         });
     }
 
@@ -1665,6 +1694,47 @@ function buildDossierHtmlContent(isPrintOnly = false) {
                     <span class="text-[11px] text-slate-500">über 20 Jahre Betrieb</span>
                 </div>
             </div>
+
+            ${investDetails ? `
+            <div class="mb-6 rounded-xl border border-slate-200 overflow-hidden bg-white text-xs">
+                <div class="bg-slate-100 px-3.5 py-2.5 font-black text-slate-800 border-b border-slate-200 flex justify-between items-center">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-1.5 h-3 bg-primary rounded-full inline-block"></span>
+                        <span>Investitionskosten-Aufstellung (Positionen & Zusatzaufwände)</span>
+                    </div>
+                    <span class="text-primary font-black">${totalInvestSum.toLocaleString('de-DE')} € Netto</span>
+                </div>
+                <div class="p-3.5 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                        <span class="text-[11px] font-bold text-slate-800 block border-b border-slate-200 pb-1">1. PV-Module & Unterkonstruktion</span>
+                        <div class="flex justify-between text-slate-600"><span>PV-Module:</span> <strong class="text-slate-800">${(investDetails.panels || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>Montagesystem & Haken:</span> <strong class="text-slate-800">${(investDetails.mounting || 0).toLocaleString('de-DE')} €</strong></div>
+                        ${(investDetails.customItems?.[1] || []).map(ci => `<div class="flex justify-between text-emerald-700 dark:text-emerald-400 font-medium"><span>+ ${escapeHtml(ci.name || 'Zusatz')}:</span> <strong>${(parseFloat(ci.cost) || 0).toLocaleString('de-DE')} €</strong></div>`).join('')}
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                        <span class="text-[11px] font-bold text-slate-800 block border-b border-slate-200 pb-1">2. Wechselrichter, Speicher & Sensorik</span>
+                        <div class="flex justify-between text-slate-600"><span>Wechselrichter:</span> <strong class="text-slate-800">${(investDetails.inverter || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>Batteriespeicher:</span> <strong class="text-slate-800">${(investDetails.battery || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>Smart Meter & Sensorik:</span> <strong class="text-slate-800">${(investDetails.smartmeter || 0).toLocaleString('de-DE')} €</strong></div>
+                        ${(investDetails.customItems?.[2] || []).map(ci => `<div class="flex justify-between text-emerald-700 dark:text-emerald-400 font-medium"><span>+ ${escapeHtml(ci.name || 'Zusatz')}:</span> <strong>${(parseFloat(ci.cost) || 0).toLocaleString('de-DE')} €</strong></div>`).join('')}
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                        <span class="text-[11px] font-bold text-slate-800 block border-b border-slate-200 pb-1">3. DC/AC Installation & Schutztechnik</span>
+                        <div class="flex justify-between text-slate-600"><span>Solarkabel & Stecker:</span> <strong class="text-slate-800">${(investDetails.cables || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>Generatoranschlusskasten (GAK):</span> <strong class="text-slate-800">${(investDetails.gak || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>AC-Verteiler & LS/FI:</span> <strong class="text-slate-800">${(investDetails.acmat || 0).toLocaleString('de-DE')} €</strong></div>
+                        ${(investDetails.customItems?.[3] || []).map(ci => `<div class="flex justify-between text-emerald-700 dark:text-emerald-400 font-medium"><span>+ ${escapeHtml(ci.name || 'Zusatz')}:</span> <strong>${(parseFloat(ci.cost) || 0).toLocaleString('de-DE')} €</strong></div>`).join('')}
+                    </div>
+                    <div class="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                        <span class="text-[11px] font-bold text-slate-800 block border-b border-slate-200 pb-1">4. Gerüst, Fachpersonal & Formalitäten</span>
+                        <div class="flex justify-between text-slate-600"><span>Gerüst & Absturzsicherung:</span> <strong class="text-slate-800">${(investDetails.scaffold || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>Elektriker-Meister & Anmeldung:</span> <strong class="text-slate-800">${(investDetails.electrician || 0).toLocaleString('de-DE')} €</strong></div>
+                        <div class="flex justify-between text-slate-600"><span>Sonstiges & Genehmigungen:</span> <strong class="text-slate-800">${(investDetails.misc || 0).toLocaleString('de-DE')} €</strong></div>
+                        ${(investDetails.customItems?.[4] || []).map(ci => `<div class="flex justify-between text-emerald-700 dark:text-emerald-400 font-medium"><span>+ ${escapeHtml(ci.name || 'Zusatz')}:</span> <strong>${(parseFloat(ci.cost) || 0).toLocaleString('de-DE')} €</strong></div>`).join('')}
+                    </div>
+                </div>
+            </div>
+            ` : ''}
 
             <div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
                 <p class="font-bold text-slate-900 mb-1">Berechnungsgrundlagen nach EEG & VDI 4655:</p>

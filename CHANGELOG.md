@@ -4,6 +4,33 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.1] – 2026-09-13
+
+### 💰 Dynamische Zusatzpositionen in Investitionskosten, Dossier-Synchronisation & 0.1-Versionsstandard
+
+#### 1. Dynamische Zusatzpositionen für alle Investitions-Unterkategorien
+* **Individuell hinzufügbare Positionen per „+ Position hinzufügen“-Schaltfläche:**
+  - Jede der 4 Haupt-Unterkategorien (Module & Unterkonstruktion, Wechselrichter & Speicher, DC/AC Installation & Schutz, Gerüst, Elektriker & Formalitäten) verfügt nun über eine intuitive Schaltfläche zum Hinzufügen flexibler benutzerdefinierter Positionen.
+  - Jede neue Zeile bietet ein Textfeld für die Bezeichnung (z.B. „Zählerkasten-Umbau“, „Dachhaken Sonderanfertigung“, „Kabelkanal-Trasse“) und ein Euro-Eingabefeld für den Betrag.
+  - Positionen können mit einem Klick auf das Papierkorb-Symbol wieder entfernt werden.
+* **Echtzeit-Kalkulation & Gesamtsumme:**
+  - `calcInvestTotal()` kalkuliert in Echtzeit alle Standard- und benutzerdefinierten Zusatzpositionen in die Zwischensummen der Kategorien und die Gesamtsumme der Investition ein.
+  - Vollständige Synchronisation mit der Wirtschaftlichkeits- und Amortisationsrechnung.
+* **Permanente Speicherung & Projekt-Management:**
+  - Alle Zusatzpositionen werden in `localStorage` (`pvpro_invest`) sowie in fest auf dem Server gespeicherten Planungen (`submitSaveSystemPlanToServer` / `loadPersistentPlanFromServer`) vollständig serialisiert und wiederhergestellt.
+
+#### 2. Vollständige Integration in den PDF- und Druck-Dossiergenerator
+* **Dossier & Kompaktbericht Synchronisation (`dossier.js`):**
+  - Die Gesamtsumme der Investition (`totalInvestSum`) wird im Druckdossier nicht mehr auf generische Schätzwerte zurückgesetzt, sondern exakt aus den benutzerdefinierten Eingaben berechnet.
+  - Auf Seite 7 (Wirtschaftlichkeit & Amortisation) wird eine detaillierte, strukturierte Aufstellung aller 4 Kategorien samt sämtlicher erfasster Zusatzaufwände gerendert.
+
+#### 3. Standardisierung der Versionsführung (0.1-Schritte)
+* **Verbindliche Dokumentationsrichtlinie:**
+  - Festlegung des Versionsschemas auf exakte 0.1-Inkremente (z.B. 8.0 &rarr; 8.1 &rarr; 8.2) in `AGENTS.md` und `DEVELOPMENT_GUIDELINES.md`.
+  - Vollständige Synchronisation über `package.json`, `index.html`, `sw.js` (`pvpro-cache-v8.1`), `app.js`, `wiring.js` und `dossier.js`.
+
+---
+
 ## [Version 8.0.3] – 2026-09-12
 
 ### 🛡️ Globale HTML-Escaping-Sicherheit & Robuste SVG-Schaltplan-Resilienz
