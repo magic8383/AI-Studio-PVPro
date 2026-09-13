@@ -4,6 +4,28 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.2] – 2026-09-13
+
+### 💾 Vollendung der Server- & Systemplan-Persistenz, lückenloser State-Transfer & Header-Synchronisation
+
+#### 1. Lückenloser Konfigurations- & State-Transfer für fest im Server/Code gespeicherte Planungen
+* **Vollständige Serialisierung aller System-Parameter:**
+  - Beim festen Speichern einer Planung auf dem Server (`/api/plans/persist` via `submitSaveSystemPlanToServer`) werden nun ausnahmslos alle System-Parameter vollständig erfasst: Stränge (`strings` mit Fallback-Prüfung gegen leere Arrays), Standort (`LocationData`), Wechselrichter- & Modul-Zuweisungspools (`projectInverterIds`, `projectPanelIds`), Batteriezuordnung (`batMap`, `activeHardwareBatteryId`), Kabel- & Leitungsdimensionierung nach DIN VDE 0100-712 (`cableParams`, `wiring`), alle Investitionskosten inkl. dynamischer Zusatzaufwände (`invest`), detaillierte Anlagenkosten (`costs`), Finanzierungsparameter (`finance`) sowie Verbrauchsdaten (`consumption`).
+* **Lückenlose Rekonstruktion & Re-Rendering beim Laden:**
+  - Beim Aktivieren einer Server-Planung (`loadPersistentPlanFromServer`) werden alle Module, Stränge, Leitungsquerschnitte und Hardware-Zuweisungen reaktiv in die Benutzeroberfläche und die physikalische Simulation eingespielt.
+  - Der Tab Verkabelung (`renderWiringTab`), der Hardware-Katalog (`renderDatabaseUI`, `renderActiveHardwareUI`), die String-Übersicht (`updateStringsUI`) und die Physikengine (`updatePhysicsOnly`) werden unmittelbar synchron aktualisiert.
+* **Synchronisation mit dem Projekt-Manager & Header:**
+  - Die geladene Server-Planung aktualisiert direkt die aktive Projektinstanz (`projects`) und synchronisiert den sichtbaren Plannamen in der Kopfzeile (`#headerProjectName`).
+* **Resiliente Offline-Pufferung:**
+  - Planungsdaten werden im lokalen Cache (`pvpro_server_plans_cache`) gespiegelt, sodass auch bei temporären Netzwerkunterbrechungen oder Offline-Nutzung kein Datenverlust auftritt.
+
+#### 2. Synchronisation der Release-Version 8.2
+* **0.1-Schritt-Governance:**
+  - Exakte Inkrementierung von 8.1 &rarr; 8.2 gemäß Projekt-Governance in `AGENTS.md` und `DEVELOPMENT_GUIDELINES.md`.
+  - Vollständige Aktualisierung in `package.json`, `index.html` (Header `#app-header-version`, Title, Meta-Tags, Script-Tags mit `?v=8.2`), `sw.js` (`pvpro-cache-v8.2`), `app.js` und `content.js`.
+
+---
+
 ## [Version 8.1] – 2026-09-13
 
 ### 💰 Dynamische Zusatzpositionen in Investitionskosten, Dossier-Synchronisation & 0.1-Versionsstandard

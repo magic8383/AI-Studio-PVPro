@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.1 (Investitionskosten-Erweiterung mit dynamisch hinzufügbaren Positionen je Unterkategorie, verbesserte Server-Persistenz & Resilienz, verbindliche 0.1-Schritt-Versionierung)  
+**Aktuelle Version:** 8.2 (Server- & Systemplan-Persistenz-Vollendung mit lückenlosem State-Transfer & Offline-Cache, Header- & Projekt-Synchronisation, verbindliche 0.1-Schritt-Versionierung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

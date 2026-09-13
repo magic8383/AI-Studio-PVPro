@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.1';
+        if (verEl) verEl.innerText = 'Pro 8.2';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -4270,9 +4270,11 @@ async function submitSaveSystemPlanToServer() {
         batteryKwh: batCap
     };
 
+    const effectiveStrings = (strings && strings.length > 0) ? strings : JSON.parse(localStorage.getItem('pvpro_strings') || '[]');
     const planData = {
-        strings: strings,
-        location: LocationData,
+        strings: effectiveStrings,
+        location: LocationData ? Object.assign({}, LocationData) : JSON.parse(localStorage.getItem('pvpro_loc') || '{}'),
+        LocationData: LocationData ? Object.assign({}, LocationData) : JSON.parse(localStorage.getItem('pvpro_loc') || '{}'),
         projectInverterIds: typeof projectInverterIds !== 'undefined' ? projectInverterIds : [],
         projectPanelIds: typeof projectPanelIds !== 'undefined' ? projectPanelIds : [],
         batMap: JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'),
@@ -4281,8 +4283,8 @@ async function submitSaveSystemPlanToServer() {
         costs: JSON.parse(localStorage.getItem('pvpro_costs') || '{}'),
         invest: JSON.parse(localStorage.getItem('pvpro_invest') || '{}'),
         finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
-        consumption: JSON.parse(localStorage.getItem('pvpro_cons') || '{}'),
-        wiring: JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')
+        consumption: (typeof getConsumptionSettingsPayload === 'function' ? getConsumptionSettingsPayload() : JSON.parse(localStorage.getItem('pvpro_cons') || '{}')),
+        wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}'))
     };
 
     const newPlanEntry = {
@@ -4352,12 +4354,13 @@ async function loadPersistentPlanFromServer(planId) {
 
     if (targetPlan && targetPlan.data) {
         const pData = targetPlan.data;
-        if (pData.strings) {
+        if (pData.strings && Array.isArray(pData.strings) && pData.strings.length > 0) {
             strings = pData.strings;
             localStorage.setItem('pvpro_strings', JSON.stringify(strings));
         }
-        if (pData.location) {
-            LocationData = pData.location;
+        if (pData.location || pData.LocationData) {
+            const loc = pData.location || pData.LocationData;
+            LocationData = Object.assign(LocationData, loc);
             localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
             const locInp = document.getElementById('locSearchInput'); if (locInp) locInp.value = LocationData.name || '';
             const locTxt = document.getElementById('locNameText'); if (locTxt) locTxt.innerText = LocationData.name || '';
@@ -4372,6 +4375,16 @@ async function loadPersistentPlanFromServer(planId) {
         }
         if (pData.batMap) {
             localStorage.setItem('pvpro_batmap', JSON.stringify(pData.batMap));
+            if (typeof batMap !== 'undefined') Object.assign(batMap, pData.batMap);
+        }
+        if (pData.activeHardwareBatteryId !== undefined && pData.activeHardwareBatteryId !== null) {
+            activeHardwareBatteryId = pData.activeHardwareBatteryId;
+        }
+        if (pData.cableParams) {
+            localStorage.setItem('pvpro_cable_params', JSON.stringify(pData.cableParams));
+        }
+        if (pData.costs) {
+            localStorage.setItem('pvpro_costs', JSON.stringify(pData.costs));
         }
         if (pData.invest) {
             localStorage.setItem('pvpro_invest', JSON.stringify(pData.invest));
@@ -4395,7 +4408,25 @@ async function loadPersistentPlanFromServer(planId) {
         if (typeof updateStringsUI === 'function') updateStringsUI();
         if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
         if (typeof renderActiveHardwareUI === 'function') renderActiveHardwareUI();
+        if (typeof renderWiringTab === 'function') renderWiringTab();
         renderDatabaseUI();
+
+        // Synchronisiere in den lokalen Projekt-Manager, damit Name und Header aktuell sind
+        try {
+            const activeId = getActiveProjectId();
+            let projects = getStoredProjects() || [];
+            let activeProj = projects.find(p => p.id === activeId);
+            const fullCfg = exportFullConfiguration();
+            if (activeProj) {
+                activeProj.name = targetPlan.name;
+                activeProj.data = fullCfg;
+                activeProj.summary = calculateProjectSummary(fullCfg);
+                activeProj.updatedAt = new Date().toISOString();
+                localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+            }
+            updateHeaderProjectIndicator();
+        } catch(e) {}
+
         showToastNotification(`Planung "${targetPlan.name}" erfolgreich geladen!`, 'success');
         closeProjectManagerModal();
         return;
