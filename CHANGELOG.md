@@ -4,6 +4,25 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.6] – 2026-11-09
+
+### 🌐 GitHub Pages & Browser-First Home Assistant Engine (Beseitigung des `Unexpected token '<'` HTML-Fehlers)
+
+#### 1. Browser-First Home Assistant Client (`fetchHaDirectFromBrowser`, `parseHaStatesInBrowser`, `fetchHaHistoryInBrowser`)
+* **100 % lauffähig auf GitHub Pages & statischen Webservern ohne Node.js-Backend:**
+  - Auf statischen Hosts wie GitHub Pages existiert kein lokales `/api/ha/*`-Backend, sodass Aufrufe an `/api/ha/test`, `/api/ha/states` oder `/api/ha/history` eine statische HTML-404/405-Seite (`<html><head>...`) zurücklieferten und bei `res.json()` den Fehler `Unexpected token '<', "<html> <he"... is not valid JSON` auslösten.
+  - Ab Version 8.6 kommuniziert `telemetry.js` **primär direkt aus dem Browser** mit der Home-Assistant-REST-API (`${baseUrl}/api/states` und `${baseUrl}/api/history/period/...`) inklusive kompletter Einheiten-Normalisierung (`W`/`kW`, `Wh`/`kWh`), String- & Einzelverbraucher-Auswertung sowie 5-Minuten-Tagesverlauf-Integration direkt im Browser.
+
+#### 2. Defensive JSON/HTML-Prüfung (`safeFetchBackendJson`) & Automatischer `:8123` Reverse-Proxy-Fallback
+* **Kein Absturz bei HTML-Fehlerseiten:**
+  - Alle verbleibenden Backend-Fallbacks prüfen zuerst den Antworttext auf `<` / `<!doctype`, sodass HTML-Seiten niemals ungeprüft an `JSON.parse` übergeben werden.
+* **Automatische Port-Korrektur für HTTPS-Domains:**
+  - Falls bei einer HTTPS-Reverse-Proxy-Domain versehentlich `:8123` eingetragen wurde (z. B. `https://home.mb10.org:8123`), testet die App automatisch auch die Standard-Port-443-URL (`https://home.mb10.org`) und übernimmt die funktionierende Adresse direkt in die Konfiguration.
+* **Dynamische GitHub-Pages `cors_allowed_origins`-Vorlage:**
+  - Da Home Assistant in `cors_allowed_origins` exakte Origin-URLs verlangt, fügt das Modal automatisch die aktuelle Browser-Origin (z. B. `https://magic8383.github.io`) in die kopierbare `configuration.yaml`-Vorlage ein.
+
+---
+
 ## [Version 8.5] – 2026-11-09
 
 ### 🌊 Interaktives Sankey-Energiefluss-Diagramm, Echtes „Liquid Glass“-Design, Einheitliche 2-Ebenen Mobile-First Drill-Down-Navigation & Home Assistant Reverse-Proxy Fix

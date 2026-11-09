@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.5)
-// Liquid-Glass UI, Mobile-First 2-Level Drill-Down, Interactive Sankey Diagram,
-// Configurable HA Strings & Consumers, Domain/Reverse-Proxy Diagnostics
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.6)
+// GitHub Pages Browser-First HA Client, Liquid-Glass UI, Mobile-First 2-Level
+// Drill-Down, Interactive Sankey Diagram & Reverse-Proxy/CORS Diagnostics
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -156,34 +156,28 @@ async function initTelemetryAndAnalysis() {
         }
     } catch (e) {}
 
-    // 2. Sync with backend server asynchronously
+    // 2. Sync with backend server asynchronously (safe on GitHub Pages / static hosts)
     try {
         const [haRes, recRes] = await Promise.all([
-            fetch('/api/ha/config').catch(() => null),
-            fetch('/api/performance/records').catch(() => null)
+            safeFetchBackendJson('/api/ha/config'),
+            safeFetchBackendJson('/api/performance/records')
         ]);
 
-        if (haRes && haRes.ok) {
-            const haData = await haRes.json();
-            if (haData && haData.success && haData.config) {
-                haConfigState = {
-                    ...haConfigState,
-                    ...haData.config,
-                    entities: { ...haConfigState.entities, ...(haData.config.entities || {}) },
-                    customStrings: Array.isArray(haData.config.customStrings) && haData.config.customStrings.length > 0 ? haData.config.customStrings : haConfigState.customStrings,
-                    customConsumers: Array.isArray(haData.config.customConsumers) ? haData.config.customConsumers : haConfigState.customConsumers,
-                    stringEntities: { ...haConfigState.stringEntities, ...(haData.config.stringEntities || {}) }
-                };
-                localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
-            }
+        if (haRes.ok && haRes.data && haRes.data.success && haRes.data.config) {
+            haConfigState = {
+                ...haConfigState,
+                ...haRes.data.config,
+                entities: { ...haConfigState.entities, ...(haRes.data.config.entities || {}) },
+                customStrings: Array.isArray(haRes.data.config.customStrings) && haRes.data.config.customStrings.length > 0 ? haRes.data.config.customStrings : haConfigState.customStrings,
+                customConsumers: Array.isArray(haRes.data.config.customConsumers) ? haRes.data.config.customConsumers : haConfigState.customConsumers,
+                stringEntities: { ...haConfigState.stringEntities, ...(haRes.data.config.stringEntities || {}) }
+            };
+            localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
         }
 
-        if (recRes && recRes.ok) {
-            const recData = await recRes.json();
-            if (recData && recData.success && recData.records && Object.keys(recData.records).length > 0) {
-                performanceRecordsByProject = { ...performanceRecordsByProject, ...recData.records };
-                localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
-            }
+        if (recRes.ok && recRes.data && recRes.data.success && recRes.data.records && Object.keys(recRes.data.records).length > 0) {
+            performanceRecordsByProject = { ...performanceRecordsByProject, ...recRes.data.records };
+            localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
         }
     } catch (e) {}
 
@@ -467,6 +461,371 @@ async function refreshIntradayHistoryAndLive() {
     await fetchAndRenderIntradayHistory();
 }
 
+// ============================================================================
+// 3B. BROWSER-FIRST HOME ASSISTANT CLIENT (GITHUB PAGES & REVERSE PROXY READY)
+// ============================================================================
+
+function normalizeHaUrlClient(rawUrl) {
+    let url = String(rawUrl || '').trim();
+    if (!url) return '';
+    if (!/^https?:\/\//i.test(url)) {
+        const isLocal = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|homeassistant\.local)/i.test(url);
+        url = (isLocal ? 'http://' : 'https://') + url;
+    }
+    url = url
+        .replace(/\/lovelace(\/.*)?$/i, '')
+        .replace(/\/api\/states(\/.*)?$/i, '')
+        .replace(/\/api\/?$/i, '')
+        .replace(/\/+$/, '');
+    return url;
+}
+
+function cleanHaTokenClient(rawToken) {
+    return String(rawToken || '')
+        .trim()
+        .replace(/^Bearer\s+/i, '')
+        .replace(/[\r\n\t\s]+/g, '');
+}
+
+async function safeFetchBackendJson(url, options = {}) {
+    try {
+        const res = await fetch(url, options);
+        const text = await res.text();
+        const trimmed = (text || '').trim();
+        if (!trimmed || trimmed.startsWith('<') || trimmed.toLowerCase().startsWith('<!doctype')) {
+            return { ok: false, isHtml: true, status: res.status, data: null };
+        }
+        const data = JSON.parse(trimmed);
+        return { ok: res.ok, isHtml: false, status: res.status, data };
+    } catch (err) {
+        return { ok: false, isHtml: false, status: 0, data: null, error: err.message };
+    }
+}
+
+function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
+    if (!entityId || typeof entityId !== 'string') return null;
+    const st = statesMap.get(entityId.trim());
+    if (!st || st.state === 'unavailable' || st.state === 'unknown' || st.state === null || st.state === undefined) return null;
+    const val = parseFloat(String(st.state).replace(',', '.'));
+    if (isNaN(val)) return null;
+    const unit = String(st.attributes?.unit_of_measurement || '').trim().toLowerCase();
+    if (targetUnitType === 'W') {
+        if (unit === 'kw') return val * 1000;
+        if (unit === 'mw') return val * 1000000;
+    } else if (targetUnitType === 'kWh') {
+        if (unit === 'wh') return val / 1000;
+        if (unit === 'mwh') return val * 1000;
+    }
+    return val;
+}
+
+function parseHaStatesInBrowser(statesArray, cfg) {
+    const statesMap = new Map();
+    statesArray.forEach(s => {
+        if (s && s.entity_id) statesMap.set(s.entity_id, s);
+    });
+
+    const e = cfg.entities || {};
+    const pvPowerW = extractHaNumericClient(statesMap, e.pvPower, 'W');
+    const loadPowerW = extractHaNumericClient(statesMap, e.loadPower, 'W');
+    let gridPowerW = extractHaNumericClient(statesMap, e.gridPower, 'W');
+    const gridImpW = extractHaNumericClient(statesMap, e.gridImportPower, 'W');
+    const gridExpW = extractHaNumericClient(statesMap, e.gridExportPower, 'W');
+    if (gridPowerW === null && (gridImpW !== null || gridExpW !== null)) {
+        gridPowerW = (gridImpW || 0) - (gridExpW || 0);
+    }
+
+    const batteryPowerW = extractHaNumericClient(statesMap, e.batteryPower, 'W');
+    const batterySocPct = extractHaNumericClient(statesMap, e.batterySoc, '%');
+    const pvEnergyTodayKwh = extractHaNumericClient(statesMap, e.pvEnergyToday, 'kWh');
+    const pvEnergyMonthKwh = extractHaNumericClient(statesMap, e.pvEnergyMonth, 'kWh');
+    const gridImportMonthKwh = extractHaNumericClient(statesMap, e.gridImportMonth, 'kWh');
+    const gridExportMonthKwh = extractHaNumericClient(statesMap, e.gridExportMonth, 'kWh');
+    const batteryChargeMonthKwh = extractHaNumericClient(statesMap, e.batteryChargeMonth, 'kWh');
+    const batteryDischargeMonthKwh = extractHaNumericClient(statesMap, e.batteryDischargeMonth, 'kWh');
+
+    const stringTelemetry = {};
+    const customStringsTelemetry = [];
+    if (Array.isArray(cfg.customStrings)) {
+        cfg.customStrings.forEach(cs => {
+            if (!cs || !cs.id) return;
+            const pW = extractHaNumericClient(statesMap, cs.powerEntity, 'W');
+            const eKwh = extractHaNumericClient(statesMap, cs.energyEntity, 'kWh');
+            stringTelemetry[cs.id] = {
+                powerW: pW !== null ? pW : 0,
+                energyKwh: eKwh,
+                available: pW !== null
+            };
+            customStringsTelemetry.push({
+                id: cs.id,
+                name: cs.name || cs.id,
+                color: cs.color || '#14b8a6',
+                powerEntity: cs.powerEntity || '',
+                energyEntity: cs.energyEntity || '',
+                powerW: pW !== null ? pW : 0,
+                energyKwh: eKwh,
+                available: pW !== null
+            });
+        });
+    }
+
+    const consumersTelemetry = [];
+    let unavailableConsumersCount = 0;
+    if (Array.isArray(cfg.customConsumers)) {
+        cfg.customConsumers.forEach(cc => {
+            if (!cc || !cc.name) return;
+            const pW = extractHaNumericClient(statesMap, cc.powerEntity, 'W');
+            if (pW === null) {
+                unavailableConsumersCount++;
+                consumersTelemetry.push({
+                    id: cc.id,
+                    name: cc.name,
+                    powerEntity: cc.powerEntity,
+                    powerW: 0,
+                    available: false
+                });
+            } else {
+                consumersTelemetry.push({
+                    id: cc.id,
+                    name: cc.name,
+                    powerEntity: cc.powerEntity,
+                    powerW: Math.max(0, pW),
+                    available: true
+                });
+            }
+        });
+    }
+
+    let finalPvPowerW = pvPowerW;
+    if (finalPvPowerW === null && customStringsTelemetry.length > 0) {
+        const sumStrings = customStringsTelemetry.reduce((acc, s) => acc + (s.powerW || 0), 0);
+        if (sumStrings > 0) finalPvPowerW = sumStrings;
+    }
+
+    return {
+        updatedAt: new Date().toISOString(),
+        pvPowerW: Math.round(finalPvPowerW || 0),
+        loadPowerW: Math.round(loadPowerW || 0),
+        gridPowerW: Math.round(gridPowerW || 0),
+        batteryPowerW: Math.round(batteryPowerW || 0),
+        batterySocPct,
+        pvEnergyTodayKwh,
+        pvEnergyMonthKwh,
+        gridImportMonthKwh,
+        gridExportMonthKwh,
+        batteryChargeMonthKwh,
+        batteryDischargeMonthKwh,
+        stringTelemetry,
+        customStringsTelemetry,
+        consumersTelemetry,
+        unavailableConsumersCount
+    };
+}
+
+async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/api/states') {
+    const cleanUrl = normalizeHaUrlClient(rawBaseUrl);
+    const cleanTok = cleanHaTokenClient(rawToken);
+    if (!cleanUrl || !cleanTok) {
+        return { ok: false, error: 'Bitte Home Assistant URL und Long-Lived Access Token eintragen.', diagnostics: [] };
+    }
+
+    const candidateUrls = [cleanUrl];
+    // Automatic fallback if user entered https://domain:8123 behind a Reverse Proxy on port 443
+    if (/^https:\/\/[^/]+:8123$/i.test(cleanUrl)) {
+        candidateUrls.push(cleanUrl.replace(/:8123$/i, ''));
+    }
+
+    const diagnostics = [];
+
+    for (const candidateBase of candidateUrls) {
+        const fullUrl = `${candidateBase}${endpointPath}`;
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 9000);
+            const res = await fetch(fullUrl, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${cleanTok}`,
+                    'Accept': 'application/json'
+                },
+                mode: 'cors',
+                credentials: 'omit',
+                signal: controller.signal
+            });
+            clearTimeout(timer);
+
+            const text = await res.text();
+            const trimmed = (text || '').trim();
+
+            if (!res.ok) {
+                diagnostics.push(`HTTP ${res.status} von ${candidateBase}`);
+                if (res.status === 401) {
+                    return {
+                        ok: false,
+                        status: 401,
+                        usedBaseUrl: candidateBase,
+                        error: 'HTTP 401 Unauthorized: Dein Reverse Proxy ist erreichbar, aber das Long-Lived Access Token wurde abgelehnt oder der Authorization-Header vom Proxy gefiltert.',
+                        diagnostics
+                    };
+                }
+                if (res.status === 403) {
+                    return {
+                        ok: false,
+                        status: 403,
+                        usedBaseUrl: candidateBase,
+                        error: 'HTTP 403 Forbidden: Bitte prüfe trusted_proxies und ip_ban_enabled in deiner Home Assistant configuration.yaml.',
+                        diagnostics
+                    };
+                }
+                continue;
+            }
+
+            if (trimmed.startsWith('<') || trimmed.toLowerCase().startsWith('<!doctype')) {
+                diagnostics.push(`${candidateBase} lieferte eine HTML-Seite statt JSON (z. B. vorgeschalteter Proxy-Login).`);
+                continue;
+            }
+
+            const json = JSON.parse(trimmed);
+            return {
+                ok: true,
+                status: res.status,
+                usedBaseUrl: candidateBase,
+                data: json,
+                diagnostics: [`Direkte Browser-Verbindung zu ${candidateBase} erfolgreich (HTTP 200 JSON).`]
+            };
+        } catch (err) {
+            diagnostics.push(`Abruf ${candidateBase}: ${err.name === 'AbortError' ? 'Timeout (9s)' : err.message}`);
+        }
+    }
+
+    const currentOrigin = window.location.origin;
+    return {
+        ok: false,
+        status: 0,
+        usedBaseUrl: candidateUrls[candidateUrls.length - 1],
+        isCorsOrNetworkError: true,
+        error: `Direkter Browser-Zugriff auf ${candidateUrls[candidateUrls.length - 1]}/api/states wurde vom Browser blockiert (CORS-Richtlinie oder Port).`,
+        diagnostics: [
+            ...diagnostics,
+            `WICHTIG für GitHub Pages (${currentOrigin}): Home Assistant verlangt in der configuration.yaml unter http: -> cors_allowed_origins exakt die Domain "${currentOrigin}" (ohne Schrägstrich am Ende, "*" allein wird von Home Assistant ignoriert!).`,
+            `Nach Änderung der configuration.yaml muss Home Assistant komplett neu gestartet werden (Entwicklerwerkzeuge → YAML → Home Assistant neu starten).`
+        ]
+    };
+}
+
+async function fetchHaHistoryInBrowser(cfg) {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    const startIso = startOfDay.toISOString();
+    const now = new Date();
+
+    const e = cfg.entities || {};
+    const entitySet = new Set();
+    if (e.pvPower) entitySet.add(e.pvPower.trim());
+    if (e.loadPower) entitySet.add(e.loadPower.trim());
+    if (e.gridPower) entitySet.add(e.gridPower.trim());
+    if (e.gridImportPower) entitySet.add(e.gridImportPower.trim());
+    if (e.batterySoc) entitySet.add(e.batterySoc.trim());
+    (cfg.customStrings || []).forEach(cs => {
+        if (cs && cs.powerEntity) entitySet.add(cs.powerEntity.trim());
+    });
+
+    const entityList = [...entitySet].filter(Boolean);
+    if (entityList.length === 0) return null;
+
+    const endpoint = `/api/history/period/${encodeURIComponent(startIso)}?filter_entity_id=${encodeURIComponent(entityList.join(','))}&minimal_response&no_attributes`;
+    const histRes = await fetchHaDirectFromBrowser(cfg.baseUrl, cfg.accessToken, endpoint);
+    if (!histRes.ok || !Array.isArray(histRes.data)) return null;
+
+    const stepMs = 5 * 60 * 1000;
+    const bucketTimes = [];
+    for (let t = startOfDay.getTime(); t <= now.getTime(); t += stepMs) {
+        bucketTimes.push(t);
+    }
+    if (bucketTimes.length === 0 || bucketTimes[bucketTimes.length - 1] < now.getTime()) {
+        bucketTimes.push(now.getTime());
+    }
+
+    const rawSeriesByEntity = new Map();
+    histRes.data.forEach(entityHistoryArr => {
+        if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return;
+        const entId = entityHistoryArr[0]?.entity_id;
+        if (!entId) return;
+        const points = [];
+        entityHistoryArr.forEach(pt => {
+            const val = parseFloat(String(pt.state).replace(',', '.'));
+            const ts = new Date(pt.last_changed || pt.last_updated || startIso).getTime();
+            if (!isNaN(val) && !isNaN(ts)) points.push({ ts, val });
+        });
+        points.sort((a, b) => a.ts - b.ts);
+        rawSeriesByEntity.set(entId, points);
+    });
+
+    const sampleEntity = (entityId, scale = 1) => {
+        const pts = rawSeriesByEntity.get((entityId || '').trim()) || [];
+        if (pts.length === 0) return bucketTimes.map(() => 0);
+        let pIdx = 0;
+        let lastVal = pts[0].ts <= bucketTimes[0] ? pts[0].val : 0;
+        return bucketTimes.map(bTs => {
+            while (pIdx < pts.length && pts[pIdx].ts <= bTs) {
+                lastVal = pts[pIdx].val;
+                pIdx++;
+            }
+            return +(lastVal * scale).toFixed(2);
+        });
+    };
+
+    const integrateKwh = (powerArr) => {
+        let wh = 0;
+        for (let i = 1; i < powerArr.length; i++) {
+            const dtH = (bucketTimes[i] - bucketTimes[i - 1]) / 3600000;
+            const avgW = Math.max(0, (powerArr[i] + powerArr[i - 1]) / 2);
+            wh += avgW * dtH;
+        }
+        return +(wh / 1000).toFixed(3);
+    };
+
+    const series = {};
+    const integratedKwh = {};
+
+    (cfg.customStrings || []).forEach(cs => {
+        if (!cs || !cs.id) return;
+        const arr = sampleEntity(cs.powerEntity, 1);
+        series[cs.id] = arr;
+        integratedKwh[cs.id] = integrateKwh(arr);
+    });
+
+    if (e.pvPower && rawSeriesByEntity.has(e.pvPower.trim())) {
+        series.pv_total = sampleEntity(e.pvPower, 1);
+    } else {
+        series.pv_total = bucketTimes.map((_, idx) => {
+            let sum = 0;
+            (cfg.customStrings || []).forEach(cs => {
+                if (cs && series[cs.id]) sum += series[cs.id][idx] || 0;
+            });
+            return +sum.toFixed(1);
+        });
+    }
+    integratedKwh.pv_total = integrateKwh(series.pv_total);
+
+    series.house_load = sampleEntity(e.loadPower, 1);
+    integratedKwh.house_load = integrateKwh(series.house_load);
+
+    const gridRaw = sampleEntity(e.gridPower || e.gridImportPower, 1);
+    series.grid_power = gridRaw.map(v => Math.max(0, v));
+    integratedKwh.grid_power = integrateKwh(series.grid_power);
+
+    series.battery_soc = sampleEntity(e.batterySoc, 1);
+
+    return {
+        startOfDay: startIso,
+        now: now.toISOString(),
+        bucketTimes,
+        series,
+        integratedKwh
+    };
+}
+
 async function refreshLiveTelemetryNow() {
     const baseline = getPlannedSystemBaseline();
 
@@ -478,48 +837,68 @@ async function refreshLiveTelemetryNow() {
         return;
     }
 
-    // Mode 'poll' or 'webhook' -> query backend /api/ha/states
-    try {
-        const res = await fetch('/api/ha/states', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: haConfigState })
-        });
-        const data = await res.json();
-
-        if (res.ok && data && data.success && data.telemetry) {
-            const t = data.telemetry;
-            currentLiveTelemetry = {
-                updatedAt: data.updatedAt || new Date().toISOString(),
-                pvPowerW: Math.round(t.pvPowerW || 0),
-                loadPowerW: Math.round(t.loadPowerW || 0),
-                gridPowerW: Math.round(t.gridPowerW || 0),
-                batteryPowerW: Math.round(t.batteryPowerW || 0),
-                batterySocPct: t.batterySocPct !== null && t.batterySocPct !== undefined ? +(Number(t.batterySocPct).toFixed(1)) : (baseline.totalBatteryKwh > 0 ? 50 : null),
-                pvEnergyTodayKwh: t.pvEnergyTodayKwh,
-                pvEnergyMonthKwh: t.pvEnergyMonthKwh,
-                gridImportMonthKwh: t.gridImportMonthKwh,
-                gridExportMonthKwh: t.gridExportMonthKwh,
-                batteryChargeMonthKwh: t.batteryChargeMonthKwh,
-                batteryDischargeMonthKwh: t.batteryDischargeMonthKwh,
-                stringTelemetry: data.stringTelemetry || {},
-                customStringsTelemetry: Array.isArray(data.customStringsTelemetry) ? data.customStringsTelemetry : [],
-                consumersTelemetry: Array.isArray(data.consumersTelemetry) ? data.consumersTelemetry : [],
-                unavailableConsumersCount: t.unavailableConsumersCount ?? 0,
-                connectionOk: true,
-                lastError: null
-            };
-
-            if (haConfigState.autoSyncMonthly && t.pvEnergyMonthKwh !== null && t.pvEnergyMonthKwh !== undefined && t.pvEnergyMonthKwh > 0) {
-                syncCurrentMonthFromLiveTelemetry(false);
-            }
-        } else {
-            currentLiveTelemetry.connectionOk = false;
-            currentLiveTelemetry.lastError = data?.error || 'Keine Antwort von Home Assistant.';
+    // 1. Try Browser-Direct Home Assistant API first (works on GitHub Pages & local LAN/VPN)
+    const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+    if (directRes.ok && Array.isArray(directRes.data)) {
+        if (directRes.usedBaseUrl && directRes.usedBaseUrl !== haConfigState.baseUrl) {
+            haConfigState.baseUrl = directRes.usedBaseUrl;
+            localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
         }
-    } catch (err) {
+        const parsed = parseHaStatesInBrowser(directRes.data, haConfigState);
+        currentLiveTelemetry = {
+            ...currentLiveTelemetry,
+            ...parsed,
+            batterySocPct: parsed.batterySocPct !== null && parsed.batterySocPct !== undefined
+                ? +(Number(parsed.batterySocPct).toFixed(1))
+                : (baseline.totalBatteryKwh > 0 ? 50 : null),
+            connectionOk: true,
+            lastError: null
+        };
+        if (haConfigState.autoSyncMonthly && parsed.pvEnergyMonthKwh !== null && parsed.pvEnergyMonthKwh !== undefined && parsed.pvEnergyMonthKwh > 0) {
+            syncCurrentMonthFromLiveTelemetry(false);
+        }
+        renderLiveCockpitUI(baseline);
+        renderIntradayCurveSection(baseline);
+        return;
+    }
+
+    // 2. Fallback to backend /api/ha/states (when running with Node.js server.js)
+    const backendRes = await safeFetchBackendJson('/api/ha/states', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config: haConfigState })
+    });
+
+    if (backendRes.ok && backendRes.data && backendRes.data.success && backendRes.data.telemetry) {
+        const data = backendRes.data;
+        const t = data.telemetry;
+        currentLiveTelemetry = {
+            updatedAt: data.updatedAt || new Date().toISOString(),
+            pvPowerW: Math.round(t.pvPowerW || 0),
+            loadPowerW: Math.round(t.loadPowerW || 0),
+            gridPowerW: Math.round(t.gridPowerW || 0),
+            batteryPowerW: Math.round(t.batteryPowerW || 0),
+            batterySocPct: t.batterySocPct !== null && t.batterySocPct !== undefined ? +(Number(t.batterySocPct).toFixed(1)) : (baseline.totalBatteryKwh > 0 ? 50 : null),
+            pvEnergyTodayKwh: t.pvEnergyTodayKwh,
+            pvEnergyMonthKwh: t.pvEnergyMonthKwh,
+            gridImportMonthKwh: t.gridImportMonthKwh,
+            gridExportMonthKwh: t.gridExportMonthKwh,
+            batteryChargeMonthKwh: t.batteryChargeMonthKwh,
+            batteryDischargeMonthKwh: t.batteryDischargeMonthKwh,
+            stringTelemetry: data.stringTelemetry || {},
+            customStringsTelemetry: Array.isArray(data.customStringsTelemetry) ? data.customStringsTelemetry : [],
+            consumersTelemetry: Array.isArray(data.consumersTelemetry) ? data.consumersTelemetry : [],
+            unavailableConsumersCount: t.unavailableConsumersCount ?? 0,
+            connectionOk: true,
+            lastError: null
+        };
+
+        if (haConfigState.autoSyncMonthly && t.pvEnergyMonthKwh !== null && t.pvEnergyMonthKwh !== undefined && t.pvEnergyMonthKwh > 0) {
+            syncCurrentMonthFromLiveTelemetry(false);
+        }
+    } else {
         currentLiveTelemetry.connectionOk = false;
-        currentLiveTelemetry.lastError = err.message;
+        currentLiveTelemetry.lastError = directRes.error || backendRes.data?.error || 'Home Assistant nicht erreichbar (CORS / Token prüfen).';
     }
 
     renderLiveCockpitUI(baseline);
@@ -751,15 +1130,37 @@ async function fetchAndRenderIntradayHistory() {
         return;
     }
 
+    // 1. Try Browser-Direct Home Assistant History API first (GitHub Pages compatible)
     try {
-        const res = await fetch('/api/ha/history', {
+        const directHist = await fetchHaHistoryInBrowser(haConfigState);
+        if (directHist && Array.isArray(directHist.bucketTimes) && directHist.bucketTimes.length > 0) {
+            const labels = directHist.bucketTimes.map(ts => {
+                const d = new Date(ts);
+                return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+            });
+            intradaySeriesState = {
+                startOfDayIso: directHist.startOfDay,
+                nowIso: directHist.now,
+                labels,
+                bucketTimes: directHist.bucketTimes,
+                series: directHist.series,
+                integratedKwh: directHist.integratedKwh || {}
+            };
+            renderIntradayCurveSection(baseline);
+            return;
+        }
+    } catch (e) {}
+
+    // 2. Fallback to backend /api/ha/history (safe JSON check)
+    try {
+        const backendRes = await safeFetchBackendJson('/api/ha/history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ config: haConfigState })
         });
-        const data = await res.json();
+        const data = backendRes.data;
 
-        if (res.ok && data && data.success) {
+        if (backendRes.ok && data && data.success) {
             if (Array.isArray(data.bucketTimes) && data.bucketTimes.length > 0 && data.series) {
                 const labels = data.bucketTimes.map(ts => {
                     const d = new Date(ts);
@@ -774,7 +1175,6 @@ async function fetchAndRenderIntradayHistory() {
                     integratedKwh: data.integratedKwh || {}
                 };
             } else if (Array.isArray(data.snapshots) && data.snapshots.length > 0) {
-                // Build from buffered snapshots
                 const snaps = data.snapshots;
                 const bucketTimes = snaps.map(s => s.ts);
                 const labels = snaps.map(s => new Date(s.ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
@@ -806,9 +1206,11 @@ async function fetchAndRenderIntradayHistory() {
                     series,
                     integratedKwh
                 };
-            } else {
+            } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
                 buildDemoIntradaySeries(baseline);
             }
+        } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
+            buildDemoIntradaySeries(baseline);
         }
     } catch (e) {
         if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
@@ -2287,9 +2689,10 @@ function switchHaModalTab(tab = 'config') {
 }
 
 function copyHaReverseProxyYaml() {
-    const codeEl = document.getElementById('haReverseProxyYamlCode');
-    if (!codeEl) return;
-    navigator.clipboard.writeText(codeEl.value).then(() => {
+    const blockEl = document.getElementById('haReverseProxyYamlBlock') || document.getElementById('haReverseProxyYamlCode');
+    if (!blockEl) return;
+    const textToCopy = blockEl.value !== undefined ? blockEl.value : blockEl.innerText;
+    navigator.clipboard.writeText(textToCopy).then(() => {
         if (typeof showToastNotification === 'function') {
             showToastNotification('http / cors configuration.yaml Vorlage in die Zwischenablage kopiert!', 'success');
         }
@@ -2322,6 +2725,7 @@ function openHaConfigModal(focusSection = null) {
     renderHaCustomStringsEditor();
     renderHaCustomConsumersEditor();
     updateHaWebhookYamlSnippet();
+    updateHaReverseProxyYamlDynamic();
 
     modal.classList.remove('hidden');
 
@@ -2341,6 +2745,27 @@ function openHaConfigModal(focusSection = null) {
             document.getElementById('haStringsSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
     }
+}
+
+function updateHaReverseProxyYamlDynamic() {
+    const currentOrigin = window.location.origin;
+    const originsSet = new Set([currentOrigin, 'https://magic8383.github.io', 'https://aistudio.google.com']);
+    const originsLines = [...originsSet].map(o => `    - ${o}`).join('\n');
+    const yamlText = `http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 127.0.0.1
+    - ::1
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 10.0.0.0/8
+  cors_allowed_origins:
+${originsLines}`;
+
+    const blockEl = document.getElementById('haReverseProxyYamlBlock');
+    if (blockEl) blockEl.innerText = yamlText;
+    const codeEl = document.getElementById('haReverseProxyYamlCode');
+    if (codeEl) codeEl.value = yamlText;
 }
 
 function closeHaConfigModal() {
@@ -2531,119 +2956,126 @@ async function testHaConnectionAndLoadSensors() {
     if (statusBox) {
         statusBox.classList.remove('hidden');
         statusBox.className = "p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 font-medium";
-        statusBox.innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Prüfe Domain, Reverse-Proxy Weiterleitungen & Long-Lived Token...</span></div>`;
+        statusBox.innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Prüfe direkte Browser-Verbindung zu Home Assistant (${typeof escapeHtml === 'function' ? escapeHtml(normalizeHaUrlClient(haConfigState.baseUrl)) : normalizeHaUrlClient(haConfigState.baseUrl)})...</span></div>`;
     }
 
-    try {
-        const res = await fetch('/api/ha/test', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                baseUrl: haConfigState.baseUrl,
-                accessToken: haConfigState.accessToken
-            })
-        });
-        const data = await res.json();
+    // 1. Primary path: Direct Browser Fetch (essential for GitHub Pages & static web hosts)
+    const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
 
-        if (data?.normalizedBaseUrl) {
+    if (directRes.usedBaseUrl) {
+        haConfigState.baseUrl = directRes.usedBaseUrl;
+        setElVal('ha_cfg_url', directRes.usedBaseUrl);
+    }
+
+    if (directRes.ok && Array.isArray(directRes.data)) {
+        discoveredHaSensors = directRes.data
+            .filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('sensor.'))
+            .map(s => ({
+                entity_id: s.entity_id,
+                name: s.attributes?.friendly_name || s.entity_id,
+                state: s.state,
+                unit: s.attributes?.unit_of_measurement || ''
+            }))
+            .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+
+        const dl = document.getElementById('haEntitiesDatalist');
+        if (dl) {
+            dl.innerHTML = discoveredHaSensors.map(s =>
+                `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
+            ).join('');
+        }
+
+        // Switch mode to 'poll' automatically on successful test so live values appear immediately
+        haConfigState.mode = 'poll';
+        setElVal('ha_cfg_mode', 'poll');
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+
+        if (statusBox) {
+            statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
+            statusBox.innerHTML = `
+                <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                    <span class="material-symbols-rounded text-base">check_circle</span>
+                    <span>Direkt-Verbindung erfolgreich! (${discoveredHaSensors.length} Sensoren von ${directRes.usedBaseUrl} geladen)</span>
+                </div>
+                <p class="mt-1 text-[11px]">Daten-Modus wurde automatisch auf „Home Assistant API Abruf (Live-Poll)“ gestellt.</p>
+            `;
+        }
+        return;
+    }
+
+    // 2. Secondary path: Try backend proxy /api/ha/test ONLY if running on a Node.js server (safe against HTML 404/405 on GitHub Pages)
+    const backendRes = await safeFetchBackendJson('/api/ha/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            baseUrl: haConfigState.baseUrl,
+            accessToken: haConfigState.accessToken
+        })
+    });
+
+    if (backendRes.ok && backendRes.data && backendRes.data.success) {
+        const data = backendRes.data;
+        if (data.normalizedBaseUrl) {
             haConfigState.baseUrl = data.normalizedBaseUrl;
             setElVal('ha_cfg_url', data.normalizedBaseUrl);
         }
-
-        const diagHtml = Array.isArray(data?.diagnostics) && data.diagnostics.length > 0
-            ? `<div class="mt-2.5 pt-2 border-t border-slate-300/50 dark:border-slate-700/60 space-y-1 font-mono text-[11px] opacity-90">${data.diagnostics.map(d => `<div>• ${typeof escapeHtml === 'function' ? escapeHtml(d) : d}</div>`).join('')}</div>`
-            : '';
-
-        if (res.ok && data && data.success) {
-            discoveredHaSensors = data.sensors || [];
-            const dl = document.getElementById('haEntitiesDatalist');
-            if (dl) {
-                dl.innerHTML = discoveredHaSensors.map(s =>
-                    `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
-                ).join('');
-            }
-            if (statusBox) {
-                statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
-                statusBox.innerHTML = `
-                    <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
-                        <span class="material-symbols-rounded text-base">check_circle</span>
-                        <span>Verbindung über Reverse Proxy erfolgreich! (${data.sensorCount} Sensoren geladen)</span>
-                    </div>
-                    ${diagHtml}
-                `;
-            }
-            return;
+        discoveredHaSensors = data.sensors || [];
+        const dl = document.getElementById('haEntitiesDatalist');
+        if (dl) {
+            dl.innerHTML = discoveredHaSensors.map(s =>
+                `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
+            ).join('');
         }
-
-        // If server proxy failed (e.g., private Split-DNS domain or Geo-IP block), try direct browser fetch as fallback
-        try {
-            const cleanUrl = (data?.normalizedBaseUrl || haConfigState.baseUrl || '').replace(/\/+$/, '');
-            const cleanTok = (haConfigState.accessToken || '').replace(/^Bearer\s+/i, '').replace(/[\r\n\s]+/g, '');
-            if (cleanUrl && cleanTok) {
-                const directRes = await fetch(`${cleanUrl}/api/states`, {
-                    method: 'GET',
-                    headers: {
-                        'Authorization': `Bearer ${cleanTok}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-                if (directRes.ok) {
-                    const statesArr = await directRes.json();
-                    if (Array.isArray(statesArr)) {
-                        discoveredHaSensors = statesArr
-                            .filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('sensor.'))
-                            .map(s => ({
-                                entity_id: s.entity_id,
-                                name: s.attributes?.friendly_name || s.entity_id,
-                                state: s.state,
-                                unit: s.attributes?.unit_of_measurement || ''
-                            }));
-                        const dl = document.getElementById('haEntitiesDatalist');
-                        if (dl) {
-                            dl.innerHTML = discoveredHaSensors.map(s =>
-                                `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
-                            ).join('');
-                        }
-                        if (statusBox) {
-                            statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
-                            statusBox.innerHTML = `
-                                <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
-                                    <span class="material-symbols-rounded text-base">check_circle</span>
-                                    <span>Direkt-Verbindung über deinen Browser erfolgreich! (${discoveredHaSensors.length} Sensoren geladen)</span>
-                                </div>
-                                <p class="mt-1 text-[11px]">Deine Domain ist aus deinem lokalen Netz/Browser direkt erreichbar (CORS aktiv).</p>
-                            `;
-                        }
-                        return;
-                    }
-                }
-            }
-        } catch (directErr) {
-            // Ignore direct fallback error and show detailed server diagnostics
-        }
+        haConfigState.mode = 'poll';
+        setElVal('ha_cfg_mode', 'poll');
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
 
         if (statusBox) {
-            const safeErr = typeof escapeHtml === 'function' ? escapeHtml(data?.error || 'Verbindung fehlgeschlagen.') : (data?.error || 'Verbindung fehlgeschlagen.');
-            statusBox.className = "p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-800 dark:text-rose-200";
+            statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
             statusBox.innerHTML = `
-                <div class="font-extrabold flex items-start gap-1.5 text-rose-600 dark:text-rose-300">
-                    <span class="material-symbols-rounded text-base shrink-0">error</span>
-                    <span>${safeErr}</span>
-                </div>
-                ${diagHtml}
-                <div class="mt-3 pt-2.5 border-t border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
-                    <span class="text-[11px] text-rose-700 dark:text-rose-300 font-semibold">Nutzt du Nginx, Traefik, Cloudflare oder Synology Reverse Proxy?</span>
-                    <button type="button" onclick="switchHaModalTab('guide')" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-extrabold transition-colors cursor-pointer">
-                        Zur Reverse-Proxy Anleitung & Lösung →
-                    </button>
+                <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                    <span class="material-symbols-rounded text-base">check_circle</span>
+                    <span>Verbindung über Server-Proxy erfolgreich! (${data.sensorCount} Sensoren geladen)</span>
                 </div>
             `;
         }
-    } catch (err) {
-        if (statusBox) {
-            statusBox.className = "p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 font-semibold";
-            statusBox.innerText = 'Netzwerkfehler: ' + err.message;
-        }
+        return;
+    }
+
+    // 3. Detailed, accurate error reporting (especially for GitHub Pages CORS & Reverse Proxy)
+    const allDiagnostics = [
+        ...(directRes.diagnostics || []),
+        ...((!backendRes.isHtml && Array.isArray(backendRes.data?.diagnostics)) ? backendRes.data.diagnostics : [])
+    ];
+    const diagHtml = allDiagnostics.length > 0
+        ? `<div class="mt-2.5 pt-2 border-t border-rose-500/20 space-y-1 font-mono text-[11px] opacity-95">${allDiagnostics.map(d => `<div>• ${typeof escapeHtml === 'function' ? escapeHtml(d) : d}</div>`).join('')}</div>`
+        : '';
+
+    const primaryErr = directRes.error || backendRes.data?.error || 'Verbindung fehlgeschlagen.';
+    const safeErr = typeof escapeHtml === 'function' ? escapeHtml(primaryErr) : primaryErr;
+    const currentOrigin = window.location.origin;
+
+    if (statusBox) {
+        statusBox.className = "p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-800 dark:text-rose-200";
+        statusBox.innerHTML = `
+            <div class="font-extrabold flex items-start gap-1.5 text-rose-600 dark:text-rose-300">
+                <span class="material-symbols-rounded text-base shrink-0">error</span>
+                <span>${safeErr}</span>
+            </div>
+            ${diagHtml}
+            <div class="mt-3 p-2.5 rounded-lg bg-slate-900 text-teal-300 font-mono text-[11px]">
+                <div class="text-slate-400 font-sans font-bold mb-1">Erforderlicher Eintrag in deiner Home Assistant configuration.yaml für diese Domain:</div>
+                <div>http:</div>
+                <div>&nbsp;&nbsp;cors_allowed_origins:</div>
+                <div>&nbsp;&nbsp;&nbsp;&nbsp;- "${currentOrigin}"</div>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
+                <span class="text-[11px] text-rose-700 dark:text-rose-300 font-semibold">Wichtig: Home Assistant akzeptiert bei cors_allowed_origins kein "*", sondern braucht exakt "${currentOrigin}"!</span>
+                <button type="button" onclick="switchHaModalTab('guide')" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-extrabold transition-colors cursor-pointer">
+                    Komplette YAML-Vorlage kopieren →
+                </button>
+            </div>
+        `;
     }
 }
 

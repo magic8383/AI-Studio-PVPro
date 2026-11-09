@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.5';
+        if (verEl) verEl.innerText = 'Pro 8.6';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -1705,7 +1705,7 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
     const badgeEl = document.getElementById('headerLevelBadge');
     const brandBadge = document.getElementById('headerBrandBadge');
     const backBtn = document.getElementById('btnHeaderBack');
-    const backBtnLbl = document.getElementById('btnHeaderBackLabel');
+    const backBtnLbl = document.getElementById('headerBackBtnLabel') || document.getElementById('btnHeaderBackLabel');
 
     if (titleEl) titleEl.innerText = title;
     if (subEl) subEl.innerText = subtitle;

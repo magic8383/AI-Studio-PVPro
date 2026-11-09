@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 8.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 8.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 8.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 8.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=8.5">
+    <link rel="manifest" href="manifest.json?v=8.6">
     <meta name="theme-color" content="#0b1519">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.5">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.5">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.5">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.5">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.6">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.6">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.6">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.6">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -346,7 +346,7 @@
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-400/15 border border-teal-500/30 dark:border-teal-400/30 flex items-center justify-center text-teal-700 dark:text-teal-300 shrink-0 cursor-pointer" title="Zum Start-Dashboard">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-lg">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 8.5</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 8.6</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -601,7 +601,7 @@
                         </div>
                         <div class="min-w-0">
                             <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">9. Handbuch, Formeln &amp; Versions-Historie</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Physikalische Grundlagen, VDE-Normen &amp; Changelog v8.5</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Physikalische Grundlagen, VDE-Normen &amp; Changelog v8.6</p>
                         </div>
                     </div>
                     <span class="material-symbols-rounded text-slate-400 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
@@ -2508,8 +2508,8 @@
     - 192.168.0.0/16
     - 10.0.0.0/8
   cors_allowed_origins:
-    - https://aistudio.google.com
-    - "*"</pre>
+    - https://magic8383.github.io
+    - https://aistudio.google.com</pre>
                     </div>
 
                     <!-- Schritt 3: Reverse Proxy Einstellungen (Nginx Proxy Manager / Cloudflare / Synology) -->
@@ -2768,13 +2768,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V8.5 (Liquid Glass, Sankey Energy Flow, 2-Level Mobile-First Drill-Down & HA Reverse-Proxy Engine) -->
-    <script src="qrcode.client.js?v=8.5"></script>
-    <script src="database.js?v=8.5"></script>
-    <script src="content.js?v=8.5"></script>
-    <script src="app.js?v=8.5"></script>
-    <script src="wiring.js?v=8.5"></script>
-    <script src="dossier.js?v=8.5"></script>
-    <script src="telemetry.js?v=8.5"></script>
+    <!-- MODULARE ARCHITEKTUR V8.6 (GitHub Pages Browser-First HA Client, Liquid Glass, Sankey Energy Flow & 2-Level Mobile-First Drill-Down) -->
+    <script src="qrcode.client.js?v=8.6"></script>
+    <script src="database.js?v=8.6"></script>
+    <script src="content.js?v=8.6"></script>
+    <script src="app.js?v=8.6"></script>
+    <script src="wiring.js?v=8.6"></script>
+    <script src="dossier.js?v=8.6"></script>
+    <script src="telemetry.js?v=8.6"></script>
 </body>
 </html>

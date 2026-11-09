@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.5 (Interaktives Sankey-Energiefluss-Diagramm, echtes Liquid-Glass Dark-Mode Design, einheitliche 2-Ebenen Mobile-First Drill-Down-Navigation, 2-zeiliger Header & Home Assistant Reverse-Proxy Diagnose/Anleitung)  
+**Aktuelle Version:** 8.6 (Browser-First Home Assistant Client für GitHub Pages & statische Webserver, automatische Port-443/8123-Erkennung, sicheres HTML/JSON-Parsing ohne `Unexpected token '<'` & dynamische `cors_allowed_origins` Origin-Erkennung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
