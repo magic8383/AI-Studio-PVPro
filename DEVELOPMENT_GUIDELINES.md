@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.3 (Live-Telemetrie & Performance-Analyse-Suite mit Home Assistant Integration, Soll-Ist-PVGIS-Vergleich, Batterie-Wirkungsgrad, realer Amortisationsrechnung & mehrstufigem EU-JRC-PVGIS-Server-Proxy)  
+**Aktuelle Version:** 8.4 (Dashboard-First Redesign „Solar & Netz · live“ mit 2x2 Echtzeit-Energiekacheln, frei konfigurierbaren Einzelverbrauchern & PV-Strings, interaktivem HA-Tagesverlauf mit auswählbaren Messwert-Kacheln & schwebender Pill-Navigation)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

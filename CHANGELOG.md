@@ -4,6 +4,34 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.4] – 2026-11-09
+
+### ⚡ Komplettes Dashboard-First Redesign („Solar & Netz · live“), Interaktiver Tagesverlauf & Frei Konfigurierbare Home Assistant Verbraucher/Strings
+
+#### 1. Neues Start-Dashboard „Solar & Netz · live“ (Progressive Disclosure)
+* **Sofortiger Überblick beim Öffnen der App (`#tab-live`):**
+  - Die App startet direkt auf dem aufgeräumten **Live-Dashboard** im zweistufigen Farbdesign (sanfter Mint-Pastell-Verlauf im Hellmodus, edles Deep-Teal/Slate im Dunkelmodus).
+  - **Sektion „Energie · jetzt“ (2x2 Status-Kacheln):** Zeigt auf einen Blick `PV gesamt · DC` (Mint/Teal), `Hausverbrauch · AC` (Amber/Orange), `Batteriespeicher / BYD HVS+` (Lavendel/Violett mit SoC-% und Status) sowie `Netz · Bezug / Einspeisung` (Blau) inklusive dynamischer Fortschrittsbalken.
+  - **Sektion „Aktive Verbraucher“:** Listet alle aktiven Einzelverbraucher (z. B. `Trockner`, `TV-Verstärker`, `Esszimmer Licht`, `Küche Licht`) absteigend nach aktueller Leistung (`W`/`kW`) in klaren Pill-Zeilen auf und zeigt automatisch an, falls ein Sensorwert aktuell nicht verfügbar ist.
+
+#### 2. Interaktives Tagesdiagramm & Auswählbare Messwert-Kacheln (`/api/ha/history`)
+* **Automatischer Home Assistant Tagesverlauf (`00:00` bis jetzt):**
+  - Neuer Backend-Endpunkt `/api/ha/history` in `server.js` ruft die Tageshistorie aller zugeordneten Leistungs-, String- und Batterie-Sensoren direkt aus Home Assistant (`/api/history/period`) ab, tastet sie auf ein einheitliches 5-Minuten-Zeitraster ab und berechnet per Trapez-Integration die erzeugte bzw. verbrauchte Tagesenergie (`≈ kWh · aus Leistung`).
+  - **Dual-Achsen-Diagramm (`W` links, `%` rechts):** Rendert beliebig viele String- und Systemkurven gleichzeitig mit interaktiven Legenden-Chips und präzisem Zeitstempel-Readout unter dem Graphen.
+  - **Interaktive Kurven-Auswahlkacheln (`Kurven auswählen · aktuelle Messwerte`):** 2-spaltiges Kachel-Grid für alle Strings und Hauptsensoren. Ein Tap auf eine Kachel schaltet die zugehörige Kurve im Diagramm sofort ein oder aus (mit farbigem Rahmen-Highlight) und zeigt live die aktuelle Leistung (`W`) sowie die Tages-kWh (`erfasster Zeitraum` bzw. `≈ kWh · aus Leistung`).
+
+#### 3. Frei Konfigurierbare Einzelverbraucher & PV-Strings in Home Assistant (`#modal-ha-config`)
+* **Dynamischer Editor für Verbraucher & Strings:**
+  - Beliebig viele Einzelverbraucher (`Name` + `sensor.*`) und PV-Strings/Wechselrichter (`Name`, Farb-Akzent, Leistungs-Entität `W` + optionale Tagesertrags-Entität `kWh`) können frei angelegt, bearbeitet oder gelöscht werden.
+  - **1-Klick „Aus Planung übernehmen“:** Überträgt die in der PV-Planung angelegten Stränge automatisch in die Home-Assistant-Stringliste.
+
+#### 4. Schwebende, Handyoptimierte Pill-Navigationsleiste & Entkoppelte Ebenen
+* **Kompakte Floating Bottom Bar (`#floatingBottomNav`, ab 360 px Bildschirmbreite):**
+  - Schneller Wechsel mit einem Daumen-Tap zwischen **Dashboard (`bolt`)**, **Soll-Ist- & Tiefen-Analyse (`monitoring`)**, **PV-Planung (`solar_power`)**, **Menü (`menu`)** und **Hell-/Dunkelmodus (`dark_mode`/`light_mode`)**.
+  - Die detaillierte 9-stufige Planungs-Subnavigation (`#navScroller`) erscheint kontextsensitiv nur noch innerhalb der PV-Planungsebene, sodass das Start-Dashboard maximal ruhig und übersichtlich bleibt.
+
+---
+
 ## [Version 8.3] – 2026-11-08
 
 ### 📊 Live-Telemetrie, Home Assistant Integration, Soll-Ist-Performance-Analyse & EU-JRC PVGIS Server-Proxy

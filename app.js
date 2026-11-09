@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.3';
+        if (verEl) verEl.innerText = 'Pro 8.4';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -1666,7 +1666,8 @@ async function loadConfigurationByCode(code) {
 // ==========================================
 // 2. UI TAB ROUTING & SWIPE GESTURES
 // ==========================================
-const tabOrder = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'live', 'database', 'faq'];
+const tabOrder = ['live', 'analyse', 'system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
+const planningTabs = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
 let touchStartX = 0, touchStartY = 0;
 
 document.addEventListener('touchstart', e => { 
@@ -1700,69 +1701,88 @@ function switchTab(tabId) {
     
     const target = document.getElementById('tab-' + tabId);
     if(target) target.classList.add('active');
+
+    // Top Header Titel & Icon kontextsensitiv aktualisieren
+    const titleEl = document.getElementById('headerViewTitle');
+    const iconEl = document.getElementById('headerSectionIcon');
+    const scroller = document.getElementById('navScroller');
+    const saveBtn = document.getElementById('btnHeaderSave');
+    const isPlanning = planningTabs.includes(tabId);
+
+    if (tabId === 'live') {
+        if (titleEl) titleEl.innerText = 'Solar & Netz · live';
+        if (iconEl) iconEl.innerText = 'cell_tower';
+    } else if (tabId === 'analyse') {
+        if (titleEl) titleEl.innerText = 'Performance & Soll-Ist · Analyse';
+        if (iconEl) iconEl.innerText = 'monitoring';
+    } else {
+        const tabTitles = {
+            system: 'PV-Planung · Strings & Dach',
+            verkabelung: 'PV-Planung · Kabelplan & VDE',
+            verbrauch: 'PV-Planung · Lastprofil & Verbrauch',
+            invest: 'PV-Planung · Investition & Kosten',
+            finance: 'PV-Planung · Tarife & EEG',
+            uebersicht: 'PV-Planung · Übersicht & KPIs',
+            auswertung: 'PV-Planung · 8.760h Prognose',
+            database: 'PV-Planung · Hardware-Datenbank',
+            faq: 'PV-Planung · Handbuch & Hilfe'
+        };
+        if (titleEl) titleEl.innerText = tabTitles[tabId] || 'PV-Planung & Auslegung';
+        if (iconEl) iconEl.innerText = 'solar_power';
+    }
+
+    if (scroller) {
+        if (isPlanning) {
+            scroller.classList.remove('hidden');
+            scroller.classList.add('flex');
+        } else {
+            scroller.classList.add('hidden');
+            scroller.classList.remove('flex');
+        }
+    }
+    if (saveBtn) {
+        if (isPlanning) {
+            saveBtn.classList.remove('hidden');
+            saveBtn.classList.add('flex');
+        } else {
+            saveBtn.classList.add('hidden');
+            saveBtn.classList.remove('flex');
+        }
+    }
     
-    // Desktop Segmented Bar Buttons aktualisieren
-    tabOrder.forEach(id => {
+    // Sub-Navigationsleiste (#navScroller) für Planungs-Tabs aktualisieren
+    planningTabs.forEach(id => {
         let btn = document.getElementById('btn-' + id);
         if(btn) {
             if(id === tabId) {
-                btn.className = "m3-segment-btn active snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-bold rounded-xl bg-primary text-white shadow-sm flex items-center gap-1.5 transition-all";
+                btn.className = "m3-segment-btn active snap-start shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl bg-primary text-white shadow-xs flex items-center gap-1.5 transition-all cursor-pointer";
                 let icon = btn.querySelector('.material-symbols-rounded');
                 if(icon) icon.classList.add('fill-1');
             } else {
-                btn.className = "m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all";
-                if(id === 'auswertung') btn.classList.add('text-accent');
-                if(id === 'live') btn.classList.add('text-emerald-400');
+                btn.className = "m3-segment-btn snap-start shrink-0 px-3 py-1.5 text-xs font-medium rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 flex items-center gap-1.5 transition-all cursor-pointer";
                 let icon = btn.querySelector('.material-symbols-rounded');
                 if(icon) icon.classList.remove('fill-1');
             }
         }
     });
 
-    // Mobile Bottom Navigation Bar Buttons aktualisieren
-    const bottomNavIds = ['system', 'verbrauch', 'auswertung', 'live'];
-    bottomNavIds.forEach(id => {
-        let bBtn = document.getElementById('bnav-' + id);
-        if(bBtn) {
-            let pill = bBtn.querySelector('.m3-bnav-pill');
-            let icon = bBtn.querySelector('.material-symbols-rounded');
-            let label = bBtn.querySelector('.m3-bnav-label');
-            if(id === tabId) {
-                if(pill) pill.className = "m3-bnav-pill px-4 py-1 rounded-full bg-primary/20 text-primary dark:bg-primary/30 dark:text-primary transition-all flex items-center justify-center";
-                if(icon) { icon.classList.add('fill-1'); icon.className = "material-symbols-rounded text-xl text-primary font-bold fill-1"; }
-                if(label) label.className = "m3-bnav-label text-[10px] font-bold text-primary mt-0.5 tracking-tight";
-            } else {
-                if(pill) pill.className = "m3-bnav-pill px-4 py-1 rounded-full bg-transparent text-slate-400 transition-all flex items-center justify-center";
-                if(icon) { icon.classList.remove('fill-1'); icon.className = "material-symbols-rounded text-xl text-slate-400"; }
-                if(label) label.className = "m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight";
-            }
-        }
-    });
+    // Schwebende untere Pill-Navigation aktualisieren (bnav-live, bnav-analyse, bnav-system)
+    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-14 h-12 rounded-2xl bg-teal-500/15 dark:bg-teal-500/20 border-2 border-teal-600 dark:border-teal-400 text-teal-700 dark:text-teal-300 transition-all cursor-pointer";
+    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-14 h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all cursor-pointer";
 
-    // Falls ein Tab aus dem "Mehr"-Sheet aktiv ist, den "Mehr"-Button hervorheben
-    let moreBtn = document.getElementById('bnav-more');
-    if(moreBtn) {
-        let isMoreChild = ['verkabelung', 'invest', 'finance', 'uebersicht', 'database', 'faq'].includes(tabId);
-        let pill = moreBtn.querySelector('.m3-bnav-pill');
-        let icon = moreBtn.querySelector('.material-symbols-rounded');
-        let label = moreBtn.querySelector('.m3-bnav-label');
-        if(isMoreChild) {
-            if(pill) pill.className = "m3-bnav-pill px-4 py-1 rounded-full bg-primary/20 text-primary dark:bg-primary/30 dark:text-primary transition-all flex items-center justify-center";
-            if(icon) { icon.classList.add('fill-1'); icon.className = "material-symbols-rounded text-xl text-primary font-bold fill-1"; }
-            if(label) label.className = "m3-bnav-label text-[10px] font-bold text-primary mt-0.5 tracking-tight";
-        } else {
-            if(pill) pill.className = "m3-bnav-pill px-4 py-1 rounded-full bg-transparent text-slate-400 transition-all flex items-center justify-center";
-            if(icon) { icon.classList.remove('fill-1'); icon.className = "material-symbols-rounded text-xl text-slate-400"; }
-            if(label) label.className = "m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight";
-        }
-    }
+    const bLive = document.getElementById('bnav-live');
+    const bAnalyse = document.getElementById('bnav-analyse');
+    const bSystem = document.getElementById('bnav-system');
+
+    if (bLive) bLive.className = (tabId === 'live') ? activePillClass : inactivePillClass;
+    if (bAnalyse) bAnalyse.className = (tabId === 'analyse') ? activePillClass : inactivePillClass;
+    if (bSystem) bSystem.className = isPlanning ? activePillClass : inactivePillClass;
     
-    // Nach Auswahl Bottom Sheet schließen (falls mobil offen)
+    // Nach Auswahl Bottom Sheet schließen (falls offen)
     closeMoreSheet();
 
-    let btn = document.getElementById('btn-'+tabId);
-    let scroller = document.getElementById('navScroller');
-    if(btn && scroller) {
+    let btn = document.getElementById('btn-' + tabId);
+    if(btn && scroller && isPlanning) {
         try { scroller.scrollTo({left: btn.offsetLeft - window.innerWidth/2 + 50, behavior:'smooth'}); } 
         catch(e) { scroller.scrollLeft = btn.offsetLeft - window.innerWidth/2 + 50; }
     }
@@ -1772,6 +1792,9 @@ function switchTab(tabId) {
     if(tabId === 'live') {
         if (typeof renderLiveTab === 'function') renderLiveTab();
         if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
+    }
+    if(tabId === 'analyse') {
+        if (typeof renderAnalyseTab === 'function') renderAnalyseTab();
     }
 }
 
@@ -5178,12 +5201,15 @@ function applyTheme(primary, accent, dark) {
     
     let html = document.documentElement;
     let btn = document.getElementById('btnThemeDarkMode');
+    let bnavIcon = document.getElementById('bnavThemeIcon');
     if(dark) {
         html.classList.add('dark');
         if(btn) btn.innerText = "Ausschalten";
+        if(bnavIcon) bnavIcon.innerText = "light_mode";
     } else {
         html.classList.remove('dark');
         if(btn) btn.innerText = "Aktivieren";
+        if(bnavIcon) bnavIcon.innerText = "dark_mode";
     }
     
     if (typeof Chart !== 'undefined') {
@@ -5194,6 +5220,8 @@ function applyTheme(primary, accent, dark) {
         if (chartAutarkyGen) chartAutarkyGen.update();
         if (detailConsChart) detailConsChart.update();
         if (detailGenChart) detailGenChart.update();
+        if (typeof renderIntradayCurveSection === 'function') renderIntradayCurveSection();
+        if (typeof renderAnalysisSection === 'function') renderAnalysisSection();
     }
 }
 

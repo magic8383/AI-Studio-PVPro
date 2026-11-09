@@ -561,20 +561,84 @@ app.get('/api/pvgis/seriescalc', async (req, res) => {
 });
 
 // ==========================================
-// API: HOME ASSISTANT TELEMETRY & PERFORMANCE RECORDS (V8.3)
+// API: HOME ASSISTANT TELEMETRY, HISTORY & PERFORMANCE RECORDS (V8.4)
 // ==========================================
 
 let latestWebhookTelemetry = {
   updatedAt: null,
   values: {},
-  strings: {}
+  strings: {},
+  consumers: []
 };
+
+// In-memory intraday history ring-buffer (for webhook & poll fallback)
+let intradaySnapshots = [];
+
+function recordIntradaySnapshot(point) {
+  const now = new Date();
+  const dayKey = now.toISOString().slice(0, 10);
+  // Keep only today's snapshots
+  intradaySnapshots = intradaySnapshots.filter(p => p.dayKey === dayKey);
+  // Avoid recording more often than every 20 seconds
+  const last = intradaySnapshots[intradaySnapshots.length - 1];
+  if (last && (now.getTime() - last.ts) < 20000) {
+    intradaySnapshots[intradaySnapshots.length - 1] = { ...point, ts: now.getTime(), iso: now.toISOString(), dayKey };
+  } else {
+    intradaySnapshots.push({ ...point, ts: now.getTime(), iso: now.toISOString(), dayKey });
+  }
+}
+
+function getDefaultCustomStrings() {
+  return [
+    { id: 'str_fronius_1', name: 'Fronius · String 1 DC', powerEntity: 'sensor.fronius_string_1_power', energyEntity: 'sensor.fronius_string_1_energy_today', color: '#14b8a6' },
+    { id: 'str_fronius_2', name: 'Fronius · String 2 DC', powerEntity: 'sensor.fronius_string_2_power', energyEntity: 'sensor.fronius_string_2_energy_today', color: '#f59e0b' },
+    { id: 'str_hoymiles', name: 'Hoymiles · gesamt DC', powerEntity: 'sensor.hoymiles_power_dc', energyEntity: '', color: '#22c55e' }
+  ];
+}
+
+function getDefaultCustomConsumers() {
+  return [
+    { id: 'cons_1', name: 'Trockner', powerEntity: 'sensor.trockner_power' },
+    { id: 'cons_2', name: 'TV-Verstärker', powerEntity: 'sensor.tv_verstaerker_power' },
+    { id: 'cons_3', name: 'Esszimmer Licht', powerEntity: 'sensor.esszimmer_licht_power' },
+    { id: 'cons_4', name: 'Küche Licht', powerEntity: 'sensor.kueche_licht_power' }
+  ];
+}
 
 function loadHaConfig() {
   try {
     if (fs.existsSync(HA_CONFIG_FILE)) {
       const raw = fs.readFileSync(HA_CONFIG_FILE, 'utf-8');
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw);
+      return {
+        mode: parsed.mode || 'demo',
+        baseUrl: parsed.baseUrl || 'http://homeassistant.local:8123',
+        accessToken: parsed.accessToken || '',
+        pollIntervalSec: parsed.pollIntervalSec || 10,
+        autoSyncMonthly: parsed.autoSyncMonthly !== false,
+        batteryName: parsed.batteryName || 'BYD HVS+',
+        entities: {
+          pvPower: 'sensor.pv_power_total',
+          loadPower: 'sensor.house_consumption_power',
+          gridPower: 'sensor.grid_power',
+          gridImportPower: '',
+          gridExportPower: '',
+          batteryPower: 'sensor.battery_power',
+          batterySoc: 'sensor.battery_soc',
+          pvEnergyToday: 'sensor.pv_energy_today',
+          pvEnergyMonth: 'sensor.pv_energy_monthly',
+          pvEnergyTotal: 'sensor.pv_energy_total',
+          gridImportMonth: 'sensor.grid_import_monthly',
+          gridExportMonth: 'sensor.grid_export_monthly',
+          batteryChargeMonth: 'sensor.battery_charge_monthly',
+          batteryDischargeMonth: 'sensor.battery_discharge_monthly',
+          ...(parsed.entities || {})
+        },
+        customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : getDefaultCustomStrings(),
+        customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : getDefaultCustomConsumers(),
+        stringEntities: parsed.stringEntities || {},
+        inverterEntities: parsed.inverterEntities || {}
+      };
     }
   } catch (err) {
     console.warn('Could not load HA config:', err.message);
@@ -585,6 +649,7 @@ function loadHaConfig() {
     accessToken: '',
     pollIntervalSec: 10,
     autoSyncMonthly: true,
+    batteryName: 'BYD HVS+',
     entities: {
       pvPower: 'sensor.pv_power_total',
       loadPower: 'sensor.house_consumption_power',
@@ -597,10 +662,12 @@ function loadHaConfig() {
       pvEnergyMonth: 'sensor.pv_energy_monthly',
       pvEnergyTotal: 'sensor.pv_energy_total',
       gridImportMonth: 'sensor.grid_import_monthly',
-      gridExportMonth: 'sensor.grid_export_monthly',
+      gridExportMonth: 'sensor.gridExport_monthly',
       batteryChargeMonth: 'sensor.battery_charge_monthly',
       batteryDischargeMonth: 'sensor.battery_discharge_monthly'
     },
+    customStrings: getDefaultCustomStrings(),
+    customConsumers: getDefaultCustomConsumers(),
     stringEntities: {},
     inverterEntities: {}
   };
@@ -654,6 +721,8 @@ app.post('/api/ha/config', (req, res) => {
       ...current,
       ...incoming,
       entities: { ...(current.entities || {}), ...(incoming.entities || {}) },
+      customStrings: Array.isArray(incoming.customStrings) ? incoming.customStrings : (current.customStrings || getDefaultCustomStrings()),
+      customConsumers: Array.isArray(incoming.customConsumers) ? incoming.customConsumers : (current.customConsumers || getDefaultCustomConsumers()),
       stringEntities: { ...(current.stringEntities || {}), ...(incoming.stringEntities || {}) },
       inverterEntities: { ...(current.inverterEntities || {}), ...(incoming.inverterEntities || {}) },
       updatedAt: new Date().toISOString()
@@ -735,7 +804,9 @@ app.post('/api/ha/test', async (req, res) => {
 // Helper to normalize HA sensor numeric state and unit (converts kW -> W for power, Wh -> kWh for energy)
 function parseHaNumericState(stateObj, targetType = 'power') {
   if (!stateObj || stateObj.state === undefined || stateObj.state === null) return null;
-  const rawVal = parseFloat(String(stateObj.state).replace(',', '.'));
+  const sStr = String(stateObj.state).trim().toLowerCase();
+  if (sStr === 'unavailable' || sStr === 'unknown' || sStr === '') return null;
+  const rawVal = parseFloat(sStr.replace(',', '.'));
   if (isNaN(rawVal)) return null;
   const unit = String(stateObj.attributes?.unit_of_measurement || stateObj.unit || '').trim().toLowerCase();
 
@@ -764,7 +835,8 @@ app.all('/api/ha/states', async (req, res) => {
         mode: 'webhook',
         updatedAt: latestWebhookTelemetry.updatedAt,
         telemetry: latestWebhookTelemetry.values,
-        stringTelemetry: latestWebhookTelemetry.strings
+        stringTelemetry: latestWebhookTelemetry.strings,
+        consumersTelemetry: latestWebhookTelemetry.consumers || []
       });
     }
 
@@ -816,7 +888,7 @@ app.all('/api/ha/states', async (req, res) => {
     let batteryPower = getPower(ent.batteryPower);
     let batterySoc = getRaw(ent.batterySoc);
 
-    // Map per-string entities
+    // Map per-string entities (legacy + customStrings)
     const stringTelemetry = {};
     const strEnts = cfg.stringEntities || {};
     for (const [sId, sCfg] of Object.entries(strEnts)) {
@@ -829,11 +901,55 @@ app.all('/api/ha/states', async (req, res) => {
       };
     }
 
+    const customStringsList = Array.isArray(cfg.customStrings) ? cfg.customStrings : [];
+    const customStringsTelemetry = customStringsList.map(cs => {
+      const pVal = getPower(cs.powerEntity);
+      const eVal = getEnergy(cs.energyEntity);
+      const available = cs.powerEntity ? (stateMap.has(cs.powerEntity) && pVal !== null) : false;
+      if (cs.id) {
+        stringTelemetry[cs.id] = {
+          powerW: pVal,
+          energyKwh: eVal
+        };
+      }
+      return {
+        id: cs.id,
+        name: cs.name || cs.powerEntity || 'PV-String',
+        color: cs.color || '#14b8a6',
+        powerEntity: cs.powerEntity || '',
+        energyEntity: cs.energyEntity || '',
+        powerW: pVal !== null ? Math.max(0, pVal) : 0,
+        energyKwh: eVal,
+        available
+      };
+    });
+
+    // Map custom individual consumers (Aktive Verbraucher)
+    const customConsumersList = Array.isArray(cfg.customConsumers) ? cfg.customConsumers : [];
+    let unavailableConsumersCount = 0;
+    const consumersTelemetry = customConsumersList.map(cc => {
+      const pVal = getPower(cc.powerEntity);
+      const isAvail = cc.powerEntity && stateMap.has(cc.powerEntity) && pVal !== null;
+      if (cc.powerEntity && !isAvail) unavailableConsumersCount++;
+      return {
+        id: cc.id,
+        name: cc.name || cc.powerEntity || 'Verbraucher',
+        powerEntity: cc.powerEntity || '',
+        powerW: isAvail ? Math.max(0, Math.round(pVal)) : 0,
+        available: Boolean(isAvail)
+      };
+    });
+
     // If total pvPower wasn't provided directly, sum from mapped strings if available
     if (pvPower === null) {
-      const strPowers = Object.values(stringTelemetry).map(x => x.powerW).filter(v => typeof v === 'number');
-      if (strPowers.length > 0) {
-        pvPower = strPowers.reduce((a, b) => a + b, 0);
+      const customPowers = customStringsTelemetry.filter(x => x.available).map(x => x.powerW);
+      if (customPowers.length > 0) {
+        pvPower = customPowers.reduce((a, b) => a + b, 0);
+      } else {
+        const strPowers = Object.values(stringTelemetry).map(x => x.powerW).filter(v => typeof v === 'number');
+        if (strPowers.length > 0) {
+          pvPower = strPowers.reduce((a, b) => a + b, 0);
+        }
       }
     }
 
@@ -849,23 +965,20 @@ app.all('/api/ha/states', async (req, res) => {
       gridImportMonthKwh: getEnergy(ent.gridImportMonth),
       gridExportMonthKwh: getEnergy(ent.gridExportMonth),
       batteryChargeMonthKwh: getEnergy(ent.batteryChargeMonth),
-      batteryDischargeMonthKwh: getEnergy(ent.batteryDischargeMonth)
+      batteryDischargeMonthKwh: getEnergy(ent.batteryDischargeMonth),
+      unavailableConsumersCount
     };
 
-    // Provide raw entity states for any explicitly requested entityIds in test/preview mode
-    const rawRequested = {};
-    if (Array.isArray(req.body?.entityIds)) {
-      req.body.entityIds.forEach(id => {
-        if (id && stateMap.has(id)) {
-          const st = stateMap.get(id);
-          rawRequested[id] = {
-            state: st.state,
-            unit: st.attributes?.unit_of_measurement || '',
-            name: st.attributes?.friendly_name || id
-          };
-        }
-      });
-    }
+    // Record snapshot into in-memory intraday buffer
+    const snapStrings = {};
+    customStringsTelemetry.forEach(cs => { snapStrings[cs.id] = cs.powerW; });
+    recordIntradaySnapshot({
+      pvPowerW: telemetry.pvPowerW,
+      loadPowerW: telemetry.loadPowerW,
+      gridImportW: Math.max(0, telemetry.gridPowerW),
+      batterySocPct: telemetry.batterySocPct ?? 0,
+      strings: snapStrings
+    });
 
     res.json({
       success: true,
@@ -873,12 +986,167 @@ app.all('/api/ha/states', async (req, res) => {
       updatedAt: new Date().toISOString(),
       telemetry,
       stringTelemetry,
-      rawRequested
+      customStringsTelemetry,
+      consumersTelemetry
     });
   } catch (err) {
     res.status(502).json({
       success: false,
       error: `Fehler beim Abruf von Home Assistant: ${err.message}`
+    });
+  }
+});
+
+// POST or GET /api/ha/history: Fetch intraday time-series from 00:00 today from Home Assistant
+app.all('/api/ha/history', async (req, res) => {
+  try {
+    const stored = loadHaConfig();
+    const cfg = req.body && req.body.config ? { ...stored, ...req.body.config } : stored;
+    const baseUrlRaw = (cfg.baseUrl || '').trim().replace(/\/+$/, '');
+    const token = (cfg.accessToken || '').trim();
+
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+
+    // If in webhook mode or missing credentials, return buffered intraday snapshots
+    if (cfg.mode !== 'poll' || !baseUrlRaw || !token) {
+      return res.json({
+        success: true,
+        source: 'buffer',
+        startOfDay: startOfDay.toISOString(),
+        now: now.toISOString(),
+        snapshots: intradaySnapshots
+      });
+    }
+
+    const ent = cfg.entities || {};
+    const customStrings = Array.isArray(cfg.customStrings) ? cfg.customStrings : [];
+
+    // Collect all entity IDs we want history for
+    const entityKeyMap = [];
+    if (ent.pvPower) entityKeyMap.push({ key: 'pv_total', entityId: ent.pvPower, type: 'power' });
+    if (ent.loadPower) entityKeyMap.push({ key: 'house_load', entityId: ent.loadPower, type: 'power' });
+    if (ent.gridPower) entityKeyMap.push({ key: 'grid_power', entityId: ent.gridPower, type: 'power' });
+    if (ent.batterySoc) entityKeyMap.push({ key: 'battery_soc', entityId: ent.batterySoc, type: 'raw' });
+
+    customStrings.forEach(cs => {
+      if (cs.id && cs.powerEntity) {
+        entityKeyMap.push({ key: cs.id, entityId: cs.powerEntity, type: 'power' });
+      }
+    });
+
+    const uniqueEntityIds = [...new Set(entityKeyMap.map(x => x.entityId).filter(Boolean))];
+    if (uniqueEntityIds.length === 0) {
+      return res.json({
+        success: true,
+        source: 'empty',
+        startOfDay: startOfDay.toISOString(),
+        now: now.toISOString(),
+        snapshots: intradaySnapshots
+      });
+    }
+
+    const historyUrl = `${baseUrlRaw}/api/history/period/${encodeURIComponent(startOfDay.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(now.toISOString())}&minimal_response`;
+
+    const response = await fetchWithTimeout(historyUrl, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    }, 8000);
+
+    if (!response.ok) {
+      return res.json({
+        success: true,
+        source: 'buffer-fallback',
+        startOfDay: startOfDay.toISOString(),
+        now: now.toISOString(),
+        snapshots: intradaySnapshots
+      });
+    }
+
+    const rawHistoryArrays = await response.json();
+    // Build 5-minute time buckets from startOfDay to now
+    const stepMs = 5 * 60 * 1000;
+    const bucketTimes = [];
+    for (let t = startOfDay.getTime(); t <= now.getTime(); t += stepMs) {
+      bucketTimes.push(t);
+    }
+    if (bucketTimes.length === 0 || bucketTimes[bucketTimes.length - 1] < now.getTime()) {
+      bucketTimes.push(now.getTime());
+    }
+
+    // Parse each entity's timeline
+    const historyByEntity = new Map();
+    if (Array.isArray(rawHistoryArrays)) {
+      rawHistoryArrays.forEach(arr => {
+        if (!Array.isArray(arr) || arr.length === 0) return;
+        const firstId = arr[0]?.entity_id;
+        if (!firstId) return;
+        const mInfo = entityKeyMap.find(x => x.entityId === firstId);
+        const targetType = mInfo ? mInfo.type : 'power';
+        const pts = [];
+        arr.forEach(item => {
+          const val = parseHaNumericState(item, targetType);
+          const tsStr = item.last_changed || item.last_updated;
+          const ts = tsStr ? new Date(tsStr).getTime() : NaN;
+          if (val !== null && !isNaN(ts)) {
+            pts.push({ ts, val });
+          }
+        });
+        pts.sort((a, b) => a.ts - b.ts);
+        historyByEntity.set(firstId, pts);
+      });
+    }
+
+    // Sample onto bucketTimes (step-hold interpolation) and integrate kWh
+    const series = {};
+    const integratedKwh = {};
+
+    entityKeyMap.forEach(({ key, entityId, type }) => {
+      const pts = historyByEntity.get(entityId) || [];
+      const sampled = new Array(bucketTimes.length).fill(0);
+      if (pts.length > 0) {
+        let pIdx = 0;
+        let lastVal = pts[0].val;
+        for (let i = 0; i < bucketTimes.length; i++) {
+          const bt = bucketTimes[i];
+          while (pIdx < pts.length && pts[pIdx].ts <= bt) {
+            lastVal = pts[pIdx].val;
+            pIdx++;
+          }
+          sampled[i] = Math.round(lastVal * 10) / 10;
+        }
+      }
+      series[key] = sampled;
+
+      // Trapezoidal energy integration in kWh for power curves
+      if (type === 'power' && bucketTimes.length > 1) {
+        let whSum = 0;
+        for (let i = 1; i < bucketTimes.length; i++) {
+          const dtHours = (bucketTimes[i] - bucketTimes[i - 1]) / 3600000;
+          const avgW = Math.max(0, (sampled[i] + sampled[i - 1]) / 2);
+          whSum += avgW * dtHours;
+        }
+        integratedKwh[key] = +(whSum / 1000).toFixed(3);
+      }
+    });
+
+    res.json({
+      success: true,
+      source: 'ha-history',
+      startOfDay: startOfDay.toISOString(),
+      now: now.toISOString(),
+      bucketTimes,
+      series,
+      integratedKwh
+    });
+  } catch (err) {
+    res.json({
+      success: true,
+      source: 'buffer-error-fallback',
+      snapshots: intradaySnapshots,
+      error: err.message
     });
   }
 });
@@ -902,8 +1170,18 @@ app.post('/api/ha/webhook', (req, res) => {
         batteryChargeMonthKwh: body.batteryChargeMonthKwh !== undefined ? parseFloat(body.batteryChargeMonthKwh) : null,
         batteryDischargeMonthKwh: body.batteryDischargeMonthKwh !== undefined ? parseFloat(body.batteryDischargeMonthKwh) : null
       },
-      strings: body.strings || {}
+      strings: body.strings || {},
+      consumers: Array.isArray(body.consumers) ? body.consumers : []
     };
+
+    recordIntradaySnapshot({
+      pvPowerW: latestWebhookTelemetry.values.pvPowerW,
+      loadPowerW: latestWebhookTelemetry.values.loadPowerW,
+      gridImportW: Math.max(0, latestWebhookTelemetry.values.gridPowerW),
+      batterySocPct: latestWebhookTelemetry.values.batterySocPct ?? 0,
+      strings: body.strings || {}
+    });
+
     res.json({
       success: true,
       updatedAt: latestWebhookTelemetry.updatedAt
@@ -950,6 +1228,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Server running at http://${HOST}:${PORT} (v8.3)`);
+  console.log(`Server running at http://${HOST}:${PORT} (v8.4)`);
 });
+
 

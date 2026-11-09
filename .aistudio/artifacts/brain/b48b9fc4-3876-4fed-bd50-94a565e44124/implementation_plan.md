@@ -1,148 +1,83 @@
-# PV-Planung Pro 8.3 – Live-Performance, Home Assistant Telemetrie & Soll-Ist-Analyse
+# Implementierungsplan: Komplettes Dashboard-First Redesign & Live-Analyse (Version 8.4)
 
-Erweiterung der Applikation von einem reinen Auslegungs- und Planungswerkzeug zu einer vollwertigen **Live-Monitoring- und Performance-Analyse-Plattform** mit frei konfigurierbarer **Home-Assistant-Anbindung**, **Soll-Ist-Ertragsabgleich gegen die PVGIS-Prognose** und **realer Amortisations-Verfolgung** – kombiniert mit einem ausfallsicheren, mehrstufigen **EU-JRC-PVGIS-Server-Proxy**.
+## 1. Zielsetzung & UX-Neuausrichtung („Dashboard First“)
 
-## User Review & Critical Decisions
+Die App wird von einer komplexen Planungs-Oberfläche zu einer **schnellen, aufgeräumten und mobil-optimierten Energie- & Analyse-App** umgebaut, die sich optisch eng an deinen beiden Referenz-Screenshots orientiert (weiche Pastell-Oberflächen mit feinen Farb-Tints im Light-Mode, tiefes Petrol-Schiefergrau mit leuchtenden Akzenträndern im Dark-Mode):
 
-> [!IMPORTANT]
-> Basierend auf deinen Antworten haben wir die Architektur auf zwei nahtlos verbundene Zeitebenen ausgerichtet: **Echtzeit-Blick in die laufende Anlage (Live-Werte via Home Assistant)** sowie **Monats- und Jahres-Performance-Analyse (Soll vs. Ist, Autarkie, Batterie & Amortisation)**.
+1. **Sofortiger Start auf dem Live-Dashboard (`Solar & Netz · live`)**:
+   - Beim Öffnen der App landet man direkt auf dem **Start-Dashboard**, um in Sekundenbruchteilen den aktuellen Anlagenstatus zu prüfen.
+   - Keine überladenen Formulare oder Planungs-Tabellen auf der Startseite – alles Weitere ist logisch in tiefere Ebenen gegliedert (**Dashboard → Analyse → Planung & Konfiguration → Einstellungen**).
 
-- **Bestätigte Entscheidung 1 (Home Assistant & Freie Entitäts-Zuordnung)**: Vorbereitung einer flexiblen Home-Assistant-Schnittstelle, in der Verbindungsdaten sowie sämtliche Sensor-Entitäten (`sensor.*`) für Gesamtleistung, einzelne Strings/Wechselrichter, Hausverbrauch, Batterie (Leistung, SoC, Ladung/Entladung) und Stromzähler (Netzbezug/Einspeisung) frei im UI eingetragen, getestet und dauerhaft gespeichert werden können.
-- **Bestätigte Entscheidung 2 (Drei Analyse-Schwerpunkte)**:
-  1. **Soll-Ist-Vergleich**: Realer Ertrag im direkten Vergleich zur standort- und strangspezifischen PVGIS-Prognose.
-  2. **Autarkie, Eigenverbrauch & Batterie-Effizienz**: Reale Energiebilanz inkl. Speicher-Wirkungsgrad und Vollzyklen.
-  3. **Reale Amortisations- & Euro-Ersparnis-Rechnung**: Tatsächlich eingesparte Stromkosten + Einspeiseerlöse im Vergleich zum geplanten Break-Even-Pfad.
-- **Bestätigte Entscheidung 3 (Live + Monatsabschluss)**: Sofort sichtbares Live-Cockpit beim Öffnen des Analyse-Bereichs, ergänzt um ein Monats-/Jahres-Logbuch, das sich automatisch aus den Home-Assistant-Zählern speist oder am Monatsende per Schnelleingabe ergänzt/korrigiert werden kann.
-- **Technische Behebung (PVGIS-Erreichbarkeit)**: Ablösung des rein clientseitigen Aufrufs über den externen Drittanbieter-Proxy durch einen direkten, gecachten Server-Proxy zur offiziellen EU-JRC-PVGIS-Schnittstelle (v5.3 & v5.2) mit mehrstufiger Fallback-Kaskade.
-
----
-
-## 1. Overview & Core Concept
-
-- **Was die Erweiterung leistet**:
-  - **Ausfallsichere PVGIS-Wetter- & Ertragssimulation**: Der eigene App-Server ruft die offizielle EU-Wissenschaftsschnittstelle (JRC PVGIS) direkt serverseitig ab (ohne Browser-CORS-Blockaden) und speichert abgerufene 8.760-Stunden-Zeitreihen im lokalen Server-Cache. Fällt ein Endpunkt aus, wechselt das System automatisch über drei Stufen und informiert dezent per Toast-Benachrichtigung statt blockierender Browser-Alerts.
-  - **Neuer Hauptbereich „Live & Analyse"**: Verbindet die geplante PV-Anlage (Strings, Wechselrichter, Speicher, Investitionskosten, Stromtarife) direkt mit den realen Betriebsdaten aus Home Assistant.
-  - **Live-Energiefluss & String-Monitoring**: Zeigt in Echtzeit, wie viel Watt aktuell vom Dach (und den einzelnen geplanten Strings/Wechselrichtern) kommen, wie viel ins Haus, in die Batterie oder ins öffentliche Netz fließt, inklusive aktuellem Batterie-Ladestand (SoC) und Live-Autarkiegrad.
-  - **Monatlicher Soll-Ist-Abgleich & Finanz-Tracking**: Stellt für jeden Monat und das Gesamtjahr den prognostizierten PVGIS-Ertrag dem tatsächlichen Ertrag gegenüber und berechnet daraus die reale Euro-Ersparnis sowie den tatsächlichen Amortisationsfortschritt.
+2. **Schwebende, handytaugliche Bottom-Navigation (Floating Pill Bar)**:
+   - Eine kompakte, schwebende Pill-Leiste am unteren Bildschirmrand (perfekt erreichbar mit dem Daumen auf jedem Smartphone ab 360px Breite):
+     - **Live-Dashboard** (Blitz-/Energie-Icon, Startansicht mit Live-Status & Tageskurven)
+     - **Analyse & Soll-Ist** (Diagramm-/Performance-Icon für Monatsvergleich vs. PVGIS, Autarkie & Amortisation)
+     - **Menü / Weitere Ebenen** (Kompaktes Drawer-/Sheet-Menü für **PV-Planung & Strings**, **Hardware-Datenbank**, **Handbuch**, **PDF-Dossier** und **Home-Assistant-Einstellungen**)
+     - **Theme-Schalter** (Mond/Sonne-Icon für direkten Wechsel zwischen dem hellen Mint-Pastell-Look und dem dunklen Petrol-Dashboard-Look)
 
 ---
 
-## 2. User Experience & Visual Design
+## 2. Design & Aufbau des neuen Start-Dashboards
 
-- **Key User Flows**:
-  1. **Schnell-Blick im Live-Cockpit**: Beim Wechsel in den neuen Tab **„Live & Analyse"** (über die Desktop-Leiste oder die mobile Bottom-Navigation) sieht der Nutzer sofort das animierte Echtzeit-Energiefluss-Diagramm (PV $\rightarrow$ Wechselrichter $\rightarrow$ Haus / Speicher / Netz), die aktuellen Tages-KPIs (Erzeugung heute, Eigenverbrauch, Autarkie, Tages-Ersparnis in €) sowie die Live-Auslastung der einzelnen Strings.
-  2. **Home Assistant Entitäten-Konfigurator**: Über den Button **„Home Assistant & Sensoren konfigurieren"** öffnet sich ein strukturiertes Konfigurations-Modal. Dort trägt der Nutzer seine Home-Assistant-URL und ein Long-Lived Access Token ein (oder nutzt den integrierten Webhook-Endpunkt für Push-Automationen aus Home Assistant) und ordnet den Anlagenteilen seine individuellen `sensor.*`-Entitäten zu – inklusive **„Verbindung & Entitäten testen"**-Funktion mit sofortiger Live-Wert-Vorschau. Solange noch keine echten Sensoren eingetragen sind, kann ein **„Live-Simulationsmodus (Demo)"** aktiviert werden, um alle Diagramme und Energieflüsse realistisch in Aktion zu erleben.
-  3. **Monats- & Jahres-Analyse (Soll vs. Ist)**: Unterhalb des Live-Cockpits wechselt der Nutzer zwischen drei Analyse-Ansichten:
-     - **Ertrag & PVGIS Soll-Ist**: Gruppiertes Monats-Balkendiagramm (PVGIS-Soll in Schieferblau vs. Ist-Ertrag in Smaragdgrün/Amber), prozentuale Zielerreichung (Performance-Index in %) und spezifischer Ertrag ($\text{kWh}/\text{kWp}$).
-     - **Autarkie, Eigenverbrauch & Speicher-Bilanz**: Aufschlüsselung des realen Stromverbrauchs (Direktverbrauch, Batterieentladung, Netzbezug) sowie Berechnung des realen Batterie-Systemwirkungsgrads ($\eta_{\text{Bat}} = E_{\text{Entladung}} / E_{\text{Ladung}}$) und der absolvierten Vollzyklen.
-     - **Reale Amortisation & Euro-Rendite**: Gegenüberstellung der kumulierten Ist-Ersparnis (vermiedener Netzbezug $\times$ Arbeitspreis + Einspeisung $\times$ EEG-Vergütung) gegen die reale Gesamtinvestition aus dem Tab „Investition", inklusive Prognose des tatsächlichen Break-Even-Datums.
-  4. **Monatswerte-Manager**: Eine übersichtliche 12-Monats-Tabelle (mit Jahreswahl), in der die aus Home Assistant übernommenen Monatswerte eingesehen oder jederzeit manuell eingetragen bzw. übersteuert werden können (inkl. CSV/JSON-Import & -Export).
+### A. Sektion 1: „Energie · jetzt“ (2x2 Live-Status-Kacheln)
+Große, abgerundete Hauptkarte (`rounded-3xl`) mit den vier wichtigsten Echtzeit-Metriken im **2x2 Raster** – jeweils mit eigenem Pastell-/Glow-Farbton, klarer Typografie, Status-Untertitel und dynamischem Fortschrittsbalken am unteren Kachelrand:
+1. **PV gesamt · DC** (Mint/Türkis): Aktuelle Gesamtleistung (`W` / `kW`), Status (z. B. *„Erzeugung läuft“* oder *„Nacht / Standby“*) und Auslastungsbalken relativ zur Anlagen-kWp.
+2. **Hausverbrauch · AC** (Warm-Amber/Orange): Aktueller Hausverbrauch (`W` / `kW`), Status (*„Aktueller Hausverbrauch“*) und Lastbalken.
+3. **Batteriespeicher** (Lavendel/Violett, Name frei anpassbar z. B. *„BYD HVS+“*): Ladezustand in `%`, Status (*„Lädt mit … W“*, *„Entlädt“* oder *„Ruhe / Standby“*) und SoC-Fortschrittsbalken.
+4. **Netz · Bezug / Einspeisung** (Blau/Cyan): Aktueller Netzfluss (`W` / `kW`), automatischer Statuswechsel zwischen *„Bezug aus dem Netz“* und *„Einspeisung ins Netz“* samt Richtungsbalken.
 
-- **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Technisch präzises Engineering-Dashboard nach **Material Design 3 Expressive**, nahtlos abgestimmt auf das bestehende Erscheinungsbild von PV-Planung Pro (`Version 8.3`).
-  - *Color Palette & Mood*:
-    - **Neutral Canvas (60%)**: `bg-slate-50` (Light) / `dark:bg-slate-950` (Dark) mit klaren Oberflächen `bg-white dark:bg-slate-900` und feinen `1px`-Rahmen (`border-slate-200 dark:border-slate-800`).
-    - **Semantic Energy Colors (30% / 10%)**:
-      - **Solar / PV-Erzeugung**: Amber / Gold (`text-amber-500`, `#f59e0b`)
-      - **Eigenverbrauch & Ziel übertroffen (Soll $\ge 100\%$ )**: Smaragdgrün (`text-emerald-500`, `#10b981`)
-      - **Batteriespeicher**: Indigo / Violett (`text-indigo-500`, `#6366f1`)
-      - **Netzbezug / Unterdeckung**: Rose / Koralle (`text-rose-500`, `#f43f5e`)
-      - **PVGIS-Prognose (Soll-Referenz)**: Kühles Cyan / Slate (`text-sky-500`, `#0ea5e9`)
-  - *Typography & Tabular Discipline*: `Plus Jakarta Sans` für Überschriften und Navigation; sämtliche Live-Leistungswerte ($\text{W}$, $\text{kW}$), Zählerstände ($\text{kWh}$), Prozentwerte und Euro-Beträge nutzen strikt `tabular-nums` (`font-mono`), damit sich ändernde Live-Zahlen niemals zu Layout-Springen führen.
-  - *Mobile-First Ergonomie*: Alle Charts, das SVG-Energiefluss-Schema und die Monats-Tabellen sind ab `360px` Smartphone-Breite ohne horizontalen Seiten-Overflow bedienbar; sämtliche Modals nutzen `max-h-[90vh] overflow-y-auto`.
+### B. Sektion 2: „Aktive Verbraucher“ (Frei konfigurierbare Einzelverbraucher)
+Direkt unter dem 2x2-Grid werden die **größten aktiven Einzelverbraucher** in schlanken, abgerundeten Zeilenkarten (`rounded-2xl`) absteigend nach aktueller Leistung (`W`) aufgelistet (z. B. *Trockner 429 W*, *Wärmepumpe*, *Wallbox*, *TV-Verstärker 76 W*, *Küche Licht 36 W*):
+- **Frei konfigurierbar**: Du kannst beliebig viele eigene Home-Assistant-Sensoren (`sensor.*` in W oder kW) mit eigenem Anzeigenamen hinzufügen, bearbeiten oder löschen.
+- Inaktive Verbraucher (`0 W`) können wahlweise ausgeblendet oder dezent am Ende gruppiert werden; fehlende Sensoren werden sauber im Fußtext vermerkt (*„Größte aktive Einzelverbraucher · X Messwert(e) nicht verfügbar“*).
 
----
-
-## 3. Key Product Decisions & Trade-Offs
-
-- **Entscheidung 1: Mehrstufiger Server-Proxy für PVGIS mit lokalem Disk-Cache**
-  - *Gewählter Ansatz*: Der Node/Express-Server stellt den Endpunkt `/api/pvgis/seriescalc` bereit. Dieser fragt zuerst die offizielle EU-JRC-API (`re.jrc.ec.europa.eu/api/v5_3/seriescalc` und `v5_2/seriescalc`) direkt vom Server aus ab, nutzt bei Bedarf den bisherigen Mirror als Fallback und speichert erfolgreiche 8.760h-Antworten persistent im Server-Datenverzeichnis zwischen.
-  - *Warum*: Browser scheitern bei direkten Aufrufen an die EU-JRC-Server an fehlenden CORS-Headern; externe Drittanbieter-Proxys fallen häufig aus. Durch den eigenen Server-Proxy mit Disk-Cache funktionieren Abfragen dauerhaft zuverlässig und bereits berechnete Dachflächen laden in unter $20\,\text{ms}$.
-- **Entscheidung 2: Hybride Home-Assistant-Architektur (Server-Proxy Poll + Push-Webhook)**
-  - *Gewählter Ansatz*: Die App unterstützt sowohl das aktive Abrufen der Entitäten über den eigenen Backend-Proxy (`/api/ha/states`) als auch das Empfangen von Werten über einen Webhook (`/api/ha/webhook`).
-  - *Warum*: Wenn Home Assistant über Nabu Casa, Cloudflare Tunnel, VPN oder im selben Netzwerk erreichbar ist, holt der Server-Proxy die Live-Werte alle paar Sekunden ab (ohne CORS-Probleme im Browser). Liegt Home Assistant hinter einer strikten Heimnetz-Firewall ohne eingehenden Port, kann eine einfache Home-Assistant-Automation die Sensorwerte per HTTP-POST an die App senden.
-- **Entscheidung 3: Dynamisches Mapping auf geplante Strings & Wechselrichter**
-  - *Gewählter Ansatz*: Der Entitäts-Konfigurator liest automatisch alle in der aktiven Planung angelegten Strings (z. B. „Süddach Gaube", „Ost-Fassade") und Wechselrichter (z. B. „Fronius Symo GEN24", „Hoymiles HMS-2000") aus und bietet für jeden Strang/Wechselrichter ein eigenes optionales Sensor-Feld (`sensor.*`).
-  - *Warum*: Keine Insellösung – Planung und Live-Überwachung greifen auf exakt dieselbe Anlagenstruktur zu, sodass man sofort erkennt, ob ein einzelner String in der Realität hinter seiner spezifischen Prognose zurückbleibt.
+### C. Sektion 3: Interaktives Tagesdiagramm & „Kurven auswählen · aktuelle Messwerte“
+Inspiriert von deinem zweiten Screenshot erhält das Dashboard eine interaktive **Tagesverlauf-Karte (00:00 Uhr bis jetzt)**:
+- **Automatischer Home-Assistant-Verlauf (`/api/ha/history`)**: Das Backend lädt automatisch die echte Tageshistorie (`00:00` bis aktuelle Uhrzeit) deiner konfigurierten Leistungs- und Batterie-Entitäten aus Home Assistant (und zeichnet Live-Werte zusätzlich lokal mit).
+- **Dual-Achsen-Kurvendiagramm**:
+  - Linke Achse: Leistung in `W` (für Strings, Wechselrichter, PV gesamt, Hausverbrauch, Netz).
+  - Rechte Achse: Ladezustand in `%` (für die Batterie-Kurve).
+  - Oben farbige Legenden-Chips + Refresh-Button (`↻`) + Hover-/Touch-Zeitpunkt-Inspektor.
+- **Interaktive Auswahl-Kacheln („Kurven auswählen · aktuelle Messwerte“)**:
+  - Unter dem Diagramm liegt ein 2-spaltiges Grid mit Kacheln für deine **frei definierbaren PV-Strings / Teilanlagen** (z. B. *Fronius · String 1 DC*, *Fronius · String 2 DC*, *Hoymiles · gesamt DC*) sowie *PV gesamt · DC*, *Hausverbrauch · AC*, *Netzbezug* und *Batterie · Ladezustand*.
+  - **Klick/Tap auf eine Kachel** schaltet die jeweilige Kurve im Diagramm aktiv/inaktiv (mit farbig leuchtendem Rahmen in der Kurvenfarbe).
+  - Jede Kachel zeigt sowohl den **aktuellen Live-Messwert (`W` / `%`)** als auch die **über den erfassten Zeitraum integrierte Tagesenergie (`kWh · erfasster Zeitraum` bzw. `≈ kWh · aus Leistung`)**.
 
 ---
 
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+## 3. Tiefere Ebenen (Drill-Down-Struktur)
 
-### Architecture & Component Diagram
+Damit die App übersichtlich bleibt, sind alle weiterführenden Funktionen klar getrennt über die untere Navigationsleiste erreichbar:
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        PV-PLANUNG PRO 8.3 (CLIENT UI)                        │
-├───────────────────────┬──────────────────────────┬───────────────────────────┤
-│   Planungs-Engine     │   Live-Telemetrie Hub    │  Performance-Analyse UI   │
-│  ┌─────────────────┐  │  ┌────────────────────┐  │  ┌─────────────────────┐  │
-│  │ Strings & WR    │  │  │ SVG Energiefluss   │  │  │ Soll vs Ist Chart   │  │
-│  │ Invest & Tarife │──┼─▶│ (PV/Bat/Haus/Netz) │  │  │ (Monat / Jahr / PR) │  │
-│  │ 8760h Prognose  │  │  ├────────────────────┤  │  ├─────────────────────┤  │
-│  └────────┬────────┘  │  │ String-Live-Balken │  │  │ Autarkie & Batterie │  │
-│           │           │  ├────────────────────┤  │  │ Wirkungsgrad-Analyse│  │
-│           │           │  │ HA Entitäts-Editor │  │  ├─────────────────────┤  │
-│           │           │  │ & Verbindungs-Test │  │  │ Reale Amortisation  │  │
-│           │           │  └─────────┬──────────┘  │  │ & Cashflow-Tracker  │  │
-│           ▼           │            │             │  └──────────┬──────────┘  │
-└───────────┼───────────┴────────────┼─────────────┴─────────────┼─────────────┘
-            │                        │                           │
-            ▼                        ▼                           ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                       NODE.JS / EXPRESS BACKEND SERVER                       │
-├───────────────────────┬──────────────────────────┬───────────────────────────┤
-│  /api/pvgis/seriescalc│  /api/ha/states & /test  │ /api/performance/records  │
-│  ┌─────────────────┐  │  ┌────────────────────┐  │ ┌───────────────────────┐ │
-│  │ 1. Disk Cache   │  │  │ REST Proxy zu HA   │  │ │ Persistente Speicherung│ │
-│  │ 2. EU JRC v5.3  │  │  │ (Bearer Token Auth)│  │ │ von HA-Mapping,       │ │
-│  │ 3. EU JRC v5.2  │  │  ├────────────────────┤  │ │ Monats-Ist-Werten &   │ │
-│  │ 4. Mirror / Syn │  │  │ /api/ha/webhook    │  │ │ Historie im Server    │ │
-│  └─────────────────┘  │  └────────────────────┘  │ └───────────────────────┘ │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
+1. **Ebene 1: Live-Dashboard (`Solar & Netz · live`)**
+   - `Energie · jetzt` (2x2 Hauptkacheln)
+   - `Aktive Verbraucher` (Einzelverbraucher-Liste)
+   - `Tagesverlauf & Kurven auswählen` (Interaktives Intraday-Chart + String-/Quellen-Kacheln)
+2. **Ebene 2: Tiefen-Analyse (`Soll vs. Ist & Finanzen`)**
+   - **Soll-Ist-Vergleich**: Monatlicher realer Ertrag vs. PVGIS-8.760h-Prognose (Balken-/Liniendiagramm + Performance-Index in `%`).
+   - **Autarkie, Eigenverbrauch & Batterie-Effizienz**: Auswertung von Direktverbrauch, Speicher-Vollzyklen und Speicherwirkungsgrad.
+   - **Reale Amortisation & Euro-Ersparnis**: Kumulierte Ersparnis + Einspeisevergütung gegen reale Investitionskosten inkl. Break-Even-Prognose.
+   - **Monatswerte-Pflege**: Schnelle Übernahme aus Home Assistant oder manuelle Korrektur.
+3. **Ebene 3: Planung & Auslegung (`PV-Konfiguration`)**
+   - Kompakte Unter-Tabs für **Anlagen-Setup & Wirtschaftlichkeit**, **Strings & VDE-Verkabelung** sowie **Hardware-Datenbank** – nur sichtbar, wenn man gezielt an der Auslegung arbeitet.
+4. **Ebene 4: Einstellungen & Sensoren (`Home Assistant & App-Setup`)**
+   - Übersichtlicher Verbindungs- & Entitäten-Konfigurator:
+     - **Haupt-Entitäten**: PV Gesamt, Hausverbrauch, Batterie SoC/Leistung, Netzbezug/Einspeisung.
+     - **Eigene PV-Strings / Erzeuger**: Beliebig viele Strings oder Mikrowechselrichter mit Name, Entität (`sensor.*`) und Kurvenfarbe anlegen.
+     - **Eigene Einzelverbraucher**: Beliebig viele Haushaltsgeräte/Lichtkreise mit Name und Entität (`sensor.*`) anlegen.
 
-### Data Model & State
+---
 
-1. **Home Assistant Konfigurations-Profil (`haConfig`)**:
-   - **Verbindung**: `baseUrl` (z. B. `http://homeassistant.local:8123` oder externe URL), `accessToken` (Long-Lived Token, sicher serverseitig gespeichert), `pollIntervalSec` (Standard: `10`), `mode` (`'poll' | 'webhook' | 'demo'`).
-   - **Kern-Entitäten (Leistung in W / kW & Status)**:
-     - `pvPowerEntity`: Aktuelle Gesamterzeugung PV (z. B. `sensor.pv_power_total`)
-     - `loadPowerEntity`: Aktueller Hausverbrauch (z. B. `sensor.house_consumption_power`)
-     - `gridPowerEntity`: Netzleistung (positiv = Bezug, negativ = Einspeisung, oder getrennt `gridImportPowerEntity` / `gridExportPowerEntity`)
-     - `batteryPowerEntity`: Batterieleistung (positiv = Ladung, negativ = Entladung)
-     - `batterySocEntity`: Batterie-Ladestand in % (z. B. `sensor.byd_battery_soc`)
-   - **Energie-Zähler-Entitäten (kWh für Tag / Monat / Gesamt)**:
-     - `pvEnergyTodayEntity`, `pvEnergyMonthEntity`, `pvEnergyTotalEntity`
-     - `gridImportMonthEntity`, `gridExportMonthEntity`
-     - `batteryChargeMonthEntity`, `batteryDischargeMonthEntity`
-   - **Dynamische String- & Wechselrichter-Entitäten (`stringEntities` / `inverterEntities`)**:
-     - Zuordnung `{ [stringId]: { powerEntity: 'sensor.string_1_power', energyEntity: 'sensor.string_1_energy' } }` für detaillierten String-Soll-Ist-Abgleich.
+## 4. Technische Umsetzung & Datei-Architektur (Version 8.4)
 
-2. **Monatliche & Jährliche Performance-Datensätze (`performanceRecords`)**:
-   - Gespeichert je Projekt und Jahr (`year: 2026`, `months: Array(12)`):
-     - `pvYieldKwh` (Realer PV-Ertrag)
-     - `gridImportKwh` (Netzbezug)
-     - `gridExportKwh` (Netzeinspeisung)
-     - `batteryChargedKwh` / `batteryDischargedKwh` (Speicher-Durchsatz)
-     - `source`: `'ha'` (automatisch aus Home Assistant übernommen) oder `'manual'` (manuell eingetragen/fixiert).
-   - Abgeleitete Kennzahlen (Single Source of Truth):
-     - **Direkt- & Eigenverbrauch**: $E_{\text{Eigen}} = E_{\text{PV}} - E_{\text{Einspeisung}}$
-     - **Realer Hausverbrauch**: $E_{\text{Haus}} = E_{\text{Eigen}} + E_{\text{Netzbezug}}$
-     - **Reale Autarkiequote**: $\text{Autarkie} = \frac{E_{\text{Eigen}}}{E_{\text{Haus}}} \times 100\,\%$
-     - **Eigenverbrauchsquote**: $\text{EV-Quote} = \frac{E_{\text{Eigen}}}{E_{\text{PV}}} \times 100\,\%$
-     - **Batterie-Wirkungsgrad**: $\eta_{\text{Bat}} = \frac{E_{\text{Bat,Entladung}}}{E_{\text{Bat,Ladung}}} \times 100\,\%$
-     - **Soll-Ist-Erfüllungsgrad**: $\text{Performance-Index} = \frac{E_{\text{PV,Ist}}}{E_{\text{PV,PVGIS-Soll}}} \times 100\,\%$
-     - **Monatliche & Kumulierte Euro-Ersparnis**: $\text{Ertrag}_{€} = (E_{\text{Eigen}} \times P_{\text{Strom}}) + (E_{\text{Einspeisung}} \times P_{\text{EEG}})$
-
-### Interactive Component & State Mapping
-
-- **PVGIS Server-Proxy & Cache-Handler**:
-  - `calculateYieldAPI()` ruft `/api/pvgis/seriescalc` auf. Der Server prüft den lokalen Cache, fragt bei Cache-Miss die offizielle EU-JRC-API mit sauberem Timeout ab und liefert die 8.760 Stundenwerte zurück. Ein dezentes Badge im Standort-Header zeigt den Datenquellen-Status (`EU-JRC Live`, `Server-Cache` oder `Synthetisches Modell`).
-- **Home Assistant Verbindungs- & Entitäts-Modal**:
-  - Bietet Eingabefelder mit Autovervollständigungs-Vorschlägen (falls Verbindung zu HA besteht, lädt ein Klick auf „Verfügbare Sensoren aus HA abrufen" alle `sensor.*`-Entitäten von Home Assistant zur bequemen Auswahl per Suchfeld!).
-  - Einzel-Test-Button je Entität zeigt sofort den aktuellen Live-Wert und die Einheit (`W`, `kW`, `kWh`, `%`) an und rechnet Einheiten (`W` vs. `kW`) automatisch um.
-- **Live-Cockpit & Polling-Loop**:
-  - Solange der Tab „Live & Analyse" geöffnet ist, aktualisiert der Polling-Service im eingestellten Intervall (z. B. alle 5–10 Sekunden) die Live-Werte, animiert die Energiefluss-Pfeile proportional zur Leistung und aktualisiert auf Wunsch den laufenden Monatseintrag.
-- **Dossier-Integration**:
-  - Wenn reale Performance-Daten vorliegen, kann im Druck-/PDF-Dossier optional eine zusätzliche Sektion **„Betriebsanalyse & Soll-Ist-Ertragsbilanz"** mit ausgedruckt werden.
+- **`server.js`**:
+  - Erweiterung der Home-Assistant-Schnittstelle um `GET /api/ha/history`: Abruf von `/api/history/period/<start_of_day>` aus Home Assistant, intelligente Glättung/Downsampling auf saubere Zeitreihen-Punkte und automatische Berechnung der Tagesarbeit (`kWh`) per Trapez-Integration über die Leistungskurve, falls kein separater kWh-Sensor angegeben ist.
+  - Speicherung der erweiterten Sensor-Konfiguration (frei definierbare `strings[]` und `consumers[]`) in `/data/ha_config.json`.
+- **`telemetry.js`**:
+  - Neues Rendering für das **Start-Dashboard (`Solar & Netz · live`)**, die **Einzelverbraucher-Liste**, das **interaktive Dual-Achsen-Tagesdiagramm** mit umschaltbaren Kurven-Kacheln sowie den erweiterten **Sensor-Editor** für eigene Strings und Verbraucher.
+  - Getrennte Ansicht für die **Monats- & Langzeitanalyse** (Soll-Ist vs. PVGIS, Autarkie, Amortisation).
+- **`index.html` & `app.js`**:
+  - Komplettes Redesign der App-Shell im Stil der Referenz-Screenshots (Light-Mode mit sanftem Mint-/Pastell-Hintergrund und weißen `rounded-3xl` Cards; Dark-Mode mit tiefem Petrol-Slate `#0f191e` / `#132026` und farbigen Glow-Rahmen).
+  - Neue schwebende **Floating Bottom Pill Navigation** + kompaktes Ebenen-Menü für Smartphone und Desktop.
+- **Versionierung (8.3 → 8.4)**:
+  - Synchrones Versions-Update auf **8.4** in `package.json`, `index.html`, `app.js`, `sw.js`, `content.js`, `DEVELOPMENT_GUIDELINES.md` und `CHANGELOG.md` (neuester Eintrag ganz oben).
