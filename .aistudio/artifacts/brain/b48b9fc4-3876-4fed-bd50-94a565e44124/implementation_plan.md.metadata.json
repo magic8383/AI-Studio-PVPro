@@ -1,6 +1,6 @@
 {
-  "summary":  "Umfassender Implementierungsplan für das komplette Dashboard-First Redesign (Version 8.4): Neuer Startbildschirm im modernen Soft-Pastel / Deep-Teal Design der Referenz-Screenshots mit 2x2 Status-Kacheln, frei konfigurierbaren Einzelverbrauchern und PV-Strings, interaktivem Tagesverlaufs-Diagramm mit Home-Assistant-Historie & auswählbaren Kurven-Kacheln sowie einer schlanken, handytauglichen schwebenden Navigationsleiste (Bottom Pill Bar) mit Drill-Down in Analyse, Planung und Einstellungen.",
-  "updatedAt":  "2026-11-09T10:52:10.778901231Z",
+  "summary":  "Implementation plan for Version 8.5 of PV-Planung Pro: Interactive multi-horizon Sankey Energy Flow diagram (Today, Month, Year), True Liquid Glass Dark & Light Mode, Unified Mobile-First Drill-Down Architecture (Level 1 Overview Hub Cards -> Level 2 Focused Detail View with Back Button) across Analyse and PV-Planung, Two-Row Mobile-First Header with full title legibility, Streamlined 4-Icon Floating Bottom Pill Bar (without theme toggle), and Reverse-Proxy Home Assistant Connection Fix with Interactive Step-by-Step Setup & Diagnostic Guide.",
+  "updatedAt":  "2026-11-09T16:00:16.502085770Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
