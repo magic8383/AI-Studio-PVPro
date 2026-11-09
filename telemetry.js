@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.6)
-// GitHub Pages Browser-First HA Client, Liquid-Glass UI, Mobile-First 2-Level
-// Drill-Down, Interactive Sankey Diagram & Reverse-Proxy/CORS Diagnostics
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.7)
+// Komfort-Sensor-Picker (Geräte & Helfer + Suche), Vollbild-Tagesdiagramm,
+// GitHub Pages Browser-First HA Client, Liquid-Glass UI & Sankey-Analyse
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -18,8 +18,8 @@ const DEFAULT_CUSTOM_CONSUMERS = [
 ];
 
 let haConfigState = {
-    mode: 'demo', // 'demo' | 'poll' | 'webhook'
-    baseUrl: 'http://homeassistant.local:8123',
+    mode: 'poll', // 'poll' | 'webhook' (Demo-Modus ab v8.7 entfernt)
+    baseUrl: 'https://home.mb10.org',
     accessToken: '',
     pollIntervalSec: 10,
     autoSyncMonthly: true,
@@ -73,6 +73,8 @@ let currentLiveTelemetry = {
 
 // Intraday chart state & active curve toggles
 let chartIntraday = null;
+let chartIntradayFullscreen = null;
+let isIntradayFsRotated = false;
 let intradaySeriesState = {
     startOfDayIso: null,
     nowIso: null,
@@ -84,7 +86,7 @@ let intradaySeriesState = {
 
 let activeCurveKeys = new Set(['str_fronius_1', 'str_fronius_2', 'str_hoymiles', 'pv_total', 'battery_soc']);
 
-let demoSimHour = 11.27; // 11:16 Uhr wie im Referenz-Screenshot als sofortiger Hingucker
+let demoSimHour = 11.27;
 let activeAnalysisSubTab = 'soll-ist'; // 'soll-ist' | 'autarkie-bat' | 'amortisation' | 'logbuch'
 let currentSankeyHorizon = 'year'; // 'today' | 'month' | 'year'
 let selectedAnalysisYear = new Date().getFullYear();
@@ -180,6 +182,11 @@ async function initTelemetryAndAnalysis() {
             localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
         }
     } catch (e) {}
+
+    // Migrate legacy 'demo' mode to 'poll' (Demo mode removed in v8.7)
+    if (!haConfigState.mode || haConfigState.mode === 'demo') {
+        haConfigState.mode = 'poll';
+    }
 
     // Ensure all customStrings have active curve keys on first load if none match
     if (Array.isArray(haConfigState.customStrings)) {
@@ -829,9 +836,12 @@ async function fetchHaHistoryInBrowser(cfg) {
 async function refreshLiveTelemetryNow() {
     const baseline = getPlannedSystemBaseline();
 
-    if (haConfigState.mode === 'demo') {
+    // If no Home Assistant token is configured yet, display initial fallback values without demo slider
+    if (!haConfigState.accessToken && haConfigState.mode !== 'webhook') {
         computeDemoLiveTelemetry(baseline);
         buildDemoIntradaySeries(baseline);
+        currentLiveTelemetry.connectionOk = false;
+        currentLiveTelemetry.lastError = 'Bitte Token & Sensoren unter „HA & Sensoren“ wählen.';
         renderLiveCockpitUI(baseline);
         renderIntradayCurveSection(baseline);
         return;
@@ -1124,7 +1134,7 @@ function buildDemoIntradaySeries(baseline) {
 
 async function fetchAndRenderIntradayHistory() {
     const baseline = getPlannedSystemBaseline();
-    if (haConfigState.mode === 'demo') {
+    if (!haConfigState.accessToken && haConfigState.mode !== 'webhook') {
         buildDemoIntradaySeries(baseline);
         renderIntradayCurveSection(baseline);
         return;
@@ -1280,46 +1290,32 @@ function renderLiveCockpitUI(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const t = currentLiveTelemetry;
 
-    // 1. Update Mode Pill Buttons & Status Subtitle
-    ['demo', 'poll', 'webhook'].forEach(m => {
-        const btn = document.getElementById(`btn-ha-mode-${m}`);
-        if (btn) {
-            if (haConfigState.mode === m) {
-                btn.className = "px-2.5 py-1 rounded-full bg-teal-600 text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap";
-            } else {
-                btn.className = "px-2.5 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-[11px] font-medium transition-all cursor-pointer whitespace-nowrap";
-            }
-        }
-    });
-
-    const demoBar = document.getElementById('liveDemoTimeBar');
-    if (demoBar) {
-        if (haConfigState.mode === 'demo') demoBar.classList.remove('hidden');
-        else demoBar.classList.add('hidden');
-    }
-
+    // 1. Update Connection Status Pill
     const statusText = document.getElementById('liveConnectionStatusText');
     if (statusText) {
-        if (haConfigState.mode === 'demo') {
-            statusText.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-teal-500 mr-1"></span><span class="font-semibold text-teal-700 dark:text-teal-300">Live-Vorschau</span> · Sensoren frei anpassbar`;
-        } else if (t.connectionOk) {
+        if (t.connectionOk) {
             const timeStr = t.updatedAt ? new Date(t.updatedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'jetzt';
-            statusText.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-1"></span><span class="font-semibold text-emerald-700 dark:text-emerald-300">Home Assistant live</span> · ${timeStr}`;
+            statusText.className = "text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 truncate";
+            statusText.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse mr-1"></span><span>HA Live · ${timeStr}</span>`;
         } else {
-            statusText.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-rose-500 mr-1"></span><span class="font-semibold text-rose-600 dark:text-rose-400">HA Hinweis:</span> ${typeof escapeHtml === 'function' ? escapeHtml(t.lastError || 'Nicht erreichbar') : (t.lastError || 'Nicht erreichbar')}`;
+            statusText.className = "text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 truncate";
+            statusText.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1"></span><span>${typeof escapeHtml === 'function' ? escapeHtml(t.lastError || 'HA verbinden') : (t.lastError || 'HA verbinden')}</span>`;
         }
     }
 
-    // 2. Render "Energie · jetzt" 2x2 Status Tiles (Matching Screenshot 1)
+    // 2. Render "Energie · jetzt" 2x2 Status Tiles
     const maxPvRefW = Math.max(1500, baseline.totalKwp * 1000);
     const pvBarPct = Math.min(100, Math.max(t.pvPowerW > 0 ? 4 : 0, Math.round((t.pvPowerW / maxPvRefW) * 100)));
     setElText('dash_pv_power', formatPowerDe(t.pvPowerW, t.pvPowerW < 1000));
-    setElText('dash_pv_sub', t.pvPowerW > 15 ? 'Erzeugung läuft' : 'Standby / Nacht');
+    const pvSubText = t.pvPowerW > 15 ? 'Erzeugung läuft' : 'Standby / Nacht';
+    setElText('dash_pv_status', pvSubText);
+    setElText('dash_pv_sub', pvSubText);
     const pvBar = document.getElementById('dash_pv_bar');
     if (pvBar) pvBar.style.width = `${pvBarPct}%`;
 
     const loadBarPct = Math.min(100, Math.max(6, Math.round((t.loadPowerW / 5000) * 100)));
     setElText('dash_load_power', formatPowerDe(t.loadPowerW));
+    setElText('dash_load_status', 'Aktueller Hausverbrauch');
     setElText('dash_load_sub', 'Aktueller Hausverbrauch');
     const loadBar = document.getElementById('dash_load_bar');
     if (loadBar) loadBar.style.width = `${loadBarPct}%`;
@@ -1335,6 +1331,7 @@ function renderLiveCockpitUI(baseline) {
     let batSub = 'Ruhe / Standby';
     if (t.batteryPowerW > 25) batSub = `Lädt · +${formatPowerDe(t.batteryPowerW)}`;
     else if (t.batteryPowerW < -25) batSub = `Entlädt · ${formatPowerDe(Math.abs(t.batteryPowerW))}`;
+    setElText('dash_bat_status', batSub);
     setElText('dash_bat_sub', batSub);
     const batBar = document.getElementById('dash_bat_bar');
     if (batBar) batBar.style.width = `${Math.min(100, Math.max(4, socNum))}%`;
@@ -1342,13 +1339,11 @@ function renderLiveCockpitUI(baseline) {
     const absGridW = Math.abs(t.gridPowerW || 0);
     const gridBarPct = Math.min(100, Math.max(absGridW > 10 ? 5 : 0, Math.round((absGridW / 5000) * 100)));
     setElText('dash_grid_power', formatPowerDe(absGridW));
-    if (t.gridPowerW > 15) {
-        setElText('dash_grid_sub', 'Bezug aus dem Netz');
-    } else if (t.gridPowerW < -15) {
-        setElText('dash_grid_sub', 'Einspeisung ins Netz');
-    } else {
-        setElText('dash_grid_sub', 'Netz ausgeglichen');
-    }
+    let gridSub = 'Netz ausgeglichen';
+    if (t.gridPowerW > 15) gridSub = 'Bezug aus dem Netz';
+    else if (t.gridPowerW < -15) gridSub = 'Einspeisung ins Netz';
+    setElText('dash_grid_status', gridSub);
+    setElText('dash_grid_sub', gridSub);
     const gridBar = document.getElementById('dash_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
 
@@ -1502,55 +1497,68 @@ function renderIntradayCurveSection(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const defs = getAvailableCurveDefinitions();
 
-    // 1. Update Timestamp Range Header
+    // 1. Update Single-Line Timestamp Range Header (Never wraps!)
+    const now = intradaySeriesState.nowIso ? new Date(intradaySeriesState.nowIso) : new Date();
+    const dateStr = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const rangeString = `${dateStr}, 00:00 — ${dateStr}, ${timeStr} · Kachelwerte: jetzt`;
+
     const rangeEl = document.getElementById('dash_curve_timerange');
-    if (rangeEl) {
-        const now = intradaySeriesState.nowIso ? new Date(intradaySeriesState.nowIso) : new Date();
-        const dateStr = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-        const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-        rangeEl.innerText = `${dateStr}, 00:00 – ${dateStr}, ${timeStr} · Kachelwerte: jetzt`;
+    if (rangeEl) rangeEl.innerText = rangeString;
+    const fsRangeEl = document.getElementById('fs_curve_timerange');
+    if (fsRangeEl) fsRangeEl.innerText = rangeString;
+
+    const activeCountBadge = document.getElementById('dash_active_curves_badge');
+    if (activeCountBadge) {
+        const activeCount = defs.filter(d => activeCurveKeys.has(d.key)).length;
+        activeCountBadge.innerText = `${activeCount} von ${defs.length} Kurven aktiv`;
     }
 
     // 2. Render Top Interactive Legend Chips (with colored left accent bar like Screenshot 2)
-    const chipsEl = document.getElementById('dash_curve_legend_chips');
-    if (chipsEl) {
-        chipsEl.innerHTML = defs.map(d => {
-            const isActive = activeCurveKeys.has(d.key);
-            const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
-            return `
-            <button type="button" onclick="toggleIntradayCurve('${d.key}')"
-                class="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer select-none ${
-                    isActive
-                        ? 'bg-slate-800/90 text-white dark:bg-[#1c2c33] dark:text-slate-100 shadow-2xs'
-                        : 'bg-slate-200/60 text-slate-400 dark:bg-slate-800/40 dark:text-slate-500 opacity-60'
-                }"
-                style="border-left: 3.5px solid ${isActive ? d.color : '#64748b'}">
-                <span>${safeName}</span>
-            </button>`;
-        }).join('');
-    }
+    const buildChipsHtml = () => defs.map(d => {
+        const isActive = activeCurveKeys.has(d.key);
+        const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
+        return `
+        <button type="button" onclick="toggleIntradayCurve('${d.key}')"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer select-none whitespace-nowrap shrink-0 ${
+                isActive
+                    ? 'bg-slate-800/95 text-white dark:bg-[#192c34] dark:text-white shadow-2xs ring-1 ring-white/15'
+                    : 'bg-slate-200/50 text-slate-400 dark:bg-slate-900/40 dark:text-slate-500 opacity-45 hover:opacity-75'
+            }"
+            style="border-left: 3.5px solid ${isActive ? d.color : '#475569'}">
+            <span>${safeName}</span>
+        </button>`;
+    }).join('');
 
-    // 3. Render Selectable Measurement Tiles ("Kurven auswählen · aktuelle Messwerte")
+    const chipsEl = document.getElementById('dash_curve_legend_chips');
+    if (chipsEl) chipsEl.innerHTML = buildChipsHtml();
+    const fsChipsEl = document.getElementById('fs_curve_legend_chips');
+    if (fsChipsEl) fsChipsEl.innerHTML = buildChipsHtml();
+
+    // 3. Render Compact Selectable Measurement Tiles with Unmistakable Active vs. Inactive Contrast
     const tilesGrid = document.getElementById('dash_curve_tiles_grid');
     if (tilesGrid) {
         tilesGrid.innerHTML = defs.map(d => {
             const isActive = activeCurveKeys.has(d.key);
             const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
-            const borderStyle = isActive
-                ? `border: 2px solid ${d.color}; box-shadow: 0 0 18px -4px ${d.color}33;`
-                : `border: 1.5px solid rgba(100, 116, 139, 0.25);`;
+            const tileStyle = isActive
+                ? `border: 2px solid ${d.color}; background: linear-gradient(135deg, ${d.color}24 0%, rgba(15, 29, 36, 0.94) 100%); box-shadow: 0 6px 18px -4px ${d.color}40, inset 0 1px 0 rgba(255,255,255,0.18);`
+                : `border: 1px solid rgba(100, 116, 139, 0.22); background: rgba(15, 23, 30, 0.35); opacity: 0.42;`;
+
+            const badgeHtml = isActive
+                ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider shrink-0" style="background:${d.color}30; color:${d.color}; border:1px solid ${d.color}75"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span>Aktiv</span>`
+                : `<span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-500 bg-slate-800/50 shrink-0">Aus</span>`;
 
             return `
             <div onclick="toggleIntradayCurve('${d.key}')"
-                style="${borderStyle}"
-                class="rounded-2xl p-3.5 sm:p-4 cursor-pointer select-none transition-all duration-200 ${
-                    isActive
-                        ? 'bg-teal-950/20 dark:bg-[#13292d]/90'
-                        : 'bg-slate-100/60 dark:bg-[#131e24]/60 opacity-65 hover:opacity-90'
-                }">
-                <p class="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200 truncate">${safeName}</p>
-                <p class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white font-mono tabular-nums mt-1">${d.liveDisplay}</p>
-                <p class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-1 leading-snug">${d.subDisplay}</p>
+                style="${tileStyle}"
+                class="rounded-xl p-2.5 sm:p-3 cursor-pointer select-none transition-all duration-150 hover:opacity-95">
+                <div class="flex items-center justify-between gap-1.5">
+                    <p class="text-[11px] sm:text-xs ${isActive ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-500 dark:text-slate-400'} truncate">${safeName}</p>
+                    ${badgeHtml}
+                </div>
+                <p class="text-base sm:text-lg font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'} font-mono tabular-nums leading-tight mt-1">${d.liveDisplay}</p>
+                <p class="text-[10px] sm:text-[11px] ${isActive ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'} font-mono tabular-nums truncate mt-0.5">${d.subDisplay}</p>
             </div>`;
         }).join('');
     }
@@ -1558,9 +1566,19 @@ function renderIntradayCurveSection(baseline) {
     // 4. Update Default Readout Line Below Chart
     updateIntradayHoverReadout(intradaySeriesState.labels.length - 1, defs);
 
-    // 5. Render Dual-Axis Chart.js Line Chart
-    const canvas = document.getElementById('intradayTelemetryChart');
+    // 5. Render Dual-Axis Chart.js Line Chart (Main + Fullscreen if open)
+    renderIntradayCanvasInstance('intradayTelemetryChart', defs, false);
+
+    const fsModal = document.getElementById('modal-intraday-fullscreen');
+    if (fsModal && !fsModal.classList.contains('hidden')) {
+        renderIntradayCanvasInstance('intradayFullscreenChart', defs, true);
+    }
+}
+
+function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
+    const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === 'undefined') return;
+    if (!defs) defs = getAvailableCurveDefinitions();
 
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
     const datasets = activeDefs.map(d => {
@@ -1571,26 +1589,27 @@ function renderIntradayCurveSection(baseline) {
             borderColor: d.color,
             backgroundColor: d.color + '18',
             yAxisID: d.axis,
-            borderWidth: 2.2,
+            borderWidth: isFullscreen ? 2.6 : 2.2,
             pointRadius: 0,
-            pointHoverRadius: 4,
+            pointHoverRadius: isFullscreen ? 5 : 4,
             tension: 0.25,
             fill: false
         };
     });
 
-    // Compute max W for clean left axis ticks like Screenshot 2
     let maxPowerW = 500;
     activeDefs.filter(d => d.axis === 'yPower').forEach(d => {
         const arr = intradaySeriesState.series[d.key] || [];
         arr.forEach(v => { if (v > maxPowerW) maxPowerW = v; });
     });
 
-    if (chartIntraday) {
-        chartIntraday.destroy();
+    if (isFullscreen) {
+        if (chartIntradayFullscreen) chartIntradayFullscreen.destroy();
+    } else {
+        if (chartIntraday) chartIntraday.destroy();
     }
 
-    chartIntraday = new Chart(canvas.getContext('2d'), {
+    const chartInstance = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: {
             labels: intradaySeriesState.labels,
@@ -1599,7 +1618,7 @@ function renderIntradayCurveSection(baseline) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 220 },
+            animation: { duration: 180 },
             interaction: {
                 mode: 'index',
                 intersect: false
@@ -1613,10 +1632,10 @@ function renderIntradayCurveSection(baseline) {
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: 'rgba(15, 25, 30, 0.94)',
+                    backgroundColor: 'rgba(11, 21, 26, 0.95)',
                     titleColor: '#e2e8f0',
                     bodyColor: '#f8fafc',
-                    borderColor: 'rgba(45, 212, 191, 0.3)',
+                    borderColor: 'rgba(45, 212, 191, 0.35)',
                     borderWidth: 1,
                     padding: 10,
                     callbacks: {
@@ -1633,8 +1652,8 @@ function renderIntradayCurveSection(baseline) {
                     grid: { color: 'rgba(148, 163, 184, 0.08)', drawBorder: false },
                     ticks: {
                         color: '#94a3b8',
-                        maxTicksLimit: 6,
-                        font: { size: 11 }
+                        maxTicksLimit: isFullscreen ? 10 : 6,
+                        font: { size: isFullscreen ? 12 : 11 }
                     }
                 },
                 yPower: {
@@ -1645,16 +1664,9 @@ function renderIntradayCurveSection(baseline) {
                     grid: { color: 'rgba(148, 163, 184, 0.12)', drawBorder: false },
                     ticks: {
                         color: '#94a3b8',
-                        count: 5,
-                        font: { size: 11 },
+                        count: isFullscreen ? 6 : 5,
+                        font: { size: isFullscreen ? 12 : 11 },
                         callback: (val) => val.toLocaleString('de-DE', { maximumFractionDigits: 1 })
-                    },
-                    title: {
-                        display: true,
-                        text: 'W',
-                        align: 'end',
-                        color: '#94a3b8',
-                        font: { size: 11, weight: '600' }
                     }
                 },
                 ySoc: {
@@ -1666,24 +1678,21 @@ function renderIntradayCurveSection(baseline) {
                     ticks: {
                         color: '#94a3b8',
                         stepSize: 25,
-                        font: { size: 11 }
-                    },
-                    title: {
-                        display: true,
-                        text: '%',
-                        align: 'end',
-                        color: '#94a3b8',
-                        font: { size: 11, weight: '600' }
+                        font: { size: isFullscreen ? 12 : 11 }
                     }
                 }
             }
         }
     });
+
+    if (isFullscreen) {
+        chartIntradayFullscreen = chartInstance;
+    } else {
+        chartIntraday = chartInstance;
+    }
 }
 
 function updateIntradayHoverReadout(index, defs) {
-    const readoutEl = document.getElementById('dash_curve_hover_readout');
-    if (!readoutEl) return;
     if (!defs) defs = getAvailableCurveDefinitions();
 
     const idx = Math.max(0, Math.min(index, (intradaySeriesState.labels.length || 1) - 1));
@@ -1700,7 +1709,68 @@ function updateIntradayHoverReadout(index, defs) {
         return `${d.name}: ${Number(val).toLocaleString('de-DE', { maximumFractionDigits: 1 })} ${unit}`;
     });
 
-    readoutEl.innerText = `${datePart}, ${timePart} · ${parts.join(' · ')}`;
+    const text = `${datePart}, ${timePart} · ${parts.join(' · ')}`;
+    const readoutEl = document.getElementById('dash_curve_hover_readout');
+    if (readoutEl) readoutEl.innerText = text;
+    const fsReadoutEl = document.getElementById('fs_curve_hover_readout');
+    if (fsReadoutEl) fsReadoutEl.innerText = text;
+}
+
+// ============================================================================
+// 5B. FULLSCREEN & 90° LANDSCAPE OVERLAY FOR INTRADAY CHART
+// ============================================================================
+
+function openIntradayFullscreenModal() {
+    const modal = document.getElementById('modal-intraday-fullscreen');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    applyIntradayFullscreenRotationStyle();
+    setTimeout(() => {
+        renderIntradayCurveSection();
+    }, 40);
+}
+
+function closeIntradayFullscreenModal() {
+    const modal = document.getElementById('modal-intraday-fullscreen');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    if (isIntradayFsRotated) {
+        isIntradayFsRotated = false;
+        applyIntradayFullscreenRotationStyle();
+    }
+}
+
+function toggleIntradayFullscreenRotate() {
+    isIntradayFsRotated = !isIntradayFsRotated;
+    applyIntradayFullscreenRotationStyle();
+    setTimeout(() => {
+        const defs = getAvailableCurveDefinitions();
+        renderIntradayCanvasInstance('intradayFullscreenChart', defs, true);
+    }, 120);
+}
+
+function applyIntradayFullscreenRotationStyle() {
+    const inner = document.getElementById('intradayFullscreenInner');
+    const lbl = document.getElementById('btnIntradayFsRotateLabel');
+    if (!inner) return;
+
+    if (isIntradayFsRotated) {
+        inner.style.position = 'fixed';
+        inner.style.top = '50%';
+        inner.style.left = '50%';
+        inner.style.width = '100dvh';
+        inner.style.height = '100dvw';
+        inner.style.transform = 'translate(-50%, -50%) rotate(90deg)';
+        if (lbl) lbl.innerText = 'Normalansicht';
+    } else {
+        inner.style.position = '';
+        inner.style.top = '';
+        inner.style.left = '';
+        inner.style.width = '100%';
+        inner.style.height = '100%';
+        inner.style.transform = '';
+        if (lbl) lbl.innerText = '90° Querformat';
+    }
 }
 
 // ============================================================================
@@ -2672,19 +2742,19 @@ function onImportPerformanceCsvFile(event) {
 function switchHaModalTab(tab = 'config') {
     const panelCfg = document.getElementById('ha-modal-panel-config');
     const panelGuide = document.getElementById('ha-modal-panel-guide');
-    const btnCfg = document.getElementById('btn-ha-modal-tab-config');
-    const btnGuide = document.getElementById('btn-ha-modal-tab-guide');
+    const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
+    const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
 
     if (tab === 'guide') {
         if (panelCfg) panelCfg.classList.add('hidden');
         if (panelGuide) panelGuide.classList.remove('hidden');
-        if (btnGuide) btnGuide.className = "px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
-        if (btnCfg) btnCfg.className = "px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+        if (btnGuide) btnGuide.className = "px-3.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-xs";
+        if (btnCfg) btnCfg.className = "px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
     } else {
         if (panelCfg) panelCfg.classList.remove('hidden');
         if (panelGuide) panelGuide.classList.add('hidden');
-        if (btnCfg) btnCfg.className = "px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
-        if (btnGuide) btnGuide.className = "px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+        if (btnCfg) btnCfg.className = "px-3.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-xs";
+        if (btnGuide) btnGuide.className = "px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
     }
 }
 
@@ -2703,8 +2773,9 @@ function openHaConfigModal(focusSection = null) {
     const modal = document.getElementById('modal-ha-config');
     if (!modal) return;
 
-    setElVal('ha_cfg_mode', haConfigState.mode || 'demo');
-    setElVal('ha_cfg_url', haConfigState.baseUrl || 'http://homeassistant.local:8123');
+    const cleanMode = (!haConfigState.mode || haConfigState.mode === 'demo') ? 'poll' : haConfigState.mode;
+    setElVal('ha_cfg_mode', cleanMode);
+    setElVal('ha_cfg_url', haConfigState.baseUrl || 'https://home.mb10.org');
     setElVal('ha_cfg_token', haConfigState.accessToken || '');
     setElVal('ha_cfg_interval', haConfigState.pollIntervalSec || 10);
     setElVal('ha_cfg_bat_name', haConfigState.batteryName || 'BYD HVS+');
@@ -2791,26 +2862,38 @@ function renderHaCustomStringsEditor() {
 
         return `
         <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-            <div class="sm:col-span-4 flex items-center gap-2">
+            <div class="sm:col-span-3 flex items-center gap-2">
                 <input type="color" value="${safeColor}" onchange="updateHaCustomStringField(${idx}, 'color', this.value)" class="w-7 h-7 rounded-full shrink-0 cursor-pointer border-0">
                 <div class="flex-1 min-w-0">
                     <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Bezeichnung (Kachel & Kurve)</label>
-                    <input type="text" value="${safeName}" oninput="updateHaCustomStringField(${idx}, 'name', this.value)"
+                    <input type="text" id="ha_str_name_${idx}" value="${safeName}" oninput="updateHaCustomStringField(${idx}, 'name', this.value)"
                         placeholder="z.B. Fronius · String 1 DC"
                         class="w-full text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
                 </div>
             </div>
             <div class="sm:col-span-4">
                 <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Leistungs-Entität (W / kW)</label>
-                <input type="text" list="haEntitiesDatalist" value="${safePower}" oninput="updateHaCustomStringField(${idx}, 'powerEntity', this.value)"
-                    placeholder="sensor.fronius_string_1_power"
-                    class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <div class="flex items-center gap-1">
+                    <input type="text" id="ha_str_pwr_${idx}" list="haEntitiesDatalist" value="${safePower}" oninput="updateHaCustomStringField(${idx}, 'powerEntity', this.value)"
+                        placeholder="sensor.fronius_string_1_power"
+                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="openHaEntityPicker({ customType: 'stringPower', index: ${idx}, unitFilter: 'power', title: 'PV-String ${idx + 1} · Leistung (W/kW)' })" class="px-2 py-1.5 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Sensor aus Gerät/Helfer wählen">
+                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                        <span>Wählen</span>
+                    </button>
+                </div>
             </div>
-            <div class="sm:col-span-3">
+            <div class="sm:col-span-4">
                 <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Tagesenergie (kWh, optional)</label>
-                <input type="text" list="haEntitiesDatalist" value="${safeEnergy}" oninput="updateHaCustomStringField(${idx}, 'energyEntity', this.value)"
-                    placeholder="Leer = aus W berechnet"
-                    class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <div class="flex items-center gap-1">
+                    <input type="text" id="ha_str_nrg_${idx}" list="haEntitiesDatalist" value="${safeEnergy}" oninput="updateHaCustomStringField(${idx}, 'energyEntity', this.value)"
+                        placeholder="Leer = aus W berechnet"
+                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="openHaEntityPicker({ customType: 'stringEnergy', index: ${idx}, unitFilter: 'energy', title: 'PV-String ${idx + 1} · Tagesertrag (kWh)' })" class="px-2 py-1.5 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Energiezähler aus Gerät/Helfer wählen">
+                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                        <span>Wählen</span>
+                    </button>
+                </div>
             </div>
             <div class="sm:col-span-1 flex justify-end sm:pt-4">
                 <button type="button" onclick="removeHaCustomString(${idx})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer" title="String entfernen">
@@ -2834,13 +2917,14 @@ function addHaCustomString() {
     haConfigState.customStrings.push({
         id: newId,
         name: `PV-String ${nextNum} · DC`,
-        powerEntity: `sensor.pv_string_${nextNum}_power`,
+        powerEntity: '',
         energyEntity: '',
         color: palette[(nextNum - 1) % palette.length]
     });
     activeCurveKeys.add(newId);
     renderHaCustomStringsEditor();
 }
+const addHaCustomStringRow = addHaCustomString;
 
 function removeHaCustomString(idx) {
     if (!Array.isArray(haConfigState.customStrings)) return;
@@ -2887,15 +2971,21 @@ function renderHaCustomConsumersEditor() {
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
             <div class="sm:col-span-5">
                 <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Gerätename (z.B. Trockner, Wärmepumpe)</label>
-                <input type="text" value="${safeName}" oninput="updateHaCustomConsumerField(${idx}, 'name', this.value)"
+                <input type="text" id="ha_cons_name_${idx}" value="${safeName}" oninput="updateHaCustomConsumerField(${idx}, 'name', this.value)"
                     placeholder="Trockner"
                     class="w-full text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
             </div>
             <div class="sm:col-span-6">
                 <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Home Assistant Leistungs-Entität (W oder kW)</label>
-                <input type="text" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomConsumerField(${idx}, 'powerEntity', this.value)"
-                    placeholder="sensor.trockner_power"
-                    class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <div class="flex items-center gap-1.5">
+                    <input type="text" id="ha_cons_pwr_${idx}" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomConsumerField(${idx}, 'powerEntity', this.value)"
+                        placeholder="sensor.trockner_power"
+                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="openHaEntityPicker({ customType: 'consumerPower', index: ${idx}, unitFilter: 'power', title: 'Einzelverbraucher ${idx + 1} · Leistung (W/kW)' })" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Verbraucher-Sensor aus Gerät oder Helfer wählen">
+                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                        <span>Wählen</span>
+                    </button>
+                </div>
             </div>
             <div class="sm:col-span-1 flex justify-end sm:pt-4">
                 <button type="button" onclick="removeHaCustomConsumer(${idx})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer" title="Verbraucher entfernen">
@@ -2917,10 +3007,11 @@ function addHaCustomConsumer() {
     haConfigState.customConsumers.push({
         id: 'cons_' + Date.now(),
         name: `Verbraucher ${nextNum}`,
-        powerEntity: `sensor.verbraucher_${nextNum}_power`
+        powerEntity: ''
     });
     renderHaCustomConsumersEditor();
 }
+const addHaCustomConsumerRow = addHaCustomConsumer;
 
 function removeHaCustomConsumer(idx) {
     if (!Array.isArray(haConfigState.customConsumers)) return;
@@ -2929,8 +3020,9 @@ function removeHaCustomConsumer(idx) {
 }
 
 function readHaModalIntoState() {
-    haConfigState.mode = document.getElementById('ha_cfg_mode')?.value || 'demo';
-    haConfigState.baseUrl = (document.getElementById('ha_cfg_url')?.value || 'http://homeassistant.local:8123').trim();
+    const rawMode = document.getElementById('ha_cfg_mode')?.value || 'poll';
+    haConfigState.mode = rawMode === 'demo' ? 'poll' : rawMode;
+    haConfigState.baseUrl = (document.getElementById('ha_cfg_url')?.value || 'https://home.mb10.org').trim();
     haConfigState.accessToken = (document.getElementById('ha_cfg_token')?.value || '').trim();
     haConfigState.pollIntervalSec = Math.max(3, parseInt(document.getElementById('ha_cfg_interval')?.value) || 10);
     haConfigState.batteryName = (document.getElementById('ha_cfg_bat_name')?.value || 'BYD HVS+').trim();
@@ -2950,13 +3042,184 @@ function readHaModalIntoState() {
     };
 }
 
+// ============================================================================
+// 8. KOMFORT-SENSOR-PICKER: GERÄTE- & HELFER-GRUPPIERUNG + ECHTZEIT-SUCHE
+// ============================================================================
+
+let haPickerState = {
+    targetInputId: null,
+    customType: null, // 'stringPower' | 'stringEnergy' | 'consumerPower'
+    index: null,
+    title: 'Sensor auswählen',
+    category: 'all', // 'all' | 'device' | 'helper'
+    unitFilter: 'all', // 'power' | 'energy' | 'soc' | 'all'
+    selectedGroup: '__ALL__',
+    searchQuery: '',
+    isLoading: false
+};
+
+async function fetchHaTemplateDeviceMapInBrowser(rawBaseUrl, rawToken) {
+    const cleanUrl = normalizeHaUrlClient(rawBaseUrl);
+    const cleanTok = cleanHaTokenClient(rawToken);
+    if (!cleanUrl || !cleanTok) return {};
+
+    // Query Home Assistant /api/template to resolve real Device Names & Area Names for entities
+    const jinjaTemplate = [
+        "{% set ns = namespace(items=[]) %}",
+        "{% for s in states.sensor %}",
+        "{% set dev = device_attr(s.entity_id, 'name_by_user') or device_attr(s.entity_id, 'name') or '' %}",
+        "{% set area = area_name(s.entity_id) or '' %}",
+        "{% if dev or area %}",
+        "{% set ns.items = ns.items + [[s.entity_id, dev, area]] %}",
+        "{% endif %}",
+        "{% endfor %}",
+        "{{ ns.items | to_json }}"
+    ].join('');
+
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5500);
+        const res = await fetch(`${cleanUrl}/api/template`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${cleanTok}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ template: jinjaTemplate }),
+            mode: 'cors',
+            credentials: 'omit',
+            signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (!res.ok) return {};
+        const text = (await res.text() || '').trim();
+        if (!text.startsWith('[')) return {};
+        const arr = JSON.parse(text);
+        const map = {};
+        if (Array.isArray(arr)) {
+            arr.forEach(row => {
+                if (Array.isArray(row) && row[0]) {
+                    map[row[0]] = { deviceName: row[1] || '', areaName: row[2] || '' };
+                }
+            });
+        }
+        return map;
+    } catch (e) {
+        return {};
+    }
+}
+
+function classifyHaEntityGroup(rawEntityObj, tplDeviceMap) {
+    const entityId = String(rawEntityObj.entity_id || '');
+    const attrs = rawEntityObj.attributes || {};
+    const friendlyName = String(attrs.friendly_name || entityId).trim();
+    const tplInfo = tplDeviceMap?.[entityId] || {};
+    const areaName = tplInfo.areaName || '';
+
+    // 1. Check if entity is a Home Assistant Helper (Utility Meter, Riemann Integral, Group, Template, Input/Counter)
+    if (entityId.startsWith('input_number.') || entityId.startsWith('counter.')) {
+        return { category: 'helper', groupName: 'Helfer · Eingabe & Zähler', areaName };
+    }
+    if (attrs.cron || attrs.meter_period !== undefined || attrs.last_period !== undefined || attrs.tariff !== undefined) {
+        return { category: 'helper', groupName: 'Helfer · Verbrauchszähler (Utility Meter)', areaName };
+    }
+    if (attrs.source && typeof attrs.source === 'string') {
+        return { category: 'helper', groupName: 'Helfer · Riemann-Integral (W → kWh)', areaName };
+    }
+    if (Array.isArray(attrs.entities) && attrs.entities.length > 0) {
+        return { category: 'helper', groupName: 'Helfer · Gruppen- & Summensensor', areaName };
+    }
+    if (!tplInfo.deviceName && /template|helfer|helper|integral|utility_meter|berechnet|summe_pv|pv_gesamt/i.test(`${entityId} ${friendlyName}`)) {
+        return { category: 'helper', groupName: 'Helfer · Template & Berechnete Sensoren', areaName };
+    }
+
+    // 2. If Home Assistant resolved an explicit Device Name via /api/template, use it directly
+    if (tplInfo.deviceName) {
+        return { category: 'device', groupName: tplInfo.deviceName, areaName };
+    }
+
+    // 3. Smart prefix extraction from friendly_name or entity_id
+    const cleanedFriendly = friendlyName
+        .replace(/\s+(Leistung|Power|Active Power|Energy|Energie|Tagesertrag|Gesamtertrag|Spannung|Voltage|Strom|Current|State of Charge|Ladezustand|SoC|Status|Temperature|Temperatur|Total|Today|Heute|Daily|Monthly).*$/i, '')
+        .trim();
+
+    if (cleanedFriendly && cleanedFriendly.length >= 2 && cleanedFriendly.length <= 36 && cleanedFriendly !== friendlyName) {
+        return { category: 'device', groupName: cleanedFriendly, areaName };
+    }
+
+    const words = friendlyName.split(/[\s·\-_]+/).filter(Boolean);
+    if (words.length >= 2) {
+        return { category: 'device', groupName: words.slice(0, 2).join(' '), areaName };
+    }
+
+    const slugParts = entityId.replace(/^[a-z_]+\./, '').split('_').filter(Boolean);
+    const fallbackGroup = slugParts.length > 0
+        ? slugParts[0].charAt(0).toUpperCase() + slugParts[0].slice(1)
+        : 'Sonstige Sensoren';
+    return { category: 'device', groupName: fallbackGroup, areaName };
+}
+
+function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
+    return statesArray
+        .filter(s => {
+            if (!s || typeof s.entity_id !== 'string') return false;
+            return (
+                s.entity_id.startsWith('sensor.') ||
+                s.entity_id.startsWith('number.') ||
+                s.entity_id.startsWith('input_number.') ||
+                s.entity_id.startsWith('counter.')
+            );
+        })
+        .map(s => {
+            const unit = String(s.attributes?.unit_of_measurement || '').trim();
+            const unitLower = unit.toLowerCase();
+            const devClass = String(s.attributes?.device_class || '').toLowerCase();
+            const groupInfo = classifyHaEntityGroup(s, tplDeviceMap);
+
+            let unitCategory = 'other';
+            if (unitLower === 'w' || unitLower === 'kw' || unitLower === 'mw' || unitLower === 'va' || devClass === 'power') {
+                unitCategory = 'power';
+            } else if (unitLower === 'kwh' || unitLower === 'wh' || unitLower === 'mwh' || devClass === 'energy') {
+                unitCategory = 'energy';
+            } else if (unitLower === '%' || devClass === 'battery') {
+                unitCategory = 'soc';
+            }
+
+            return {
+                entity_id: s.entity_id,
+                name: s.attributes?.friendly_name || s.entity_id,
+                state: s.state,
+                unit,
+                unitCategory,
+                category: groupInfo.category, // 'device' | 'helper'
+                groupName: groupInfo.groupName,
+                areaName: groupInfo.areaName || ''
+            };
+        })
+        .sort((a, b) => {
+            const gCmp = a.groupName.localeCompare(b.groupName, 'de');
+            if (gCmp !== 0) return gCmp;
+            return a.name.localeCompare(b.name, 'de');
+        });
+}
+
+function updateHaEntitiesDatalistElement() {
+    const dl = document.getElementById('haEntitiesDatalist');
+    if (dl) {
+        dl.innerHTML = discoveredHaSensors.map(s =>
+            `<option value="${s.entity_id}">${s.groupName ? `[${s.groupName}] ` : ''}${s.name} (${s.state} ${s.unit})</option>`
+        ).join('');
+    }
+}
+
 async function testHaConnectionAndLoadSensors() {
     readHaModalIntoState();
     const statusBox = document.getElementById('haTestFeedbackBox');
     if (statusBox) {
         statusBox.classList.remove('hidden');
         statusBox.className = "p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 font-medium";
-        statusBox.innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Prüfe direkte Browser-Verbindung zu Home Assistant (${typeof escapeHtml === 'function' ? escapeHtml(normalizeHaUrlClient(haConfigState.baseUrl)) : normalizeHaUrlClient(haConfigState.baseUrl)})...</span></div>`;
+        statusBox.innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Verbinde mit Home Assistant &amp; lade Geräte, Helfer und Sensoren (${typeof escapeHtml === 'function' ? escapeHtml(normalizeHaUrlClient(haConfigState.baseUrl)) : normalizeHaUrlClient(haConfigState.baseUrl)})...</span></div>`;
     }
 
     // 1. Primary path: Direct Browser Fetch (essential for GitHub Pages & static web hosts)
@@ -2968,42 +3231,31 @@ async function testHaConnectionAndLoadSensors() {
     }
 
     if (directRes.ok && Array.isArray(directRes.data)) {
-        discoveredHaSensors = directRes.data
-            .filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('sensor.'))
-            .map(s => ({
-                entity_id: s.entity_id,
-                name: s.attributes?.friendly_name || s.entity_id,
-                state: s.state,
-                unit: s.attributes?.unit_of_measurement || ''
-            }))
-            .sort((a, b) => a.entity_id.localeCompare(b.entity_id));
+        const tplDeviceMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+        discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplDeviceMap);
+        updateHaEntitiesDatalistElement();
 
-        const dl = document.getElementById('haEntitiesDatalist');
-        if (dl) {
-            dl.innerHTML = discoveredHaSensors.map(s =>
-                `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
-            ).join('');
-        }
-
-        // Switch mode to 'poll' automatically on successful test so live values appear immediately
         haConfigState.mode = 'poll';
         setElVal('ha_cfg_mode', 'poll');
         localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+
+        const deviceGroupsCount = new Set(discoveredHaSensors.filter(s => s.category === 'device').map(s => s.groupName)).size;
+        const helperCount = discoveredHaSensors.filter(s => s.category === 'helper').length;
 
         if (statusBox) {
             statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
             statusBox.innerHTML = `
                 <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
                     <span class="material-symbols-rounded text-base">check_circle</span>
-                    <span>Direkt-Verbindung erfolgreich! (${discoveredHaSensors.length} Sensoren von ${directRes.usedBaseUrl} geladen)</span>
+                    <span>Verbunden! ${discoveredHaSensors.length} Sensoren (${deviceGroupsCount} Geräte &amp; ${helperCount} Helfer/Zähler) geladen.</span>
                 </div>
-                <p class="mt-1 text-[11px]">Daten-Modus wurde automatisch auf „Home Assistant API Abruf (Live-Poll)“ gestellt.</p>
+                <p class="mt-1 text-[11px]">Du kannst jetzt bei jedem Feld bequem auf <strong>„Wählen“</strong> tippen, um Gerät/Helfer und Entität auszuwählen.</p>
             `;
         }
-        return;
+        return true;
     }
 
-    // 2. Secondary path: Try backend proxy /api/ha/test ONLY if running on a Node.js server (safe against HTML 404/405 on GitHub Pages)
+    // 2. Secondary path: Try backend proxy /api/ha/test ONLY if running on a Node.js server
     const backendRes = await safeFetchBackendJson('/api/ha/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -3019,13 +3271,12 @@ async function testHaConnectionAndLoadSensors() {
             haConfigState.baseUrl = data.normalizedBaseUrl;
             setElVal('ha_cfg_url', data.normalizedBaseUrl);
         }
-        discoveredHaSensors = data.sensors || [];
-        const dl = document.getElementById('haEntitiesDatalist');
-        if (dl) {
-            dl.innerHTML = discoveredHaSensors.map(s =>
-                `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
-            ).join('');
-        }
+        discoveredHaSensors = (data.sensors || []).map(s => {
+            const fakeRaw = { entity_id: s.entity_id, state: s.state, attributes: { friendly_name: s.name, unit_of_measurement: s.unit } };
+            return buildEnrichedSensorList([fakeRaw], {})[0];
+        }).filter(Boolean);
+        updateHaEntitiesDatalistElement();
+
         haConfigState.mode = 'poll';
         setElVal('ha_cfg_mode', 'poll');
         localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
@@ -3035,14 +3286,14 @@ async function testHaConnectionAndLoadSensors() {
             statusBox.innerHTML = `
                 <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
                     <span class="material-symbols-rounded text-base">check_circle</span>
-                    <span>Verbindung über Server-Proxy erfolgreich! (${data.sensorCount} Sensoren geladen)</span>
+                    <span>Verbindung über Server-Proxy erfolgreich! (${discoveredHaSensors.length} Sensoren geladen)</span>
                 </div>
             `;
         }
-        return;
+        return true;
     }
 
-    // 3. Detailed, accurate error reporting (especially for GitHub Pages CORS & Reverse Proxy)
+    // 3. Detailed, accurate error reporting
     const allDiagnostics = [
         ...(directRes.diagnostics || []),
         ...((!backendRes.isHtml && Array.isArray(backendRes.data?.diagnostics)) ? backendRes.data.diagnostics : [])
@@ -3076,6 +3327,311 @@ async function testHaConnectionAndLoadSensors() {
                 </button>
             </div>
         `;
+    }
+    return false;
+}
+
+async function openHaEntityPicker(options = {}) {
+    readHaModalIntoState();
+    haPickerState = {
+        targetInputId: options.targetInputId || null,
+        customType: options.customType || null,
+        index: options.index !== undefined ? options.index : null,
+        title: options.title || 'Sensor auswählen',
+        category: 'all',
+        unitFilter: options.unitFilter || 'all',
+        selectedGroup: '__ALL__',
+        searchQuery: '',
+        isLoading: false
+    };
+
+    const modal = document.getElementById('modal-ha-entity-picker');
+    if (!modal) return;
+
+    setElText('haPickerModalTitle', `Sensor wählen: ${haPickerState.title}`);
+    const searchInp = document.getElementById('haPickerSearchInput');
+    if (searchInp) searchInp.value = '';
+    const clearBtn = document.getElementById('haPickerClearSearchBtn');
+    if (clearBtn) clearBtn.classList.add('hidden');
+
+    modal.classList.remove('hidden');
+    updateHaPickerFilterButtonsUI();
+
+    if (discoveredHaSensors.length === 0) {
+        await reloadHaPickerSensors();
+    } else {
+        renderHaEntityPickerUI();
+    }
+}
+
+function closeHaEntityPicker() {
+    const modal = document.getElementById('modal-ha-entity-picker');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function reloadHaPickerSensors() {
+    readHaModalIntoState();
+    haPickerState.isLoading = true;
+    renderHaEntityPickerUI();
+
+    const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+    if (directRes.ok && Array.isArray(directRes.data)) {
+        if (directRes.usedBaseUrl) {
+            haConfigState.baseUrl = directRes.usedBaseUrl;
+            setElVal('ha_cfg_url', directRes.usedBaseUrl);
+        }
+        const tplDeviceMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+        discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplDeviceMap);
+        updateHaEntitiesDatalistElement();
+    }
+    haPickerState.isLoading = false;
+    renderHaEntityPickerUI();
+}
+
+function setHaPickerCategory(cat) {
+    haPickerState.category = cat || 'all';
+    haPickerState.selectedGroup = '__ALL__';
+    updateHaPickerFilterButtonsUI();
+    renderHaEntityPickerUI();
+}
+
+function setHaPickerUnitFilter(unitFilter) {
+    haPickerState.unitFilter = unitFilter || 'all';
+    updateHaPickerFilterButtonsUI();
+    renderHaEntityPickerUI();
+}
+
+function selectHaPickerGroup(groupKey) {
+    haPickerState.selectedGroup = groupKey || '__ALL__';
+    renderHaEntityPickerUI();
+}
+
+function onHaPickerSearchInput(val) {
+    haPickerState.searchQuery = String(val || '').trim();
+    const inp = document.getElementById('haPickerSearchInput');
+    if (inp && inp.value !== haPickerState.searchQuery && val === '') {
+        inp.value = '';
+    }
+    const clearBtn = document.getElementById('haPickerClearSearchBtn');
+    if (clearBtn) {
+        if (haPickerState.searchQuery.length > 0) clearBtn.classList.remove('hidden');
+        else clearBtn.classList.add('hidden');
+    }
+    renderHaEntityPickerUI();
+}
+
+function updateHaPickerFilterButtonsUI() {
+    ['all', 'device', 'helper'].forEach(cat => {
+        const btn = document.getElementById(`haPickerCat_${cat}`);
+        if (!btn) return;
+        if (haPickerState.category === cat) {
+            btn.className = "px-2.5 py-1 rounded-lg bg-teal-600 text-white transition-all cursor-pointer";
+        } else {
+            btn.className = "px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-300/50 dark:hover:bg-white/10 transition-all cursor-pointer";
+        }
+    });
+
+    ['power', 'energy', 'soc', 'all'].forEach(u => {
+        const btn = document.getElementById(`haPickerUnit_${u}`);
+        if (!btn) return;
+        if (haPickerState.unitFilter === u) {
+            btn.className = "px-2.5 py-1 rounded-lg bg-teal-500/20 border border-teal-500/50 text-teal-700 dark:text-teal-200 font-extrabold whitespace-nowrap cursor-pointer";
+        } else {
+            btn.className = "px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 text-slate-600 dark:text-slate-300 font-semibold whitespace-nowrap cursor-pointer hover:border-teal-500/40";
+        }
+    });
+}
+
+function getFilteredPickerSensors(ignoreGroupSelection = false) {
+    const q = haPickerState.searchQuery.toLowerCase();
+    return discoveredHaSensors.filter(s => {
+        if (haPickerState.category !== 'all' && s.category !== haPickerState.category) return false;
+        if (haPickerState.unitFilter !== 'all' && s.unitCategory !== haPickerState.unitFilter) return false;
+        if (!ignoreGroupSelection && haPickerState.selectedGroup !== '__ALL__' && s.groupName !== haPickerState.selectedGroup) {
+            return false;
+        }
+        if (q) {
+            const hay = `${s.name} ${s.entity_id} ${s.groupName} ${s.areaName} ${s.unit}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+}
+
+function renderHaEntityPickerUI() {
+    const groupsEl = document.getElementById('haPickerGroupsList');
+    const entitiesEl = document.getElementById('haPickerEntitiesList');
+    if (!groupsEl || !entitiesEl) return;
+
+    if (haPickerState.isLoading) {
+        groupsEl.innerHTML = `<div class="p-4 text-xs text-slate-400 flex items-center gap-2"><span class="material-symbols-rounded animate-spin text-teal-400">progress_activity</span><span>Lade Geräte &amp; Helfer...</span></div>`;
+        entitiesEl.innerHTML = `<div class="p-6 text-xs text-slate-400 text-center">Sensoren werden von Home Assistant abgerufen...</div>`;
+        return;
+    }
+
+    if (discoveredHaSensors.length === 0) {
+        groupsEl.innerHTML = `<div class="p-3 text-xs text-slate-400">Keine Verbindung geladen.</div>`;
+        entitiesEl.innerHTML = `
+            <div class="p-6 rounded-2xl border border-dashed border-slate-300 dark:border-white/15 text-center space-y-2.5">
+                <span class="material-symbols-rounded text-3xl text-amber-400">wifi_off</span>
+                <p class="text-xs font-bold text-slate-800 dark:text-white">Noch keine Sensoren aus Home Assistant geladen</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Prüfe URL &amp; Token im Konfigurator und tippe oben rechts auf „Neu laden“.</p>
+                <button type="button" onclick="reloadHaPickerSensors()" class="px-3.5 py-1.5 rounded-xl bg-teal-600 text-white text-xs font-bold cursor-pointer">
+                    Jetzt von Home Assistant laden
+                </button>
+            </div>`;
+        return;
+    }
+
+    // 1. Build Groups (Devices & Helpers) matching Category + Unit + Search
+    const baseFiltered = getFilteredPickerSensors(true);
+    const groupMap = new Map();
+    baseFiltered.forEach(s => {
+        const key = s.groupName || 'Sonstige';
+        if (!groupMap.has(key)) {
+            groupMap.set(key, { name: key, category: s.category, count: 0 });
+        }
+        groupMap.get(key).count++;
+    });
+
+    const groupsArr = [...groupMap.values()].sort((a, b) => {
+        if (a.category !== b.category) return a.category === 'device' ? -1 : 1;
+        return a.name.localeCompare(b.name, 'de');
+    });
+
+    setElText('haPickerGroupCountBadge', `${groupsArr.length} Gruppen`);
+
+    const isAllSelected = haPickerState.selectedGroup === '__ALL__';
+    let groupsHtml = `
+        <button type="button" onclick="selectHaPickerGroup('__ALL__')"
+            class="w-full text-left px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                isAllSelected
+                    ? 'bg-teal-600 text-white shadow-xs'
+                    : 'bg-white dark:bg-[#13242c] text-slate-700 dark:text-slate-200 hover:bg-teal-500/10 border border-slate-200/80 dark:border-white/10'
+            }">
+            <span class="flex items-center gap-2 truncate">
+                <span class="material-symbols-rounded text-base">apps</span>
+                <span class="truncate">Alle passenden Sensoren</span>
+            </span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'}">${baseFiltered.length}</span>
+        </button>
+    `;
+
+    groupsHtml += groupsArr.map(g => {
+        const isSel = haPickerState.selectedGroup === g.name;
+        const safeGName = typeof escapeHtml === 'function' ? escapeHtml(g.name) : g.name;
+        const iconName = g.category === 'helper' ? 'functions' : 'memory';
+        const iconColor = isSel ? 'text-white' : (g.category === 'helper' ? 'text-amber-400' : 'text-teal-400');
+        const safeJsArg = g.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+        return `
+        <button type="button" onclick="selectHaPickerGroup('${safeJsArg}')"
+            class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                isSel
+                    ? 'bg-teal-600 text-white shadow-xs font-bold'
+                    : 'bg-white dark:bg-[#13242c] text-slate-700 dark:text-slate-200 hover:bg-teal-500/10 border border-slate-200/80 dark:border-white/10'
+            }">
+            <span class="flex items-center gap-2 min-w-0">
+                <span class="material-symbols-rounded text-base shrink-0 ${iconColor}">${iconName}</span>
+                <span class="truncate">${safeGName}</span>
+            </span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${isSel ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'}">${g.count}</span>
+        </button>`;
+    }).join('');
+
+    groupsEl.innerHTML = groupsHtml;
+
+    // 2. Build Entities List for Step 2
+    const matchingEntities = getFilteredPickerSensors(false);
+    setElText('haPickerEntityCountBadge', `${matchingEntities.length} Sensoren`);
+    setElText(
+        'haPickerActiveGroupTitle',
+        haPickerState.selectedGroup === '__ALL__'
+            ? '2. Entität antippen zum Übernehmen'
+            : `2. ${haPickerState.selectedGroup}`
+    );
+
+    if (matchingEntities.length === 0) {
+        entitiesEl.innerHTML = `
+            <div class="p-6 rounded-2xl border border-dashed border-slate-300 dark:border-white/10 text-center space-y-2">
+                <p class="text-xs font-bold text-slate-700 dark:text-slate-200">Keine Entitäten mit diesem Filter gefunden</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Tippe auf „Alle Einheiten“, um auch Sensoren ohne Standard-Einheit einzublenden.</p>
+                <button type="button" onclick="setHaPickerUnitFilter('all'); setHaPickerCategory('all'); selectHaPickerGroup('__ALL__');" class="px-3 py-1.5 rounded-xl bg-teal-600/20 text-teal-700 dark:text-teal-300 text-xs font-bold cursor-pointer">
+                    Alle Filter zurücksetzen
+                </button>
+            </div>`;
+        return;
+    }
+
+    entitiesEl.innerHTML = matchingEntities.slice(0, 250).map(s => {
+        const safeName = typeof escapeHtml === 'function' ? escapeHtml(s.name) : s.name;
+        const safeId = typeof escapeHtml === 'function' ? escapeHtml(s.entity_id) : s.entity_id;
+        const safeGroup = typeof escapeHtml === 'function' ? escapeHtml(s.groupName) : s.groupName;
+        const safeArea = typeof escapeHtml === 'function' ? escapeHtml(s.areaName) : s.areaName;
+        const safeState = typeof escapeHtml === 'function' ? escapeHtml(`${s.state} ${s.unit}`.trim()) : `${s.state} ${s.unit}`.trim();
+        const jsEntityId = s.entity_id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
+        const badgeType = s.category === 'helper'
+            ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-300 text-[9px] font-bold">Helfer</span>`
+            : `<span class="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-600 dark:text-teal-300 text-[9px] font-bold">${safeGroup}</span>`;
+
+        const areaBadge = safeArea
+            ? `<span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 text-[9px] font-semibold">${safeArea}</span>`
+            : '';
+
+        return `
+        <button type="button" onclick="pickHaEntityFromModal('${jsEntityId}')"
+            class="w-full text-left p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#14252d] hover:bg-teal-500/10 dark:hover:bg-teal-500/15 border border-slate-200/90 dark:border-white/10 hover:border-teal-500/50 transition-all flex items-center justify-between gap-2.5 group cursor-pointer">
+            <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate">${safeName}</span>
+                    ${badgeType}
+                    ${areaBadge}
+                </div>
+                <p class="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate mt-0.5">${safeId}</p>
+            </div>
+            <div class="text-right shrink-0">
+                <span class="inline-block px-2 py-1 rounded-lg bg-slate-100 dark:bg-[#0b151a] border border-slate-200 dark:border-teal-500/30 text-xs font-black font-mono tabular-nums text-teal-700 dark:text-teal-300">
+                    ${safeState || '—'}
+                </span>
+            </div>
+        </button>`;
+    }).join('');
+}
+
+function pickHaEntityFromModal(entityId) {
+    const sensorObj = discoveredHaSensors.find(s => s.entity_id === entityId);
+    const cleanFriendly = sensorObj
+        ? String(sensorObj.name || '')
+            .replace(/\s+(Leistung|Power|Active Power|Energy|Energie|Tagesertrag|Heute|Today|Total).*$/i, '')
+            .trim()
+        : '';
+
+    if (haPickerState.targetInputId) {
+        const inp = document.getElementById(haPickerState.targetInputId);
+        if (inp) inp.value = entityId;
+    } else if (haPickerState.customType === 'stringPower' && haPickerState.index !== null) {
+        updateHaCustomStringField(haPickerState.index, 'powerEntity', entityId);
+        const curName = haConfigState.customStrings?.[haPickerState.index]?.name || '';
+        if (cleanFriendly && (!curName || /^PV-String \d+/i.test(curName))) {
+            updateHaCustomStringField(haPickerState.index, 'name', `${cleanFriendly} · DC`);
+        }
+        renderHaCustomStringsEditor();
+    } else if (haPickerState.customType === 'stringEnergy' && haPickerState.index !== null) {
+        updateHaCustomStringField(haPickerState.index, 'energyEntity', entityId);
+        renderHaCustomStringsEditor();
+    } else if (haPickerState.customType === 'consumerPower' && haPickerState.index !== null) {
+        updateHaCustomConsumerField(haPickerState.index, 'powerEntity', entityId);
+        const curName = haConfigState.customConsumers?.[haPickerState.index]?.name || '';
+        if (cleanFriendly && (!curName || /^Verbraucher \d+/i.test(curName))) {
+            updateHaCustomConsumerField(haPickerState.index, 'name', cleanFriendly);
+        }
+        renderHaCustomConsumersEditor();
+    }
+
+    closeHaEntityPicker();
+    if (typeof showToastNotification === 'function') {
+        showToastNotification(`Sensor „${sensorObj ? sensorObj.name : entityId}“ übernommen!`, 'success');
     }
 }
 

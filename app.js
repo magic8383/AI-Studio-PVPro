@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.6';
+        if (verEl) verEl.innerText = 'Pro 8.7';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();

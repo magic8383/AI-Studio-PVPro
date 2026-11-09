@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for Version 8.5 of PV-Planung Pro: Interactive multi-horizon Sankey Energy Flow diagram (Today, Month, Year), True Liquid Glass Dark & Light Mode, Unified Mobile-First Drill-Down Architecture (Level 1 Overview Hub Cards -> Level 2 Focused Detail View with Back Button) across Analyse and PV-Planung, Two-Row Mobile-First Header with full title legibility, Streamlined 4-Icon Floating Bottom Pill Bar (without theme toggle), and Reverse-Proxy Home Assistant Connection Fix with Interactive Step-by-Step Setup & Diagnostic Guide.",
-  "updatedAt":  "2026-11-09T16:00:16.502085770Z",
+  "summary":  "Implementierungsplan für Version 8.7: Komfort-Sensor-Picker Modal mit Geräte- und Helfer-Gruppierung sowie Echtzeit-Suche, Bereinigung des Demo-Modus, kompakter Tagesverlauf ohne Datums-Zeilenumbrüche mit klarem Aktiv-Kontrast der Kurven-Kacheln sowie Vollbild-Diagramm-Overlay mit Querformat-Ansicht.",
+  "updatedAt":  "2026-11-09T19:37:43.192904969Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

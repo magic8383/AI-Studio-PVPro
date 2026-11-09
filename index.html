@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 8.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 8.7 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 8.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 8.7 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=8.6">
+    <link rel="manifest" href="manifest.json?v=8.7">
     <meta name="theme-color" content="#0b1519">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.6">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.6">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.6">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.6">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.7">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.7">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.7">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.7">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -346,7 +346,7 @@
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-400/15 border border-teal-500/30 dark:border-teal-400/30 flex items-center justify-center text-teal-700 dark:text-teal-300 shrink-0 cursor-pointer" title="Zum Start-Dashboard">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-lg">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 8.6</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 8.7</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -601,7 +601,7 @@
                         </div>
                         <div class="min-w-0">
                             <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">9. Handbuch, Formeln &amp; Versions-Historie</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Physikalische Grundlagen, VDE-Normen &amp; Changelog v8.6</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Physikalische Grundlagen, VDE-Normen &amp; Changelog v8.7</p>
                         </div>
                     </div>
                     <span class="material-symbols-rounded text-slate-400 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
@@ -1203,9 +1203,9 @@
                 <!-- CARD 1: ENERGIE · JETZT (2x2 LIQUID GLASS GRID + AKTIVE VERBRAUCHER) -->
                 <div class="dash-main-card rounded-[28px] p-5 sm:p-6 transition-all">
                     <div class="flex items-center justify-between gap-2 mb-4">
-                        <div class="flex items-center gap-2">
-                            <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">Energie · jetzt</h2>
-                            <span id="liveConnectionStatusText" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25">Live-Demo</span>
+                        <div class="flex items-center gap-2 min-w-0">
+                            <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight shrink-0">Energie · jetzt</h2>
+                            <span id="liveConnectionStatusText" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25 truncate">Home Assistant</span>
                         </div>
                         <div class="flex items-center gap-1.5">
                             <button onclick="openHaConfigModal('guide')" class="px-2.5 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer" title="Schritt-für-Schritt Anleitung für Home Assistant & Reverse Proxy">
@@ -1358,71 +1358,66 @@
             <!-- LIVE EBENE 2 (DETAIL): TAGESVERLAUF & KURVEN-KACHELN      -->
             <!-- ========================================================= -->
             <div id="live-detail-intraday" class="hidden space-y-4">
-                <div class="dash-main-card rounded-[28px] p-5 sm:p-6 transition-all">
-                    <!-- Top Refresh Button & Header -->
-                    <div class="flex items-center justify-between gap-3 mb-3">
-                        <div class="flex items-center gap-2.5">
-                            <button onclick="refreshLiveTelemetryNow()" class="w-10 h-10 rounded-2xl bg-white/80 dark:bg-white/10 hover:bg-white dark:hover:bg-white/20 border border-slate-200/80 dark:border-white/15 text-slate-700 dark:text-slate-100 flex items-center justify-center transition-all cursor-pointer" title="Tagesverlauf & Live-Werte aktualisieren">
-                                <span class="material-symbols-rounded text-lg">refresh</span>
-                            </button>
-                            <div>
-                                <h2 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">PV, Haus, Netz &amp; Batterie</h2>
-                                <p id="dash_curve_timerange" class="text-xs text-slate-500 dark:text-slate-300 mt-0.5 font-mono tabular-nums">
-                                    Heute, 00:00 – jetzt · Kachelwerte: jetzt
-                                </p>
-                            </div>
-                        </div>
+                <div class="dash-main-card rounded-[28px] p-4 sm:p-6 transition-all">
+                    <!-- Top Action Row: Refresh Icon Left (like Screenshot 2) + Fullscreen & Sensor Config Right -->
+                    <div class="flex items-center justify-between gap-2 mb-2.5">
+                        <button onclick="refreshIntradayHistoryAndLive()" class="w-10 h-10 rounded-full bg-white/80 dark:bg-[#192b33] hover:bg-white dark:hover:bg-[#223842] border border-slate-200/80 dark:border-teal-400/25 text-teal-700 dark:text-teal-300 flex items-center justify-center shadow-xs transition-all cursor-pointer shrink-0" title="Tagesverlauf & Live-Messwerte jetzt aktualisieren">
+                            <span class="material-symbols-rounded text-lg">refresh</span>
+                        </button>
 
-                        <!-- Mode Indicator / Demo Time Slider Toggle -->
                         <div class="flex items-center gap-1.5">
-                            <button id="btn-ha-mode-demo" onclick="setLiveTelemetryMode('demo')" class="px-2.5 py-1 rounded-lg bg-primary text-white text-[11px] font-bold transition-all cursor-pointer">Demo</button>
-                            <button id="btn-ha-mode-poll" onclick="setLiveTelemetryMode('poll')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 text-[11px] font-medium transition-all cursor-pointer">HA Live</button>
-                            <button id="btn-ha-mode-webhook" onclick="setLiveTelemetryMode('webhook')" class="hidden sm:inline-block px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 text-[11px] font-medium transition-all cursor-pointer">Webhook</button>
+                            <button type="button" onclick="openHaConfigModal('strings')" class="px-2.5 py-1.5 rounded-xl bg-white/70 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 border border-slate-200/70 dark:border-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer">
+                                <span class="material-symbols-rounded text-sm text-teal-500">tune</span>
+                                <span>Strings</span>
+                            </button>
+                            <button type="button" onclick="openIntradayFullscreenModal()" class="px-3 py-1.5 rounded-xl bg-teal-600/20 hover:bg-teal-600/30 border border-teal-400/35 text-teal-800 dark:text-teal-200 text-[11px] font-extrabold flex items-center gap-1 transition-all cursor-pointer" title="Diagramm im Vollbild / Querformat öffnen">
+                                <span class="material-symbols-rounded text-sm">open_in_full</span>
+                                <span>Vollbild</span>
+                            </button>
                         </div>
                     </div>
 
-                    <!-- Optional Demo Time Slider (compact) -->
-                    <div id="liveDemoTimeBar" class="mb-3 px-3 py-2 rounded-xl bg-white/60 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 flex items-center justify-between gap-3 text-xs">
-                        <span class="text-slate-600 dark:text-slate-300 flex items-center gap-1.5 whitespace-nowrap">
-                            <span class="material-symbols-rounded text-amber-500 text-sm">schedule</span>
-                            <span>Simulierte Uhrzeit:</span>
-                            <strong id="demoTimeLabel" class="font-mono tabular-nums text-slate-900 dark:text-white">11:15 Uhr</strong>
-                        </span>
-                        <input type="range" min="6" max="21" step="0.25" value="11.25" oninput="onDemoHourSliderChange(this.value)" class="w-full max-w-[180px] accent-teal-600 cursor-pointer">
+                    <!-- Dedicated Full-Width Title & Non-Wrapping Single-Line Date (Matches Screenshot 2) -->
+                    <div class="mb-3">
+                        <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight leading-snug">PV, Haus, Netz &amp; Batterie</h2>
+                        <p id="dash_curve_timerange" class="text-[11px] sm:text-xs text-slate-500 dark:text-slate-300 mt-1 font-mono tabular-nums whitespace-nowrap overflow-x-auto hide-scroll">
+                            Heute, 00:00 — jetzt · Kachelwerte: jetzt
+                        </p>
                     </div>
 
                     <!-- Aktive Kurven-Chips oben (wie in Screenshot 2) -->
-                    <div id="dash_curve_legend_chips" class="flex flex-wrap items-center gap-1.5 mb-3">
+                    <div id="dash_curve_legend_chips" class="flex flex-wrap items-center gap-1.5 mb-2.5">
                         <!-- Gefüllt durch renderIntradayCurveSection() -->
                     </div>
 
-                    <!-- Dual-Achsen-Tagesdiagramm (W links, % rechts) -->
-                    <div class="mt-2">
+                    <!-- Dual-Achsen-Tagesdiagramm (W links, % rechts) – Tap öffnet Vollbild -->
+                    <div onclick="openIntradayFullscreenModal()" class="mt-1 rounded-2xl p-2 sm:p-2.5 bg-white/35 dark:bg-[#0d181e]/55 border border-slate-200/60 dark:border-white/10 hover:border-teal-400/40 transition-all cursor-pointer group relative" title="Antippen für Vollbild- & Querformat-Ansicht">
                         <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1 mb-1">
                             <span>W</span>
+                            <span class="inline-flex items-center gap-1 text-[10px] font-sans font-bold text-teal-600 dark:text-teal-300 opacity-85 group-hover:opacity-100">
+                                <span class="material-symbols-rounded text-xs">fullscreen</span>
+                                <span>Tippen zum Vergrößern</span>
+                            </span>
                             <span>%</span>
                         </div>
-                        <div class="relative h-64 sm:h-72 w-full">
+                        <div class="relative h-60 sm:h-72 w-full">
                             <canvas id="intradayTelemetryChart"></canvas>
                         </div>
                     </div>
 
                     <!-- Hover / Zeitpunkt-Messwert-Zeile unter dem Chart -->
-                    <p id="dash_curve_hover_readout" class="text-xs text-slate-600 dark:text-slate-300 font-mono tabular-nums leading-relaxed mt-3 pt-2.5 border-t border-slate-200/60 dark:border-white/10">
-                        <!-- Gefüllt durch updateHoverReadoutText() -->
+                    <p id="dash_curve_hover_readout" class="text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-mono tabular-nums leading-relaxed mt-2.5 pt-2 border-t border-slate-200/60 dark:border-white/10">
+                        <!-- Gefüllt durch updateIntradayHoverReadout() -->
                     </p>
 
-                    <!-- Interaktive Kurven-Auswahlkacheln (2-spaltig mit farbigem Rahmen) -->
-                    <div class="mt-5">
-                        <div class="flex items-center justify-between mb-3">
-                            <h3 class="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">Kurven auswählen · aktuelle Messwerte</h3>
-                            <button onclick="openHaConfigModal('strings')" class="text-xs font-semibold text-teal-700 dark:text-teal-300 hover:underline flex items-center gap-1 cursor-pointer">
-                                <span class="material-symbols-rounded text-sm">add_circle</span>
-                                <span>Strings anpassen</span>
-                            </button>
+                    <!-- Kompakte Interaktive Kurven-Auswahlkacheln (2-spaltig mit unübersehbarem Aktiv-Status) -->
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-xs sm:text-sm font-extrabold text-slate-800 dark:text-slate-100">Kurven auswählen · aktuelle Messwerte</h3>
+                            <span id="dash_active_curves_badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25">Aktiv</span>
                         </div>
 
-                        <div id="dash_curve_tiles_grid" class="grid grid-cols-2 gap-3">
+                        <div id="dash_curve_tiles_grid" class="grid grid-cols-2 gap-2 sm:gap-2.5">
                             <!-- Dynamisch gefüllt durch renderIntradayCurveSection() -->
                         </div>
                     </div>
@@ -2585,14 +2580,13 @@
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Daten-Modus</label>
                                 <select id="ha_cfg_mode" class="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <option value="demo">Live-Simulationsmodus (Demo)</option>
                                     <option value="poll">Home Assistant API Abruf (Live-Poll)</option>
                                     <option value="webhook">Home Assistant Push (Webhook)</option>
                                 </select>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Home Assistant Domain / URL</label>
-                                <input type="text" id="ha_cfg_url" placeholder="https://ha.deine-domain.de" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <input type="text" id="ha_cfg_url" placeholder="https://home.mb10.org" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
                             </div>
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Poll-Intervall (Sekunden)</label>
@@ -2612,32 +2606,68 @@
                         </div>
                     </div>
 
-                    <!-- 2. Live-Leistungs-Entitäten (Watt / kW) -->
+                    <!-- 2. Live-Leistungs-Entitäten (Watt / kW) mit Komfort-Sensor-Picker -->
                     <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
-                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                            <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
-                            <span>2. Haupt-Leistungssensoren (W oder kW – automatische Einheiten-Erkennung)</span>
-                        </h4>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                                <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
+                                <span>2. Haupt-Leistungssensoren (W, kW &amp; %)</span>
+                            </h4>
+                            <span class="text-[11px] text-teal-600 dark:text-teal-400 font-semibold flex items-center gap-1">
+                                <span class="material-symbols-rounded text-sm">touch_app</span>
+                                <span>Klicke auf „Wählen“ für die Geräte- &amp; Helfer-Liste</span>
+                            </span>
+                        </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV gesamt · DC (Aktuell)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="sensor.pv_power_total" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="sensor.pv_power_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_power', unitFilter: 'power', title: 'PV gesamt · DC (Leistung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Hausverbrauch · AC (Aktuelle Last)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_load_power" placeholder="sensor.house_consumption_power" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_load_power" placeholder="sensor.house_consumption_power" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_load_power', unitFilter: 'power', title: 'Hausverbrauch · AC (Leistung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzleistung (+ Bezug / - Einspeisung)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="sensor.grid_power" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="sensor.grid_power" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_power', unitFilter: 'power', title: 'Netzleistung (Bezug / Einspeisung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterieleistung (+ Laden / - Entladen)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="sensor.battery_power" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="sensor.battery_power" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_power', unitFilter: 'power', title: 'Batterieleistung (W / kW)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div class="sm:col-span-2">
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie · Ladezustand SoC (%)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_soc', unitFilter: 'soc', title: 'Batterie · Ladezustand SoC (%)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2651,21 +2681,21 @@
                                     <span>3. PV-Strings &amp; Wechselrichter-Kurven (Tagesdiagramm &amp; Auswahlkacheln)</span>
                                 </h4>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Definiere beliebig viele Strings/Wechselrichter (z. B. Fronius String 1 DC, Hoymiles gesamt DC) samt Leistungs- und optionalem Tagesertrags-Sensor.
+                                    Wähle für jeden String bequem das Gerät/den Helfer und die zugehörige Leistungs- bzw. Tagesenergie-Entität aus.
                                 </p>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
                                 <button type="button" onclick="syncCustomStringsFromPlannedStrings()" class="px-2.5 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold transition-all cursor-pointer">
                                     Aus Planung übernehmen
                                 </button>
-                                <button type="button" onclick="addHaCustomStringRow()" class="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer">
+                                <button type="button" onclick="addHaCustomString()" class="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer">
                                     <span class="material-symbols-rounded text-sm">add</span>
                                     <span>String hinzufügen</span>
                                 </button>
                             </div>
                         </div>
 
-                        <div id="haStringMappingContainer" class="space-y-2">
+                        <div id="haStringMappingContainer" class="space-y-2.5">
                             <!-- Dynamisch gefüllt durch renderHaCustomStringsEditor() -->
                         </div>
                     </div>
@@ -2679,10 +2709,10 @@
                                     <span>4. Einzelverbraucher (Sektion „Aktive Verbraucher“ auf dem Dashboard)</span>
                                 </h4>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Trage deine Smart-Plugs, Shellys oder Unterzähler ein (z. B. Trockner, Waschmaschine, Wärmepumpe, Licht). Auf dem Dashboard werden sie automatisch nach Leistung sortiert.
+                                    Wähle deine Smart-Plugs, Shellys oder Helfer über „Sensor wählen“ direkt aus der Geräteliste aus.
                                 </p>
                             </div>
-                            <button type="button" onclick="addHaCustomConsumerRow()" class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto">
+                            <button type="button" onclick="addHaCustomConsumer()" class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto">
                                 <span class="material-symbols-rounded text-sm">add</span>
                                 <span>Verbraucher hinzufügen</span>
                             </button>
@@ -2702,27 +2732,63 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV-Tagesertrag (Heute in kWh)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="sensor.pv_energy_today" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="sensor.pv_energy_today" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Tagesertrag (Heute in kWh)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV-Monatsertrag (Laufender Monat kWh)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="sensor.pv_energy_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="sensor.pv_energy_monthly" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Monatsertrag (kWh)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzeinspeisung Monat (kWh)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_month" placeholder="sensor.grid_export_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_month" placeholder="sensor.grid_export_monthly" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_exp_month', unitFilter: 'energy', title: 'Netzeinspeisung Monat (kWh)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzbezug Monat (kWh)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_month" placeholder="sensor.grid_import_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_month" placeholder="sensor.grid_import_monthly" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_imp_month', unitFilter: 'energy', title: 'Netzbezug Monat (kWh)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Ladung Monat (kWh)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_month" placeholder="sensor.battery_charge_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_month" placeholder="sensor.battery_charge_monthly" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_chg_month', unitFilter: 'energy', title: 'Batterie-Ladung Monat (kWh)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Entladung Monat (kWh)</label>
-                                <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_month" placeholder="sensor.battery_discharge_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_month" placeholder="sensor.battery_discharge_monthly" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_month', unitFilter: 'energy', title: 'Batterie-Entladung Monat (kWh)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -2765,16 +2831,154 @@
         </div>
     </div>
 
+    <!-- ========================================================================= -->
+    <!-- MODAL: KOMFORT-SENSOR-PICKER (GERÄTE & HELFER -> ENTITÄT MIT LIVE-SUCHE)   -->
+    <!-- ========================================================================= -->
+    <div id="modal-ha-entity-picker" class="fixed inset-0 z-[135] flex items-center justify-center p-2 sm:p-5 bg-slate-950/85 backdrop-blur-md hidden">
+        <div class="bg-white dark:bg-[#0f1c22] border border-slate-200 dark:border-teal-500/30 rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+            <!-- Header -->
+            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-[#0b151a]">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-300 border border-teal-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl">sensors</span>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 id="haPickerModalTitle" class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Sensor auswählen</h3>
+                        <p id="haPickerModalSubtitle" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">1. Gerät oder Helfer wählen · 2. Entität antippen</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onclick="reloadHaPickerSensors()" class="px-2.5 py-1.5 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer" title="Sensoren & Geräte aus Home Assistant neu laden">
+                        <span class="material-symbols-rounded text-sm">refresh</span>
+                        <span class="hidden sm:inline">Neu laden</span>
+                    </button>
+                    <button type="button" onclick="closeHaEntityPicker()" class="w-8 h-8 rounded-xl bg-slate-200/70 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 text-slate-600 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer">
+                        <span class="material-symbols-rounded text-lg">close</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search Bar + Category Tabs + Unit Filter Chips -->
+            <div class="p-3 sm:p-4 border-b border-slate-200 dark:border-white/10 bg-slate-100/60 dark:bg-[#122229] space-y-2.5">
+                <!-- Search Input -->
+                <div class="relative">
+                    <span class="material-symbols-rounded text-slate-400 text-lg absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">search</span>
+                    <input type="text" id="haPickerSearchInput" oninput="onHaPickerSearchInput(this.value)" placeholder="Suche nach Gerät (z. B. Fronius, BYD, Shelly), Helfer oder sensor.* ..."
+                        class="w-full pl-9 pr-9 py-2 rounded-xl border border-slate-300 dark:border-white/15 bg-white dark:bg-[#0b151a] text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" id="haPickerClearSearchBtn" onclick="onHaPickerSearchInput('')" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white cursor-pointer">
+                        <span class="material-symbols-rounded text-base">cancel</span>
+                    </button>
+                </div>
+
+                <!-- Category Switcher (Alle | Geräte | Helfer & Zähler) + Unit Filter -->
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="inline-flex rounded-xl p-0.5 bg-slate-200/90 dark:bg-[#0b151a] border border-slate-300/60 dark:border-white/10 text-[11px] font-bold">
+                        <button type="button" id="haPickerCat_all" onclick="setHaPickerCategory('all')" class="px-2.5 py-1 rounded-lg bg-teal-600 text-white transition-all cursor-pointer">Alle</button>
+                        <button type="button" id="haPickerCat_device" onclick="setHaPickerCategory('device')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 transition-all cursor-pointer">Geräte</button>
+                        <button type="button" id="haPickerCat_helper" onclick="setHaPickerCategory('helper')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 transition-all cursor-pointer">Helfer &amp; Zähler</button>
+                    </div>
+
+                    <div class="flex items-center gap-1 overflow-x-auto hide-scroll text-[11px]">
+                        <button type="button" id="haPickerUnit_power" onclick="setHaPickerUnitFilter('power')" class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 text-slate-600 dark:text-slate-300 font-bold whitespace-nowrap cursor-pointer">Leistung (W/kW)</button>
+                        <button type="button" id="haPickerUnit_energy" onclick="setHaPickerUnitFilter('energy')" class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 text-slate-600 dark:text-slate-300 font-bold whitespace-nowrap cursor-pointer">Energie (kWh/Wh)</button>
+                        <button type="button" id="haPickerUnit_soc" onclick="setHaPickerUnitFilter('soc')" class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 text-slate-600 dark:text-slate-300 font-bold whitespace-nowrap cursor-pointer">Batterie (%)</button>
+                        <button type="button" id="haPickerUnit_all" onclick="setHaPickerUnitFilter('all')" class="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-white/15 text-slate-600 dark:text-slate-300 font-bold whitespace-nowrap cursor-pointer">Alle Einheiten</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-Stage Body: Left = 1. Gerät oder Helfer | Right = 2. Entitäten des gewählten Geräts -->
+            <div id="haPickerBodyContainer" class="flex-1 overflow-hidden grid grid-cols-1 sm:grid-cols-12 min-h-[340px]">
+                <!-- Stufe 1: Geräte & Helfer-Gruppen -->
+                <div id="haPickerStep1Col" class="sm:col-span-5 border-b sm:border-b-0 sm:border-r border-slate-200 dark:border-white/10 overflow-y-auto p-2.5 sm:p-3 space-y-1.5 max-h-[38vh] sm:max-h-[58vh] bg-slate-50/50 dark:bg-[#0c171c]">
+                    <div class="px-2 py-1 flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                        <span>1. Gerät oder Helfer wählen</span>
+                        <span id="haPickerGroupCountBadge">0 Gruppen</span>
+                    </div>
+                    <div id="haPickerGroupsList" class="space-y-1">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+
+                <!-- Stufe 2: Entitäten in der gewählten Gruppe (oder Suchergebnisse) -->
+                <div id="haPickerStep2Col" class="sm:col-span-7 overflow-y-auto p-2.5 sm:p-3 space-y-1.5 max-h-[45vh] sm:max-h-[58vh]">
+                    <div class="px-2 py-1 flex items-center justify-between text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                        <span id="haPickerActiveGroupTitle">2. Entität antippen zum Übernehmen</span>
+                        <span id="haPickerEntityCountBadge">0 Sensoren</span>
+                    </div>
+                    <div id="haPickerEntitiesList" class="space-y-1.5">
+                        <!-- Rendered dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- MODAL: VOLLBILD- & QUERFORMAT-TAGESDIAGRAMM OVERLAY                        -->
+    <!-- ========================================================================= -->
+    <div id="modal-intraday-fullscreen" class="fixed inset-0 z-[130] bg-slate-950/95 backdrop-blur-xl hidden flex flex-col overflow-hidden">
+        <div id="intradayFullscreenInner" class="w-full h-full flex flex-col p-3 sm:p-5 transition-transform duration-300">
+            <!-- Fullscreen Top Bar -->
+            <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-white/10 shrink-0">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-rounded text-teal-400 text-lg">stacked_line_chart</span>
+                        <h3 class="text-sm sm:text-lg font-black text-white truncate">Tagesverlauf · Vollbild-Analyse</h3>
+                    </div>
+                    <p id="fs_curve_timerange" class="text-[11px] text-slate-400 font-mono tabular-nums whitespace-nowrap overflow-x-auto hide-scroll">
+                        Heute, 00:00 — jetzt
+                    </p>
+                </div>
+
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" id="btnIntradayFsRotate" onclick="toggleIntradayFullscreenRotate()" class="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-slate-100 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer" title="Ansicht um 90° ins Querformat drehen">
+                        <span class="material-symbols-rounded text-base text-teal-300">screen_rotation</span>
+                        <span id="btnIntradayFsRotateLabel">90° Querformat</span>
+                    </button>
+                    <button type="button" onclick="refreshIntradayHistoryAndLive()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-teal-300 flex items-center justify-center transition-all cursor-pointer" title="Aktualisieren">
+                        <span class="material-symbols-rounded text-lg">refresh</span>
+                    </button>
+                    <button type="button" onclick="closeIntradayFullscreenModal()" class="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/35 text-rose-200 text-xs font-extrabold flex items-center gap-1 transition-all cursor-pointer">
+                        <span class="material-symbols-rounded text-base">close_fullscreen</span>
+                        <span>Schließen</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interactive Curve Toggle Chips inside Fullscreen -->
+            <div id="fs_curve_legend_chips" class="flex items-center gap-1.5 overflow-x-auto hide-scroll py-2.5 shrink-0">
+                <!-- Dynamically populated -->
+            </div>
+
+            <!-- Large Chart Area -->
+            <div class="flex-1 min-h-0 w-full relative bg-[#0b151a]/90 rounded-2xl border border-white/10 p-2 sm:p-4 flex flex-col">
+                <div class="flex items-center justify-between text-[11px] font-mono text-slate-400 px-1 mb-1 shrink-0">
+                    <span>Leistung (W)</span>
+                    <span>Batterie-SoC (%)</span>
+                </div>
+                <div class="flex-1 min-h-0 w-full relative">
+                    <canvas id="intradayFullscreenChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Live Touch/Hover Readout Bar at Bottom -->
+            <p id="fs_curve_hover_readout" class="text-xs text-slate-200 font-mono tabular-nums pt-2.5 shrink-0 truncate">
+                <!-- Dynamically updated on hover/touch -->
+            </p>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V8.6 (GitHub Pages Browser-First HA Client, Liquid Glass, Sankey Energy Flow & 2-Level Mobile-First Drill-Down) -->
-    <script src="qrcode.client.js?v=8.6"></script>
-    <script src="database.js?v=8.6"></script>
-    <script src="content.js?v=8.6"></script>
-    <script src="app.js?v=8.6"></script>
-    <script src="wiring.js?v=8.6"></script>
-    <script src="dossier.js?v=8.6"></script>
-    <script src="telemetry.js?v=8.6"></script>
+    <!-- MODULARE ARCHITEKTUR V8.7 (Komfort-Sensor-Picker mit Geräte- & Helfer-Gruppen, Vollbild-Tagesdiagramm & GitHub Pages HA-Client) -->
+    <script src="qrcode.client.js?v=8.7"></script>
+    <script src="database.js?v=8.7"></script>
+    <script src="content.js?v=8.7"></script>
+    <script src="app.js?v=8.7"></script>
+    <script src="wiring.js?v=8.7"></script>
+    <script src="dossier.js?v=8.7"></script>
+    <script src="telemetry.js?v=8.7"></script>
 </body>
 </html>

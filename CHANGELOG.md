@@ -4,6 +4,33 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.7] – 2026-11-09
+
+### 🎛️ Komfort-Sensor-Picker mit Geräte- & Helfer-Gruppen, Vollbild-/Querformat-Tagesdiagramm, High-Contrast Kurven-Kacheln & Demo-Bereinigung
+
+#### 1. 2-Stufiges Komfort-Sensor-Picker Modal (`#modal-ha-entity-picker`)
+* **Kein manuelles Kopieren von `sensor.*` IDs mehr nötig:**
+  - Jedes Home-Assistant-Entitätsfeld in den Einstellungen (System-Sensoren, frei konfigurierbare PV-Strings und Einzelverbraucher) besitzt ab sofort einen direkten **„Wählen“**-Button.
+  - **Stufe 1 (Geräte & Helfer/Zähler):** Gruppiert alle gefundenen Sensoren automatisch in **Geräte** (echte Home-Assistant-Geräte- & Raum-Zuordnung über `POST /api/template` mit intelligentem Präfix-Fallback wie *Fronius*, *BYD*, *Shelly*, *Hoymiles*) sowie **Helfer & Zähler** (Integralsensoren/Riemann-Summe, Verbrauchszähler/Utility Meter, Gruppen- und Template-Sensoren).
+  - **Stufe 2 (Entitäten-Liste mit Live-Werten & Suche):** Zeigt zu jeder Entität den freundlichen Klarnamen, das zugehörige Gerät/Raum-Badge, die technische `entity_id` und den **aktuellen Live-Messwert inkl. Einheit** (z. B. `429 W`, `84 %`, `12,4 kWh`).
+  - **Echtzeit-Suche & Einheiten-Schnellfilter:** Filtert verzögerungsfrei nach Gerätenamen, Helfern oder Entitäts-IDs und bietet passende Einheiten-Filter (`Leistung W/kW`, `Energie kWh/Wh`, `Batterie %`, `Alle Einheiten`). Bei String- und Einzelverbraucher-Zeilen wird der Klarname auf Wunsch automatisch als Anzeigename übernommen.
+
+#### 2. Vollbild- & 90°-Querformat-Tagesdiagramm (`#modal-intraday-fullscreen`)
+* **Antippen des Diagramms öffnet die große Detail-Ansicht:**
+  - Ein Tap direkt auf das Tagesverlauf-Diagramm oder auf den Button **„Vollbild“** öffnet das neue Vollbild-Overlay (`#modal-intraday-fullscreen`).
+  - **90°-Querformat-Modus für Smartphones:** Über den Button **„90° Querformat“** lässt sich das Diagramm auf dem Handy im Hochformat um 90 Grad auf die volle Displayhöhe aufspannen.
+  - **Interaktive Kurven-Chips & Touch-Scrubbing im Vollbild:** Direkt oberhalb des Vollbild-Diagramms können alle Kurven (`PV gesamt`, `String 1..n`, `Hausverbrauch`, `Batterie-Ladung`, `SOC %`, `Netz`) per Tap ein-/ausgeblendet und zeitgenau abgefahren werden.
+
+#### 3. Kompakte High-Contrast Kurven-Kacheln, Einzeiliges Datum & Demo-Bereinigung
+* **Unverwechselbarer Aktiv/Inaktiv-Status der Kurven-Kacheln (`#dash_curve_tiles_grid`):**
+  - Kompaktes 2-Spalten-Raster mit reduziertem Padding: **Aktive Kurven** leuchten mit farbigem `2px`-Rahmen in der jeweiligen Kurvenfarbe, farbig getöntem Glas-Hintergrund und **`Aktiv`**-Badge; **abgewählte Kurven** werden deutlich abgedunkelt (`opacity: 0.42`, **`Aus`**-Badge), sodass sofort erkennbar ist, welche Kurven im Diagramm aktiv sind.
+* **Einzeilige Datums- & Zeitspanne ohne Zeilenumbruch (`#dash_curve_timerange`):**
+  - Die Toolbar über dem Tagesdiagramm ist klar gegliedert (`↻ Refresh` links, `Strings` + `Vollbild` rechts); das Datum (`09.11.2026 · 00:00 – jetzt`) steht darunter einzeilig mit `whitespace-nowrap tabular-nums` ohne unschöne Umbrüche.
+* **Vollständige Entfernung des Demo-Modus:**
+  - Der Demo-Zeitschieberegler (`#liveDemoTimeBar`), die Demo-Umschaltbuttons und die Auswahloption „Simulations-Demo“ wurden entfernt; die App arbeitet standardmäßig im echten Home-Assistant-Live-Modus (`poll`).
+
+---
+
 ## [Version 8.6] – 2026-11-09
 
 ### 🌐 GitHub Pages & Browser-First Home Assistant Engine (Beseitigung des `Unexpected token '<'` HTML-Fehlers)
