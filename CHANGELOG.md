@@ -4,6 +4,42 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.5] – 2026-11-09
+
+### 🌊 Interaktives Sankey-Energiefluss-Diagramm, Echtes „Liquid Glass“-Design, Einheitliche 2-Ebenen Mobile-First Drill-Down-Navigation & Home Assistant Reverse-Proxy Fix
+
+#### 1. Interaktives Sankey-Energiefluss-Diagramm im Analyse-Tab (`Heute` | `Monat` | `Gesamtjahr`)
+* **Proportionale Energiefluss-Bänder (Cubic Bézier SVG):**
+  - Neues interaktives **Sankey-Diagramm** auf Ebene 1 des Analyse-Bereichs (`#sankeyDiagramContainer`), umschaltbar zwischen **`Heute`**, **`Monat`** und **`Gesamtjahr`**.
+  - Visualisiert proportional die Energieströme (`kWh` und `%`) von den Quellen (`PV-Erzeugung`, `Netzbezug`) über `PV-Direktverbrauch` und `Batteriespeicher` (Ladung, Entladung, Wirkungsgrad $\eta$ & Wandlungsverluste) zu den Senken (`Hausverbrauch` und `Netzeinspeisung`).
+  - Darunterliegendes 4-Kachel-Summary-Ribbon (`#sankeySummaryRibbon`) für Zeitraumbilanz, Autarkiequote, Eigenverbrauchsquote und selbst gedeckte Energiemenge.
+
+#### 2. Echtes „Liquid Glass“-Design (Insbesondere im Dark Mode)
+* **Transluzente Tiefenwirkung & Specular Highlights:**
+  - Mehrschichtige Glas-Oberflächen (`backdrop-filter: blur(28px) saturate(190%)`) mit feinen Lichtkanten (`inset 0 1px 0 rgba(255,255,255,0.22)`) und sanften Ambient-Hintergrund-Orbs (`#liquidGlassAmbientBg` in Mint/Teal, Cyan und Violett), sodass die Karten im Dark Mode einen echten räumlichen Glas-Look erhalten.
+
+#### 3. Einheitliche Mobile-First 2-Ebenen Drill-Down-Navigation & Aufgeräumte Seiten
+* **Durchgängiges Ebene-1 / Ebene-2 Prinzip ohne Informationsverlust:**
+  - **Live-Bereich (`#tab-live`):** Ebene 1 zeigt kompakt `Energie · jetzt` (2x2 Statuskacheln), `Aktive Verbraucher` und eine Drill-Down-Kachel für den Tagesverlauf. Ein Tap öffnet Ebene 2 (`#live-detail-intraday`) mit dem großen 24h-Kurvendiagramm und den auswählbaren Sensor-Kacheln.
+  - **Analyse-Bereich (`#tab-analyse`):** Ebene 1 zeigt die 4 Jahres-KPIs, das neue Sankey-Energiefluss-Diagramm und 4 übersichtliche Drill-Down-Kacheln (`Soll-Ist-Vergleich`, `Autarkie & Batterie-Effizienz`, `Reale Amortisation & €-Ersparnis`, `Monats-Logbuch & HA-Zähler`). Ein Tap öffnet die jeweilige Detailauswertung auf Ebene 2 mit prominentem Zurück-Button.
+  - **PV-Planung (`#tab-planung-hub`):** Neues Ebene-1 Planungs-Hub mit 2x2 Anlagen-KPIs (`kWp`, `PVGIS-Ertrag`, `Geplante Autarkie`, `Geplante Amortisation`) und 9 aufgeräumten Engineering-Kacheln, die per Tap in die jeweilige Detailansicht (Ebene 2) verzweigen.
+
+#### 4. Zweizeiliger Mobile-Header & Verschlankte 4-Icon Pill-Bar
+* **Immer vollständig lesbarer Bereichsname (`#headerViewTitle`):**
+  - Zeile 1 enthält links das App-Badge (`Pro 8.5`) bzw. auf Ebene 2 den prominenten Button **`← Zurück zur Übersicht`** (`#btnHeaderBack`) und rechts die Schnellaktionen (`Projekt`, `HA & Sensoren`, `Speichern`).
+  - Zeile 2 widmet die gesamte Bildschirmbreite dem aktuellen Bereichstitel, Untertitel und Ebenen-Badge – selbst auf 360 px schmalen Smartphones wird nichts mehr abgeschnitten.
+* **4-Icon Floating Bottom Bar:**
+  - Der Dark-/Light-Mode-Schalter wurde aus der unteren Pill-Leiste an den oberen Rand des `Menü`-Bottom-Sheets (`#m3MoreSheet`) verschoben.
+
+#### 5. Home Assistant Domain- & Reverse-Proxy-Fix + Schritt-für-Schritt-Anleitung
+* **Robuste Reverse-Proxy-Engine in `server.js` & Diagnose:**
+  - Automatische URL-Bereinigung (entfernt versehentliche `/lovelace`-Pfade), Token-Bereinigung, Beibehaltung des `Authorization: Bearer <Token>`-Headers über HTTP `301/302/307/308` Weiterleitungen hinweg sowie Unterstützung selbstsignierter/intermediärer TLS-Zertifikate.
+  - Erkennung vorgeschalteter Proxy-Logins (Authelia, Authentik, Cloudflare Access, Synology Portal) und fehlender `trusted_proxies`-Einträge inkl. direktem Browser-CORS-Fallback.
+* **Integrierter Anleitungs-Tab im HA-Modal (`switchHaModalTab('guide')`):**
+  - Ausführliche 4-Schritte-Anleitung für **Domain + Reverse Proxy** mit kopierfertiger `configuration.yaml` (`http: use_x_forwarded_for`, `trusted_proxies`, `cors_allowed_origins`), Proxy-Checkliste (`Authorization`-Header, WebSockets) und Webhook-Push-Alternative.
+
+---
+
 ## [Version 8.4] – 2026-11-09
 
 ### ⚡ Komplettes Dashboard-First Redesign („Solar & Netz · live“), Interaktiver Tagesverlauf & Frei Konfigurierbare Home Assistant Verbraucher/Strings

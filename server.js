@@ -1,6 +1,8 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
+import https from 'https';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
 
@@ -712,11 +714,137 @@ app.get('/api/ha/config', (req, res) => {
   }
 });
 
+// ==========================================
+// REVERSE-PROXY & DOMAIN NORMALIZATION HELPERS (V8.5)
+// ==========================================
+
+function normalizeHaBaseUrl(rawUrl) {
+  let u = String(rawUrl || '').trim();
+  if (!u) return '';
+  // Remove surrounding quotes or whitespace
+  u = u.replace(/^["']+|["']+$/g, '').trim();
+  // Add protocol if user only typed domain (e.g. "ha.meinedomain.de")
+  if (!/^https?:\/\//i.test(u)) {
+    const isLocal = /^(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.|[^/]+\.local\b)/i.test(u);
+    u = (isLocal ? 'http://' : 'https://') + u;
+  }
+  try {
+    const parsed = new URL(u);
+    // Strip common UI suffixes if user copied URL from browser address bar
+    let cleanPath = parsed.pathname
+      .replace(/\/(lovelace|dashboard-[^/]+|config|developer-tools|history|logbook|map|media-browser|profile|energy|api)(\/.*)?$/i, '')
+      .replace(/\/+$/, '');
+    return `${parsed.protocol}//${parsed.host}${cleanPath}`;
+  } catch (e) {
+    return u.replace(/\/+$/, '');
+  }
+}
+
+function cleanHaToken(rawToken) {
+  let t = String(rawToken || '').trim();
+  // Remove accidental "Bearer " prefix, quotes, spaces, or newlines pasted from mobile clipboard
+  t = t.replace(/^["']+|["']+$/g, '').trim();
+  t = t.replace(/^Bearer\s+/i, '').replace(/[\r\n\s]+/g, '');
+  return t;
+}
+
+/**
+ * Low-level HTTP/HTTPS client for Home Assistant behind Reverse Proxies (Nginx, Synology, Cloudflare, Traefik).
+ * - Preserves Authorization header across 301/302/307/308 redirects (standard fetch strips Authorization on redirect)
+ * - Accepts self-signed / intermediate reverse-proxy certificates (rejectUnauthorized: false)
+ * - Detects HTML login / proxy walls vs. JSON responses
+ */
+function requestHomeAssistant(baseUrl, token, apiPath, timeoutMs = 8500, maxRedirects = 5) {
+  const normalizedBase = normalizeHaBaseUrl(baseUrl);
+  const cleanedToken = cleanHaToken(token);
+  const fullUrl = `${normalizedBase}${apiPath.startsWith('/') ? apiPath : '/' + apiPath}`;
+
+  return new Promise((resolve, reject) => {
+    const performRequest = (targetUrl, redirectsLeft) => {
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(targetUrl);
+      } catch (err) {
+        return reject(new Error(`Ungültige URL: ${targetUrl}`));
+      }
+
+      const isHttps = parsedUrl.protocol === 'https:';
+      const lib = isHttps ? https : http;
+      const agent = isHttps ? new https.Agent({ rejectUnauthorized: false, keepAlive: true }) : new http.Agent({ keepAlive: true });
+
+      const reqOptions = {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (isHttps ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: 'GET',
+        agent,
+        headers: {
+          'Authorization': `Bearer ${cleanedToken}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'PV-Planung-Pro/8.5 (HomeAssistant-Connector)',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      };
+
+      const req = lib.request(reqOptions, (res) => {
+        const status = res.statusCode || 0;
+        const location = res.headers['location'];
+
+        // Follow redirects while keeping Authorization header intact
+        if ([301, 302, 303, 307, 308].includes(status) && location && redirectsLeft > 0) {
+          res.resume();
+          const nextUrl = new URL(location, targetUrl).toString();
+          return performRequest(nextUrl, redirectsLeft - 1);
+        }
+
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const rawBody = Buffer.concat(chunks).toString('utf-8');
+          const contentType = String(res.headers['content-type'] || '').toLowerCase();
+          let json = null;
+          try {
+            json = JSON.parse(rawBody);
+          } catch (e) {
+            json = null;
+          }
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            headers: res.headers,
+            contentType,
+            rawBody,
+            json,
+            finalUrl: targetUrl,
+            normalizedBase
+          });
+        });
+      });
+
+      req.setTimeout(timeoutMs, () => {
+        req.destroy(new Error(`Zeitüberschreitung nach ${Math.round(timeoutMs / 1000)}s (Timeout)`));
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      req.end();
+    };
+
+    performRequest(fullUrl, maxRedirects);
+  });
+}
+
 // POST /api/ha/config: Save Home Assistant configuration & entity mapping
 app.post('/api/ha/config', (req, res) => {
   try {
     const incoming = req.body.config || req.body;
     const current = loadHaConfig();
+    if (incoming.baseUrl) incoming.baseUrl = normalizeHaBaseUrl(incoming.baseUrl);
+    if (incoming.accessToken) incoming.accessToken = cleanHaToken(incoming.accessToken);
     const merged = {
       ...current,
       ...incoming,
@@ -734,49 +862,93 @@ app.post('/api/ha/config', (req, res) => {
   }
 });
 
-// POST /api/ha/test: Test Home Assistant connection & discover available sensor.* entities
+// POST /api/ha/test: Test Home Assistant connection & discover available sensor.* entities with Reverse-Proxy diagnostics
 app.post('/api/ha/test', async (req, res) => {
-  try {
-    const stored = loadHaConfig();
-    const baseUrlRaw = (req.body.baseUrl || stored.baseUrl || '').trim().replace(/\/+$/, '');
-    const token = (req.body.accessToken || stored.accessToken || '').trim();
+  const stored = loadHaConfig();
+  const baseUrl = normalizeHaBaseUrl(req.body.baseUrl || stored.baseUrl || '');
+  const token = cleanHaToken(req.body.accessToken || stored.accessToken || '');
 
-    if (!baseUrlRaw || !baseUrlRaw.startsWith('http')) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bitte eine gültige Home-Assistant-URL (z. B. http://homeassistant.local:8123 oder https://...) angeben.'
-      });
-    }
-    if (!token) {
-      return res.status(400).json({
-        success: false,
-        error: 'Bitte ein Long-Lived Access Token aus deinem Home-Assistant-Profil eintragen.'
-      });
-    }
+  if (!baseUrl) {
+    return res.status(400).json({
+      success: false,
+      error: 'Bitte deine Home-Assistant-Domain oder URL eintragen (z. B. https://ha.deinedomain.de).',
+      diagnostics: { step: 'url', hint: 'URL darf nicht leer sein.' }
+    });
+  }
+  if (!token || token.length < 20) {
+    return res.status(400).json({
+      success: false,
+      error: 'Bitte ein gültiges Long-Lived Access Token (Langlebiges Zugriffstoken) aus deinem Home-Assistant-Profil eintragen.',
+      diagnostics: { step: 'token', hint: 'Ein Home Assistant Token ist ein langer JWT-String (beginnt meist mit eyJ...).' }
+    });
+  }
 
-    const response = await fetchWithTimeout(`${baseUrlRaw}/api/states`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+  const isPrivateLan = /^https?:\/\/(localhost|127\.|192\.168\.|10\.|172\.(1[6-9]|2\d|3[0-1])\.|[^/]+\.local\b)/i.test(baseUrl);
+  if (isPrivateLan) {
+    return res.status(400).json({
+      success: false,
+      normalizedBaseUrl: baseUrl,
+      error: `Die eingegebene Adresse (${baseUrl}) ist eine lokale Heimnetz-Adresse. Da diese App in der Cloud läuft, nutze bitte deine externe Reverse-Proxy-Domain (https://...) oder den Webhook-Push-Modus.`,
+      diagnostics: {
+        step: 'network-local',
+        normalizedBaseUrl: baseUrl,
+        hint: 'Trage deine externe Domain ein (z. B. https://ha.meinedomain.de) oder nutze im lokalen WLAN den Direkt-Browser-Modus / Webhook-Push.'
       }
-    }, 7000);
+    });
+  }
 
-    if (!response.ok) {
-      return res.status(response.status).json({
+  try {
+    const result = await requestHomeAssistant(baseUrl, token, '/api/states', 9000);
+
+    if (!result.ok) {
+      let detailedHint = 'Bitte prüfe URL und Long-Lived Access Token.';
+      if (result.status === 401) {
+        detailedHint = 'HTTP 401 (Unauthorized): Entweder ist das Token abgelaufen/falsch kopiert, ODER dein Reverse Proxy (Nginx / Synology / Apache) leitet den Header "Authorization" nicht an Home Assistant weiter. Lösung im Reverse Proxy: Custom Header "Authorization: $http_authorization" bzw. "proxy_pass_header Authorization;" aktivieren.';
+      } else if (result.status === 403) {
+        const isCloudflare = String(result.rawBody || '').toLowerCase().includes('cloudflare') || String(result.headers['server'] || '').toLowerCase().includes('cloudflare');
+        detailedHint = isCloudflare
+          ? 'HTTP 403 (Cloudflare Block): Cloudflare Bot Fight Mode oder WAF blockiert den API-Zugriff auf /api/*. Erstelle in Cloudflare eine WAF-Regel: Wenn URI-Pfad mit "/api/" beginnt -> Skip Bot Fight Mode / Security.'
+          : 'HTTP 403 (Forbidden): Home Assistant blockiert die Anfrage vom Reverse Proxy. Prüfe in deiner configuration.yaml unter "http:" die Einträge "use_x_forwarded_for: true" und "trusted_proxies:" (IP deines Reverse Proxys) sowie eventuelle "ip_bans.yaml".';
+      } else if (result.status === 404) {
+        detailedHint = `HTTP 404 (Not Found): Unter ${result.normalizedBase}/api/states wurde keine Home-Assistant-API gefunden. Prüfe, ob die Domain ohne Unterpfad (wie /lovelace) direkt auf Port 8123 zeigt.`;
+      } else if (result.status === 502 || result.status === 504) {
+        detailedHint = `HTTP ${result.status} (Bad Gateway / Gateway Timeout): Dein Reverse Proxy ist erreichbar, kann aber intern Home Assistant (Port 8123) nicht erreichen.`;
+      }
+
+      return res.status(result.status || 502).json({
         success: false,
-        error: `Home Assistant antwortete mit HTTP ${response.status}. Bitte URL und Token prüfen.`
+        normalizedBaseUrl: result.normalizedBase,
+        status: result.status,
+        error: `Verbindung zu ${result.normalizedBase} fehlgeschlagen (HTTP ${result.status}). ${detailedHint}`,
+        diagnostics: {
+          step: 'http-status',
+          status: result.status,
+          normalizedBaseUrl: result.normalizedBase,
+          hint: detailedHint
+        }
       });
     }
 
-    const allStates = await response.json();
-    if (!Array.isArray(allStates)) {
-      return res.status(500).json({
+    // Check if Reverse Proxy returned an HTML Login Page (e.g. Authelia, Authentik, Synology Portal, Cloudflare Access) instead of HA JSON
+    if (!Array.isArray(result.json)) {
+      const looksLikeHtml = result.contentType.includes('text/html') || String(result.rawBody || '').trim().startsWith('<');
+      const htmlHint = looksLikeHtml
+        ? 'Dein Reverse Proxy hat eine HTML-Login-Seite (z. B. vorgeschaltete Authentifizierung wie Authelia/Cloudflare Access oder falsche Weiterleitung) statt der Home-Assistant-JSON-API zurückgegeben. Bitte schalte den Pfad "/api/*" im Reverse Proxy von externen Login-Portalen frei.'
+        : 'Unerwartetes Antwortformat von /api/states (kein JSON-Array).';
+      return res.status(502).json({
         success: false,
-        error: 'Unerwartetes Antwortformat von Home Assistant (/api/states).'
+        normalizedBaseUrl: result.normalizedBase,
+        error: htmlHint,
+        diagnostics: {
+          step: 'content-type',
+          contentType: result.contentType,
+          normalizedBaseUrl: result.normalizedBase,
+          hint: htmlHint
+        }
       });
     }
 
-    // Filter relevant sensor & number entities for PV / energy / power / battery
+    const allStates = result.json;
     const sensors = allStates
       .filter(s => s && typeof s.entity_id === 'string' && (s.entity_id.startsWith('sensor.') || s.entity_id.startsWith('number.') || s.entity_id.startsWith('input_number.')))
       .map(s => ({
@@ -789,14 +961,31 @@ app.post('/api/ha/test', async (req, res) => {
 
     res.json({
       success: true,
+      normalizedBaseUrl: result.normalizedBase,
       totalEntities: allStates.length,
       sensorCount: sensors.length,
       sensors
     });
   } catch (err) {
+    const errMsg = String(err.message || '');
+    let netHint = 'Prüfe, ob deine Domain öffentlich erreichbar ist und Port 443 im Router/Reverse-Proxy geöffnet ist.';
+    if (errMsg.includes('ENOTFOUND')) {
+      netHint = `DNS-Fehler (ENOTFOUND): Die Domain "${baseUrl}" konnte im öffentlichen DNS nicht aufgelöst werden. Prüfe auf Tippfehler in der Domain.`;
+    } else if (errMsg.includes('ECONNREFUSED')) {
+      netHint = 'Verbindung abgelehnt (ECONNREFUSED): Der Server unter dieser Domain weist Verbindungen auf diesem Port ab.';
+    } else if (errMsg.includes('Timeout') || errMsg.includes('ETIMEDOUT')) {
+      netHint = 'Zeitüberschreitung (Timeout): Dein Reverse Proxy antwortet nicht auf externe Anfragen (Portweiterleitung 443 am Router oder Geo-IP-Firewall prüfen). Alternativ kannst du den Webhook-Push-Modus nutzen!';
+    }
     res.status(502).json({
       success: false,
-      error: `Home Assistant unter dieser Adresse vom Server aus nicht erreichbar (${err.message}). Tipp: Nutze eine erreichbare URL (z. B. Nabu Casa / Reverse Proxy / lokale IP) oder den Webhook-Push-Modus.`
+      normalizedBaseUrl: baseUrl,
+      error: `Home Assistant über "${baseUrl}" nicht erreichbar (${errMsg}). ${netHint}`,
+      diagnostics: {
+        step: 'network-error',
+        code: err.code || 'ERR',
+        normalizedBaseUrl: baseUrl,
+        hint: netHint
+      }
     });
   }
 });
@@ -840,8 +1029,8 @@ app.all('/api/ha/states', async (req, res) => {
       });
     }
 
-    const baseUrlRaw = (cfg.baseUrl || '').trim().replace(/\/+$/, '');
-    const token = (cfg.accessToken || '').trim();
+    const baseUrlRaw = normalizeHaBaseUrl(cfg.baseUrl || '');
+    const token = cleanHaToken(cfg.accessToken || '');
 
     if (!baseUrlRaw || !token) {
       return res.status(400).json({
@@ -850,21 +1039,16 @@ app.all('/api/ha/states', async (req, res) => {
       });
     }
 
-    const response = await fetchWithTimeout(`${baseUrlRaw}/api/states`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    }, 6500);
+    const response = await requestHomeAssistant(baseUrlRaw, token, '/api/states', 7500);
 
-    if (!response.ok) {
-      return res.status(response.status).json({
+    if (!response.ok || !Array.isArray(response.json)) {
+      return res.status(response.status || 502).json({
         success: false,
-        error: `Home Assistant HTTP ${response.status}`
+        error: `Home Assistant HTTP ${response.status || 502}`
       });
     }
 
-    const allStates = await response.json();
+    const allStates = response.json;
     const stateMap = new Map();
     if (Array.isArray(allStates)) {
       allStates.forEach(s => {
@@ -1002,8 +1186,8 @@ app.all('/api/ha/history', async (req, res) => {
   try {
     const stored = loadHaConfig();
     const cfg = req.body && req.body.config ? { ...stored, ...req.body.config } : stored;
-    const baseUrlRaw = (cfg.baseUrl || '').trim().replace(/\/+$/, '');
-    const token = (cfg.accessToken || '').trim();
+    const baseUrlRaw = normalizeHaBaseUrl(cfg.baseUrl || '');
+    const token = cleanHaToken(cfg.accessToken || '');
 
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
@@ -1046,16 +1230,11 @@ app.all('/api/ha/history', async (req, res) => {
       });
     }
 
-    const historyUrl = `${baseUrlRaw}/api/history/period/${encodeURIComponent(startOfDay.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(now.toISOString())}&minimal_response`;
+    const historyApiPath = `/api/history/period/${encodeURIComponent(startOfDay.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(now.toISOString())}&minimal_response`;
 
-    const response = await fetchWithTimeout(historyUrl, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
-    }, 8000);
+    const response = await requestHomeAssistant(baseUrlRaw, token, historyApiPath, 8500);
 
-    if (!response.ok) {
+    if (!response.ok || !Array.isArray(response.json)) {
       return res.json({
         success: true,
         source: 'buffer-fallback',
@@ -1065,7 +1244,7 @@ app.all('/api/ha/history', async (req, res) => {
       });
     }
 
-    const rawHistoryArrays = await response.json();
+    const rawHistoryArrays = response.json;
     // Build 5-minute time buckets from startOfDay to now
     const stepMs = 5 * 60 * 1000;
     const bucketTimes = [];
@@ -1228,7 +1407,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Server running at http://${HOST}:${PORT} (v8.4)`);
+  console.log(`Server running at http://${HOST}:${PORT} (v8.5)`);
 });
 
 

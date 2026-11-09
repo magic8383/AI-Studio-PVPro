@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD & PERFORMANCE ANALYSIS ENGINE (V8.4)
-// Dashboard-First Redesign ("Solar & Netz · live"), Configurable HA Strings &
-// Individual Consumers, Intraday History Chart & Soll-Ist PVGIS Analysis
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.5)
+// Liquid-Glass UI, Mobile-First 2-Level Drill-Down, Interactive Sankey Diagram,
+// Configurable HA Strings & Consumers, Domain/Reverse-Proxy Diagnostics
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -86,6 +86,7 @@ let activeCurveKeys = new Set(['str_fronius_1', 'str_fronius_2', 'str_hoymiles',
 
 let demoSimHour = 11.27; // 11:16 Uhr wie im Referenz-Screenshot als sofortiger Hingucker
 let activeAnalysisSubTab = 'soll-ist'; // 'soll-ist' | 'autarkie-bat' | 'amortisation' | 'logbuch'
+let currentSankeyHorizon = 'year'; // 'today' | 'month' | 'year'
 let selectedAnalysisYear = new Date().getFullYear();
 let performanceRecordsByProject = {};
 
@@ -984,6 +985,14 @@ function renderLiveCockpitUI(baseline) {
             fnEl.innerText = `Größte aktive Einzelverbraucher.${unavailText}`;
         }
     }
+
+    // 4. Update Level 1 Drill-Down Card Summary for Intraday Curve
+    const intradaySumEl = document.getElementById('live_hub_intraday_summary');
+    if (intradaySumEl) {
+        const customStrNames = (haConfigState.customStrings || []).slice(0, 2).map(s => s.name).join(', ');
+        const todayPv = t.pvEnergyTodayKwh ?? intradaySeriesState.integratedKwh?.pv_total ?? 1.325;
+        intradaySumEl.innerText = `${customStrNames || 'Strings'}, Haus & Batterie · Heute ≈ ${formatKwhDe(todayPv, 2)} (${activeCurveKeys.size} aktive Kurven)`;
+    }
 }
 
 // ============================================================================
@@ -1464,16 +1473,392 @@ function renderAnalysisSection(baseline) {
 
     const perfEl = document.getElementById('ana_kpi_perf_idx');
     if (perfEl) {
-        perfEl.className = `text-2xl sm:text-3xl font-black font-mono tabular-nums ${metrics.overallPerfIndexPct >= 98 ? 'text-emerald-600 dark:text-emerald-400' : (metrics.overallPerfIndexPct >= 88 ? 'text-amber-500' : 'text-rose-500')}`;
+        perfEl.className = `text-xl sm:text-3xl font-black font-mono tabular-nums ${metrics.overallPerfIndexPct >= 98 ? 'text-emerald-600 dark:text-emerald-400' : (metrics.overallPerfIndexPct >= 88 ? 'text-amber-500' : 'text-rose-500')}`;
     }
 
     setElText('ana_kpi_euro_real', `${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} €`);
     setElText('ana_kpi_euro_sub', `Hochrechnung Jahr: ${Math.round(metrics.projectedAnnualRealEur).toLocaleString('de-DE')} €/a · ROI: ${metrics.realAmortYears.toFixed(1)} J.`);
 
+    // Update Level 1 Drill-Down Hub Card Subtitles
+    setElText('hub_card_soll_ist_sub', `${metrics.overallPerfIndexPct.toFixed(1)} % Soll-Erfüllung · ${Math.round(metrics.realPvSum).toLocaleString('de-DE')} / ${Math.round(metrics.sollPvForRecordedMonths).toLocaleString('de-DE')} kWh`);
+    setElText('hub_card_autarkie_sub', `${metrics.realAutarkyPct.toFixed(1)} % Autarkie · ${metrics.realEigenQuotaPct.toFixed(1)} % Eigenverbrauch · ${baseline.totalBatteryKwh > 0 ? metrics.batFullCycles.toFixed(0) + ' Zyklen' : 'Ohne Speicher'}`);
+    setElText('hub_card_amort_sub', `${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} € gespart · ROI ${metrics.realAmortYears.toFixed(1)} J. (Plan: ${metrics.plannedAmortYears.toFixed(1)} J.)`);
+    setElText('hub_card_logbuch_sub', `${metrics.recordedMonthsCount} von 12 Monaten für ${selectedAnalysisYear} erfasst · HA-Sync & CSV`);
+
+    // Render Interactive Sankey Energy Flow Diagram on Level 1
+    renderSankeyDiagram(currentSankeyHorizon, baseline, metrics);
+
     renderSollIstPanel(baseline, metrics);
     renderAutarkyBatteryPanel(baseline, metrics);
     renderRealAmortizationPanel(baseline, metrics);
     renderMonthlyLogbookTable(baseline, metrics);
+}
+
+// ============================================================================
+// 6B. INTERACTIVE SANKEY ENERGY FLOW DIAGRAM (HEUTE / MONAT / GESAMTJAHR)
+// ============================================================================
+
+function setSankeyHorizon(horizon) {
+    if (!['today', 'month', 'year'].includes(horizon)) horizon = 'year';
+    currentSankeyHorizon = horizon;
+    const baseline = getPlannedSystemBaseline();
+    const metrics = computeAggregatedPerformanceMetrics(baseline);
+    renderSankeyDiagram(currentSankeyHorizon, baseline, metrics);
+}
+
+function computeSankeyFlowData(horizon, baseline, metrics) {
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    if (!metrics) metrics = computeAggregatedPerformanceMetrics(baseline);
+
+    const hasBattery = baseline.totalBatteryKwh > 0;
+    let pvTotal = 0;
+    let gridImp = 0;
+    let gridExp = 0;
+    let batChg = 0;
+    let batDis = 0;
+    let pvDirect = 0;
+    let batLoss = 0;
+    let houseTotal = 0;
+    let periodLabel = '';
+    let decimals = 0;
+
+    if (horizon === 'today') {
+        decimals = 1;
+        const t = currentLiveTelemetry || {};
+        const intKwh = intradaySeriesState.integratedKwh || {};
+        pvTotal = Math.max(0.2, Number(t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 4.8));
+        const rawHouse = Math.max(0.5, Number(intKwh.house_load ?? 7.4));
+
+        if (hasBattery) {
+            batChg = +(Math.min(pvTotal * 0.42, baseline.totalBatteryKwh * 0.65)).toFixed(2);
+            batDis = +(batChg * 0.91).toFixed(2);
+            batLoss = +(Math.max(0, batChg - batDis)).toFixed(2);
+        }
+
+        pvDirect = +(Math.min(rawHouse * 0.55, Math.max(0.1, pvTotal - batChg) * 0.72)).toFixed(2);
+        gridExp = +(Math.max(0, pvTotal - pvDirect - batChg)).toFixed(2);
+        const covered = pvDirect + batDis;
+        gridImp = +(Math.max(0.1, Number(intKwh.grid_power ?? Math.max(0.4, rawHouse - covered)))).toFixed(2);
+        houseTotal = +(covered + gridImp).toFixed(2);
+        periodLabel = 'Heute (Tagesbilanz bis jetzt)';
+    } else if (horizon === 'month') {
+        decimals = 0;
+        const curMonthIdx = new Date().getMonth();
+        // Find current month if recorded, or latest recorded month
+        let mRec = metrics.monthlyComparison[curMonthIdx];
+        if (!mRec || !mRec.hasReal) {
+            const recordedList = metrics.monthlyComparison.filter(m => m.hasReal);
+            if (recordedList.length > 0) {
+                mRec = recordedList[recordedList.length - 1];
+            }
+        }
+
+        if (mRec && mRec.hasReal && mRec.realPv > 0) {
+            pvTotal = Math.max(1, mRec.realPv);
+            gridExp = Math.max(0, mRec.expKwh);
+            gridImp = Math.max(0, mRec.impKwh);
+            batChg = Math.max(0, mRec.bChg);
+            batDis = Math.max(0, mRec.bDis);
+            pvDirect = Math.max(0, pvTotal - gridExp - batChg);
+            batLoss = Math.max(0, batChg - batDis);
+            houseTotal = Math.max(1, pvDirect + batDis + gridImp);
+            periodLabel = `Monat: ${mRec.labelLong} ${selectedAnalysisYear}`;
+        } else {
+            const sollM = Math.max(10, baseline.monthlySollTotal[curMonthIdx] || 650);
+            pvTotal = Math.round(sollM);
+            batChg = hasBattery ? Math.round(pvTotal * 0.28) : 0;
+            batDis = hasBattery ? Math.round(batChg * 0.91) : 0;
+            batLoss = Math.max(0, batChg - batDis);
+            pvDirect = Math.round(pvTotal * 0.34);
+            gridExp = Math.max(0, pvTotal - pvDirect - batChg);
+            gridImp = Math.round((baseline.plannedConsKwh / 12) * 0.28);
+            houseTotal = pvDirect + batDis + gridImp;
+            periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} (Prognose)`;
+        }
+    } else {
+        decimals = 0;
+        if (metrics.realPvSum > 0) {
+            pvTotal = Math.max(1, metrics.realPvSum);
+            gridExp = Math.max(0, metrics.gridExportSum);
+            gridImp = Math.max(0, metrics.gridImportSum);
+            batChg = Math.max(0, metrics.batChargedSum);
+            batDis = Math.max(0, metrics.batDischargedSum);
+            pvDirect = Math.max(0, metrics.directTotalKwh);
+            batLoss = Math.max(0, metrics.batLossKwh);
+            houseTotal = Math.max(1, metrics.totalHouseConsKwh);
+            periodLabel = `Gesamtjahr ${selectedAnalysisYear} (${metrics.recordedMonthsCount}/12 Mon. erfasst)`;
+        } else {
+            pvTotal = Math.max(100, Math.round(baseline.totalSollYearKwh));
+            batChg = hasBattery ? Math.round(pvTotal * 0.27) : 0;
+            batDis = hasBattery ? Math.round(batChg * 0.91) : 0;
+            batLoss = Math.max(0, batChg - batDis);
+            pvDirect = Math.round(pvTotal * 0.32);
+            gridExp = Math.max(0, pvTotal - pvDirect - batChg);
+            gridImp = Math.round(baseline.plannedConsKwh * 0.26);
+            houseTotal = pvDirect + batDis + gridImp;
+            periodLabel = `Gesamtjahr ${selectedAnalysisYear} (PVGIS-Simulation)`;
+        }
+    }
+
+    const autarkyPct = houseTotal > 0 ? Math.min(100, ((pvDirect + batDis) / houseTotal) * 100) : 0;
+    const eigenQuotaPct = pvTotal > 0 ? Math.min(100, ((pvDirect + batChg) / pvTotal) * 100) : 0;
+    const batEffPct = batChg > 0 ? Math.min(100, (batDis / batChg) * 100) : (hasBattery ? 91.0 : 0);
+
+    return {
+        horizon,
+        decimals,
+        periodLabel,
+        hasBattery,
+        pvTotal,
+        gridImp,
+        gridExp,
+        batChg,
+        batDis,
+        pvDirect,
+        batLoss,
+        houseTotal,
+        autarkyPct,
+        eigenQuotaPct,
+        batEffPct
+    };
+}
+
+function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, metrics = null) {
+    // 1. Update Horizon Buttons
+    ['today', 'month', 'year'].forEach(h => {
+        const btn = document.getElementById(`btn-sankey-${h}`);
+        if (btn) {
+            if (h === horizon) {
+                btn.className = "px-3 py-1 rounded-full bg-teal-600 text-white text-[11px] font-bold shadow-xs transition-all cursor-pointer";
+            } else {
+                btn.className = "px-3 py-1 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-[11px] font-semibold transition-all cursor-pointer";
+            }
+        }
+    });
+
+    const container = document.getElementById('sankeyDiagramContainer');
+    if (!container) return;
+
+    const d = computeSankeyFlowData(horizon, baseline, metrics);
+    const fmt = (v) => Number(v || 0).toLocaleString('de-DE', {
+        minimumFractionDigits: d.decimals,
+        maximumFractionDigits: d.decimals
+    });
+
+    const totalEnergyThroughput = Math.max(1, d.pvTotal + d.gridImp);
+
+    // Proportional ribbon stroke widths (clamped between 6px and 56px for crisp mobile + desktop readability)
+    const calcStroke = (val) => {
+        if (val <= 0.01) return 2;
+        return Math.max(7, Math.min(54, Math.round((val / totalEnergyThroughput) * 120)));
+    };
+
+    const swPvToDirect = calcStroke(d.pvDirect);
+    const swPvToBat = calcStroke(d.batChg);
+    const swPvToGridExp = calcStroke(d.gridExp);
+    const swDirectToHouse = calcStroke(d.pvDirect);
+    const swBatToHouse = calcStroke(d.batDis);
+    const swGridToHouse = calcStroke(d.gridImp);
+
+    const pvShareDirectPct = d.pvTotal > 0 ? Math.round((d.pvDirect / d.pvTotal) * 100) : 0;
+    const pvShareBatPct = d.pvTotal > 0 ? Math.round((d.batChg / d.pvTotal) * 100) : 0;
+    const pvShareExpPct = d.pvTotal > 0 ? Math.max(0, 100 - pvShareDirectPct - pvShareBatPct) : 0;
+
+    const houseShareDirectPct = d.houseTotal > 0 ? Math.round((d.pvDirect / d.houseTotal) * 100) : 0;
+    const houseShareBatPct = d.houseTotal > 0 ? Math.round((d.batDis / d.houseTotal) * 100) : 0;
+    const houseShareGridPct = d.houseTotal > 0 ? Math.max(0, 100 - houseShareDirectPct - houseShareBatPct) : 0;
+
+    // SVG Layout (780 x 330 viewBox, responsive)
+    // Left Column (Sources): x = 14..184
+    //   Node 1: PV-Erzeugung (y = 22..168)
+    //   Node 2: Netzbezug    (y = 198..308)
+    // Middle Column (Routing & Storage): x = 295..475
+    //   Node 3: PV-Direkt    (y = 22..118)
+    //   Node 4: Batterie     (y = 138..246)
+    // Right Column (Sinks): x = 586..766
+    //   Node 5: Hausverbrauch   (y = 22..192)
+    //   Node 6: Netzeinspeisung (y = 212..308)
+
+    const batName = typeof escapeHtml === 'function'
+        ? escapeHtml(haConfigState.batteryName || 'Batteriespeicher')
+        : (haConfigState.batteryName || 'Batteriespeicher');
+
+    container.innerHTML = `
+    <svg viewBox="0 0 780 332" class="w-full h-auto min-w-[600px] select-none overflow-visible" role="img" aria-label="Sankey Energiefluss-Diagramm">
+        <defs>
+            <linearGradient id="sankeyGradPvDirect" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.72" />
+                <stop offset="100%" stop-color="#10b981" stop-opacity="0.72" />
+            </linearGradient>
+            <linearGradient id="sankeyGradPvBat" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.68" />
+                <stop offset="100%" stop-color="#a855f7" stop-opacity="0.72" />
+            </linearGradient>
+            <linearGradient id="sankeyGradPvExport" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.55" />
+                <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.68" />
+            </linearGradient>
+            <linearGradient id="sankeyGradDirectHouse" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#10b981" stop-opacity="0.72" />
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.75" />
+            </linearGradient>
+            <linearGradient id="sankeyGradBatHouse" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#a855f7" stop-opacity="0.72" />
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.75" />
+            </linearGradient>
+            <linearGradient id="sankeyGradGridHouse" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.65" />
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.72" />
+            </linearGradient>
+        </defs>
+
+        <!-- FLOW RIBBONS (Cubic Bézier Paths) -->
+        <!-- 1. PV -> PV-Direkt -->
+        <path d="M 184 56 C 240 56, 240 66, 295 66"
+            fill="none" stroke="url(#sankeyGradPvDirect)" stroke-width="${swPvToDirect}" stroke-linecap="butt"
+            class="transition-all duration-500 hover:opacity-95" />
+
+        <!-- 2. PV -> Batteriespeicher (Ladung) -->
+        ${d.batChg > 0 ? `
+        <path d="M 184 96 C 242 96, 242 184, 295 184"
+            fill="none" stroke="url(#sankeyGradPvBat)" stroke-width="${swPvToBat}" stroke-linecap="butt"
+            class="transition-all duration-500 hover:opacity-95" />
+        ` : ''}
+
+        <!-- 3. PV -> Netzeinspeisung -->
+        ${d.gridExp > 0 ? `
+        <path d="M 184 138 C 360 138, 410 262, 586 262"
+            fill="none" stroke="url(#sankeyGradPvExport)" stroke-width="${swPvToGridExp}" stroke-linecap="butt"
+            class="transition-all duration-500 hover:opacity-95" />
+        ` : ''}
+
+        <!-- 4. PV-Direkt -> Hausverbrauch -->
+        <path d="M 475 66 C 530 66, 530 64, 586 64"
+            fill="none" stroke="url(#sankeyGradDirectHouse)" stroke-width="${swDirectToHouse}" stroke-linecap="butt"
+            class="transition-all duration-500 hover:opacity-95" />
+
+        <!-- 5. Batteriespeicher (Entladung) -> Hausverbrauch -->
+        ${d.batDis > 0 ? `
+        <path d="M 475 184 C 532 184, 532 114, 586 114"
+            fill="none" stroke="url(#sankeyGradBatHouse)" stroke-width="${swBatToHouse}" stroke-linecap="butt"
+            class="transition-all duration-500 hover:opacity-95" />
+        ` : ''}
+
+        <!-- 6. Netzbezug -> Hausverbrauch -->
+        ${d.gridImp > 0 ? `
+        <path d="M 184 252 C 390 252, 460 160, 586 160"
+            fill="none" stroke="url(#sankeyGradGridHouse)" stroke-width="${swGridToHouse}" stroke-linecap="butt"
+            class="transition-all duration-500 hover:opacity-95" />
+        ` : ''}
+
+        <!-- FLOW VALUE PILLS ON RIBBONS -->
+        <g transform="translate(239, 46)">
+            <rect x="-34" y="-10" width="68" height="19" rx="9" fill="#0f1b21" fill-opacity="0.82" stroke="#14b8a6" stroke-opacity="0.45" />
+            <text x="0" y="3" text-anchor="middle" fill="#5eead4" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${pvShareDirectPct}% Direkt</text>
+        </g>
+        ${d.batChg > 0 ? `
+        <g transform="translate(240, 142)">
+            <rect x="-34" y="-10" width="68" height="19" rx="9" fill="#0f1b21" fill-opacity="0.82" stroke="#a855f7" stroke-opacity="0.45" />
+            <text x="0" y="3" text-anchor="middle" fill="#d8b4fe" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${pvShareBatPct}% Akku</text>
+        </g>` : ''}
+        ${d.gridExp > 0 ? `
+        <g transform="translate(385, 224)">
+            <rect x="-46" y="-10" width="92" height="19" rx="9" fill="#0f1b21" fill-opacity="0.82" stroke="#06b6d4" stroke-opacity="0.45" />
+            <text x="0" y="3" text-anchor="middle" fill="#67e8f9" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${fmt(d.gridExp)} kWh (${pvShareExpPct}%)</text>
+        </g>` : ''}
+
+        <!-- LEFT COLUMN NODES (SOURCES) -->
+        <!-- Node 1: PV-Erzeugung -->
+        <g transform="translate(14, 20)">
+            <rect width="170" height="148" rx="18" fill="#11242b" fill-opacity="0.92" stroke="#14b8a6" stroke-width="1.8" />
+            <rect x="0" y="0" width="6" height="148" rx="3" fill="#14b8a6" />
+            <text x="16" y="26" fill="#5eead4" font-size="11" font-weight="800" letter-spacing="0.04em">PV-ERZEUGUNG</text>
+            <text x="16" y="54" fill="#ffffff" font-size="21" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.pvTotal)} kWh</text>
+            <text x="16" y="74" fill="#94a3b8" font-size="10.5" font-weight="600">Eigenverbrauch: ${d.eigenQuotaPct.toFixed(1)} %</text>
+            <line x1="16" y1="86" x2="154" y2="86" stroke="#334155" stroke-opacity="0.6" />
+            <text x="16" y="104" fill="#cbd5e1" font-size="10" font-family="JetBrains Mono, monospace">→ Direkt: ${fmt(d.pvDirect)} kWh</text>
+            <text x="16" y="120" fill="#cbd5e1" font-size="10" font-family="JetBrains Mono, monospace">→ Speicher: ${fmt(d.batChg)} kWh</text>
+            <text x="16" y="136" fill="#cbd5e1" font-size="10" font-family="JetBrains Mono, monospace">→ Netz-Exp: ${fmt(d.gridExp)} kWh</text>
+        </g>
+
+        <!-- Node 2: Netzbezug -->
+        <g transform="translate(14, 194)">
+            <rect width="170" height="114" rx="18" fill="#112233" fill-opacity="0.92" stroke="#3b82f6" stroke-width="1.8" />
+            <rect x="0" y="0" width="6" height="114" rx="3" fill="#3b82f6" />
+            <text x="16" y="26" fill="#93c5fd" font-size="11" font-weight="800" letter-spacing="0.04em">NETZBEZUG</text>
+            <text x="16" y="54" fill="#ffffff" font-size="20" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.gridImp)} kWh</text>
+            <text x="16" y="75" fill="#94a3b8" font-size="10.5" font-weight="600">${houseShareGridPct} % des Hausverbrauchs</text>
+            <text x="16" y="96" fill="#60a5fa" font-size="10" font-family="JetBrains Mono, monospace">Restbedarf aus Stromnetz</text>
+        </g>
+
+        <!-- MIDDLE COLUMN NODES (DIRECT & BATTERY) -->
+        <!-- Node 3: PV-Direktverbrauch -->
+        <g transform="translate(295, 20)">
+            <rect width="180" height="96" rx="18" fill="#102924" fill-opacity="0.92" stroke="#10b981" stroke-width="1.8" />
+            <rect x="0" y="0" width="6" height="96" rx="3" fill="#10b981" />
+            <text x="16" y="25" fill="#6ee7b7" font-size="11" font-weight="800" letter-spacing="0.04em">PV-DIREKTVERBRAUCH</text>
+            <text x="16" y="52" fill="#ffffff" font-size="20" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.pvDirect)} kWh</text>
+            <text x="16" y="74" fill="#a7f3d0" font-size="10.5" font-weight="600">Deckt ${houseShareDirectPct} % im Haus direkt</text>
+        </g>
+
+        <!-- Node 4: Batteriespeicher -->
+        <g transform="translate(295, 132)">
+            <rect width="180" height="118" rx="18" fill="#211730" fill-opacity="0.92" stroke="#a855f7" stroke-width="1.8" />
+            <rect x="0" y="0" width="6" height="118" rx="3" fill="#a855f7" />
+            <text x="16" y="24" fill="#d8b4fe" font-size="11" font-weight="800" letter-spacing="0.04em">${batName.toUpperCase()}</text>
+            <text x="16" y="50" fill="#ffffff" font-size="19" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.batDis)} kWh</text>
+            <text x="16" y="68" fill="#cbd5e1" font-size="10" font-family="JetBrains Mono, monospace">Ladung: ${fmt(d.batChg)} kWh</text>
+            <text x="16" y="84" fill="#c084fc" font-size="10" font-weight="600">Deckt ${houseShareBatPct} % im Haus</text>
+            <text x="16" y="102" fill="#94a3b8" font-size="9.5" font-family="JetBrains Mono, monospace">η ≈ ${d.batEffPct.toFixed(0)}% (Verlust: ${fmt(d.batLoss)} kWh)</text>
+        </g>
+
+        <!-- RIGHT COLUMN NODES (SINKS) -->
+        <!-- Node 5: Hausverbrauch Gesamt -->
+        <g transform="translate(586, 20)">
+            <rect width="180" height="168" rx="18" fill="#291f12" fill-opacity="0.92" stroke="#f59e0b" stroke-width="1.8" />
+            <rect x="174" y="0" width="6" height="168" rx="3" fill="#f59e0b" />
+            <text x="16" y="26" fill="#fcd34d" font-size="11" font-weight="800" letter-spacing="0.04em">HAUSVERBRAUCH</text>
+            <text x="16" y="54" fill="#ffffff" font-size="21" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.houseTotal)} kWh</text>
+            <text x="16" y="74" fill="#fde68a" font-size="10.5" font-weight="700">Autarkie: ${d.autarkyPct.toFixed(1)} %</text>
+            <line x1="16" y1="86" x2="160" y2="86" stroke="#475569" stroke-opacity="0.5" />
+            <text x="16" y="105" fill="#6ee7b7" font-size="10" font-family="JetBrains Mono, monospace">● PV-Direkt: ${houseShareDirectPct}% (${fmt(d.pvDirect)})</text>
+            <text x="16" y="123" fill="#d8b4fe" font-size="10" font-family="JetBrains Mono, monospace">● Speicher:  ${houseShareBatPct}% (${fmt(d.batDis)})</text>
+            <text x="16" y="141" fill="#93c5fd" font-size="10" font-family="JetBrains Mono, monospace">● Netzbezug: ${houseShareGridPct}% (${fmt(d.gridImp)})</text>
+        </g>
+
+        <!-- Node 6: Netzeinspeisung -->
+        <g transform="translate(586, 204)">
+            <rect width="180" height="104" rx="18" fill="#0f252e" fill-opacity="0.92" stroke="#06b6d4" stroke-width="1.8" />
+            <rect x="174" y="0" width="6" height="104" rx="3" fill="#06b6d4" />
+            <text x="16" y="26" fill="#67e8f9" font-size="11" font-weight="800" letter-spacing="0.04em">NETZEINSPEISUNG</text>
+            <text x="16" y="54" fill="#ffffff" font-size="20" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.gridExp)} kWh</text>
+            <text x="16" y="75" fill="#94a3b8" font-size="10.5" font-weight="600">${pvShareExpPct} % der PV-Erzeugung</text>
+            <text x="16" y="93" fill="#22d3ee" font-size="10" font-family="JetBrains Mono, monospace">EEG-Überschuss ins Netz</text>
+        </g>
+    </svg>`;
+
+    // 2. Render Summary Ribbon Below Sankey
+    const ribbon = document.getElementById('sankeySummaryRibbon');
+    if (ribbon) {
+        ribbon.innerHTML = `
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Zeitraum</span>
+                <span class="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate block mt-0.5">${d.periodLabel}</span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">Autarkiequote</span>
+                <span class="text-sm font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 block mt-0.5">${d.autarkyPct.toFixed(1)} %</span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 block">Eigenverbrauch</span>
+                <span class="text-sm font-black font-mono tabular-nums text-teal-600 dark:text-teal-400 block mt-0.5">${d.eigenQuotaPct.toFixed(1)} %</span>
+            </div>
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 block">Selbst gedeckt</span>
+                <span class="text-sm font-black font-mono tabular-nums text-purple-600 dark:text-purple-300 block mt-0.5">${fmt(d.pvDirect + d.batDis)} kWh</span>
+            </div>
+        `;
+    }
 }
 
 function renderSollIstPanel(baseline, metrics) {
@@ -1882,6 +2267,35 @@ function onImportPerformanceCsvFile(event) {
 // 7. HOME ASSISTANT & FREELY CONFIGURABLE SENSORS MODAL (STRINGS & CONSUMERS)
 // ============================================================================
 
+function switchHaModalTab(tab = 'config') {
+    const panelCfg = document.getElementById('ha-modal-panel-config');
+    const panelGuide = document.getElementById('ha-modal-panel-guide');
+    const btnCfg = document.getElementById('btn-ha-modal-tab-config');
+    const btnGuide = document.getElementById('btn-ha-modal-tab-guide');
+
+    if (tab === 'guide') {
+        if (panelCfg) panelCfg.classList.add('hidden');
+        if (panelGuide) panelGuide.classList.remove('hidden');
+        if (btnGuide) btnGuide.className = "px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+        if (btnCfg) btnCfg.className = "px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+    } else {
+        if (panelCfg) panelCfg.classList.remove('hidden');
+        if (panelGuide) panelGuide.classList.add('hidden');
+        if (btnCfg) btnCfg.className = "px-4 py-2 rounded-xl bg-teal-600 text-white text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+        if (btnGuide) btnGuide.className = "px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+    }
+}
+
+function copyHaReverseProxyYaml() {
+    const codeEl = document.getElementById('haReverseProxyYamlCode');
+    if (!codeEl) return;
+    navigator.clipboard.writeText(codeEl.value).then(() => {
+        if (typeof showToastNotification === 'function') {
+            showToastNotification('http / cors configuration.yaml Vorlage in die Zwischenablage kopiert!', 'success');
+        }
+    });
+}
+
 function openHaConfigModal(focusSection = null) {
     const modal = document.getElementById('modal-ha-config');
     if (!modal) return;
@@ -1910,6 +2324,13 @@ function openHaConfigModal(focusSection = null) {
     updateHaWebhookYamlSnippet();
 
     modal.classList.remove('hidden');
+
+    if (focusSection === 'guide') {
+        switchHaModalTab('guide');
+        return;
+    }
+
+    switchHaModalTab('config');
 
     if (focusSection === 'consumers') {
         setTimeout(() => {
@@ -2109,8 +2530,8 @@ async function testHaConnectionAndLoadSensors() {
     const statusBox = document.getElementById('haTestFeedbackBox');
     if (statusBox) {
         statusBox.classList.remove('hidden');
-        statusBox.className = "p-3 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 font-medium";
-        statusBox.innerText = "Verbinde mit Home Assistant und suche verfügbare sensor.* Entitäten...";
+        statusBox.className = "p-3.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-700 dark:text-slate-200 font-medium";
+        statusBox.innerHTML = `<div class="flex items-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Prüfe Domain, Reverse-Proxy Weiterleitungen & Long-Lived Token...</span></div>`;
     }
 
     try {
@@ -2124,6 +2545,15 @@ async function testHaConnectionAndLoadSensors() {
         });
         const data = await res.json();
 
+        if (data?.normalizedBaseUrl) {
+            haConfigState.baseUrl = data.normalizedBaseUrl;
+            setElVal('ha_cfg_url', data.normalizedBaseUrl);
+        }
+
+        const diagHtml = Array.isArray(data?.diagnostics) && data.diagnostics.length > 0
+            ? `<div class="mt-2.5 pt-2 border-t border-slate-300/50 dark:border-slate-700/60 space-y-1 font-mono text-[11px] opacity-90">${data.diagnostics.map(d => `<div>• ${typeof escapeHtml === 'function' ? escapeHtml(d) : d}</div>`).join('')}</div>`
+            : '';
+
         if (res.ok && data && data.success) {
             discoveredHaSensors = data.sensors || [];
             const dl = document.getElementById('haEntitiesDatalist');
@@ -2133,18 +2563,85 @@ async function testHaConnectionAndLoadSensors() {
                 ).join('');
             }
             if (statusBox) {
-                statusBox.className = "p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-700 dark:text-emerald-300 font-semibold";
-                statusBox.innerText = `Verbindung erfolgreich! ${data.sensorCount} Sensoren gefunden und in die Autovervollständigung geladen.`;
+                statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
+                statusBox.innerHTML = `
+                    <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                        <span class="material-symbols-rounded text-base">check_circle</span>
+                        <span>Verbindung über Reverse Proxy erfolgreich! (${data.sensorCount} Sensoren geladen)</span>
+                    </div>
+                    ${diagHtml}
+                `;
             }
-        } else {
-            if (statusBox) {
-                statusBox.className = "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 font-semibold";
-                statusBox.innerText = data?.error || 'Verbindung fehlgeschlagen.';
+            return;
+        }
+
+        // If server proxy failed (e.g., private Split-DNS domain or Geo-IP block), try direct browser fetch as fallback
+        try {
+            const cleanUrl = (data?.normalizedBaseUrl || haConfigState.baseUrl || '').replace(/\/+$/, '');
+            const cleanTok = (haConfigState.accessToken || '').replace(/^Bearer\s+/i, '').replace(/[\r\n\s]+/g, '');
+            if (cleanUrl && cleanTok) {
+                const directRes = await fetch(`${cleanUrl}/api/states`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${cleanTok}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (directRes.ok) {
+                    const statesArr = await directRes.json();
+                    if (Array.isArray(statesArr)) {
+                        discoveredHaSensors = statesArr
+                            .filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('sensor.'))
+                            .map(s => ({
+                                entity_id: s.entity_id,
+                                name: s.attributes?.friendly_name || s.entity_id,
+                                state: s.state,
+                                unit: s.attributes?.unit_of_measurement || ''
+                            }));
+                        const dl = document.getElementById('haEntitiesDatalist');
+                        if (dl) {
+                            dl.innerHTML = discoveredHaSensors.map(s =>
+                                `<option value="${s.entity_id}">${s.name} (${s.state} ${s.unit})</option>`
+                            ).join('');
+                        }
+                        if (statusBox) {
+                            statusBox.className = "p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-800 dark:text-emerald-200";
+                            statusBox.innerHTML = `
+                                <div class="font-extrabold flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
+                                    <span class="material-symbols-rounded text-base">check_circle</span>
+                                    <span>Direkt-Verbindung über deinen Browser erfolgreich! (${discoveredHaSensors.length} Sensoren geladen)</span>
+                                </div>
+                                <p class="mt-1 text-[11px]">Deine Domain ist aus deinem lokalen Netz/Browser direkt erreichbar (CORS aktiv).</p>
+                            `;
+                        }
+                        return;
+                    }
+                }
             }
+        } catch (directErr) {
+            // Ignore direct fallback error and show detailed server diagnostics
+        }
+
+        if (statusBox) {
+            const safeErr = typeof escapeHtml === 'function' ? escapeHtml(data?.error || 'Verbindung fehlgeschlagen.') : (data?.error || 'Verbindung fehlgeschlagen.');
+            statusBox.className = "p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-800 dark:text-rose-200";
+            statusBox.innerHTML = `
+                <div class="font-extrabold flex items-start gap-1.5 text-rose-600 dark:text-rose-300">
+                    <span class="material-symbols-rounded text-base shrink-0">error</span>
+                    <span>${safeErr}</span>
+                </div>
+                ${diagHtml}
+                <div class="mt-3 pt-2.5 border-t border-rose-500/20 flex flex-wrap items-center justify-between gap-2">
+                    <span class="text-[11px] text-rose-700 dark:text-rose-300 font-semibold">Nutzt du Nginx, Traefik, Cloudflare oder Synology Reverse Proxy?</span>
+                    <button type="button" onclick="switchHaModalTab('guide')" class="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-[11px] font-extrabold transition-colors cursor-pointer">
+                        Zur Reverse-Proxy Anleitung & Lösung →
+                    </button>
+                </div>
+            `;
         }
     } catch (err) {
         if (statusBox) {
-            statusBox.className = "p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 font-semibold";
+            statusBox.className = "p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-700 dark:text-rose-300 font-semibold";
             statusBox.innerText = 'Netzwerkfehler: ' + err.message;
         }
     }

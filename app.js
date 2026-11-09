@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.4';
+        if (verEl) verEl.innerText = 'Pro 8.5';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -176,6 +176,7 @@ function initDatabase() {
         try { updatePhysicsOnly(); } catch(e) {}
         try { checkUrlShareImport(); } catch(e) {}
         try { initProjectManager(); } catch(e) {}
+        try { updatePlanungHubCards(); } catch(e) {}
     } catch(e) { console.error("Init Error:", e); }
 }
 
@@ -1664,10 +1665,12 @@ async function loadConfigurationByCode(code) {
 }
 
 // ==========================================
-// 2. UI TAB ROUTING & SWIPE GESTURES
+// 2. UNIFIED 2-LEVEL MOBILE-FIRST NAVIGATION & DRILL-DOWN (V8.5)
 // ==========================================
-const tabOrder = ['live', 'analyse', 'system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
+const tabOrder = ['live', 'analyse', 'planung-hub'];
 const planningTabs = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
+let currentNavSection = 'live'; // 'live' | 'analyse' | 'planung'
+let currentNavLevel = 1; // 1 = Hub (Ebene 1), 2 = Detail (Ebene 2)
 let touchStartX = 0, touchStartY = 0;
 
 document.addEventListener('touchstart', e => { 
@@ -1677,14 +1680,14 @@ document.addEventListener('touchstart', e => {
 
 document.addEventListener('touchend', e => {
     let t = e.target.nodeType === 3 ? e.target.parentNode : e.target;
-    if (t.closest('input') || t.closest('select') || t.closest('button') || t.closest('canvas') || t.closest('.overflow-x-auto') || t.closest('a')) return;
+    if (t.closest('input') || t.closest('select') || t.closest('button') || t.closest('canvas') || t.closest('svg') || t.closest('.overflow-x-auto') || t.closest('a')) return;
     
     let touchEndX = e.changedTouches[0].clientX;
     let touchEndY = e.changedTouches[0].clientY;
     let diffX = touchEndX - touchStartX;
     let diffY = touchEndY - touchStartY;
     
-    if (Math.abs(diffX) > 60 && Math.abs(diffX) > Math.abs(diffY) * 1.8) {
+    if (Math.abs(diffX) > 65 && Math.abs(diffX) > Math.abs(diffY) * 1.9 && currentNavLevel === 1) {
         let current = document.querySelector('.tab-content.active');
         if(!current) return;
         let cIdx = tabOrder.indexOf(current.id.replace('tab-', ''));
@@ -1695,53 +1698,219 @@ document.addEventListener('touchend', e => {
     }
 }, {passive:true});
 
-function switchTab(tabId) {
-    const current = document.querySelector('.tab-content.active');
-    if(current) current.classList.remove('active');
-    
-    const target = document.getElementById('tab-' + tabId);
-    if(target) target.classList.add('active');
-
-    // Top Header Titel & Icon kontextsensitiv aktualisieren
+function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Zurück zur Übersicht') {
     const titleEl = document.getElementById('headerViewTitle');
+    const subEl = document.getElementById('headerViewSubtitle');
     const iconEl = document.getElementById('headerSectionIcon');
-    const scroller = document.getElementById('navScroller');
-    const saveBtn = document.getElementById('btnHeaderSave');
-    const isPlanning = planningTabs.includes(tabId);
+    const badgeEl = document.getElementById('headerLevelBadge');
+    const brandBadge = document.getElementById('headerBrandBadge');
+    const backBtn = document.getElementById('btnHeaderBack');
+    const backBtnLbl = document.getElementById('btnHeaderBackLabel');
 
-    if (tabId === 'live') {
-        if (titleEl) titleEl.innerText = 'Solar & Netz · live';
-        if (iconEl) iconEl.innerText = 'cell_tower';
-    } else if (tabId === 'analyse') {
-        if (titleEl) titleEl.innerText = 'Performance & Soll-Ist · Analyse';
-        if (iconEl) iconEl.innerText = 'monitoring';
+    if (titleEl) titleEl.innerText = title;
+    if (subEl) subEl.innerText = subtitle;
+    if (iconEl) iconEl.innerText = iconName || 'cell_tower';
+
+    if (level === 2) {
+        if (brandBadge) brandBadge.classList.add('hidden');
+        if (backBtn) {
+            backBtn.classList.remove('hidden');
+            backBtn.classList.add('inline-flex');
+        }
+        if (backBtnLbl) backBtnLbl.innerText = backLabel;
+        if (badgeEl) {
+            badgeEl.innerText = 'Ebene 2 · Detail';
+            badgeEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0';
+        }
     } else {
-        const tabTitles = {
-            system: 'PV-Planung · Strings & Dach',
-            verkabelung: 'PV-Planung · Kabelplan & VDE',
-            verbrauch: 'PV-Planung · Lastprofil & Verbrauch',
-            invest: 'PV-Planung · Investition & Kosten',
-            finance: 'PV-Planung · Tarife & EEG',
-            uebersicht: 'PV-Planung · Übersicht & KPIs',
-            auswertung: 'PV-Planung · 8.760h Prognose',
-            database: 'PV-Planung · Hardware-Datenbank',
-            faq: 'PV-Planung · Handbuch & Hilfe'
-        };
-        if (titleEl) titleEl.innerText = tabTitles[tabId] || 'PV-Planung & Auslegung';
-        if (iconEl) iconEl.innerText = 'solar_power';
-    }
-
-    if (scroller) {
-        if (isPlanning) {
-            scroller.classList.remove('hidden');
-            scroller.classList.add('flex');
-        } else {
-            scroller.classList.add('hidden');
-            scroller.classList.remove('flex');
+        if (brandBadge) brandBadge.classList.remove('hidden');
+        if (backBtn) {
+            backBtn.classList.add('hidden');
+            backBtn.classList.remove('inline-flex');
+        }
+        if (badgeEl) {
+            badgeEl.innerText = 'Ebene 1 · Übersicht';
+            badgeEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25 shrink-0';
         }
     }
+}
+
+function openLiveDrillDown(detailKey = 'intraday') {
+    const current = document.querySelector('.tab-content.active');
+    if (current && current.id !== 'tab-live') {
+        current.classList.remove('active');
+        document.getElementById('tab-live')?.classList.add('active');
+    }
+
+    const hub = document.getElementById('live-hub-view');
+    const detail = document.getElementById('live-detail-intraday');
+    if (hub) hub.classList.add('hidden');
+    if (detail) detail.classList.remove('hidden');
+
+    currentNavSection = 'live';
+    currentNavLevel = 2;
+
+    updateTwoRowHeader(
+        'Tagesverlauf & Kurven (00:00 – jetzt)',
+        'Ebene 2 · Solar & Netz · live · Interaktive String- & Batteriekurven',
+        'show_chart',
+        2,
+        'Zurück zu Live'
+    );
+
+    if (typeof renderIntradayCurveSection === 'function') {
+        setTimeout(() => renderIntradayCurveSection(), 40);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function openAnalyseDrillDown(subTab = 'soll-ist') {
+    const current = document.querySelector('.tab-content.active');
+    if (current && current.id !== 'tab-analyse') {
+        current.classList.remove('active');
+        document.getElementById('tab-analyse')?.classList.add('active');
+    }
+
+    const hub = document.getElementById('analyse-hub-view');
+    const detail = document.getElementById('analyse-detail-view');
+    if (hub) hub.classList.add('hidden');
+    if (detail) detail.classList.remove('hidden');
+
+    currentNavSection = 'analyse';
+    currentNavLevel = 2;
+
+    const titles = {
+        'soll-ist': 'Soll-Ist-Vergleich (PVGIS vs. Real)',
+        'autarkie-bat': 'Autarkie & Batterie-Effizienz',
+        'amortisation': 'Reale Amortisation & €-Bilanz',
+        'logbuch': 'Monats-Logbuch & HA-Zähler'
+    };
+
+    updateTwoRowHeader(
+        titles[subTab] || 'Performance-Detailanalyse',
+        'Ebene 2 · Sankey & Performance-Analyse',
+        'monitoring',
+        2,
+        'Zurück zur Analyse'
+    );
+
+    if (typeof switchAnalysisSubTab === 'function') {
+        setTimeout(() => switchAnalysisSubTab(subTab), 40);
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function openPlanungDrillDown(tabId = 'system') {
+    switchTab(tabId);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function navigateBackToHub() {
+    if (currentNavSection === 'live') {
+        switchTab('live');
+    } else if (currentNavSection === 'analyse') {
+        switchTab('analyse');
+    } else {
+        switchTab('planung-hub');
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updatePlanungHubCards() {
+    const baseline = typeof getPlannedSystemBaseline === 'function' ? getPlannedSystemBaseline() : null;
+    if (!baseline) return;
+
+    const kwpEl = document.getElementById('plan_hub_kwp');
+    const yieldEl = document.getElementById('plan_hub_yield');
+    const autEl = document.getElementById('plan_hub_autarky');
+    const amortEl = document.getElementById('plan_hub_amort');
+
+    if (kwpEl) kwpEl.innerText = `${baseline.totalKwp.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} kWp`;
+    if (yieldEl) yieldEl.innerText = `${Math.round(baseline.totalSollYearKwh).toLocaleString('de-DE')} kWh`;
+
+    let autPct = 74;
+    if (typeof FlowCache !== 'undefined' && FlowCache) {
+        const totC = FlowCache.direct + FlowCache.fromBat + FlowCache.fromGrid;
+        if (totC > 0) autPct = Math.round(((FlowCache.direct + FlowCache.fromBat) / totC) * 100);
+    } else if (baseline.totalBatteryKwh <= 0) {
+        autPct = 38;
+    }
+    if (autEl) autEl.innerText = `${autPct} %`;
+
+    const selfShare = baseline.totalBatteryKwh > 0 ? 0.58 : 0.34;
+    const annualBenefit = (baseline.totalSollYearKwh * selfShare * baseline.gridPriceEur) + (baseline.totalSollYearKwh * (1 - selfShare) * baseline.eegRateEur);
+    const amortY = annualBenefit > 0 ? (baseline.sysCostEur / annualBenefit) : 10.5;
+    if (amortEl) amortEl.innerText = `${amortY.toFixed(1)} J.`;
+}
+
+function switchTab(tabId) {
+    const current = document.querySelector('.tab-content.active');
+    if (current) current.classList.remove('active');
+    
+    const target = document.getElementById('tab-' + tabId);
+    if (target) target.classList.add('active');
+
+    const saveBtn = document.getElementById('btnHeaderSave');
+    const isPlanningDetail = planningTabs.includes(tabId);
+    const isPlanningHub = (tabId === 'planung-hub');
+
+    if (tabId === 'live') {
+        currentNavSection = 'live';
+        currentNavLevel = 1;
+        document.getElementById('live-hub-view')?.classList.remove('hidden');
+        document.getElementById('live-detail-intraday')?.classList.add('hidden');
+        updateTwoRowHeader(
+            'Solar & Netz · live',
+            'Ebene 1 · Echtzeit-Status & aktive Einzelverbraucher',
+            'cell_tower',
+            1
+        );
+    } else if (tabId === 'analyse') {
+        currentNavSection = 'analyse';
+        currentNavLevel = 1;
+        document.getElementById('analyse-hub-view')?.classList.remove('hidden');
+        document.getElementById('analyse-detail-view')?.classList.add('hidden');
+        updateTwoRowHeader(
+            'Sankey & Performance-Analyse',
+            'Ebene 1 · Energiefluss (Heute/Monat/Jahr) & Jahres-KPIs',
+            'monitoring',
+            1
+        );
+    } else if (isPlanningHub) {
+        currentNavSection = 'planung';
+        currentNavLevel = 1;
+        updatePlanungHubCards();
+        updateTwoRowHeader(
+            'PV-Planung & Auslegung',
+            'Ebene 1 · Wähle einen Engineering-Bereich (Strings, VDE, 8.760h)',
+            'solar_power',
+            1
+        );
+    } else if (isPlanningDetail) {
+        currentNavSection = 'planung';
+        currentNavLevel = 2;
+        const tabTitles = {
+            system: 'Strings, Dach & Wechselrichter',
+            verkabelung: 'DC-Kabelplan & VDE 0100-712',
+            verbrauch: 'Lastprofil, WP, Klima & E-Auto',
+            invest: 'Investition, Kosten & Förderung',
+            finance: 'Stromtarif & EEG-Vergütung',
+            uebersicht: 'Planungs-Dashboard & KPIs',
+            auswertung: '8.760h PVGIS-Jahresprognose',
+            database: 'Hardware-Stammdatenbank',
+            faq: 'Handbuch, Hilfe & Changelog'
+        };
+        updateTwoRowHeader(
+            tabTitles[tabId] || 'PV-Planung · Detail',
+            'Ebene 2 · PV-Planung & Engineering',
+            'solar_power',
+            2,
+            'Zurück zur Planung'
+        );
+    }
+
     if (saveBtn) {
-        if (isPlanning) {
+        if (isPlanningDetail || isPlanningHub) {
             saveBtn.classList.remove('hidden');
             saveBtn.classList.add('flex');
         } else {
@@ -1749,26 +1918,10 @@ function switchTab(tabId) {
             saveBtn.classList.remove('flex');
         }
     }
-    
-    // Sub-Navigationsleiste (#navScroller) für Planungs-Tabs aktualisieren
-    planningTabs.forEach(id => {
-        let btn = document.getElementById('btn-' + id);
-        if(btn) {
-            if(id === tabId) {
-                btn.className = "m3-segment-btn active snap-start shrink-0 px-3 py-1.5 text-xs font-bold rounded-xl bg-primary text-white shadow-xs flex items-center gap-1.5 transition-all cursor-pointer";
-                let icon = btn.querySelector('.material-symbols-rounded');
-                if(icon) icon.classList.add('fill-1');
-            } else {
-                btn.className = "m3-segment-btn snap-start shrink-0 px-3 py-1.5 text-xs font-medium rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 flex items-center gap-1.5 transition-all cursor-pointer";
-                let icon = btn.querySelector('.material-symbols-rounded');
-                if(icon) icon.classList.remove('fill-1');
-            }
-        }
-    });
 
-    // Schwebende untere Pill-Navigation aktualisieren (bnav-live, bnav-analyse, bnav-system)
-    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-14 h-12 rounded-2xl bg-teal-500/15 dark:bg-teal-500/20 border-2 border-teal-600 dark:border-teal-400 text-teal-700 dark:text-teal-300 transition-all cursor-pointer";
-    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-14 h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all cursor-pointer";
+    // Schwebende untere 4-Icon Pill-Navigation aktualisieren
+    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-teal-500/15 dark:bg-teal-500/25 border-2 border-teal-600 dark:border-teal-400 text-teal-700 dark:text-teal-300 transition-all cursor-pointer";
+    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all cursor-pointer";
 
     const bLive = document.getElementById('bnav-live');
     const bAnalyse = document.getElementById('bnav-analyse');
@@ -1776,24 +1929,19 @@ function switchTab(tabId) {
 
     if (bLive) bLive.className = (tabId === 'live') ? activePillClass : inactivePillClass;
     if (bAnalyse) bAnalyse.className = (tabId === 'analyse') ? activePillClass : inactivePillClass;
-    if (bSystem) bSystem.className = isPlanning ? activePillClass : inactivePillClass;
+    if (bSystem) bSystem.className = (isPlanningHub || isPlanningDetail) ? activePillClass : inactivePillClass;
     
     // Nach Auswahl Bottom Sheet schließen (falls offen)
     closeMoreSheet();
 
-    let btn = document.getElementById('btn-' + tabId);
-    if(btn && scroller && isPlanning) {
-        try { scroller.scrollTo({left: btn.offsetLeft - window.innerWidth/2 + 50, behavior:'smooth'}); } 
-        catch(e) { scroller.scrollLeft = btn.offsetLeft - window.innerWidth/2 + 50; }
-    }
-    if(tabId === 'auswertung' && currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
-    if(tabId === 'verkabelung') renderWiringTab();
-    if(tabId === 'database') renderDatabaseUI();
-    if(tabId === 'live') {
+    if (tabId === 'auswertung' && currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
+    if (tabId === 'verkabelung') renderWiringTab();
+    if (tabId === 'database') renderDatabaseUI();
+    if (tabId === 'live') {
         if (typeof renderLiveTab === 'function') renderLiveTab();
         if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
     }
-    if(tabId === 'analyse') {
+    if (tabId === 'analyse') {
         if (typeof renderAnalyseTab === 'function') renderAnalyseTab();
     }
 }
@@ -2025,6 +2173,7 @@ function updatePhysicsOnly() {
     if(btnMobile) { btnMobile.classList.remove('bg-blue-600'); btnMobile.classList.add('animate-pulse', 'bg-amber-500'); }
     renderStringsUI(); 
     renderDatabaseUI();
+    if (typeof updatePlanungHubCards === 'function') updatePlanungHubCards();
     if(document.getElementById('tab-verkabelung')?.classList.contains('active')) {
         renderWiringTab();
     }
@@ -2861,6 +3010,7 @@ async function calculateYieldAPI() {
         YieldDataCache = groupedResults; FlowCache = flow; activeGroupIndex = null; 
         renderStringsUI(); 
         renderDashboard();
+        if (typeof updatePlanungHubCards === 'function') updatePlanungHubCards();
         if (typeof renderAnalysisSection === 'function') renderAnalysisSection();
         switchTab('uebersicht'); 
     } catch(e) { console.error(e); if (typeof showToastNotification === 'function') showToastNotification("Berechnungsfehler: " + e.message, 'error'); }
@@ -5202,14 +5352,17 @@ function applyTheme(primary, accent, dark) {
     let html = document.documentElement;
     let btn = document.getElementById('btnThemeDarkMode');
     let bnavIcon = document.getElementById('bnavThemeIcon');
+    let sheetLbl = document.getElementById('moreSheetThemeLabel');
     if(dark) {
         html.classList.add('dark');
         if(btn) btn.innerText = "Ausschalten";
         if(bnavIcon) bnavIcon.innerText = "light_mode";
+        if(sheetLbl) sheetLbl.innerText = "Auf Light-Mode wechseln";
     } else {
         html.classList.remove('dark');
         if(btn) btn.innerText = "Aktivieren";
         if(bnavIcon) bnavIcon.innerText = "dark_mode";
+        if(sheetLbl) sheetLbl.innerText = "Auf Dark-Mode wechseln";
     }
     
     if (typeof Chart !== 'undefined') {
