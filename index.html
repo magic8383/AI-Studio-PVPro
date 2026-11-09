@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 8.2 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
+    <title>PV-Planung Pro 8.3 - Professionelle Photovoltaik-Planung & VDE 0100-712</title>
     <meta name="description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
-    <meta property="og:title" content="PV-Planung Pro 8.2 - Professionelle Photovoltaik-Planung & VDE 0100-712">
+    <meta property="og:title" content="PV-Planung Pro 8.3 - Professionelle Photovoltaik-Planung & VDE 0100-712">
     <meta property="og:description" content="Professionelle Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=8.2">
+    <link rel="manifest" href="manifest.json?v=8.3">
     <meta name="theme-color" content="#0f172a">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.2">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.2">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.2">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.2">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.3">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.3">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.3">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.3">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -185,7 +185,7 @@
                     <div class="shrink-0">
                         <h1 class="text-sm sm:text-base md:text-xl font-extrabold tracking-tight text-white leading-none flex items-center gap-1 sm:gap-1.5">
                             <span>PV-Planung</span>
-                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 8.2</span>
+                            <span id="app-header-version" class="text-primary font-black text-xs sm:text-sm md:text-base">Pro 8.3</span>
                         </h1>
                     </div>
 
@@ -289,6 +289,9 @@
                 <button onclick="switchTab('auswertung')" id="btn-auswertung" class="m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all text-accent">
                     <span class="material-symbols-rounded text-base">analytics</span> Auswertung
                 </button>
+                <button onclick="switchTab('live')" id="btn-live" class="m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all text-emerald-400">
+                    <span class="material-symbols-rounded text-base">monitoring</span> Live & Analyse
+                </button>
                 <div class="w-px h-5 bg-slate-700 shrink-0 mx-1"></div>
                 <button onclick="switchTab('database')" id="btn-database" class="m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all">
                     <span class="material-symbols-rounded text-base">database</span> Datenbank
@@ -312,7 +315,11 @@
                             <span class="material-symbols-rounded text-xl sm:text-2xl fill-1">location_on</span>
                         </div>
                         <div class="min-w-0">
-                            <p class="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest leading-none mb-1">Standort für PVGIS API</p>
+                            <p class="text-[9px] sm:text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest leading-none mb-1 flex items-center gap-1.5">
+                                <span>Standort für PVGIS API</span>
+                                <span>·</span>
+                                <span id="pvgisStatusBadge" class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 normal-case tracking-normal">EU-JRC Server-Proxy</span>
+                            </p>
                             <p class="text-xs sm:text-sm font-bold text-primary leading-none truncate" id="locNameText">Villingen-Schwenningen</p>
                         </div>
                     </div>
@@ -882,6 +889,375 @@
             </div>
         </div>
 
+        <!-- TAB 5B: LIVE-TELEMETRIE, HOME ASSISTANT & PERFORMANCE-ANALYSE (V8.3) -->
+        <div id="tab-live" class="tab-content max-w-7xl mx-auto space-y-6 mt-2">
+            <!-- Top Header & Home Assistant Controls -->
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div>
+                        <h3 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+                            <span class="material-symbols-rounded text-emerald-500 text-2xl">monitoring</span>
+                            <span>Live-Performance & Soll-Ist-Analyse</span>
+                        </h3>
+                        <p id="liveConnectionStatusText" class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                            Live-Simulationsmodus · Bereit für Home Assistant Anbindung
+                        </p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- Mode Switcher: Demo vs. Home Assistant Poll vs. Webhook -->
+                        <div class="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60">
+                            <button id="btn-ha-mode-demo" onclick="setLiveTelemetryMode('demo')" class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap">
+                                Live-Demo
+                            </button>
+                            <button id="btn-ha-mode-poll" onclick="setLiveTelemetryMode('poll')" class="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-xs font-medium transition-all cursor-pointer whitespace-nowrap">
+                                Home Assistant Live
+                            </button>
+                            <button id="btn-ha-mode-webhook" onclick="setLiveTelemetryMode('webhook')" class="px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 text-xs font-medium transition-all cursor-pointer whitespace-nowrap">
+                                Webhook-Push
+                            </button>
+                        </div>
+
+                        <button onclick="refreshLiveTelemetryNow()" class="px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer whitespace-nowrap" title="Live-Werte jetzt abrufen">
+                            <span class="material-symbols-rounded text-base">refresh</span>
+                            <span class="hidden sm:inline">Aktualisieren</span>
+                        </button>
+
+                        <button onclick="openHaConfigModal()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap">
+                            <span class="material-symbols-rounded text-base">settings_input_antenna</span>
+                            <span>Home Assistant & Entitäten</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Interactive Time Slider in Demo Mode -->
+                <div id="liveDemoTimeBar" class="mt-4 pt-3.5 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div class="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                        <span class="material-symbols-rounded text-amber-500 text-base">wb_sunny</span>
+                        <span>Simulierte Tageszeit für deine geplante Anlage:</span>
+                        <span id="demoTimeLabel" class="font-mono tabular-nums font-bold text-slate-900 dark:text-white">13:30 Uhr</span>
+                    </div>
+                    <div class="flex items-center gap-3 flex-1 max-w-md">
+                        <span class="text-[11px] font-mono text-slate-400">06:00</span>
+                        <input type="range" min="6" max="21" step="0.25" value="13.5" oninput="onDemoHourSliderChange(this.value)" class="w-full accent-primary cursor-pointer">
+                        <span class="text-[11px] font-mono text-slate-400">21:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 1: LIVE KPI STRIP (4 CARDS) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
+                    <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                        <span>PV-Erzeugung (Aktuell)</span>
+                        <span class="material-symbols-rounded text-amber-500 text-lg">solar_power</span>
+                    </div>
+                    <p id="live_kpi_pv_power" class="text-2xl sm:text-3xl font-black text-amber-500 font-mono tabular-nums">0 W</p>
+                    <p id="live_kpi_pv_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">0 % Auslastung · Heute: 0.0 kWh</p>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
+                    <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                        <span>Hausverbrauch & Deckung</span>
+                        <span class="material-symbols-rounded text-blue-500 text-lg">home_bolt</span>
+                    </div>
+                    <p id="live_kpi_load_power" class="text-2xl sm:text-3xl font-black text-blue-500 font-mono tabular-nums">0 W</p>
+                    <p id="live_kpi_load_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">Live-Autarkie: 100 %</p>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
+                    <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                        <span>Batteriespeicher (SoC)</span>
+                        <span class="material-symbols-rounded text-indigo-500 text-lg">battery_charging_full</span>
+                    </div>
+                    <p id="live_kpi_bat_soc" class="text-2xl sm:text-3xl font-black text-indigo-500 font-mono tabular-nums">—</p>
+                    <p id="live_kpi_bat_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">Standby</p>
+                </div>
+
+                <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 shadow-xs">
+                    <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-semibold mb-1">
+                        <span>Stromnetz & Tages-Bilanz</span>
+                        <span class="material-symbols-rounded text-emerald-500 text-lg">swap_horiz</span>
+                    </div>
+                    <p id="live_kpi_grid_power" class="text-2xl sm:text-3xl font-black text-emerald-500 font-mono tabular-nums">0 W</p>
+                    <p id="live_kpi_grid_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">Ausgeglichen</p>
+                </div>
+            </div>
+
+            <!-- SECTION 2: LIVE ENERGY FLOW DIAGRAM + LIVE STRING MONITOR -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                <!-- Left 7 Cols: Animated SVG Energy Flow -->
+                <div class="lg:col-span-7 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                <span class="material-symbols-rounded text-primary text-lg">hub</span>
+                                <span>Echtzeit-Energiefluss (PV · Speicher · Haus · Netz)</span>
+                            </h4>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Physikalische Leistungsflüsse in Watt / Kilowatt</p>
+                        </div>
+                        <button onclick="syncCurrentMonthFromLiveTelemetry(true)" class="px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap" title="Aktuelle Monatszähler in das Logbuch übernehmen">
+                            <span class="material-symbols-rounded text-sm text-primary">sync_saved_locally</span>
+                            <span>Monatszähler sichern</span>
+                        </button>
+                    </div>
+                    <div id="liveEnergyFlowSvgContainer" class="w-full flex items-center justify-center py-1">
+                        <!-- Rendered dynamically by buildEnergyFlowSvg() -->
+                    </div>
+                </div>
+
+                <!-- Right 5 Cols: Per-String Live Telemetry & Load -->
+                <div class="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs flex flex-col justify-between">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h4 class="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                <span class="material-symbols-rounded text-amber-500 text-lg">view_week</span>
+                                <span>Live-Auslastung je String & Wechselrichter</span>
+                            </h4>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400">Direkter Abgleich deiner geplanten Stränge</p>
+                        </div>
+                        <button onclick="openHaConfigModal()" class="text-xs font-semibold text-primary hover:underline cursor-pointer whitespace-nowrap">
+                            Sensoren zuordnen
+                        </button>
+                    </div>
+                    <div id="liveStringsBreakdownContainer" class="space-y-2.5 max-h-[260px] overflow-y-auto pr-1">
+                        <!-- Rendered dynamically by renderLiveCockpitUI() -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: LANGZEIT- & MONATS-PERFORMANCE-ANALYSE (SOLL VS IST, AUTARKIE/BATTERIE, AMORTISATION) -->
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-xs space-y-6">
+                <!-- Sub-Navigation & Year Selector -->
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+                    <div class="flex items-center gap-1.5 overflow-x-auto hide-scroll pb-1 sm:pb-0">
+                        <button id="btn-analysis-sub-soll-ist" onclick="switchAnalysisSubTab('soll-ist')" class="px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                            <span class="material-symbols-rounded text-base">compare_arrows</span>
+                            <span>1. Soll-Ist-Vergleich (PVGIS)</span>
+                        </button>
+                        <button id="btn-analysis-sub-autarkie-bat" onclick="switchAnalysisSubTab('autarkie-bat')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                            <span class="material-symbols-rounded text-base">battery_charging_80</span>
+                            <span>2. Autarkie & Batterie-Effizienz</span>
+                        </button>
+                        <button id="btn-analysis-sub-amortisation" onclick="switchAnalysisSubTab('amortisation')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                            <span class="material-symbols-rounded text-base">savings</span>
+                            <span>3. Reale Amortisation & €</span>
+                        </button>
+                        <button id="btn-analysis-sub-logbuch" onclick="switchAnalysisSubTab('logbuch')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                            <span class="material-symbols-rounded text-base">table_chart</span>
+                            <span>4. Monatswerte-Logbuch</span>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center gap-2 shrink-0">
+                        <label for="analysisYearSelect" class="text-xs font-bold text-slate-500 dark:text-slate-400">Betriebsjahr:</label>
+                        <select id="analysisYearSelect" onchange="changeAnalysisYear(this.value)" class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-primary">
+                            <option value="2024">2024</option>
+                            <option value="2025">2025</option>
+                            <option value="2026" selected>2026</option>
+                            <option value="2027">2027</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 4 Annual Performance KPI Cards -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+                        <p class="text-xs font-semibold text-slate-500 dark:text-slate-400">PVGIS Jahres-Soll (Prognose)</p>
+                        <p id="ana_kpi_soll_year" class="text-2xl sm:text-3xl font-black text-sky-600 dark:text-sky-400 font-mono tabular-nums mt-1">0 kWh</p>
+                        <p id="ana_kpi_soll_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">Spezifisch: 0 kWh/kWp</p>
+                    </div>
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+                        <p class="text-xs font-semibold text-slate-500 dark:text-slate-400">Realer Ist-Ertrag (Erfasste Monate)</p>
+                        <p id="ana_kpi_ist_sum" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">0 kWh</p>
+                        <p id="ana_kpi_ist_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">Soll im Zeitraum: 0 kWh</p>
+                    </div>
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+                        <p class="text-xs font-semibold text-slate-500 dark:text-slate-400">Soll-Ist Erfüllungsgrad (PR-Index)</p>
+                        <p id="ana_kpi_perf_idx" class="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">100.0 %</p>
+                        <p id="ana_kpi_perf_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">+0.0 % ggü. PVGIS-Prognose</p>
+                    </div>
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60">
+                        <p class="text-xs font-semibold text-slate-500 dark:text-slate-400">Erwirtschafteter Real-Ertrag (€)</p>
+                        <p id="ana_kpi_euro_real" class="text-2xl sm:text-3xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">0 €</p>
+                        <p id="ana_kpi_euro_sub" class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono tabular-nums">Ersparnis + Einspeisevergütung</p>
+                    </div>
+                </div>
+
+                <!-- SUB-PANEL 1: SOLL-IST-VERGLEICH (REALER ERTRAG VS PVGIS) -->
+                <div id="analysis-panel-soll-ist" class="space-y-6">
+                    <div>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                            <div>
+                                <h4 class="text-base font-bold text-slate-800 dark:text-slate-100">Monatlicher Soll-Ist-Ertragsvergleich (kWh)</h4>
+                                <p class="text-xs text-slate-500 dark:text-slate-400">Direkte Gegenüberstellung der standortgenauen PVGIS-Prognose mit deinen realen Monatserträgen</p>
+                            </div>
+                            <button onclick="switchAnalysisSubTab('logbuch')" class="text-xs font-bold text-primary hover:underline flex items-center gap-1 cursor-pointer self-start sm:self-auto">
+                                <span class="material-symbols-rounded text-sm">edit_note</span>
+                                <span>Monatswerte bearbeiten</span>
+                            </button>
+                        </div>
+                        <div class="relative h-72 sm:h-80 w-full">
+                            <canvas id="sollIstComparisonChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h5 class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Monats-Abweichungen im Detail (Ist vs. PVGIS-Soll)</h5>
+                        <div id="sollIstMonthlyCardsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5">
+                            <!-- Filled by renderSollIstPanel() -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-PANEL 2: AUTARKIE, EIGENVERBRAUCH & BATTERIE-EFFIZIENZ -->
+                <div id="analysis-panel-autarkie-bat" class="hidden space-y-6">
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Reale Autarkiequote</p>
+                            <p id="ana_bat_autarky_pct" class="text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">0.0 %</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Anteil eigener Energie am Hausverbrauch</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Reale Eigenverbrauchsquote</p>
+                            <p id="ana_bat_eigen_pct" class="text-2xl font-black text-blue-600 dark:text-blue-400 font-mono tabular-nums mt-1">0.0 %</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Selbst genutzter PV-Strom</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Batterie-Wirkungsgrad (η)</p>
+                            <p id="ana_bat_eff_pct" class="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono tabular-nums mt-1">91.0 %</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Entladung / Ladung (Roundtrip)</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Speicher-Vollzyklen</p>
+                            <p id="ana_bat_cycles" class="text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">0 Zyklen</p>
+                            <p class="text-[11px] text-slate-400 mt-0.5">Durchsatz bezogen auf Nennkapazität</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono tabular-nums">
+                        <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span class="text-slate-400 block">PV-Direktverbrauch</span>
+                            <span id="ana_bat_detail_direct" class="text-sm font-bold text-emerald-600 dark:text-emerald-400">0 kWh</span>
+                        </div>
+                        <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span class="text-slate-400 block">Aus Batterie entladen</span>
+                            <span id="ana_bat_detail_discharged" class="text-sm font-bold text-indigo-600 dark:text-indigo-400">0 kWh</span>
+                        </div>
+                        <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span class="text-slate-400 block">Rest-Netzbezug</span>
+                            <span id="ana_bat_detail_grid_in" class="text-sm font-bold text-rose-600 dark:text-rose-400">0 kWh</span>
+                        </div>
+                        <div class="p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                            <span class="text-slate-400 block">Speicher-Wandlungsverlust</span>
+                            <span id="ana_bat_detail_loss" class="text-sm font-bold text-amber-600 dark:text-amber-400">0 kWh</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-3">Monatliche Energiebilanz (Direktverbrauch · Speicher · Netzbezug · Einspeisung)</h4>
+                        <div class="relative h-72 sm:h-80 w-full">
+                            <canvas id="realAutarkyBalanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-PANEL 3: REALE AMORTISATIONS- & EURO-ERSPARNIS-RECHNUNG -->
+                <div id="analysis-panel-amortisation" class="hidden space-y-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Gesamtinvestition (Tab Invest)</p>
+                            <p id="ana_fin_invest_total" class="text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">15.000 €</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Gesparte Stromkosten (Eigenstrom)</p>
+                            <p id="ana_fin_saved_self" class="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">0 €</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Einspeiseerlös (EEG)</p>
+                            <p id="ana_fin_saved_eeg" class="text-xl font-black text-amber-500 font-mono tabular-nums mt-1">0 €</p>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
+                            <p class="text-xs text-slate-500 dark:text-slate-400 font-semibold">Amortisationsdauer (Ist vs. Plan)</p>
+                            <p id="ana_fin_amort_compare" class="text-lg font-black text-primary font-mono tabular-nums mt-1">—</p>
+                            <p id="ana_fin_delta_plan" class="text-[11px] text-slate-500 font-mono tabular-nums mt-0.5">+0 €/Jahr</p>
+                        </div>
+                    </div>
+
+                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-2">
+                        <div class="flex items-center justify-between text-xs font-semibold">
+                            <span class="text-slate-700 dark:text-slate-200">Jahres-Amortisationsbeitrag zur Gesamtinvestition</span>
+                            <span id="ana_fin_progress_label" class="font-mono tabular-nums text-emerald-600 dark:text-emerald-400">0 %</span>
+                        </div>
+                        <div class="w-full h-3 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                            <div id="ana_fin_progress_bar" class="h-full rounded-full bg-emerald-500 transition-all duration-500" style="width: 8%"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-3">20-Jahres-Cashflow & Break-Even-Vergleich (Reale Performance vs. PVGIS-Planung)</h4>
+                        <div class="relative h-72 sm:h-80 w-full">
+                            <canvas id="realAmortizationCurveChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-PANEL 4: MONATSWERTE-LOGBUCH & DATENPFLEGE -->
+                <div id="analysis-panel-logbuch" class="hidden space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <h4 class="text-base font-bold text-slate-800 dark:text-slate-100">Monatswerte-Logbuch & Zählerabgleich</h4>
+                            <p class="text-xs text-slate-500 dark:text-slate-400">Trage am Monatsende deine Zählerwerte ein oder übernimm sie mit einem Klick direkt aus Home Assistant.</p>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button onclick="syncCurrentMonthFromLiveTelemetry(true)" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer">
+                                <span class="material-symbols-rounded text-sm">sync</span>
+                                <span>Aktuellen Monat aus HA holen</span>
+                            </button>
+                            <button onclick="fillSampleYearPerformanceData()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer">
+                                <span class="material-symbols-rounded text-sm">auto_graph</span>
+                                <span>Referenz-Jahr füllen</span>
+                            </button>
+                            <button onclick="exportPerformanceCsv()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer">
+                                <span class="material-symbols-rounded text-sm">download</span>
+                                <span>CSV Export</span>
+                            </button>
+                            <button onclick="triggerImportPerformanceCsv()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer">
+                                <span class="material-symbols-rounded text-sm">upload</span>
+                                <span>CSV Import</span>
+                            </button>
+                            <input type="file" id="performanceCsvInput" accept=".csv,.txt" class="hidden" onchange="onImportPerformanceCsvFile(event)">
+                            <button onclick="clearYearPerformanceData()" class="px-2.5 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-semibold flex items-center gap-1 cursor-pointer">
+                                <span class="material-symbols-rounded text-sm">delete_sweep</span>
+                                <span>Leeren</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-100/80 dark:bg-slate-800/80 text-[11px] font-bold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
+                                    <th class="py-2.5 px-3">Monat</th>
+                                    <th class="py-2.5 px-3 text-right">PVGIS-Soll</th>
+                                    <th class="py-2.5 px-2 text-right">PV-Ertrag (Ist)</th>
+                                    <th class="py-2.5 px-2 text-right">Einspeisung</th>
+                                    <th class="py-2.5 px-2 text-right">Netzbezug</th>
+                                    <th class="py-2.5 px-2 text-right">Bat. Ladung</th>
+                                    <th class="py-2.5 px-2 text-right">Bat. Entladung</th>
+                                    <th class="py-2.5 px-3 text-right">Erfüllung</th>
+                                    <th class="py-2.5 px-3 text-right">Ertrag (€)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="monthlyLogbookTableBody">
+                                <!-- Filled dynamically by renderMonthlyLogbookTable() -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- TAB 6: GERÄTEZUWEISUNG & HARDWARE-DATENBANK -->
         <div id="tab-database" class="tab-content max-w-7xl mx-auto space-y-8 mt-2">
             <!-- Header mit Hauptaktionen -->
@@ -1034,17 +1410,17 @@
                 </div>
                 <span class="m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight">Verbrauch</span>
             </button>
-            <button onclick="switchTab('finance')" id="bnav-finance" class="flex flex-col items-center justify-center py-1 flex-1">
-                <div class="m3-bnav-pill px-4 py-1 rounded-full bg-transparent text-slate-400 transition-all flex items-center justify-center">
-                    <span class="material-symbols-rounded text-xl">payments</span>
-                </div>
-                <span class="m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight">Kosten</span>
-            </button>
             <button onclick="switchTab('auswertung')" id="bnav-auswertung" class="flex flex-col items-center justify-center py-1 flex-1">
                 <div class="m3-bnav-pill px-4 py-1 rounded-full bg-transparent text-slate-400 transition-all flex items-center justify-center">
                     <span class="material-symbols-rounded text-xl">analytics</span>
                 </div>
-                <span class="m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight">Auswertung</span>
+                <span class="m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight">Prognose</span>
+            </button>
+            <button onclick="switchTab('live')" id="bnav-live" class="flex flex-col items-center justify-center py-1 flex-1">
+                <div class="m3-bnav-pill px-4 py-1 rounded-full bg-transparent text-slate-400 transition-all flex items-center justify-center">
+                    <span class="material-symbols-rounded text-xl">monitoring</span>
+                </div>
+                <span class="m3-bnav-label text-[10px] font-medium text-slate-400 mt-0.5 tracking-tight">Live & Ist</span>
             </button>
             <button onclick="openMoreSheet()" id="bnav-more" class="flex flex-col items-center justify-center py-1 flex-1">
                 <div class="m3-bnav-pill px-4 py-1 rounded-full bg-transparent text-slate-400 transition-all flex items-center justify-center">
@@ -1115,11 +1491,25 @@
                     <p class="text-[10px] text-slate-400 truncate">Schaltplan, Leitungsführung & VDE-Verluste</p>
                 </div>
             </button>
+            <button onclick="switchTab('live')" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-emerald-950/50 hover:bg-emerald-900/50 border border-emerald-500/40 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-2xl text-emerald-400 shrink-0">monitoring</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white">Live-Cockpit & Soll-Ist-Analyse (Home Assistant)</p>
+                    <p class="text-[10px] text-slate-300 truncate">Echtzeit-Energiefluss, Monatsabgleich, Batterie & reale Amortisation</p>
+                </div>
+            </button>
             <button onclick="switchTab('invest')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
                 <span class="material-symbols-rounded text-xl text-primary shrink-0">receipt_long</span>
                 <div class="min-w-0">
                     <p class="text-xs font-bold text-white truncate">Investition</p>
                     <p class="text-[10px] text-slate-400 truncate">Kosten & Details</p>
+                </div>
+            </button>
+            <button onclick="switchTab('finance')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
+                <span class="material-symbols-rounded text-xl text-emerald-400 shrink-0">payments</span>
+                <div class="min-w-0">
+                    <p class="text-xs font-bold text-white truncate">Tarife & Kosten</p>
+                    <p class="text-[10px] text-slate-400 truncate">Strompreis & EEG</p>
                 </div>
             </button>
             <button onclick="switchTab('uebersicht')" class="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-left transition-all cursor-pointer">
@@ -1516,15 +1906,187 @@
         </div>
     </div>
 
+    <!-- ========================================== -->
+    <!-- MODAL: HOME ASSISTANT & SENSOR-ENTITÄTEN KONFIGURATOR (V8.3) -->
+    <!-- ========================================== -->
+    <div id="modal-ha-config" class="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-3xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- Header -->
+            <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                        <span class="material-symbols-rounded text-2xl">settings_input_antenna</span>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">Home Assistant & Sensor-Entitäten</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Verbinde deine Live-Sensoren (sensor.*) mit deiner PV-Planung</p>
+                    </div>
+                </div>
+                <button onclick="closeHaConfigModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-lg">close</span>
+                </button>
+            </div>
+
+            <!-- Body -->
+            <div class="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+                <datalist id="haEntitiesDatalist"></datalist>
+
+                <!-- 1. Verbindungs-Einstellungen -->
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                            <span class="material-symbols-rounded text-emerald-500 text-base">lan</span>
+                            <span>1. Verbindungsmodus & Home Assistant Server</span>
+                        </h4>
+                        <button type="button" onclick="testHaConnectionAndLoadSensors()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer self-start sm:self-auto">
+                            <span class="material-symbols-rounded text-sm">sync_saved_locally</span>
+                            <span>Verbindung testen & Sensoren laden</span>
+                        </button>
+                    </div>
+
+                    <div id="haTestFeedbackBox" class="hidden"></div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-500 mb-1">Daten-Modus</label>
+                            <select id="ha_cfg_mode" class="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <option value="demo">Live-Simulationsmodus (Demo)</option>
+                                <option value="poll">Home Assistant API Abruf (Live-Poll)</option>
+                                <option value="webhook">Home Assistant Push (Webhook)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-500 mb-1">Home Assistant URL</label>
+                            <input type="text" id="ha_cfg_url" placeholder="http://homeassistant.local:8123" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-bold text-slate-500 mb-1">Poll-Intervall (Sekunden)</label>
+                            <input type="number" id="ha_cfg_interval" min="3" max="300" value="10" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-bold text-slate-500 mb-1">Long-Lived Access Token (Profil &rarr; Sicherheit &rarr; Langlebige Zugriffstoken)</label>
+                        <input type="password" id="ha_cfg_token" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                    </div>
+                </div>
+
+                <!-- 2. Live-Leistungs-Entitäten (Watt / kW) -->
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
+                        <span>2. Echtzeit-Leistungssensoren (W oder kW – automatische Einheiten-Erkennung)</span>
+                    </h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV-Gesamtleistung (Aktuell)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="sensor.pv_power_total" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Hausverbrauch (Aktuelle Last)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_load_power" placeholder="sensor.house_consumption_power" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzleistung (+ Netzbezug / - Einspeisung)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="sensor.grid_power" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterieleistung (+ Laden / - Entladen)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="sensor.battery_power" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Ladestand SoC (%)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3. Energie-Zähler-Entitäten (kWh für Tag & Monat) -->
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <span class="material-symbols-rounded text-primary text-base">electric_meter</span>
+                        <span>3. Energiezähler-Entitäten (kWh für Tages- & Monats-Soll-Ist-Abgleich)</span>
+                    </h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV-Tagesertrag (Heute in kWh)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="sensor.pv_energy_today" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV-Monatsertrag (Laufender Monat kWh)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="sensor.pv_energy_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzeinspeisung Monat (kWh)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_month" placeholder="sensor.grid_export_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzbezug Monat (kWh)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_month" placeholder="sensor.grid_import_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Ladung Monat (kWh)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_month" placeholder="sensor.battery_charge_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Entladung Monat (kWh)</label>
+                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_month" placeholder="sensor.battery_discharge_monthly" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Dynamische Zuordnung zu den geplanten Strings -->
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                        <span class="material-symbols-rounded text-indigo-500 text-base">solar_power</span>
+                        <span>4. Einzelne Strings & MPPT-Kanäle zuordnen (Optional)</span>
+                    </h4>
+                    <div id="haStringMappingContainer" class="space-y-2">
+                        <!-- Dynamically populated from active strings -->
+                    </div>
+                </div>
+
+                <!-- 5. Optionaler Webhook-Push Assistent -->
+                <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                            <span class="material-symbols-rounded text-sky-500 text-base">webhook</span>
+                            <span>Alternative: Home Assistant Webhook-Push (Ohne Portfreigabe)</span>
+                        </h4>
+                        <button type="button" onclick="copyHaWebhookYaml()" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-[11px] font-bold cursor-pointer">
+                            YAML kopieren
+                        </button>
+                    </div>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400">
+                        Falls dein Home Assistant nur im lokalen Heimnetz läuft, kann er die Live-Werte auch aktiv per Automation an diese App senden:
+                    </p>
+                    <textarea id="haWebhookYamlCode" readonly rows="6" class="w-full font-mono text-[11px] p-2.5 rounded-xl bg-slate-900 text-emerald-300 border border-slate-700 outline-none"></textarea>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="px-5 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-end gap-3">
+                <button onclick="closeHaConfigModal()" class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer">
+                    Abbrechen
+                </button>
+                <button onclick="saveHaConfigFromModal()" class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-base">save</span>
+                    <span>Konfiguration speichern</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-6 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V8.2 (Separation of Concerns & Offline-QR Engine) -->
-    <script src="qrcode.client.js?v=8.2"></script>
-    <script src="database.js?v=8.2"></script>
-    <script src="content.js?v=8.2"></script>
-    <script src="app.js?v=8.2"></script>
-    <script src="wiring.js?v=8.2"></script>
-    <script src="dossier.js?v=8.2"></script>
+    <!-- MODULARE ARCHITEKTUR V8.3 (Separation of Concerns, Live Telemetry & Offline-QR Engine) -->
+    <script src="qrcode.client.js?v=8.3"></script>
+    <script src="database.js?v=8.3"></script>
+    <script src="content.js?v=8.3"></script>
+    <script src="app.js?v=8.3"></script>
+    <script src="wiring.js?v=8.3"></script>
+    <script src="dossier.js?v=8.3"></script>
+    <script src="telemetry.js?v=8.3"></script>
 </body>
 </html>

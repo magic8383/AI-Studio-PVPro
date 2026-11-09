@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pvpro-cache-v8.2';
+const CACHE_NAME = 'pvpro-cache-v8.3';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -6,6 +6,7 @@ const STATIC_ASSETS = [
     './app.js',
     './wiring.js',
     './dossier.js',
+    './telemetry.js',
     './database.js',
     './content.js',
     './manifest.json',

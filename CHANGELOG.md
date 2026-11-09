@@ -4,6 +4,42 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.3] – 2026-11-08
+
+### 📊 Live-Telemetrie, Home Assistant Integration, Soll-Ist-Performance-Analyse & EU-JRC PVGIS Server-Proxy
+
+#### 1. Ausfallsicherer Multi-Tier PVGIS Server-Proxy mit Disk- & Memory-Cache (`/api/pvgis/seriescalc`)
+* **Direkte Server-Abfrage der offiziellen EU-JRC-Wissenschaftsschnittstelle:**
+  - Behebung von Verbindungsabbrüchen und CORS-Blockaden externer Drittanbieter-Proxys durch einen dedizierten Backend-Endpunkt in `server.js`.
+  - Mehrstufige Kaskade: `1. Lokaler Server-Memory-/Disk-Cache` &rarr; `2. Offizielle EU-JRC PVGIS v5.3 API` &rarr; `3. Offizielle EU-JRC PVGIS v5.2 API` &rarr; `4. PVGIS Mirror` &rarr; `5. Kalibriertes 8.760h Synthetik-Modell`.
+  - Dezente Statusanzeige im Standort-Header (`#pvgisStatusBadge`) und nicht-blockierende Toast-Benachrichtigungen anstelle störender Browser-Alerts.
+
+#### 2. Neuer Hauptbereich „Live & Analyse“ (`telemetry.js`) mit Echtzeit-Energiefluss & String-Monitoring
+* **Animiertes Echtzeit-Energiefluss-Cockpit (SVG):**
+  - Visualisiert live die Leistungsflüsse zwischen PV-Generator (Dach & Strings), Wechselrichter-Hub, Hausverbrauch, Batteriespeicher (inkl. SoC-%-Füllstandsanzeige) und öffentlichem Stromnetz (Einspeisung vs. Netzbezug).
+  - Strangspezifischer Live-Monitor: Zeigt für jeden in der Planung angelegten String die aktuelle Leistung (`W`/`kW`), die prozentuale Auslastung bezogen auf die geplante String-Nennleistung (`kWp`) und die zugeordnete Sensor-Entität.
+  - Integrierter **Live-Simulationsmodus (Demo)** mit interaktivem Tageszeit-Schieberegler (06:00–21:00 Uhr), der exakt auf die geplante Anlagengröße (`kWp`), String-Ausrichtungen (`Azimut`/`Neigung`) und Speichergröße abgestimmt ist.
+
+#### 3. Flexibler Home Assistant Konfigurator & Sensor-Entitäten-Manager (`#modal-ha-config`)
+* **Freie Zuordnung aller `sensor.*`-Entitäten:**
+  - Konfigurations-Modal für Home Assistant URL, Long-Lived Access Token, Abfrage-Intervall und Daten-Modus (`Live-Poll`, `Webhook-Push`, `Live-Demo`).
+  - **1-Klick Verbindungstest & Sensor-Discovery (`/api/ha/test`):** Prüft die Verbindung zu Home Assistant und lädt alle vorhandenen `sensor.*`-Entitäten automatisch in die Such- und Autovervollständigungsliste (`<datalist>`).
+  - Automatische Einheiten-Normalisierung (`W` vs. `kW`, `Wh` vs. `kWh`) für Leistungs- und Energiezähler sowie dynamische Zuordnung einzelner Strings (`sensor.string_1_power`, etc.).
+  - Integrierter YAML-Generator für **Webhook-Push (`/api/ha/webhook`)**, falls Home Assistant ohne Portfreigabe aus dem lokalen Heimnetz pushen soll.
+
+#### 4. Drei-Säulen Langzeit- & Monats-Performance-Analyse + 12-Monats-Logbuch
+* **1. Soll-Ist-Vergleich (Realer Ertrag vs. PVGIS-Prognose):**
+  - Gruppiertes 12-Monats-Diagramm (`PVGIS-Soll` vs. `Realer Ist-Ertrag`), Berechnung des Performance-Index (`%` Zielerreichung), des spezifischen Ist-Ertrags (`kWh/kWp`) sowie detaillierte Monats-Abweichungskarten.
+* **2. Autarkie, Eigenverbrauch & Batterie-Effizienz:**
+  - Auswertung der realen Autarkie- und Eigenverbrauchsquote sowie Berechnung des realen **Batterie-Systemwirkungsgrads ($\eta_{\text{Bat}} = E_{\text{Entladung}} / E_{\text{Ladung}}$)**, der Speicher-Wandlungsverluste und der absolvierten Vollzyklen.
+* **3. Reale Amortisations- & Euro-Ersparnis-Rechnung:**
+  - Verknüpft die realen Eigenverbrauchs- und Einspeisemengen direkt mit dem geplanten Strompreis, dem EEG-Vergütungssatz und der Gesamtinvestitionssumme aus dem Tab „Investition“.
+  - Zeigt die erwirtschaftete Euro-Ersparnis, das jährliche Cashflow-Delta (`Ist vs. Plan`) und die 20-Jahres-Break-Even-Kurve.
+* **4. Monatswerte-Logbuch & CSV-Schnittstelle:**
+  - Editierbare 12-Monats-Tabelle mit 1-Klick-Übernahme der laufenden Monatszähler aus Home Assistant, Referenz-Jahresbefüllung sowie CSV-Import und CSV-Export.
+
+---
+
 ## [Version 8.2] – 2026-09-13
 
 ### 💾 Vollendung der Server- & Systemplan-Persistenz, lückenloser State-Transfer & Header-Synchronisation

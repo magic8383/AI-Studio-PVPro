@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementierungsplan für Version 8.3: Ausfallsichere EU-JRC-PVGIS-Server-Schnittstelle sowie Erweiterung von PV-Planung Pro zu einer vollwertigen Live-Telemetrie- & Performance-Analyse-Plattform mit konfigurierbarer Home-Assistant-Integration, Echtzeit-Energiefluss, Soll-Ist-Ertragsvergleich, Batterie-Effizienz und realer Amortisationsrechnung.",
+  "updatedAt":  "2026-11-09T06:28:22.254001694Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

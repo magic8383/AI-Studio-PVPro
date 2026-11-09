@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.2 (Server- & Systemplan-Persistenz-Vollendung mit lückenlosem State-Transfer & Offline-Cache, Header- & Projekt-Synchronisation, verbindliche 0.1-Schritt-Versionierung)  
+**Aktuelle Version:** 8.3 (Live-Telemetrie & Performance-Analyse-Suite mit Home Assistant Integration, Soll-Ist-PVGIS-Vergleich, Batterie-Wirkungsgrad, realer Amortisationsrechnung & mehrstufigem EU-JRC-PVGIS-Server-Proxy)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
@@ -16,7 +16,7 @@
    Bevor irgendeine Code-Datei angefasst wird, MUSS dieser Leitfaden konsultiert werden.
 2. **Versionierungs-Pflicht nach JEDER Änderung (0.1-Schritte):**  
    Nach **jeder** funktionalen oder architektonischen Anpassung **MUSS zwingend eine neue Version angelegt werden**. Die Versionsnummer wird dabei **IMMER um genau 0.1 inkrementiert** (z. B. 8.0 -> 8.1 -> 8.2 -> 8.3 ...). Niemals Zwischen- oder Patch-Suffixe wie 8.0.x verwenden, sondern ausnahmslos 0.1-Schritte. Ein Stillstand der Versionsnummer bei Code-Änderungen ist untersagt.
-   * **Kopfzeilen-Synchronisation:** Die in der App-Kopfzeile sichtbare Versionsnummer (`#app-header-version` in `index.html` sowie im Starter in `app.js`) **MUSS** bei jedem Versionswechsel zwingend synchron mitgeführt und aktualisiert werden (z. B. `Pro 8.1`).
+   * **Kopfzeilen-Synchronisation:** Die in der App-Kopfzeile sichtbare Versionsnummer (`#app-header-version` in `index.html` sowie im Starter in `app.js`) **MUSS** bei jedem Versionswechsel zwingend synchron mitgeführt und aktualisiert werden (z. B. `Pro 8.3`).
 3. **Changelog-Synchronisationspflicht:**  
    Zu jeder neuen Version **MUSS** parallel der `CHANGELOG.md` aktualisiert werden.  
    **Strikte Regel:** Die neuesten Versionen stehen **IMMER ganz oben** (chronologisch absteigend).  
@@ -45,7 +45,8 @@ Um unkontrolliertes Anwachsen von Monolithen zu verhindern, ist die Codebasis mo
 | `app.js` | Kern-Orchestrierung, reaktiver State, Physik- & MPP-Prüfung, 8.760h PVGIS-Simulation, Finanzen, Cross-Device Sync & QR-Transfer. |
 | `wiring.js` | **DC-Verkabelungs-Engine:** Interaktiver Schaltplan, Reißverschluss-Verfahren (Leap-Frog nach DIN EN 62305-3), Dachhindernisse (Gauben/Fenster), Mehrfeld-Dächer, VDE 0100-712 Leitungsrechnung & Vollbild-Viewer mit Zoom/Pan/Rotation. |
 | `dossier.js` | **Druck- & PDF-Dossier-Engine:** Vollständige, normgerechte Dokumentation (Anlagenpass, String-Verifikation, SVG-Schaltplan, Kabelberechnung, Stückliste, 20-Jahres-ROI & DIN VDE 0100-712 Inbetriebnahmeprotokoll). |
-| `server.js` | Express Server, persistente Share-API (`/api/share`), QR-Code Generierung (`qrcode`) & statische Auslieferung. |
+| `telemetry.js` | **Live-Telemetrie & Performance-Analyse-Engine:** Home Assistant Integration (Sensor-Entitäten, Verbindungs-Test, Webhook-Push), Echtzeit-SVG-Energiefluss, Soll-Ist-Ertragsabgleich gegen PVGIS, Batterie-Wirkungsgrad & reale Amortisationsrechnung. |
+| `server.js` | Express Server, mehrstufiger EU-JRC-PVGIS-Proxy mit Disk-Cache (`/api/pvgis/seriescalc`), Home Assistant Proxy (`/api/ha/*`), persistente Share-API (`/api/share`) & statische Auslieferung. |
 | `database.js` | Master-Hardwarekatalog (Solarmodule, Wechselrichter, Speicher, MPPT-Spezifikationen) & Custom-DB. |
 | `content.js` | Integriertes Handbuch, Hilfetexte, Glossar und In-App-Changelog. |
 | `sw.js` | Service Worker für Offline-Fähigkeit, PWA-Caching und Stale-While-Revalidate. |

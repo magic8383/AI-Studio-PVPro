@@ -155,7 +155,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.2';
+        if (verEl) verEl.innerText = 'Pro 8.3';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -1666,7 +1666,7 @@ async function loadConfigurationByCode(code) {
 // ==========================================
 // 2. UI TAB ROUTING & SWIPE GESTURES
 // ==========================================
-const tabOrder = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
+const tabOrder = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'live', 'database', 'faq'];
 let touchStartX = 0, touchStartY = 0;
 
 document.addEventListener('touchstart', e => { 
@@ -1712,6 +1712,7 @@ function switchTab(tabId) {
             } else {
                 btn.className = "m3-segment-btn snap-start shrink-0 px-3.5 py-1.5 text-xs md:text-sm font-medium rounded-xl text-slate-300 hover:text-white hover:bg-slate-800/60 flex items-center gap-1.5 transition-all";
                 if(id === 'auswertung') btn.classList.add('text-accent');
+                if(id === 'live') btn.classList.add('text-emerald-400');
                 let icon = btn.querySelector('.material-symbols-rounded');
                 if(icon) icon.classList.remove('fill-1');
             }
@@ -1719,7 +1720,7 @@ function switchTab(tabId) {
     });
 
     // Mobile Bottom Navigation Bar Buttons aktualisieren
-    const bottomNavIds = ['system', 'verbrauch', 'finance', 'auswertung'];
+    const bottomNavIds = ['system', 'verbrauch', 'auswertung', 'live'];
     bottomNavIds.forEach(id => {
         let bBtn = document.getElementById('bnav-' + id);
         if(bBtn) {
@@ -1741,7 +1742,7 @@ function switchTab(tabId) {
     // Falls ein Tab aus dem "Mehr"-Sheet aktiv ist, den "Mehr"-Button hervorheben
     let moreBtn = document.getElementById('bnav-more');
     if(moreBtn) {
-        let isMoreChild = ['verkabelung', 'invest', 'uebersicht', 'database', 'faq'].includes(tabId);
+        let isMoreChild = ['verkabelung', 'invest', 'finance', 'uebersicht', 'database', 'faq'].includes(tabId);
         let pill = moreBtn.querySelector('.m3-bnav-pill');
         let icon = moreBtn.querySelector('.material-symbols-rounded');
         let label = moreBtn.querySelector('.m3-bnav-label');
@@ -1768,6 +1769,10 @@ function switchTab(tabId) {
     if(tabId === 'auswertung' && currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
     if(tabId === 'verkabelung') renderWiringTab();
     if(tabId === 'database') renderDatabaseUI();
+    if(tabId === 'live') {
+        if (typeof renderLiveTab === 'function') renderLiveTab();
+        if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
+    }
 }
 
 function openMoreSheet() {
@@ -2629,28 +2634,40 @@ async function calculateYieldAPI() {
                     let asp = str.azimuth - 180; if (asp>180) asp-=360; if (asp<-180) asp+=360;
                     let peakKw = ((p.pmax * f.count) / 1000).toFixed(3);
                     let peakPower = (p.pmax * f.count) / 1000;
-                    const pvgisUrl = `https://pvgis.mb10.org/api/v5_2/seriescalc?lat=${safeLat}&lon=${safeLon}&pvcalculation=1&peakpower=${peakKw}&loss=14&angle=${f.tilt}&aspect=${asp}&startyear=2019&endyear=2019&outputformat=json`;
+                    const serverPvgisUrl = `/api/pvgis/seriescalc?lat=${safeLat}&lon=${safeLon}&peakpower=${peakKw}&loss=14&angle=${f.tilt}&aspect=${asp}&startyear=2019&endyear=2019`;
+                    const directPvgisUrl = `https://pvgis.mb10.org/api/v5_2/seriescalc?lat=${safeLat}&lon=${safeLon}&pvcalculation=1&peakpower=${peakKw}&loss=14&angle=${f.tilt}&aspect=${asp}&startyear=2019&endyear=2019&outputformat=json`;
 
                     const fetchWithFallback = async () => {
-                        // 1. Reale 8.760h Stundenwerte über Synology PVGIS Proxy
+                        // 1. Primär: Eigener Server-Proxy zur offiziellen EU-JRC-PVGIS-API (inkl. Server-Disk-Cache & Multi-Tier-Kaskade)
                         try {
-                            const r1 = await fetch(pvgisUrl);
-                            if (r1.ok) {
-                                const json = await r1.json();
-                                if (json && json.outputs && Array.isArray(json.outputs.hourly) && json.outputs.hourly.length === 8760) {
-                                    return json;
+                            const rServer = await fetch(serverPvgisUrl);
+                            if (rServer.ok) {
+                                const json = await rServer.json();
+                                if (json && json.success && json.outputs && Array.isArray(json.outputs.hourly) && json.outputs.hourly.length === 8760) {
+                                    return { outputs: json.outputs, source: json.source || 'eu-jrc', offline: false };
                                 }
                             }
                         } catch(e) {}
 
-                        // Fallback auf synthetische Berechnung falls offline
+                        // 2. Sekundär: Direkter Abruf über Mirror falls lokal ohne Express-Backend geöffnet
+                        try {
+                            const r1 = await fetch(directPvgisUrl);
+                            if (r1.ok) {
+                                const json = await r1.json();
+                                if (json && json.outputs && Array.isArray(json.outputs.hourly) && json.outputs.hourly.length === 8760) {
+                                    return { outputs: json.outputs, source: 'mirror', offline: false };
+                                }
+                            }
+                        } catch(e) {}
+
+                        // 3. Fallback: Physikalisches 8.760h Synthetik-Modell falls komplett offline
                         let synthetic = generateSyntheticPVGISData(safeLat, f.tilt, str.azimuth, peakPower);
-                        return { outputs: { hourly: synthetic }, offline: true };
+                        return { outputs: { hourly: synthetic }, source: 'synthetic', offline: true };
                     };
 
                     proms.push(
                         fetchWithFallback()
-                        .then(d => ({ sId: str.id, fId: f.id, d: d.outputs.hourly, sF: shadingFactor, panel: p, count: f.count, offline: !!d.offline }))
+                        .then(d => ({ sId: str.id, fId: f.id, d: d.outputs.hourly, sF: shadingFactor, panel: p, count: f.count, offline: !!d.offline, source: d.source }))
                     );
                 }
             });
@@ -2662,8 +2679,24 @@ async function calculateYieldAPI() {
 
         const res = await Promise.all(proms);
         let hasOfflineData = res.some(r => r.offline);
+        const statusBadge = document.getElementById('pvgisStatusBadge');
         if (hasOfflineData) {
-            alert("⚠️ Hinweis: Die Ertragsdaten wurden synthetisch berechnet, da die PVGIS-Schnittstelle nicht erreichbar war.");
+            if (statusBadge) {
+                statusBadge.innerText = 'Synthetik-Modell (8.760h)';
+                statusBadge.className = 'text-[10px] font-semibold text-amber-600 dark:text-amber-400';
+            }
+            if (typeof showToastNotification === 'function') {
+                showToastNotification("Hinweis: Externe PVGIS-Server momentan nicht erreichbar – Simulation lief mit dem kalibrierten 8.760h-Modell.", 'info');
+            }
+        } else {
+            const firstSrc = res[0]?.source || 'eu-jrc';
+            if (statusBadge) {
+                statusBadge.innerText = firstSrc.includes('cache') ? 'EU-JRC PVGIS (Cache)' : 'EU-JRC PVGIS Live';
+                statusBadge.className = 'text-[10px] font-semibold text-emerald-600 dark:text-emerald-400';
+            }
+            if (typeof showToastNotification === 'function') {
+                showToastNotification("8.760h PVGIS-Simulation erfolgreich abgeschlossen!", 'success');
+            }
         }
 
         let invH = {}; 
@@ -2805,8 +2838,9 @@ async function calculateYieldAPI() {
         YieldDataCache = groupedResults; FlowCache = flow; activeGroupIndex = null; 
         renderStringsUI(); 
         renderDashboard();
+        if (typeof renderAnalysisSection === 'function') renderAnalysisSection();
         switchTab('uebersicht'); 
-    } catch(e) { console.error(e); alert("Berechnungsfehler: " + e.message); }
+    } catch(e) { console.error(e); if (typeof showToastNotification === 'function') showToastNotification("Berechnungsfehler: " + e.message, 'error'); }
     if(btn) { btn.innerHTML = origTxt; btn.disabled = false; }
 }
 
