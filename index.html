@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 9.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 9.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=9.0">
+    <link rel="manifest" href="manifest.json?v=9.1">
     <meta name="theme-color" content="#0b1519">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.0">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.0">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.0">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.0">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.1">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.1">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.1">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.1">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -389,7 +389,7 @@
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-400/15 border border-teal-500/30 dark:border-teal-400/30 flex items-center justify-center text-teal-700 dark:text-teal-300 shrink-0 cursor-pointer" title="Zum Start-Dashboard">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-lg">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.0</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.1</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -426,14 +426,14 @@
                 </div>
             </div>
 
-            <!-- ROW 2: Dedicated Full-Width Section Title + Breadcrumb Subtitle (Never Truncated on Phones!) -->
+            <!-- ROW 2: Dedicated 1-Word Single-Line Section Title + Breadcrumb Subtitle -->
             <div class="flex items-baseline justify-between gap-2 pt-0.5">
                 <div class="min-w-0 flex-1">
-                    <h1 id="headerViewTitle" class="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white leading-snug">
-                        Solar &amp; Netz · live
+                    <h1 id="headerViewTitle" class="text-lg sm:text-xl font-black tracking-tight text-slate-900 dark:text-white leading-snug whitespace-nowrap truncate">
+                        Live
                     </h1>
-                    <p id="headerViewSubtitle" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">
-                        Ebene 1 · Echtzeit-Status &amp; aktive Verbraucher
+                    <p id="headerViewSubtitle" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight truncate">
+                        Ebene 1 · Echtzeit-Status &amp; Top-5 Verbraucher
                     </p>
                 </div>
                 <span id="headerLevelBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-900/5 dark:bg-white/10 text-slate-600 dark:text-slate-300 shrink-0">
@@ -526,10 +526,10 @@
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                         <div class="flex items-center gap-2">
-                            <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">PV-Planung · 6-Schritte-Assistent</h2>
-                            <span id="plan_hub_pvgis_badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">PVGIS bereit</span>
+                            <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Planung</h2>
+                            <span id="plan_hub_pvgis_badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 whitespace-nowrap">PVGIS bereit</span>
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Klicke dich Schritt für Schritt durch deine Auslegung – unten erscheinen automatisch die Vor-/Zurück-Tasten</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">6-Schritte-Assistent · Klicke dich durch deine Auslegung mit Vor-/Zurück-Tasten unten</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         <button onclick="goToPlanningWizardStep(1)" class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer">
@@ -1285,76 +1285,88 @@
                         </div>
                     </div>
 
-                    <!-- 2x2 Interaktive Status-Kacheln (Tap öffnet direkt die fokussierte Verlaufskurve) -->
+                    <!-- 2x2 Interaktive Status-Kacheln (Zweizeiliger Unterblock mit Zahlenwert zuerst – niemals abgeschnitten!) -->
                     <div class="grid grid-cols-2 gap-3 sm:gap-3.5">
-                        <!-- Kachel 1: PV gesamt · DC -->
-                        <div onclick="openLiveCurveFocus('pv')" role="button" tabindex="0" title="Antippen für PV- & String-Verlaufskurve" class="dash-tile-pv rounded-[22px] p-4 flex flex-col justify-between min-h-[140px] transition-all cursor-pointer group hover:ring-2 hover:ring-teal-400/45 active:scale-[0.99]">
+                        <!-- Kachel 1: PV gesamt -->
+                        <div onclick="openLiveCurveFocus('pv')" role="button" tabindex="0" title="Antippen für PV- & String-Verlaufskurve" class="dash-tile-pv rounded-[22px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[146px] transition-all cursor-pointer group hover:ring-2 hover:ring-teal-400/45 active:scale-[0.99]">
                             <div>
-                                <div class="flex items-center justify-between gap-1.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                <div class="flex items-center justify-between gap-1 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200">
                                     <span class="flex items-center gap-1.5 min-w-0">
                                         <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-lg sm:text-xl fill-1 shrink-0">solar_power</span>
-                                        <span class="truncate">PV gesamt · DC</span>
+                                        <span class="whitespace-nowrap">PV gesamt</span>
                                     </span>
                                     <span class="material-symbols-rounded text-sm text-teal-600/60 dark:text-teal-300/60 group-hover:text-teal-400 group-hover:translate-x-0.5 transition-all shrink-0">show_chart</span>
                                 </div>
-                                <p id="dash_pv_power" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2.5">682 W</p>
-                                <p id="dash_pv_status" class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1.5 truncate">Erzeugung läuft</p>
+                                <p id="dash_pv_power" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2">682 W</p>
+                                <div class="mt-1.5 space-y-0.5">
+                                    <p id="dash_pv_status" class="text-xs sm:text-sm font-extrabold text-teal-800 dark:text-teal-200 font-mono tabular-nums leading-tight">1,33 kWh heute</p>
+                                    <p id="dash_pv_sub2" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">Erzeugung aktiv</p>
+                                </div>
                             </div>
-                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3.5">
+                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3">
                                 <div id="dash_pv_bar" class="h-full rounded-full bg-teal-500 transition-all duration-500" style="width: 14%"></div>
                             </div>
                         </div>
 
-                        <!-- Kachel 2: Hausverbrauch · AC -->
-                        <div onclick="openLiveCurveFocus('load')" role="button" tabindex="0" title="Antippen für Hausverbrauch-Verlaufskurve" class="dash-tile-load rounded-[22px] p-4 flex flex-col justify-between min-h-[140px] transition-all cursor-pointer group hover:ring-2 hover:ring-amber-400/45 active:scale-[0.99]">
+                        <!-- Kachel 2: Hauslast -->
+                        <div onclick="openLiveCurveFocus('load')" role="button" tabindex="0" title="Antippen für Hausverbrauch-Verlaufskurve" class="dash-tile-load rounded-[22px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[146px] transition-all cursor-pointer group hover:ring-2 hover:ring-amber-400/45 active:scale-[0.99]">
                             <div>
-                                <div class="flex items-center justify-between gap-1.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                <div class="flex items-center justify-between gap-1 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200">
                                     <span class="flex items-center gap-1.5 min-w-0">
-                                        <span class="material-symbols-rounded text-amber-500 text-lg sm:text-xl fill-1 shrink-0">home_bolt</span>
-                                        <span class="truncate">Hausverbrauch · AC</span>
+                                        <span class="material-symbols-rounded text-amber-500 text-lg sm:text-xl fill-1 shrink-0">home</span>
+                                        <span class="whitespace-nowrap">Hauslast</span>
                                     </span>
                                     <span class="material-symbols-rounded text-sm text-amber-500/60 dark:text-amber-300/60 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all shrink-0">show_chart</span>
                                 </div>
-                                <p id="dash_load_power" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2.5">2,1 kW</p>
-                                <p id="dash_load_status" class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1.5 truncate">Aktueller Hausverbrauch</p>
+                                <p id="dash_load_power" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2">2,1 kW</p>
+                                <div class="mt-1.5 space-y-0.5">
+                                    <p id="dash_load_status" class="text-xs sm:text-sm font-extrabold text-amber-800 dark:text-amber-200 font-mono tabular-nums leading-tight">4,25 kWh heute</p>
+                                    <p id="dash_load_sub2" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">Hausverbrauch · AC</p>
+                                </div>
                             </div>
-                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3.5">
+                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3">
                                 <div id="dash_load_bar" class="h-full rounded-full bg-amber-500 transition-all duration-500" style="width: 42%"></div>
                             </div>
                         </div>
 
                         <!-- Kachel 3: Batteriespeicher (z. B. BYD HVS+) -->
-                        <div onclick="openLiveCurveFocus('battery')" role="button" tabindex="0" title="Antippen für Batterie-Ladezustand & Leistungsverlauf" class="dash-tile-bat rounded-[22px] p-4 flex flex-col justify-between min-h-[140px] transition-all cursor-pointer group hover:ring-2 hover:ring-purple-400/45 active:scale-[0.99]">
+                        <div onclick="openLiveCurveFocus('battery')" role="button" tabindex="0" title="Antippen für Batterie-Ladezustand & Leistungsverlauf" class="dash-tile-bat rounded-[22px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[146px] transition-all cursor-pointer group hover:ring-2 hover:ring-purple-400/45 active:scale-[0.99]">
                             <div>
-                                <div class="flex items-center justify-between gap-1.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                <div class="flex items-center justify-between gap-1 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200">
                                     <span class="flex items-center gap-1.5 min-w-0">
                                         <span class="material-symbols-rounded text-purple-600 dark:text-purple-400 text-lg sm:text-xl shrink-0">battery_5_bar</span>
                                         <span id="dash_bat_title" class="truncate">BYD HVS+</span>
                                     </span>
                                     <span class="material-symbols-rounded text-sm text-purple-500/60 dark:text-purple-300/60 group-hover:text-purple-300 group-hover:translate-x-0.5 transition-all shrink-0">show_chart</span>
                                 </div>
-                                <p id="dash_bat_soc" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2.5">8,4 %</p>
-                                <p id="dash_bat_status" class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1.5 truncate">Ruhe / Standby</p>
+                                <p id="dash_bat_soc" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2">8,4 %</p>
+                                <div class="mt-1.5 space-y-0.5">
+                                    <p id="dash_bat_status" class="text-xs sm:text-sm font-extrabold text-purple-800 dark:text-purple-200 font-mono tabular-nums leading-tight">0 W · Standby</p>
+                                    <p id="dash_bat_sub2" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 font-mono tabular-nums leading-tight">↑ 0,0 · ↓ 0,0 kWh</p>
+                                </div>
                             </div>
-                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3.5">
+                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3">
                                 <div id="dash_bat_bar" class="h-full rounded-full bg-purple-400 transition-all duration-500" style="width: 9%"></div>
                             </div>
                         </div>
 
-                        <!-- Kachel 4: Netz · Bezug / Einspeisung -->
-                        <div onclick="openLiveCurveFocus('grid')" role="button" tabindex="0" title="Antippen für Netzbezug- & Einspeise-Verlaufskurve" class="dash-tile-grid rounded-[22px] p-4 flex flex-col justify-between min-h-[140px] transition-all cursor-pointer group hover:ring-2 hover:ring-blue-400/45 active:scale-[0.99]">
+                        <!-- Kachel 4: Stromnetz -->
+                        <div onclick="openLiveCurveFocus('grid')" role="button" tabindex="0" title="Antippen für Netzbezug- & Einspeise-Verlaufskurve" class="dash-tile-grid rounded-[22px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[146px] transition-all cursor-pointer group hover:ring-2 hover:ring-blue-400/45 active:scale-[0.99]">
                             <div>
-                                <div class="flex items-center justify-between gap-1.5 text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200">
+                                <div class="flex items-center justify-between gap-1 text-xs sm:text-sm font-bold text-slate-700 dark:text-slate-200">
                                     <span class="flex items-center gap-1.5 min-w-0">
                                         <span class="material-symbols-rounded text-blue-600 dark:text-blue-400 text-lg sm:text-xl shrink-0">cell_tower</span>
-                                        <span class="leading-tight truncate">Netz · Bezug / Einspeisung</span>
+                                        <span class="whitespace-nowrap">Stromnetz</span>
                                     </span>
                                     <span class="material-symbols-rounded text-sm text-blue-500/60 dark:text-blue-300/60 group-hover:text-blue-300 group-hover:translate-x-0.5 transition-all shrink-0">show_chart</span>
                                 </div>
                                 <p id="dash_grid_power" class="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white font-mono tabular-nums tracking-tight mt-2">1,48 kW</p>
-                                <p id="dash_grid_status" class="text-xs sm:text-sm text-slate-600 dark:text-slate-300 mt-1.5 truncate">Bezug aus dem Netz</p>
+                                <div class="mt-1.5 space-y-0.5">
+                                    <p id="dash_grid_status" class="text-xs sm:text-sm font-extrabold text-blue-800 dark:text-blue-200 font-mono tabular-nums leading-tight">3,56 kWh Bezug</p>
+                                    <p id="dash_grid_sub2" class="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight">0,00 kWh Einspeisung</p>
+                                </div>
                             </div>
-                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3.5">
+                            <div class="w-full h-1.5 rounded-full bg-slate-300/70 dark:bg-slate-700/70 overflow-hidden mt-3">
                                 <div id="dash_grid_bar" class="h-full rounded-full bg-blue-500 transition-all duration-500" style="width: 30%"></div>
                             </div>
                         </div>
@@ -1526,7 +1538,7 @@
                 <div class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
                     <div class="flex items-center justify-between gap-2">
                         <div>
-                            <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">Performance-Übersicht</h2>
+                            <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Performance</h2>
                             <p class="text-xs text-slate-500 dark:text-slate-400">Reale Anlagendaten im Abgleich mit deiner PVGIS-Prognose</p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
@@ -1571,7 +1583,7 @@
                         <div>
                             <div class="flex items-center gap-2 flex-wrap">
                                 <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">account_tree</span>
-                                <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">Sankey-Energiefluss</h3>
+                                <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Energiefluss</h3>
                                 <button type="button" onclick="openHaConfigModal('counters')" class="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer">
                                     <span class="material-symbols-rounded text-xs">electric_meter</span>
                                     <span>Zähler (kWh total)</span>
@@ -2745,20 +2757,40 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterieleistung (+ Laden / - Entladen)</label>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie · Ladezustand SoC (%)</label>
                                 <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="sensor.battery_power" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_power', unitFilter: 'power', title: 'Batterieleistung (W / kW)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_soc', unitFilter: 'soc', title: 'Batterie · Ladezustand SoC (%)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-purple-600 dark:text-purple-300 mb-1">Batterie · Ladeleistung (W / kW)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_power" placeholder="sensor.battery_power_charging" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_chg_power', unitFilter: 'power', title: 'Batterie · Ladeleistung (W / kW)' })" class="px-2.5 py-2 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Ladeleistungs-Sensor auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-purple-600 dark:text-purple-300 mb-1">Batterie · Entladeleistung (W / kW)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_power" placeholder="sensor.battery_power_discharging" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_power', unitFilter: 'power', title: 'Batterie · Entladeleistung (W / kW)' })" class="px-2.5 py-2 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Entladeleistungs-Sensor auswählen">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
                                     </button>
                                 </div>
                             </div>
                             <div class="sm:col-span-2">
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie · Ladezustand SoC (%)</label>
+                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Optional: Batterie Kombi-Leistung (+/- W, nur falls kein getrennter Lade-/Entladesensor)</label>
                                 <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_soc', unitFilter: 'soc', title: 'Batterie · Ladezustand SoC (%)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="Leer lassen, wenn oben Lade- & Entladeleistung getrennt gewählt sind" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_power', unitFilter: 'power', title: 'Batterie Kombi-Leistung (+/- W)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
                                     </button>
@@ -3072,13 +3104,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V9.0 (6-Schritte-Assistent mit animierter Nav-Pill, Token-sicherer GitHub-Sync, Flackerfreie Charts & PVGIS-Cache) -->
-    <script src="qrcode.client.js?v=9.0"></script>
-    <script src="database.js?v=9.0"></script>
-    <script src="content.js?v=9.0"></script>
-    <script src="app.js?v=9.0"></script>
-    <script src="wiring.js?v=9.0"></script>
-    <script src="dossier.js?v=9.0"></script>
-    <script src="telemetry.js?v=9.0"></script>
+    <!-- MODULARE ARCHITEKTUR V9.1 (Zweizeilige Wert-zuerst Kacheln, 2 Batterie-Sensoren, 1-Wort-Überschriften & Stabile Tages-kWh) -->
+    <script src="qrcode.client.js?v=9.1"></script>
+    <script src="database.js?v=9.1"></script>
+    <script src="content.js?v=9.1"></script>
+    <script src="app.js?v=9.1"></script>
+    <script src="wiring.js?v=9.1"></script>
+    <script src="dossier.js?v=9.1"></script>
+    <script src="telemetry.js?v=9.1"></script>
 </body>
 </html>

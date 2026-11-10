@@ -658,6 +658,8 @@ function loadHaConfig() {
           gridImportPower: '',
           gridExportPower: '',
           batteryPower: 'sensor.battery_power',
+          batteryChargePower: '',
+          batteryDischargePower: '',
           batterySoc: 'sensor.battery_soc',
           pvEnergyToday: 'sensor.pv_energy_today',
           pvEnergyMonth: 'sensor.pv_energy_monthly',
@@ -691,6 +693,8 @@ function loadHaConfig() {
       gridImportPower: '',
       gridExportPower: '',
       batteryPower: 'sensor.battery_power',
+      batteryChargePower: '',
+      batteryDischargePower: '',
       batterySoc: 'sensor.battery_soc',
       pvEnergyToday: 'sensor.pv_energy_today',
       pvEnergyMonth: 'sensor.pv_energy_monthly',
@@ -1101,7 +1105,14 @@ app.all('/api/ha/states', async (req, res) => {
     if (gridPower === null && (gridImportP !== null || gridExportP !== null)) {
       gridPower = (gridImportP || 0) - (gridExportP || 0);
     }
-    let batteryPower = getPower(ent.batteryPower);
+    const batChgP = getPower(ent.batteryChargePower);
+    const batDisP = getPower(ent.batteryDischargePower);
+    let batteryPower = null;
+    if (batChgP !== null || batDisP !== null) {
+      batteryPower = Math.max(0, batChgP || 0) - Math.max(0, batDisP || 0);
+    } else {
+      batteryPower = getPower(ent.batteryPower);
+    }
     let batterySoc = getRaw(ent.batterySoc);
 
     // Map per-string entities (legacy + customStrings)
@@ -1243,6 +1254,9 @@ app.all('/api/ha/history', async (req, res) => {
     if (ent.pvPower) entityKeyMap.push({ key: 'pv_total', entityId: ent.pvPower, type: 'power' });
     if (ent.loadPower) entityKeyMap.push({ key: 'house_load', entityId: ent.loadPower, type: 'power' });
     if (ent.gridPower) entityKeyMap.push({ key: 'grid_power', entityId: ent.gridPower, type: 'power' });
+    if (ent.batteryChargePower) entityKeyMap.push({ key: 'battery_charge_power', entityId: ent.batteryChargePower, type: 'power' });
+    if (ent.batteryDischargePower) entityKeyMap.push({ key: 'battery_discharge_power', entityId: ent.batteryDischargePower, type: 'power' });
+    if (ent.batteryPower) entityKeyMap.push({ key: 'battery_power', entityId: ent.batteryPower, type: 'power' });
     if (ent.batterySoc) entityKeyMap.push({ key: 'battery_soc', entityId: ent.batterySoc, type: 'raw' });
 
     customStrings.forEach(cs => {
@@ -1342,6 +1356,14 @@ app.all('/api/ha/history', async (req, res) => {
         integratedKwh[key] = +(whSum / 1000).toFixed(3);
       }
     });
+
+    if (series.battery_charge_power || series.battery_discharge_power) {
+      const chgArr = series.battery_charge_power || new Array(bucketTimes.length).fill(0);
+      const disArr = series.battery_discharge_power || new Array(bucketTimes.length).fill(0);
+      series.battery_power = bucketTimes.map((_, i) => Math.max(0, chgArr[i] || 0) - Math.max(0, disArr[i] || 0));
+      if (typeof integratedKwh.battery_charge_power === 'number') integratedKwh.battery_charge = integratedKwh.battery_charge_power;
+      if (typeof integratedKwh.battery_discharge_power === 'number') integratedKwh.battery_discharge = integratedKwh.battery_discharge_power;
+    }
 
     res.json({
       success: true,

@@ -4,6 +4,45 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.1] – 2026-11-10
+
+### ✨ Zweizeilige Wert-zuerst-Kacheln ohne abgeschnittene Zahlen, 2 Batterie-Leistungssensoren (Laden/Entladen), Kurze 1-Wort-Überschriften & Stabile Tages-kWh ohne Rücksprung auf Total
+
+#### 1. Wert-zuerst & Zweizeiler-Layout auf allen Status- und Kurven-Kacheln (Kein Abschneiden des zweiten Werts)
+* **2×2 Live-Dashboard-Kacheln (`#live-hub-view` / `renderLiveCockpitUI`):**
+  - Die Sekundärzeile unter dem Haupt-Watt-/SoC-Wert ist nun **zweizeilig** aufgebaut, wobei der **Zahlenwert immer an erster Stelle** steht:
+    - **PV gesamt:** Zeile 1 `0,80 kWh · Heute` | Zeile 2 `Erzeugung · 2 Strings aktiv`
+    - **Hauslast:** Zeile 1 `4,25 kWh · Heute` | Zeile 2 `Grund- & Direktlast`
+    - **BYD HVS+:** Zeile 1 `Laden · 1.240 W` / `Entladen · 420 W` / `Standby · 0 W` | Zeile 2 `↑ 3,4 kWh · ↓ 2,1 kWh`
+    - **Stromnetz:** Zeile 1 `7 W Bezug` / `450 W Einspeisung` | Zeile 2 `↓ 3,56 kWh · ↑ 1,20 kWh`
+  - Zusätzlich wurde das `home_bolt`-Icon auf der Hauslast-Kachel durch das universelle `home`-Symbol ersetzt, damit die Schriftart auf Smartphones niemals zwei getrennte Icons (`home` + `_` + `bolt`) rendert und den Titel verdrängt.
+* **Messkanal-Kacheln unter dem Tagesdiagramm (`#dash_curve_tiles_grid` / `renderIntradayCurveSection`):**
+  - Auch auf Ebene 2 zeigen alle Kacheln unter dem Hauptwert ein zweizeiliges Wert-zuerst-Layout: Zeile 1 prominent `15,32 kWh · Heute` (bzw. `↑ 3,4 · ↓ 2,1 kWh` bei Batterie), Zeile 2 `Max 231 W` (bzw. `Min 10 % · Max 88 %` beim SoC).
+
+#### 2. Zwei separate Batterie-Sensoren für Ladeleistung & Entladeleistung
+* **Getrennte Entitätsfelder im Home-Assistant-Setup (`#modal-ha-config`):**
+  - Neben dem optionalen Kombi-Sensor gibt es nun zwei dedizierte Felder mit **`Wählen`**-Sensor-Picker:
+    - **`Batterie · Ladeleistung (W / kW)`** (`ha_ent_bat_chg_power` / `entities.batteryChargePower`)
+    - **`Batterie · Entladeleistung (W / kW)`** (`ha_ent_bat_dis_power` / `entities.batteryDischargePower`)
+* **Automatische Netto-Berechnung & 24h-Kurven-Integration (`telemetry.js` & `server.js`):**
+  - Aus beiden Sensoren wird sowohl im Live-Dashboard als auch im 24h-Tagesverlauf die vorzeichenrichtige Batterieleistung (`+Laden` / `-Entladen`) sowie die integrierte Tages-Lade- und Entlade-Energie (`↑ kWh` / `↓ kWh`) berechnet.
+
+#### 3. Kurze, einzeilige 1-Wort-Überschriften auf Smartphones
+* **Kompakte Header- & Hub-Titel (`index.html` & `app.js`):**
+  - Alle Bereichs- und Kartenüberschriften wurden auf prägnante **1-Wort-Titel** mit `whitespace-nowrap` gekürzt, damit sie auf keinem Smartphone-Display mehr zweizeilig umbrechen:
+    - Top-Header (`#headerViewTitle`): **`Live`**, **`Analyse`**, **`Planung`**, **`Tagesverlauf`**, **`Soll-Ist`**, **`Effizienz`**, **`Amortisation`**, **`Logbuch`** sowie **`1/6 · Hardware`** bis **`6/6 · Ergebnis`**.
+    - Hub-Karten: **`Performance`** (statt *Performance & Analyse*), **`Energiefluss`** (statt *Energiefluss · Sankey*) und **`Planung`** (statt *PV-Planung · 6-Schritte-Assistent*).
+
+#### 4. Stabile Tages-Erzeugung (`Heute kWh`) ohne Rücksprung auf `Total`
+* **Einheiten-sichere 00:00-Uhr-Baseline & Sonnenaufgangs-Erkennung (`syncEnergyCounterBaselinesFromHaHistory` / `resolveEnergyCounterDelta`):**
+  - Behebung der Ursache, durch die `total_increasing`-Gesamtzähler nach dem History-Sync oder bei einem Sensor in `Wh` auf den `Total`-Zählerstand zurücksprangen:
+    1. Vor der Auswertung von `/api/history/period` (welches bei `no_attributes` keine Einheiten liefert) wird die exakte Einheit (`Wh`, `kWh`, `MWh`) und `state_class` jedes Zählers aus der Live-`statesMap` (`/api/states`) bestimmt.
+    2. Die History-Abfrage sucht ab `00:00` Uhr den **ersten gültigen numerischen Messwert des Tages** – auch dann, wenn ein Wechselrichter nachts im Standby (`unavailable`) war und erst bei Sonnenaufgang den ersten Zählerstand meldet.
+    3. Ein automatisches Schema-Upgrade (`schemaVersion: '9.1'`) bereinigt alte, unskalierte Baselines im Browser-Speicher.
+    4. Solange für einen kumulativen Gesamtzähler noch keine gültige 00:00-Baseline vorliegt oder eine Differenz unplausibel groß ist (`> 250 kWh/Tag`), gibt `resolveEnergyCounterDelta` niemals den `Total`-Wert zurück, sondern fällt sauber auf die **Trapez-Integration der heutigen Watt-Kurve** (`intradaySeriesState.integratedKwh`) zurück.
+
+---
+
 ## [Version 9.0] – 2026-11-10
 
 ### ✨ Theme-gerechte Kurven-Kacheln, Flackerfreie Charts, Top-5 Verbraucher, Smartphone Zurück-Wischen, Token-freier GitHub-Sync, Persistenter PVGIS-Cache & 6-Schritte-Planungsassistent mit Morphing-Pill

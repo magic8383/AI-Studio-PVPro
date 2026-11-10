@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.0 (Theme-gerechte Kurven-Kacheln in Hell/Dunkel, Flackerfreie Chart-Updates, Top-5 Verbraucher mit Aufklapp-Funktion, Smartphone Zurück-Wischen von Ebene 2 auf Ebene 1, Token-freies GitHub/Server-Speichern inkl. HA-Sensoren & PVGIS-Cache, Geführter 6-Schritte-Planungsassistent mit animierter Bottom-Pill-Navigation & 4-Punkte-Menü)  
+**Aktuelle Version:** 9.1 (Zweizeilige Wert-zuerst-Kacheln ohne abgeschnittene Zahlen, Separate Batterie-Lade-/Entladeleistungs-Sensoren, Kurze 1-Wort-Überschriften für Smartphone-Einzeiligkeit & Stabile Tages-kWh-Berechnung ohne Rücksprung auf Total)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

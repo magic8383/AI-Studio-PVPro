@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.0)
-// Flackerfreie Chart.js In-Place-Updates, Light/Dark Kanal-Kacheln, Top-5
-// Verbraucher-Ausklappung & Token-sichere GitHub-Projekt-Synchronisation
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.1)
+// Zweizeilige Wert-zuerst Kacheln, 2 separate Batterie-Sensoren (Lade/Entlade),
+// 1-Wort-Überschriften & Einheitensichere Tages-kWh ohne Zurückspringen auf Total
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -30,9 +30,11 @@ let haConfigState = {
         gridPower: 'sensor.grid_power',
         gridImportPower: '',
         gridExportPower: '',
+        batteryChargePower: '',
+        batteryDischargePower: '',
         batteryPower: 'sensor.battery_power',
         batterySoc: 'sensor.battery_soc',
-        pvEnergyToday: 'sensor.pv_energy_today',
+        pvEnergyToday: '',
         pvEnergyMonth: 'sensor.pv_energy_monthly',
         pvEnergyTotal: 'sensor.pv_energy_total',
         gridImportMonth: 'sensor.grid_import_monthly',
@@ -47,11 +49,14 @@ let haConfigState = {
 };
 
 let discoveredHaSensors = [];
+let lastKnownHaUnitMap = new Map(); // entity_id -> unit_of_measurement (populated from /api/states)
+let lastKnownHaStateClassMap = new Map(); // entity_id -> state_class
 let liveTelemetryTimer = null;
 let intradayHistoryTimer = null;
 
 // Baseline cache for computing Today & Month deltas from total_increasing kWh counters without HA helpers
 let energyCounterBaselines = {
+    schemaVersion: '9.1',
     dayKey: '',
     monthKey: '',
     dayStartByEntity: {},
@@ -549,10 +554,12 @@ function loadEnergyCounterBaselines() {
         const raw = localStorage.getItem('pvpro_energy_counter_baselines');
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object') {
+            // Only reuse cached baselines if schemaVersion is '9.1' (clears any unscaled Wh baselines from v9.0)
+            if (parsed && typeof parsed === 'object' && parsed.schemaVersion === '9.1') {
                 energyCounterBaselines = {
-                    dayKey: parsed.dayKey === keys.dayKey ? keys.dayKey : keys.dayKey,
-                    monthKey: parsed.monthKey === keys.monthKey ? keys.monthKey : keys.monthKey,
+                    schemaVersion: '9.1',
+                    dayKey: keys.dayKey,
+                    monthKey: keys.monthKey,
                     dayStartByEntity: parsed.dayKey === keys.dayKey ? (parsed.dayStartByEntity || {}) : {},
                     monthStartByEntity: parsed.monthKey === keys.monthKey ? (parsed.monthStartByEntity || {}) : {},
                     lastHistorySyncMs: parsed.dayKey === keys.dayKey ? (parsed.lastHistorySyncMs || 0) : 0
@@ -562,46 +569,145 @@ function loadEnergyCounterBaselines() {
         }
     } catch (e) {}
     energyCounterBaselines = {
+        schemaVersion: '9.1',
         dayKey: keys.dayKey,
         monthKey: keys.monthKey,
         dayStartByEntity: {},
         monthStartByEntity: {},
         lastHistorySyncMs: 0
     };
+    saveEnergyCounterBaselines();
 }
 
 function saveEnergyCounterBaselines() {
     try {
+        energyCounterBaselines.schemaVersion = '9.1';
         localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines));
     } catch (e) {}
 }
 
-function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap) {
+function isEntityCumulativeTotal(entityId, statesMap = null, forceCumulative = false) {
+    if (forceCumulative) return true;
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return false;
+    const st = statesMap ? statesMap.get(cleanId) : null;
+    const friendly = String(st?.attributes?.friendly_name || '').toLowerCase();
+    const idLower = cleanId.toLowerCase();
+    const stateClass = String(st?.attributes?.state_class || lastKnownHaStateClassMap.get(cleanId) || '').toLowerCase();
+
+    // If sensor explicitly says "today", "heute", "daily", "tag", "tagesertrag", it resets daily
+    const isExplicitDaily = /\b(today|heute|daily|tag|tages|tagesertrag|day)\b/i.test(`${idLower} ${friendly}`);
+    if (isExplicitDaily && !/\b(total|gesamt|lifetime)\b/i.test(`${idLower} ${friendly}`)) {
+        return false;
+    }
+
+    if (stateClass === 'total_increasing' || stateClass === 'total') {
+        return true;
+    }
+    if (/\b(total|gesamt|sum|lifetime|month|monat|year|jahr|import|export|charged|discharged)\b/i.test(`${idLower} ${friendly}`)) {
+        return true;
+    }
+    return false;
+}
+
+function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options = {}) {
     if (currentValKwh === null || currentValKwh === undefined || isNaN(currentValKwh)) return null;
     const cleanId = String(entityId || '').trim();
     if (!cleanId) return currentValKwh;
 
-    const baseVal = baselineMap?.[cleanId];
+    const { isCumulative = false, maxPlausibleKwh = null } = options;
+    let baseVal = baselineMap?.[cleanId];
+
+    // Auto-heal if a legacy baseline was stored in Wh while currentValKwh is in kWh
+    if (baseVal !== undefined && baseVal !== null && !isNaN(baseVal) && currentValKwh > 0 && baseVal > currentValKwh * 150) {
+        baseVal = +(baseVal / 1000).toFixed(3);
+        baselineMap[cleanId] = baseVal;
+        saveEnergyCounterBaselines();
+    }
+
     if (baseVal === undefined || baseVal === null || isNaN(baseVal)) {
-        // If no history baseline is recorded yet and value looks like a daily/monthly counter (< 150 kWh), return as-is;
-        // if it looks like a large lifetime counter (> 150 kWh), record current reading as initial anchor until history arrives
-        if (currentValKwh > 150) {
-            baselineMap[cleanId] = currentValKwh;
+        // If no 00:00 history baseline is available yet:
+        // Never return the raw total of a cumulative counter! Anchor it now and return null so power-integration is shown until history arrives.
+        if (isCumulative || (maxPlausibleKwh !== null && currentValKwh > maxPlausibleKwh) || currentValKwh > 60) {
+            baselineMap[cleanId] = +currentValKwh.toFixed(3);
+            saveEnergyCounterBaselines();
+            return null;
+        }
+        return +Math.max(0, currentValKwh).toFixed(3);
+    }
+
+    // If sensor is cumulative (total_increasing / total) or has a non-zero start-of-period reading
+    if (isCumulative || baseVal > 0.05) {
+        if (currentValKwh >= baseVal) {
+            const delta = +Math.max(0, currentValKwh - baseVal).toFixed(3);
+            if (maxPlausibleKwh !== null && delta > maxPlausibleKwh) {
+                // Guard against uninitialized baseline (e.g. baseline was 0 on a lifetime counter)
+                baselineMap[cleanId] = +currentValKwh.toFixed(3);
+                saveEnergyCounterBaselines();
+                return null;
+            }
+            return delta;
+        } else {
+            // Current value is smaller than baseline (e.g. counter reset at midnight or unit change)
+            if (!isCumulative && currentValKwh < 15) {
+                baselineMap[cleanId] = 0;
+                saveEnergyCounterBaselines();
+                return +Math.max(0, currentValKwh).toFixed(3);
+            }
+            baselineMap[cleanId] = +currentValKwh.toFixed(3);
             saveEnergyCounterBaselines();
             return 0;
         }
-        return +currentValKwh.toFixed(3);
     }
 
-    // If sensor is a lifetime total_increasing counter (baseline > 0.05 and current >= baseline), return the delta!
-    // If sensor already resets at midnight/month-start (baseline ~ 0 or current < baseline), return current value directly.
-    if (baseVal > 0.05 && currentValKwh >= baseVal) {
-        return +Math.max(0, currentValKwh - baseVal).toFixed(3);
+    // For a daily-resetting sensor (baseVal ~ 0):
+    if (maxPlausibleKwh !== null && currentValKwh > maxPlausibleKwh) {
+        baselineMap[cleanId] = +currentValKwh.toFixed(3);
+        saveEnergyCounterBaselines();
+        return null;
     }
     return +Math.max(0, currentValKwh).toFixed(3);
 }
 
-async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
+function getEnergyScaleForEntity(entityId, statesMap = null) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return 1;
+    let unit = '';
+    if (statesMap && statesMap.has(cleanId)) {
+        unit = String(statesMap.get(cleanId)?.attributes?.unit_of_measurement || '').trim().toLowerCase();
+    }
+    if (!unit && lastKnownHaUnitMap.has(cleanId)) {
+        unit = String(lastKnownHaUnitMap.get(cleanId) || '').trim().toLowerCase();
+    }
+    if (!unit) {
+        const found = discoveredHaSensors.find(s => s.entity_id === cleanId);
+        if (found) unit = String(found.unit || '').trim().toLowerCase();
+    }
+    if (unit === 'wh') return 0.001;
+    if (unit === 'mwh') return 1000;
+    return 1;
+}
+
+function getPowerScaleForEntity(entityId, statesMap = null) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return 1;
+    let unit = '';
+    if (statesMap && statesMap.has(cleanId)) {
+        unit = String(statesMap.get(cleanId)?.attributes?.unit_of_measurement || '').trim().toLowerCase();
+    }
+    if (!unit && lastKnownHaUnitMap.has(cleanId)) {
+        unit = String(lastKnownHaUnitMap.get(cleanId) || '').trim().toLowerCase();
+    }
+    if (!unit) {
+        const found = discoveredHaSensors.find(s => s.entity_id === cleanId);
+        if (found) unit = String(found.unit || '').trim().toLowerCase();
+    }
+    if (unit === 'kw') return 1000;
+    if (unit === 'mw') return 1000000;
+    return 1;
+}
+
+async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
     const keys = getTodayAndMonthKeys();
     if (energyCounterBaselines.dayKey !== keys.dayKey) {
         energyCounterBaselines.dayKey = keys.dayKey;
@@ -632,16 +738,17 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
     const allHaveBaselines = uniqueEntities.every(
         id => energyCounterBaselines.dayStartByEntity[id] !== undefined && energyCounterBaselines.monthStartByEntity[id] !== undefined
     );
-    if (allHaveBaselines && (Date.now() - (energyCounterBaselines.lastHistorySyncMs || 0) < 15 * 60 * 1000)) {
+    if (allHaveBaselines && (Date.now() - (energyCounterBaselines.lastHistorySyncMs || 0) < 10 * 60 * 1000)) {
         return;
     }
 
-    const extractPeriodStartReading = (entityHistoryArr, periodStartMs, unitMap) => {
+    const extractPeriodStartReading = (entityHistoryArr, periodStartMs) => {
         if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return null;
         const entId = entityHistoryArr[0]?.entity_id;
-        const scale = unitMap.get(entId) || 1;
-        const windowEndMs = periodStartMs + 45 * 60 * 1000;
+        const scale = getEnergyScaleForEntity(entId, statesMap);
+        const windowEndMs = periodStartMs + 90 * 60 * 1000;
         let minEarlyVal = null;
+        let firstPositiveVal = null;
         let firstValidVal = null;
 
         for (let i = 0; i < entityHistoryArr.length; i++) {
@@ -650,33 +757,27 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
             if (isNaN(rawNum) || rawNum < 0) continue;
             const val = rawNum * scale;
             if (firstValidVal === null) firstValidVal = val;
+            if (val > 0 && firstPositiveVal === null) firstPositiveVal = val;
             const ts = new Date(pt.last_changed || pt.last_updated || periodStartMs).getTime();
             if (ts <= windowEndMs) {
                 if (minEarlyVal === null || val < minEarlyVal) minEarlyVal = val;
-            } else if (minEarlyVal !== null) {
-                break;
             }
         }
-        return minEarlyVal !== null ? minEarlyVal : firstValidVal;
+        if (minEarlyVal !== null && minEarlyVal > 0) return minEarlyVal;
+        if (firstPositiveVal !== null) return firstPositiveVal;
+        return firstValidVal;
     };
-
-    const unitScaleByEntity = new Map();
-    discoveredHaSensors.forEach(s => {
-        const u = String(s.unit || '').toLowerCase();
-        if (u === 'wh') unitScaleByEntity.set(s.entity_id, 0.001);
-        else if (u === 'mwh') unitScaleByEntity.set(s.entity_id, 1000);
-    });
 
     try {
         const filterParam = encodeURIComponent(uniqueEntities.join(','));
-        const dayEndIso = new Date(new Date(keys.startOfDayIso).getTime() + 2 * 3600000).toISOString();
-        const monthEndIso = new Date(new Date(keys.startOfMonthIso).getTime() + 6 * 3600000).toISOString();
+        const nowIso = new Date().toISOString();
+        const monthEndIso = new Date(Math.min(Date.now(), new Date(keys.startOfMonthIso).getTime() + 24 * 3600000)).toISOString();
 
         const [dayHistRes, monthHistRes] = await Promise.all([
             fetchHaDirectFromBrowser(
                 cfg.baseUrl,
                 cfg.accessToken,
-                `/api/history/period/${encodeURIComponent(keys.startOfDayIso)}?end_time=${encodeURIComponent(dayEndIso)}&filter_entity_id=${filterParam}&minimal_response&no_attributes`
+                `/api/history/period/${encodeURIComponent(keys.startOfDayIso)}?end_time=${encodeURIComponent(nowIso)}&filter_entity_id=${filterParam}&minimal_response&no_attributes`
             ),
             fetchHaDirectFromBrowser(
                 cfg.baseUrl,
@@ -689,9 +790,13 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
         if (dayHistRes.ok && Array.isArray(dayHistRes.data)) {
             dayHistRes.data.forEach(arr => {
                 const entId = arr?.[0]?.entity_id;
-                const val = extractPeriodStartReading(arr, dayStartMs, unitScaleByEntity);
+                const val = extractPeriodStartReading(arr, dayStartMs);
                 if (entId && val !== null) {
-                    energyCounterBaselines.dayStartByEntity[entId] = +val.toFixed(3);
+                    const existing = energyCounterBaselines.dayStartByEntity[entId];
+                    // Always prefer the earliest/lowest start-of-day reading over a later mid-day anchor
+                    if (existing === undefined || existing === null || val <= existing) {
+                        energyCounterBaselines.dayStartByEntity[entId] = +val.toFixed(3);
+                    }
                 }
             });
         }
@@ -700,9 +805,12 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
         if (monthHistRes.ok && Array.isArray(monthHistRes.data)) {
             monthHistRes.data.forEach(arr => {
                 const entId = arr?.[0]?.entity_id;
-                const val = extractPeriodStartReading(arr, monthStartMs, unitScaleByEntity);
+                const val = extractPeriodStartReading(arr, monthStartMs);
                 if (entId && val !== null) {
-                    energyCounterBaselines.monthStartByEntity[entId] = +val.toFixed(3);
+                    const existing = energyCounterBaselines.monthStartByEntity[entId];
+                    if (existing === undefined || existing === null || val <= existing) {
+                        energyCounterBaselines.monthStartByEntity[entId] = +val.toFixed(3);
+                    }
                 }
             });
         }
@@ -714,11 +822,16 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
 
 function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
     if (!entityId || typeof entityId !== 'string') return null;
-    const st = statesMap.get(entityId.trim());
+    const cleanId = entityId.trim();
+    if (!cleanId) return null;
+    const st = statesMap.get(cleanId);
     if (!st || st.state === 'unavailable' || st.state === 'unknown' || st.state === null || st.state === undefined) return null;
     const val = parseFloat(String(st.state).replace(',', '.'));
     if (isNaN(val)) return null;
     const unit = String(st.attributes?.unit_of_measurement || '').trim().toLowerCase();
+    if (unit) lastKnownHaUnitMap.set(cleanId, unit);
+    if (st.attributes?.state_class) lastKnownHaStateClassMap.set(cleanId, st.attributes.state_class);
+
     if (targetUnitType === 'W') {
         if (unit === 'kw') return val * 1000;
         if (unit === 'mw') return val * 1000000;
@@ -729,11 +842,33 @@ function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
     return val;
 }
 
-function parseHaStatesInBrowser(statesArray, cfg) {
-    const statesMap = new Map();
-    statesArray.forEach(s => {
-        if (s && s.entity_id) statesMap.set(s.entity_id, s);
-    });
+function pickExistingHaEntityId(statesMap, candidates = []) {
+    for (const cand of candidates) {
+        const id = String(cand.id || '').trim();
+        if (!id) continue;
+        const val = extractHaNumericClient(statesMap, id, 'kWh');
+        if (val !== null) {
+            return { id, val, forceCumulative: Boolean(cand.forceCumulative) };
+        }
+    }
+    return { id: '', val: null, forceCumulative: false };
+}
+
+function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
+    const statesMap = prebuiltStatesMap || new Map();
+    if (!prebuiltStatesMap) {
+        statesArray.forEach(s => {
+            if (s && s.entity_id) {
+                statesMap.set(s.entity_id, s);
+                const u = String(s.attributes?.unit_of_measurement || '').trim().toLowerCase();
+                if (u) lastKnownHaUnitMap.set(s.entity_id, u);
+                if (s.attributes?.state_class) lastKnownHaStateClassMap.set(s.entity_id, s.attributes.state_class);
+            }
+        });
+    }
+
+    const baseline = getPlannedSystemBaseline();
+    const maxPlausibleDailyPvKwh = Math.max(80, (baseline.totalKwp || 15) * 9.5);
 
     const e = cfg.entities || {};
     const pvPowerW = extractHaNumericClient(statesMap, e.pvPower, 'W');
@@ -745,31 +880,102 @@ function parseHaStatesInBrowser(statesArray, cfg) {
         gridPowerW = (gridImpW || 0) - (gridExpW || 0);
     }
 
-    const batteryPowerW = extractHaNumericClient(statesMap, e.batteryPower, 'W');
+    // Support 2 separate battery power sensors (Ladeleistung W & Entladeleistung W) + optional combined sensor
+    const batChgPowerW = extractHaNumericClient(statesMap, e.batteryChargePower, 'W');
+    const batDisPowerW = extractHaNumericClient(statesMap, e.batteryDischargePower, 'W');
+    const batCombinedPowerW = extractHaNumericClient(statesMap, e.batteryPower, 'W');
+    let batteryPowerW = null;
+    if (batChgPowerW !== null || batDisPowerW !== null) {
+        batteryPowerW = Math.max(0, batChgPowerW || 0) - Math.max(0, batDisPowerW || 0);
+    } else if (batCombinedPowerW !== null) {
+        batteryPowerW = batCombinedPowerW;
+    }
+
     const batterySocPct = extractHaNumericClient(statesMap, e.batterySoc, '%');
 
-    // Read raw kWh counter states (works with both total_increasing lifetime counters and daily/monthly counters)
-    const primaryPvCounterId = (e.pvEnergyMonth || e.pvEnergyTotal || e.pvEnergyToday || '').trim();
-    const todayPvCounterId = (e.pvEnergyToday || e.pvEnergyMonth || e.pvEnergyTotal || '').trim();
-    const rawPvTodayReading = extractHaNumericClient(statesMap, todayPvCounterId, 'kWh');
-    const rawPvMonthReading = extractHaNumericClient(statesMap, primaryPvCounterId, 'kWh');
+    // Pick first available PV energy sensor for Today and for Month
+    const todayPvPick = pickExistingHaEntityId(statesMap, [
+        { id: e.pvEnergyToday, forceCumulative: false },
+        { id: e.pvEnergyMonth, forceCumulative: true },
+        { id: e.pvEnergyTotal, forceCumulative: true }
+    ]);
+    const monthPvPick = pickExistingHaEntityId(statesMap, [
+        { id: e.pvEnergyMonth, forceCumulative: true },
+        { id: e.pvEnergyTotal, forceCumulative: true },
+        { id: e.pvEnergyToday, forceCumulative: false }
+    ]);
+
     const rawGridImpReading = extractHaNumericClient(statesMap, e.gridImportMonth, 'kWh');
     const rawGridExpReading = extractHaNumericClient(statesMap, e.gridExportMonth, 'kWh');
     const rawBatChgReading = extractHaNumericClient(statesMap, e.batteryChargeMonth, 'kWh');
     const rawBatDisReading = extractHaNumericClient(statesMap, e.batteryDischargeMonth, 'kWh');
 
-    // Compute Today (seit 00:00) and Month (seit 1. des Monats) deltas automatically
-    const pvEnergyTodayKwh = resolveEnergyCounterDelta(todayPvCounterId, rawPvTodayReading, energyCounterBaselines.dayStartByEntity);
-    const gridImportTodayKwh = resolveEnergyCounterDelta(e.gridImportMonth, rawGridImpReading, energyCounterBaselines.dayStartByEntity);
-    const gridExportTodayKwh = resolveEnergyCounterDelta(e.gridExportMonth, rawGridExpReading, energyCounterBaselines.dayStartByEntity);
-    const batteryChargeTodayKwh = resolveEnergyCounterDelta(e.batteryChargeMonth, rawBatChgReading, energyCounterBaselines.dayStartByEntity);
-    const batteryDischargeTodayKwh = resolveEnergyCounterDelta(e.batteryDischargeMonth, rawBatDisReading, energyCounterBaselines.dayStartByEntity);
+    // Compute Today (seit 00:00) deltas – never returns raw Total counter!
+    const pvEnergyTodayKwh = resolveEnergyCounterDelta(
+        todayPvPick.id,
+        todayPvPick.val,
+        energyCounterBaselines.dayStartByEntity,
+        {
+            isCumulative: isEntityCumulativeTotal(todayPvPick.id, statesMap, todayPvPick.forceCumulative),
+            maxPlausibleKwh: maxPlausibleDailyPvKwh
+        }
+    );
+    const gridImportTodayKwh = resolveEnergyCounterDelta(
+        e.gridImportMonth,
+        rawGridImpReading,
+        energyCounterBaselines.dayStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.gridImportMonth, statesMap, true), maxPlausibleKwh: 180 }
+    );
+    const gridExportTodayKwh = resolveEnergyCounterDelta(
+        e.gridExportMonth,
+        rawGridExpReading,
+        energyCounterBaselines.dayStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.gridExportMonth, statesMap, true), maxPlausibleKwh: maxPlausibleDailyPvKwh }
+    );
+    const batteryChargeTodayKwh = resolveEnergyCounterDelta(
+        e.batteryChargeMonth,
+        rawBatChgReading,
+        energyCounterBaselines.dayStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.batteryChargeMonth, statesMap, true), maxPlausibleKwh: 120 }
+    );
+    const batteryDischargeTodayKwh = resolveEnergyCounterDelta(
+        e.batteryDischargeMonth,
+        rawBatDisReading,
+        energyCounterBaselines.dayStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.batteryDischargeMonth, statesMap, true), maxPlausibleKwh: 120 }
+    );
 
-    const pvEnergyMonthKwh = resolveEnergyCounterDelta(primaryPvCounterId, rawPvMonthReading, energyCounterBaselines.monthStartByEntity);
-    const gridImportMonthKwh = resolveEnergyCounterDelta(e.gridImportMonth, rawGridImpReading, energyCounterBaselines.monthStartByEntity);
-    const gridExportMonthKwh = resolveEnergyCounterDelta(e.gridExportMonth, rawGridExpReading, energyCounterBaselines.monthStartByEntity);
-    const batteryChargeMonthKwh = resolveEnergyCounterDelta(e.batteryChargeMonth, rawBatChgReading, energyCounterBaselines.monthStartByEntity);
-    const batteryDischargeMonthKwh = resolveEnergyCounterDelta(e.batteryDischargeMonth, rawBatDisReading, energyCounterBaselines.monthStartByEntity);
+    // Compute Month (seit 1. des Monats) deltas
+    const pvEnergyMonthKwh = resolveEnergyCounterDelta(
+        monthPvPick.id,
+        monthPvPick.val,
+        energyCounterBaselines.monthStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(monthPvPick.id, statesMap, monthPvPick.forceCumulative) }
+    );
+    const gridImportMonthKwh = resolveEnergyCounterDelta(
+        e.gridImportMonth,
+        rawGridImpReading,
+        energyCounterBaselines.monthStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.gridImportMonth, statesMap, true) }
+    );
+    const gridExportMonthKwh = resolveEnergyCounterDelta(
+        e.gridExportMonth,
+        rawGridExpReading,
+        energyCounterBaselines.monthStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.gridExportMonth, statesMap, true) }
+    );
+    const batteryChargeMonthKwh = resolveEnergyCounterDelta(
+        e.batteryChargeMonth,
+        rawBatChgReading,
+        energyCounterBaselines.monthStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.batteryChargeMonth, statesMap, true) }
+    );
+    const batteryDischargeMonthKwh = resolveEnergyCounterDelta(
+        e.batteryDischargeMonth,
+        rawBatDisReading,
+        energyCounterBaselines.monthStartByEntity,
+        { isCumulative: isEntityCumulativeTotal(e.batteryDischargeMonth, statesMap, true) }
+    );
 
     const stringTelemetry = {};
     const customStringsTelemetry = [];
@@ -778,7 +984,15 @@ function parseHaStatesInBrowser(statesArray, cfg) {
             if (!cs || !cs.id) return;
             const pW = extractHaNumericClient(statesMap, cs.powerEntity, 'W');
             const rawStrKwh = extractHaNumericClient(statesMap, cs.energyEntity, 'kWh');
-            const eKwh = resolveEnergyCounterDelta(cs.energyEntity, rawStrKwh, energyCounterBaselines.dayStartByEntity);
+            const eKwh = resolveEnergyCounterDelta(
+                cs.energyEntity,
+                rawStrKwh,
+                energyCounterBaselines.dayStartByEntity,
+                {
+                    isCumulative: isEntityCumulativeTotal(cs.energyEntity, statesMap, false),
+                    maxPlausibleKwh: maxPlausibleDailyPvKwh
+                }
+            );
             stringTelemetry[cs.id] = {
                 powerW: pW !== null ? pW : 0,
                 energyKwh: eKwh,
@@ -836,6 +1050,8 @@ function parseHaStatesInBrowser(statesArray, cfg) {
         loadPowerW: Math.round(loadPowerW || 0),
         gridPowerW: Math.round(gridPowerW || 0),
         batteryPowerW: Math.round(batteryPowerW || 0),
+        batteryChargePowerW: Math.round(batChgPowerW !== null ? Math.max(0, batChgPowerW) : Math.max(0, batteryPowerW || 0)),
+        batteryDischargePowerW: Math.round(batDisPowerW !== null ? Math.max(0, batDisPowerW) : Math.max(0, -(batteryPowerW || 0))),
         batterySocPct,
         pvEnergyTodayKwh,
         gridImportTodayKwh,
@@ -958,6 +1174,8 @@ async function fetchHaHistoryInBrowser(cfg) {
     if (e.gridPower) entitySet.add(e.gridPower.trim());
     if (e.gridImportPower) entitySet.add(e.gridImportPower.trim());
     if (e.gridExportPower) entitySet.add(e.gridExportPower.trim());
+    if (e.batteryChargePower) entitySet.add(e.batteryChargePower.trim());
+    if (e.batteryDischargePower) entitySet.add(e.batteryDischargePower.trim());
     if (e.batteryPower) entitySet.add(e.batteryPower.trim());
     if (e.batterySoc) entitySet.add(e.batterySoc.trim());
     (cfg.customStrings || []).forEach(cs => {
@@ -983,19 +1201,12 @@ async function fetchHaHistoryInBrowser(cfg) {
         bucketTimes.push(now.getTime());
     }
 
-    const unitScaleByEntity = new Map();
-    discoveredHaSensors.forEach(s => {
-        const u = String(s.unit || '').toLowerCase();
-        if (u === 'kw') unitScaleByEntity.set(s.entity_id, 1000);
-        else if (u === 'mw') unitScaleByEntity.set(s.entity_id, 1000000);
-    });
-
     const rawSeriesByEntity = new Map();
     histRes.data.forEach(entityHistoryArr => {
         if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return;
         const entId = entityHistoryArr[0]?.entity_id;
         if (!entId) return;
-        const scale = unitScaleByEntity.get(entId) || 1;
+        const scale = getPowerScaleForEntity(entId, null);
         const points = [];
         entityHistoryArr.forEach(pt => {
             const val = parseFloat(String(pt.state).replace(',', '.'));
@@ -1067,13 +1278,26 @@ async function fetchHaHistoryInBrowser(cfg) {
     integratedKwh.grid_power = integrateKwh(series.grid_power);
     integratedKwh.grid_feedin = integrateKwh(series.grid_feedin);
 
-    const batRaw = sampleEntity(e.batteryPower, 1);
-    series.battery_power = batRaw;
-    const batChgArr = batRaw.map(v => Math.max(0, v));
-    const batDisArr = batRaw.map(v => Math.max(0, -v));
-    integratedKwh.battery_charge = integrateKwh(batChgArr);
-    integratedKwh.battery_discharge = integrateKwh(batDisArr);
-    integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
+    // Dual Battery Power Sensors (Ladeleistung & Entladeleistung) or single signed batteryPower sensor
+    const hasSeparateBatChg = Boolean(e.batteryChargePower && rawSeriesByEntity.has(e.batteryChargePower.trim()));
+    const hasSeparateBatDis = Boolean(e.batteryDischargePower && rawSeriesByEntity.has(e.batteryDischargePower.trim()));
+
+    if (hasSeparateBatChg || hasSeparateBatDis) {
+        const chgArr = hasSeparateBatChg ? sampleEntity(e.batteryChargePower, 1).map(v => Math.max(0, v)) : bucketTimes.map(() => 0);
+        const disArr = hasSeparateBatDis ? sampleEntity(e.batteryDischargePower, 1).map(v => Math.max(0, v)) : bucketTimes.map(() => 0);
+        series.battery_power = bucketTimes.map((_, i) => +((chgArr[i] || 0) - (disArr[i] || 0)).toFixed(2));
+        integratedKwh.battery_charge = integrateKwh(chgArr);
+        integratedKwh.battery_discharge = integrateKwh(disArr);
+        integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
+    } else {
+        const batRaw = sampleEntity(e.batteryPower, 1);
+        series.battery_power = batRaw;
+        const batChgArr = batRaw.map(v => Math.max(0, v));
+        const batDisArr = batRaw.map(v => Math.max(0, -v));
+        integratedKwh.battery_charge = integrateKwh(batChgArr);
+        integratedKwh.battery_discharge = integrateKwh(batDisArr);
+        integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
+    }
 
     series.battery_soc = sampleEntity(e.batterySoc, 1);
 
@@ -1114,9 +1338,6 @@ async function refreshLiveTelemetryNow() {
         return;
     }
 
-    // Ensure today & month start counter baselines are loaded for total_increasing kWh sensors
-    await syncEnergyCounterBaselinesFromHaHistory(haConfigState);
-
     // 1. Try Browser-Direct Home Assistant API first (works on GitHub Pages & local LAN/VPN)
     const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
     if (directRes.ok && Array.isArray(directRes.data)) {
@@ -1124,7 +1345,21 @@ async function refreshLiveTelemetryNow() {
             haConfigState.baseUrl = directRes.usedBaseUrl;
             localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
         }
-        const parsed = parseHaStatesInBrowser(directRes.data, haConfigState);
+
+        // Build statesMap first so unit scaling (Wh/kWh/MWh) & state_class are known before syncing 00:00 history baselines!
+        const statesMap = new Map();
+        directRes.data.forEach(s => {
+            if (s && s.entity_id) {
+                statesMap.set(s.entity_id, s);
+                const u = String(s.attributes?.unit_of_measurement || '').trim().toLowerCase();
+                if (u) lastKnownHaUnitMap.set(s.entity_id, u);
+                if (s.attributes?.state_class) lastKnownHaStateClassMap.set(s.entity_id, s.attributes.state_class);
+            }
+        });
+
+        await syncEnergyCounterBaselinesFromHaHistory(haConfigState, statesMap);
+
+        const parsed = parseHaStatesInBrowser(directRes.data, haConfigState, statesMap);
         currentLiveTelemetry = {
             ...currentLiveTelemetry,
             ...parsed,
@@ -1142,6 +1377,9 @@ async function refreshLiveTelemetryNow() {
         return;
     }
 
+    // Ensure today & month start counter baselines are loaded for fallback backend path
+    await syncEnergyCounterBaselinesFromHaHistory(haConfigState, null);
+
     // 2. Fallback to backend /api/ha/states (when running with Node.js server.js)
     const backendRes = await safeFetchBackendJson('/api/ha/states', {
         method: 'POST',
@@ -1155,6 +1393,7 @@ async function refreshLiveTelemetryNow() {
         const e = haConfigState.entities || {};
         const primaryPvCounterId = (e.pvEnergyMonth || e.pvEnergyTotal || e.pvEnergyToday || '').trim();
         const todayPvCounterId = (e.pvEnergyToday || e.pvEnergyMonth || e.pvEnergyTotal || '').trim();
+        const maxPlausibleDailyPvKwh = Math.max(80, (baseline.totalKwp || 15) * 9.5);
 
         currentLiveTelemetry = {
             updatedAt: data.updatedAt || new Date().toISOString(),
@@ -1163,16 +1402,19 @@ async function refreshLiveTelemetryNow() {
             gridPowerW: Math.round(t.gridPowerW || 0),
             batteryPowerW: Math.round(t.batteryPowerW || 0),
             batterySocPct: t.batterySocPct !== null && t.batterySocPct !== undefined ? +(Number(t.batterySocPct).toFixed(1)) : (baseline.totalBatteryKwh > 0 ? 50 : null),
-            pvEnergyTodayKwh: resolveEnergyCounterDelta(todayPvCounterId, t.pvEnergyTodayKwh ?? t.pvEnergyMonthKwh, energyCounterBaselines.dayStartByEntity),
-            gridImportTodayKwh: resolveEnergyCounterDelta(e.gridImportMonth, t.gridImportMonthKwh, energyCounterBaselines.dayStartByEntity),
-            gridExportTodayKwh: resolveEnergyCounterDelta(e.gridExportMonth, t.gridExportMonthKwh, energyCounterBaselines.dayStartByEntity),
-            batteryChargeTodayKwh: resolveEnergyCounterDelta(e.batteryChargeMonth, t.batteryChargeMonthKwh, energyCounterBaselines.dayStartByEntity),
-            batteryDischargeTodayKwh: resolveEnergyCounterDelta(e.batteryDischargeMonth, t.batteryDischargeMonthKwh, energyCounterBaselines.dayStartByEntity),
-            pvEnergyMonthKwh: resolveEnergyCounterDelta(primaryPvCounterId, t.pvEnergyMonthKwh, energyCounterBaselines.monthStartByEntity),
-            gridImportMonthKwh: resolveEnergyCounterDelta(e.gridImportMonth, t.gridImportMonthKwh, energyCounterBaselines.monthStartByEntity),
-            gridExportMonthKwh: resolveEnergyCounterDelta(e.gridExportMonth, t.gridExportMonthKwh, energyCounterBaselines.monthStartByEntity),
-            batteryChargeMonthKwh: resolveEnergyCounterDelta(e.batteryChargeMonth, t.batteryChargeMonthKwh, energyCounterBaselines.monthStartByEntity),
-            batteryDischargeMonthKwh: resolveEnergyCounterDelta(e.batteryDischargeMonth, t.batteryDischargeMonthKwh, energyCounterBaselines.monthStartByEntity),
+            pvEnergyTodayKwh: resolveEnergyCounterDelta(todayPvCounterId, t.pvEnergyTodayKwh ?? t.pvEnergyMonthKwh, energyCounterBaselines.dayStartByEntity, {
+                isCumulative: !e.pvEnergyToday || isEntityCumulativeTotal(todayPvCounterId, null, false),
+                maxPlausibleKwh: maxPlausibleDailyPvKwh
+            }),
+            gridImportTodayKwh: resolveEnergyCounterDelta(e.gridImportMonth, t.gridImportMonthKwh, energyCounterBaselines.dayStartByEntity, { isCumulative: true, maxPlausibleKwh: 180 }),
+            gridExportTodayKwh: resolveEnergyCounterDelta(e.gridExportMonth, t.gridExportMonthKwh, energyCounterBaselines.dayStartByEntity, { isCumulative: true, maxPlausibleKwh: maxPlausibleDailyPvKwh }),
+            batteryChargeTodayKwh: resolveEnergyCounterDelta(e.batteryChargeMonth, t.batteryChargeMonthKwh, energyCounterBaselines.dayStartByEntity, { isCumulative: true, maxPlausibleKwh: 120 }),
+            batteryDischargeTodayKwh: resolveEnergyCounterDelta(e.batteryDischargeMonth, t.batteryDischargeMonthKwh, energyCounterBaselines.dayStartByEntity, { isCumulative: true, maxPlausibleKwh: 120 }),
+            pvEnergyMonthKwh: resolveEnergyCounterDelta(primaryPvCounterId, t.pvEnergyMonthKwh, energyCounterBaselines.monthStartByEntity, { isCumulative: true }),
+            gridImportMonthKwh: resolveEnergyCounterDelta(e.gridImportMonth, t.gridImportMonthKwh, energyCounterBaselines.monthStartByEntity, { isCumulative: true }),
+            gridExportMonthKwh: resolveEnergyCounterDelta(e.gridExportMonth, t.gridExportMonthKwh, energyCounterBaselines.monthStartByEntity, { isCumulative: true }),
+            batteryChargeMonthKwh: resolveEnergyCounterDelta(e.batteryChargeMonth, t.batteryChargeMonthKwh, energyCounterBaselines.monthStartByEntity, { isCumulative: true }),
+            batteryDischargeMonthKwh: resolveEnergyCounterDelta(e.batteryDischargeMonth, t.batteryDischargeMonthKwh, energyCounterBaselines.monthStartByEntity, { isCumulative: true }),
             stringTelemetry: data.stringTelemetry || {},
             customStringsTelemetry: Array.isArray(data.customStringsTelemetry) ? data.customStringsTelemetry : [],
             consumersTelemetry: Array.isArray(data.consumersTelemetry) ? data.consumersTelemetry : [],
@@ -1596,23 +1838,29 @@ function renderLiveCockpitUI(baseline) {
         }
     }
 
-    // 2. Render "Energie · jetzt" 2x2 Interactive Status Tiles
+    // 2. Render "Energie · jetzt" 2x2 Interactive Status Tiles (Value-First 2-Line Subblock -> Never Truncated!)
     const maxPvRefW = Math.max(1500, baseline.totalKwp * 1000);
     const pvBarPct = Math.min(100, Math.max(t.pvPowerW > 0 ? 4 : 0, Math.round((t.pvPowerW / maxPvRefW) * 100)));
     setElText('dash_pv_power', formatPowerDe(t.pvPowerW, t.pvPowerW < 1000));
-    const pvTodayVal = t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 0;
-    const pvSubText = `${t.pvPowerW > 15 ? 'Erzeugung' : 'Standby'} · Heute ${formatKwhDe(pvTodayVal, 2)}`;
-    setElText('dash_pv_status', pvSubText);
-    setElText('dash_pv_sub', pvSubText);
+    const pvTodayVal = (t.pvEnergyTodayKwh !== null && t.pvEnergyTodayKwh !== undefined)
+        ? t.pvEnergyTodayKwh
+        : (intKwh.pv_total ?? 0);
+    const pvLine1 = `${formatKwhDe(pvTodayVal, 2)} heute`;
+    const pvLine2 = t.pvPowerW > 15 ? 'Erzeugung aktiv' : 'Standby · DC';
+    setElText('dash_pv_status', pvLine1);
+    setElText('dash_pv_sub2', pvLine2);
+    setElText('dash_pv_sub', `${pvLine1} · ${pvLine2}`);
     const pvBar = document.getElementById('dash_pv_bar');
     if (pvBar) pvBar.style.width = `${pvBarPct}%`;
 
     const loadBarPct = Math.min(100, Math.max(6, Math.round((t.loadPowerW / 5000) * 100)));
     setElText('dash_load_power', formatPowerDe(t.loadPowerW));
     const loadTodayVal = intKwh.house_load ?? 0;
-    const loadSubText = loadTodayVal > 0 ? `Hauslast · Heute ${formatKwhDe(loadTodayVal, 2)}` : 'Aktueller Hausverbrauch';
-    setElText('dash_load_status', loadSubText);
-    setElText('dash_load_sub', loadSubText);
+    const loadLine1 = `${formatKwhDe(loadTodayVal, 2)} heute`;
+    const loadLine2 = 'Hausverbrauch · AC';
+    setElText('dash_load_status', loadLine1);
+    setElText('dash_load_sub2', loadLine2);
+    setElText('dash_load_sub', `${loadLine1} · ${loadLine2}`);
     const loadBar = document.getElementById('dash_load_bar');
     if (loadBar) loadBar.style.width = `${loadBarPct}%`;
 
@@ -1624,23 +1872,44 @@ function renderLiveCockpitUI(baseline) {
         : '—';
     setElText('dash_bat_soc', socFormatted);
 
-    let batSub = 'Ruhe / Standby';
-    if (t.batteryPowerW > 25) batSub = `Lädt · +${formatPowerDe(t.batteryPowerW)}`;
-    else if (t.batteryPowerW < -25) batSub = `Entlädt · ${formatPowerDe(Math.abs(t.batteryPowerW))}`;
-    setElText('dash_bat_status', batSub);
-    setElText('dash_bat_sub', batSub);
+    let batLine1 = '0 W · Standby';
+    if (t.batteryPowerW > 15) batLine1 = `+${formatPowerDe(t.batteryPowerW, true)} · Lädt`;
+    else if (t.batteryPowerW < -15) batLine1 = `−${formatPowerDe(Math.abs(t.batteryPowerW), true)} · Entlädt`;
+    const batChgToday = (t.batteryChargeTodayKwh !== null && t.batteryChargeTodayKwh !== undefined)
+        ? t.batteryChargeTodayKwh
+        : (intKwh.battery_charge ?? 0);
+    const batDisToday = (t.batteryDischargeTodayKwh !== null && t.batteryDischargeTodayKwh !== undefined)
+        ? t.batteryDischargeTodayKwh
+        : (intKwh.battery_discharge ?? 0);
+    const batLine2 = `↑ ${batChgToday.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · ↓ ${batDisToday.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kWh`;
+    setElText('dash_bat_status', batLine1);
+    setElText('dash_bat_sub2', batLine2);
+    setElText('dash_bat_sub', `${batLine1} · ${batLine2}`);
     const batBar = document.getElementById('dash_bat_bar');
     if (batBar) batBar.style.width = `${Math.min(100, Math.max(4, socNum))}%`;
 
     const absGridW = Math.abs(t.gridPowerW || 0);
     const gridBarPct = Math.min(100, Math.max(absGridW > 10 ? 5 : 0, Math.round((absGridW / 5000) * 100)));
     setElText('dash_grid_power', formatPowerDe(absGridW));
-    const gridImpToday = t.gridImportTodayKwh ?? intKwh.grid_power ?? 0;
-    let gridSub = gridImpToday > 0 ? `Ausgeglichen · ${formatKwhDe(gridImpToday, 2)}` : 'Netz ausgeglichen';
-    if (t.gridPowerW > 15) gridSub = `Bezug · Heute ${formatKwhDe(gridImpToday, 2)}`;
-    else if (t.gridPowerW < -15) gridSub = `Einspeisung · ${formatPowerDe(absGridW)}`;
-    setElText('dash_grid_status', gridSub);
-    setElText('dash_grid_sub', gridSub);
+    const gridImpToday = (t.gridImportTodayKwh !== null && t.gridImportTodayKwh !== undefined)
+        ? t.gridImportTodayKwh
+        : (intKwh.grid_power ?? 0);
+    const gridExpToday = (t.gridExportTodayKwh !== null && t.gridExportTodayKwh !== undefined)
+        ? t.gridExportTodayKwh
+        : (intKwh.grid_feedin ?? 0);
+
+    let gridLine1 = `${formatKwhDe(gridImpToday, 2)} Bezug`;
+    let gridLine2 = `↑ ${formatKwhDe(gridExpToday, 2)} Einsp.`;
+    if (t.gridPowerW < -15) {
+        gridLine1 = `${formatKwhDe(gridExpToday, 2)} Einsp.`;
+        gridLine2 = `↓ ${formatKwhDe(gridImpToday, 2)} Bezug`;
+    } else if (t.gridPowerW > 15) {
+        gridLine1 = `${formatKwhDe(gridImpToday, 2)} Bezug`;
+        gridLine2 = `Netzbezug aktiv`;
+    }
+    setElText('dash_grid_status', gridLine1);
+    setElText('dash_grid_sub2', gridLine2);
+    setElText('dash_grid_sub', `${gridLine1} · ${gridLine2}`);
     const gridBar = document.getElementById('dash_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
 
@@ -1859,6 +2128,8 @@ function getAvailableCurveDefinitions() {
             unit: 'W',
             category: 'pv',
             liveDisplay: formatPowerDe(liveW, true),
+            subLine1: `${formatKwhDe(kwhVal, 2)} heute`,
+            subLine2: `${formatPowerDe(peakW, true)} Max`,
             subDisplay: `${formatKwhDe(kwhVal, 2)} · Max ${formatPowerDe(peakW, true)}`
         });
     });
@@ -1876,6 +2147,8 @@ function getAvailableCurveDefinitions() {
         unit: 'W',
         category: 'pv',
         liveDisplay: formatPowerDe(t.pvPowerW, t.pvPowerW < 1000),
+        subLine1: `${formatKwhDe(pvTotalKwh, 2)} heute`,
+        subLine2: `${formatPowerDe(pvPeakW, true)} Max`,
         subDisplay: `${formatKwhDe(pvTotalKwh, 2)} · Max ${formatPowerDe(pvPeakW, true)}`
     });
 
@@ -1884,12 +2157,14 @@ function getAvailableCurveDefinitions() {
     const loadPeakW = Math.max(t.loadPowerW || 0, peaks.house_load || 0);
     defs.push({
         key: 'house_load',
-        name: 'Hausverbrauch · AC',
+        name: 'Hauslast · AC',
         color: '#f472b6',
         axis: 'yPower',
         unit: 'W',
         category: 'load',
         liveDisplay: formatPowerDe(t.loadPowerW),
+        subLine1: `${formatKwhDe(loadKwh, 2)} heute`,
+        subLine2: `${formatPowerDe(loadPeakW, true)} Max`,
         subDisplay: `${formatKwhDe(loadKwh, 2)} · Max ${formatPowerDe(loadPeakW, true)}`
     });
 
@@ -1907,6 +2182,8 @@ function getAvailableCurveDefinitions() {
         unit: 'W',
         category: 'grid',
         liveDisplay: formatPowerDe(gridImportLive),
+        subLine1: `${formatKwhDe(gridImportKwh, 2)} heute`,
+        subLine2: `${formatPowerDe(gridImpPeakW, true)} Max`,
         subDisplay: `${formatKwhDe(gridImportKwh, 2)} · Max ${formatPowerDe(gridImpPeakW, true)}`
     });
 
@@ -1924,15 +2201,21 @@ function getAvailableCurveDefinitions() {
         unit: 'W',
         category: 'grid',
         liveDisplay: formatPowerDe(gridExportLive),
+        subLine1: `${formatKwhDe(gridExportKwh, 2)} heute`,
+        subLine2: `${formatPowerDe(gridExpPeakW, true)} Max`,
         subDisplay: `${formatKwhDe(gridExportKwh, 2)} · Max ${formatPowerDe(gridExpPeakW, true)}`
     });
 
     // 6. Batterie · Leistung (W)
     const batName = haConfigState.batteryName || 'Batterie';
     const batLiveW = t.batteryPowerW || 0;
-    const batChgKwh = t.batteryChargeTodayKwh ?? intKwh.battery_charge ?? 0;
-    const batDisKwh = t.batteryDischargeTodayKwh ?? intKwh.battery_discharge ?? 0;
-    const batLiveSign = batLiveW > 20 ? '+' : (batLiveW < -20 ? '−' : '');
+    const batChgKwh = (t.batteryChargeTodayKwh !== null && t.batteryChargeTodayKwh !== undefined)
+        ? t.batteryChargeTodayKwh
+        : (intKwh.battery_charge ?? 0);
+    const batDisKwh = (t.batteryDischargeTodayKwh !== null && t.batteryDischargeTodayKwh !== undefined)
+        ? t.batteryDischargeTodayKwh
+        : (intKwh.battery_discharge ?? 0);
+    const batLiveSign = batLiveW > 15 ? '+' : (batLiveW < -15 ? '−' : '');
     defs.push({
         key: 'battery_power',
         name: `${batName} · Leistung`,
@@ -1941,6 +2224,8 @@ function getAvailableCurveDefinitions() {
         unit: 'W',
         category: 'battery',
         liveDisplay: `${batLiveSign}${formatPowerDe(Math.abs(batLiveW), true)}`,
+        subLine1: `↑ ${formatKwhDe(batChgKwh, 2)} Ladung`,
+        subLine2: `↓ ${formatKwhDe(batDisKwh, 2)} Entl.`,
         subDisplay: `↑${formatKwhDe(batChgKwh, 1)} · ↓${formatKwhDe(batDisKwh, 1)}`
     });
 
@@ -1957,6 +2242,8 @@ function getAvailableCurveDefinitions() {
         unit: '%',
         category: 'battery',
         liveDisplay: `${socVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`,
+        subLine1: `${minSoc.toFixed(0)} % Minimum`,
+        subLine2: `${maxSoc.toFixed(0)} % Maximum`,
         subDisplay: `Min ${minSoc.toFixed(0)}% · Max ${maxSoc.toFixed(0)}%`
     });
 
@@ -1978,6 +2265,8 @@ function getAvailableCurveDefinitions() {
             unit: 'W',
             category: 'consumer',
             liveDisplay: formatPowerDe(liveW, true),
+            subLine1: `${formatKwhDe(cKwh, 2)} heute`,
+            subLine2: `${formatPowerDe(cPeakW, true)} Max`,
             subDisplay: `${formatKwhDe(cKwh, 2)} · Max ${formatPowerDe(cPeakW, true)}`
         });
     });
@@ -2099,7 +2388,10 @@ function renderIntradayCurveSection(baseline) {
                     <p class="text-sm sm:text-base font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
                     <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isActive ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}">${isActive ? 'AN' : 'AUS'}</span>
                 </div>
-                <p class="text-[10px] ${isActive ? 'text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'} font-mono tabular-nums truncate mt-0.5">${d.subDisplay}</p>
+                <div class="mt-1 space-y-0.5 font-mono tabular-nums">
+                    <p class="text-[11px] font-bold ${isActive ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-tight">${d.subLine1 || d.subDisplay}</p>
+                    <p class="text-[10px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-tight">${d.subLine2 || ''}</p>
+                </div>
             </div>`;
         }).join('');
     }
@@ -3432,6 +3724,8 @@ function openHaConfigModal(focusSection = null) {
     setElVal('ha_ent_pv_power', ent.pvPower || '');
     setElVal('ha_ent_load_power', ent.loadPower || '');
     setElVal('ha_ent_grid_power', ent.gridPower || '');
+    setElVal('ha_ent_bat_chg_power', ent.batteryChargePower || '');
+    setElVal('ha_ent_bat_dis_power', ent.batteryDischargePower || '');
     setElVal('ha_ent_bat_power', ent.batteryPower || '');
     setElVal('ha_ent_bat_soc', ent.batterySoc || '');
     setElVal('ha_ent_pv_today', ent.pvEnergyToday || '');
@@ -3680,9 +3974,12 @@ function readHaModalIntoState() {
     haConfigState.batteryName = (document.getElementById('ha_cfg_bat_name')?.value || 'BYD HVS+').trim();
 
     haConfigState.entities = {
+        ...haConfigState.entities,
         pvPower: (document.getElementById('ha_ent_pv_power')?.value || '').trim(),
         loadPower: (document.getElementById('ha_ent_load_power')?.value || '').trim(),
         gridPower: (document.getElementById('ha_ent_grid_power')?.value || '').trim(),
+        batteryChargePower: (document.getElementById('ha_ent_bat_chg_power')?.value || '').trim(),
+        batteryDischargePower: (document.getElementById('ha_ent_bat_dis_power')?.value || '').trim(),
         batteryPower: (document.getElementById('ha_ent_bat_power')?.value || '').trim(),
         batterySoc: (document.getElementById('ha_ent_bat_soc')?.value || '').trim(),
         pvEnergyToday: (document.getElementById('ha_ent_pv_today')?.value || '').trim(),

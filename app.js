@@ -159,7 +159,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 9.0';
+        if (verEl) verEl.innerText = 'Pro 9.1';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -1149,7 +1149,7 @@ function restoreCachedSimulationResult(simObj = null) {
 
 function exportFullConfiguration() {
     return {
-        version: '9.0',
+        version: '9.1',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],
@@ -1882,18 +1882,18 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
 }
 
 // ==========================================
-// 2.1 SMARTPHONE SWIPE-BACK (HISTORY API) & 6-STEP PLANNING WIZARD (V9.0)
+// 2.1 SMARTPHONE SWIPE-BACK (HISTORY API) & 6-STEP PLANNING WIZARD (V9.1)
 // ==========================================
 let _suppressHistoryPush = false;
 let currentPlanningWizardStep = 1;
 
 const PLANNING_WIZARD_STEPS = [
-    { step: 1, tabIds: ['database'], title: 'Schritt 1/6 · Standort & Hardware-Pool', subtitle: 'Ebene 2 · Standort, Wechselrichter, Module & Speicher wählen', nextLabel: 'Strings' },
-    { step: 2, tabIds: ['system'], title: 'Schritt 2/6 · Dach-Strings & MPPT', subtitle: 'Ebene 2 · Strings anlegen, Dachneigung, Azimut & Verschattung', nextLabel: 'DC-Kabel' },
-    { step: 3, tabIds: ['verkabelung'], title: 'Schritt 3/6 · DC-Verkabelung & VDE 0100-712', subtitle: 'Ebene 2 · Modulfelder, Leap-Frog & Leitungsverluste', nextLabel: 'Verbrauch' },
-    { step: 4, tabIds: ['verbrauch'], title: 'Schritt 4/6 · Verbrauch, WP & E-Auto', subtitle: 'Ebene 2 · Haushaltslast, Wärmepumpe, Klima & Smart-Charging', nextLabel: 'Kosten' },
-    { step: 5, tabIds: ['invest', 'finance'], title: 'Schritt 5/6 · Investition, Stromtarif & EEG', subtitle: 'Ebene 2 · Angebotskosten, Strompreis & Einspeisevergütung', nextLabel: '8.760h Start' },
-    { step: 6, tabIds: ['uebersicht', 'auswertung'], title: 'Schritt 6/6 · 8.760h Prognose & VDE-Dossier', subtitle: 'Ebene 2 · PVGIS-Simulation, Autarkie, Cashflow & Druck-Dossier', nextLabel: 'Fertig' }
+    { step: 1, tabIds: ['database'], title: '1/6 · Hardware', subtitle: 'Ebene 2 · Standort, Wechselrichter, Module & Speicher wählen', nextLabel: 'Strings' },
+    { step: 2, tabIds: ['system'], title: '2/6 · Strings', subtitle: 'Ebene 2 · Strings anlegen, Dachneigung, Azimut & Verschattung', nextLabel: 'DC-Kabel' },
+    { step: 3, tabIds: ['verkabelung'], title: '3/6 · Verkabelung', subtitle: 'Ebene 2 · Modulfelder, Leap-Frog & Leitungsverluste', nextLabel: 'Verbrauch' },
+    { step: 4, tabIds: ['verbrauch'], title: '4/6 · Verbrauch', subtitle: 'Ebene 2 · Haushaltslast, Wärmepumpe, Klima & Smart-Charging', nextLabel: 'Kosten' },
+    { step: 5, tabIds: ['invest', 'finance'], title: '5/6 · Finanzen', subtitle: 'Ebene 2 · Angebotskosten, Strompreis & Einspeisevergütung', nextLabel: '8.760h Start' },
+    { step: 6, tabIds: ['uebersicht', 'auswertung'], title: '6/6 · Ergebnis', subtitle: 'Ebene 2 · PVGIS-Simulation, Autarkie, Cashflow & Druck-Dossier', nextLabel: 'Fertig' }
 ];
 
 function pushAppNavHistoryState(section, level, detailId = '') {
@@ -2079,8 +2079,8 @@ function openLiveDrillDown(detailKey = 'intraday') {
     pushAppNavHistoryState('live', 2, detailKey);
 
     updateTwoRowHeader(
-        'Tagesverlauf & Kurven (00:00 – jetzt)',
-        'Ebene 2 · Solar & Netz · live · Interaktive String- & Batteriekurven',
+        'Tagesverlauf',
+        'Ebene 2 · Solar & Netz · 00:00 – jetzt · Interaktive Kurven',
         'show_chart',
         2,
         'Zurück zu Live'
@@ -2110,14 +2110,14 @@ function openAnalyseDrillDown(subTab = 'soll-ist') {
     pushAppNavHistoryState('analyse', 2, subTab);
 
     const titles = {
-        'soll-ist': 'Soll-Ist-Vergleich (PVGIS vs. Real)',
-        'autarkie-bat': 'Autarkie & Batterie-Effizienz',
-        'amortisation': 'Reale Amortisation & €-Bilanz',
-        'logbuch': 'Monats-Logbuch & HA-Zähler'
+        'soll-ist': 'Soll-Ist',
+        'autarkie-bat': 'Effizienz',
+        'amortisation': 'Amortisation',
+        'logbuch': 'Logbuch'
     };
 
     updateTwoRowHeader(
-        titles[subTab] || 'Performance-Detailanalyse',
+        titles[subTab] || 'Analyse',
         'Ebene 2 · Sankey & Performance-Analyse',
         'monitoring',
         2,
@@ -2221,7 +2221,7 @@ function switchTab(tabId) {
         document.getElementById('live-hub-view')?.classList.remove('hidden');
         document.getElementById('live-detail-intraday')?.classList.add('hidden');
         updateTwoRowHeader(
-            'Solar & Netz · live',
+            'Live',
             'Ebene 1 · Echtzeit-Status & Top-5 Einzelverbraucher',
             'cell_tower',
             1
@@ -2232,7 +2232,7 @@ function switchTab(tabId) {
         document.getElementById('analyse-hub-view')?.classList.remove('hidden');
         document.getElementById('analyse-detail-view')?.classList.add('hidden');
         updateTwoRowHeader(
-            'Sankey & Performance-Analyse',
+            'Analyse',
             'Ebene 1 · Energiefluss (Heute/Monat/Jahr) & Jahres-KPIs',
             'monitoring',
             1
@@ -2242,8 +2242,8 @@ function switchTab(tabId) {
         currentNavLevel = 1;
         updatePlanungHubCards();
         updateTwoRowHeader(
-            'PV-Planung & Auslegung (6-Schritte-Assistent)',
-            'Ebene 1 · Geführter Engineering-Workflow von Standort bis 8.760h Prognose',
+            'Planung',
+            'Ebene 1 · Geführter 6-Schritte Engineering-Assistent',
             'solar_power',
             1
         );
@@ -2252,10 +2252,10 @@ function switchTab(tabId) {
         currentNavLevel = 2;
         pushAppNavHistoryState('planung', 2, tabId);
         const tabTitles = {
-            faq: 'Handbuch, Hilfe & Changelog'
+            faq: 'Handbuch'
         };
         updateTwoRowHeader(
-            tabTitles[tabId] || 'PV-Planung · Detail',
+            tabTitles[tabId] || 'Planung',
             'Ebene 2 · PV-Planung & Dokumentation',
             'menu_book',
             2,
