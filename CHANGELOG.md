@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.6] – 2026-11-10
+
+### ✨ In-Place Full-Bleed Diagramm-Vergrößerung ohne seitliche Achsenskalen (+20 % Platz), Verdeckungsfreie Fadenkreuz-Anzeige, Light/Dark-Mode-Konsistenz & Sofort-Umschalter für Tag/Woche/Monat
+
+#### 1. In-Place Full-Bleed Vergrößerung bis zum Bildschirmrand ohne linke/rechte Achsenskala
+* **Tap auf das Diagramm vergrößert direkt an Ort und Stelle (`toggleIntradayInlineExpand`):**
+  - Ein Antippen/Anklicken der Diagrammfläche (oder des neuen Buttons **„Randlos“** in der Kopfleiste) öffnet nicht mehr das Hochkant-Fullscreen-Popup, sondern dehnt den Diagrammkasten **in-place bis ganz an den linken und rechten Bildschirmrand (`-mx-3 sm:-mx-5`)** aus und erhöht die Diagrammhöhe (`h-60 sm:h-80 md:h-96`).
+  - Gleichzeitig werden die **linke (`W`) und rechte (`%`) Y-Achsen-Skala komplett ausgeblendet** (`yPower.display = false`, `ySoc.display = false`). Dadurch gewinnt die Verlaufskurve sofort über **20 % mehr nutzbare Breite**.
+  - Der gewählte Vergrößerungsmodus bleibt auch beim Wechsel zwischen `Tag`, `Woche` und `Monat` sowie bei Live-Aktualisierungen stabil erhalten (`pvpro_intraday_expanded`).
+  - Das separate Vollbild-/90°-Querformat-Overlay bleibt gezielt über die oberen Buttons **`Vollbild`** und **`90°`** erreichbar.
+
+#### 2. Kein verdeckendes Tooltip-Popup mehr – Präzise Fadenkreuz-Linie + Kopfleisten-Readout
+* **Deaktivierung des schwebenden Chart.js-Popups (`tooltip.enabled = false`):**
+  - Das große dunkle Popup-Rechteck, das beim Berühren der Grafik die Kurven verdeckte, wurde vollständig abgeschaltet.
+* **Custom Crosshair-Plugin (`intradayCrosshairPlugin`):**
+  - Beim Berühren oder Ziehen mit dem Finger/Mauszeiger zeichnet das Diagramm eine feine vertikale Fadenkreuz-Linie samt Punkt-Markierungen auf den aktiven Kurven, während Uhrzeit/Datum und alle exakten Messwerte unverdeckt in der Leiste direkt über dem Diagramm (`#dash_curve_hover_readout`) stehen.
+
+#### 3. Durchgängige Light- & Dark-Mode-Treue (auch in der Vergrößerung & im Vollbild)
+* **Beseitigung des erzwungenen Dark-Modes im Vollbild (`#modal-intraday-fullscreen`):**
+  - Das Vollbild-Overlay und die Kurven-Chips besaßen zuvor hartcodierte dunkle Hintergrundklassen (`bg-slate-950/95`, `bg-[#0b151a]/90`, `text-white`). Sie folgen nun wie die In-Place-Vergrößerung strikt dem aktiven Light- oder Dark-Mode der App.
+
+#### 4. Verzögerungsfreier Tag / Woche / Monat-Umschalter (`intradayHistoryCache` & Preloading)
+* **Sofortiges Button-Feedback (0 ms) & In-Memory-Cache:**
+  - `setIntradayTimeframe()` schaltet den aktiven Button (`Tag` / `Woche` / `Monat`) sofort beim Antippen um.
+  - Einmal geladene Zeiträume werden im Arbeitsspeicher (`intradayHistoryCache`) gehalten und bei erneutem Wechsel in **< 10 ms** sofort dargestellt (Stale-While-Revalidate mit `AbortController` für laufende Abfragen).
+  - Nach dem ersten Laden der Tageskurve werden `Woche` und `Monat` automatisch im Hintergrund vorgeladen (`prewarmOtherTimeframesInBackground()`).
+
+---
+
 ## [Version 9.5] – 2026-11-10
 
 ### ✨ Monatliche Ertrags-Zusammenfassung auf der Analyse-Hauptseite mit automatischem PVGIS-Soll-Ist-Abgleich, taggenauem Pro-Rata-Soll & prozentualer Abweichungsanzeige

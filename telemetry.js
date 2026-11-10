@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.5)
-// Monatliche Ertrags-Zusammenfassung mit Pro-Rata-PVGIS-Soll & %-Abweichung,
-// Zentrale Single Source of Truth, saubere 0-Werte & Zeitraum-Konsistenz
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.6)
+// In-Place Full-Bleed Diagramm ohne seitliche Skalen, Fadenkreuz-Readout,
+// Light/Dark-Mode-Konsistenz & verzögerungsfreier Zeitraum-Cache (Tag/Woche/Monat)
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -92,6 +92,12 @@ let currentLiveTelemetry = {
 let chartIntraday = null;
 let chartIntradayFullscreen = null;
 let isIntradayFsRotated = false;
+let isIntradayChartExpanded = false; // In-Place Full-Bleed mode (edge-to-edge, no left/right scales)
+let activeCrosshairIndex = null;
+let intradayPointerStart = null;
+let intradayHistoryCache = { day: null, week: null, month: null };
+let intradayFetchAbortController = null;
+let hasPrewarmedHistoryTimeframes = false;
 let currentFocusedCurveMode = false;
 let currentFocusedCurveTitle = 'Tagesverlauf · Telemetrie';
 let showAllDashboardConsumers = false;
@@ -147,7 +153,7 @@ function createEmptyYearMonths() {
 }
 
 async function initTelemetryAndAnalysis() {
-    // Load active curve selection from localStorage
+    // Load active curve selection & inline expand preference from localStorage
     try {
         const savedCurves = localStorage.getItem('pvpro_active_curves');
         if (savedCurves) {
@@ -155,6 +161,10 @@ async function initTelemetryAndAnalysis() {
             if (Array.isArray(parsedC) && parsedC.length > 0) {
                 activeCurveKeys = new Set(parsedC);
             }
+        }
+        const savedExpand = localStorage.getItem('pvpro_intraday_expanded');
+        if (savedExpand === '1') {
+            isIntradayChartExpanded = true;
         }
     } catch (e) {}
 
@@ -1097,7 +1107,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
     };
 }
 
-async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/api/states') {
+async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/api/states', externalSignal = null) {
     const cleanUrl = normalizeHaUrlClient(rawBaseUrl);
     const cleanTok = cleanHaTokenClient(rawToken);
     if (!cleanUrl || !cleanTok) {
@@ -1113,10 +1123,16 @@ async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/a
     const diagnostics = [];
 
     for (const candidateBase of candidateUrls) {
+        if (externalSignal && externalSignal.aborted) {
+            return { ok: false, aborted: true, error: 'Abgebrochen', diagnostics };
+        }
         const fullUrl = `${candidateBase}${endpointPath}`;
         try {
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 9000);
+            const timer = setTimeout(() => controller.abort(), 14000);
+            if (externalSignal) {
+                externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
+            }
             const res = await fetch(fullUrl, {
                 method: 'GET',
                 headers: {
@@ -1169,7 +1185,10 @@ async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/a
                 diagnostics: [`Direkte Browser-Verbindung zu ${candidateBase} erfolgreich (HTTP 200 JSON).`]
             };
         } catch (err) {
-            diagnostics.push(`Abruf ${candidateBase}: ${err.name === 'AbortError' ? 'Timeout (9s)' : err.message}`);
+            if (externalSignal && externalSignal.aborted) {
+                return { ok: false, aborted: true, error: 'Abgebrochen', diagnostics };
+            }
+            diagnostics.push(`Abruf ${candidateBase}: ${err.name === 'AbortError' ? 'Timeout (14s)' : err.message}`);
         }
     }
 
@@ -1188,7 +1207,7 @@ async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/a
     };
 }
 
-async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe) {
+async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, externalSignal = null) {
     const now = new Date();
     let startTime;
     let stepMs;
@@ -1226,7 +1245,7 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe) {
     if (entityList.length === 0) return null;
 
     const endpoint = `/api/history/period/${encodeURIComponent(startIso)}?filter_entity_id=${encodeURIComponent(entityList.join(','))}&minimal_response&no_attributes`;
-    const histRes = await fetchHaDirectFromBrowser(cfg.baseUrl, cfg.accessToken, endpoint);
+    const histRes = await fetchHaDirectFromBrowser(cfg.baseUrl, cfg.accessToken, endpoint, externalSignal);
     if (!histRes.ok || !Array.isArray(histRes.data)) return null;
 
     const bucketTimes = [];
@@ -1614,20 +1633,36 @@ function resetToEmptyIntradaySeries() {
     };
 }
 
-async function fetchAndRenderIntradayHistory() {
-    const baseline = getPlannedSystemBaseline();
-    if (!haConfigState.accessToken && haConfigState.mode !== 'webhook') {
-        resetToEmptyIntradaySeries();
-        renderIntradayCurveSection(baseline);
-        return;
+function updateTimeframeButtonsUI(tf = currentCurveTimeframe, isLoading = false) {
+    ['day', 'week', 'month'].forEach(t => {
+        const btn = document.getElementById(`btn-timerange-${t}`);
+        if (btn) {
+            if (t === tf) {
+                btn.className = "px-2.5 py-1 rounded-lg bg-teal-600 text-white shadow-xs transition-all cursor-pointer font-bold";
+            } else {
+                btn.className = "px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer font-bold";
+            }
+        }
+    });
+    if (isLoading) {
+        const rangeEl = document.getElementById('dash_curve_timerange');
+        if (rangeEl) {
+            const labelMap = { day: 'Tagesverlauf', week: '7-Tage-Verlauf', month: '30-Tage-Verlauf' };
+            rangeEl.innerText = `Lade ${labelMap[tf] || 'Verlauf'} aus Home Assistant …`;
+        }
     }
+}
 
-    // 1. Try Browser-Direct Home Assistant History API first (GitHub Pages compatible)
+async function fetchTimeframeDataset(tf, signal = null) {
+    // 1. Try Browser-Direct Home Assistant History API first
     try {
-        const directHist = await fetchHaHistoryInBrowser(haConfigState, currentCurveTimeframe);
+        const directHist = await fetchHaHistoryInBrowser(haConfigState, tf, signal);
+        if (signal && signal.aborted) return null;
         if (directHist && Array.isArray(directHist.bucketTimes) && directHist.bucketTimes.length > 0) {
-            const labels = directHist.bucketTimes.map(ts => formatHistoryBucketLabel(ts, currentCurveTimeframe));
-            intradaySeriesState = {
+            const labels = directHist.bucketTimes.map(ts => formatHistoryBucketLabel(ts, tf));
+            return {
+                timeframe: tf,
+                fetchedAtMs: Date.now(),
                 startOfDayIso: directHist.startOfDay || new Date().toISOString(),
                 nowIso: directHist.now || new Date().toISOString(),
                 labels,
@@ -1636,51 +1671,122 @@ async function fetchAndRenderIntradayHistory() {
                 integratedKwh: directHist.integratedKwh || {},
                 peakValues: directHist.peakValues || {}
             };
-            renderIntradayCurveSection(baseline);
-            return;
         }
     } catch (e) {}
 
-    // 2. Fallback to backend /api/ha/history (safe JSON check)
+    if (signal && signal.aborted) return null;
+
+    // 2. Fallback to backend /api/ha/history
     try {
         const backendRes = await safeFetchBackendJson('/api/ha/history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: haConfigState, range: currentCurveTimeframe })
+            body: JSON.stringify({ config: haConfigState, range: tf }),
+            signal
         });
+        if (signal && signal.aborted) return null;
         const data = backendRes.data;
-
-        if (backendRes.ok && data && data.success) {
-            if (Array.isArray(data.bucketTimes) && data.bucketTimes.length > 0 && data.series) {
-                const labels = data.bucketTimes.map(ts => formatHistoryBucketLabel(ts, currentCurveTimeframe));
-                const peakValues = data.peakValues || {};
-                if (Object.keys(peakValues).length === 0) {
-                    Object.keys(data.series).forEach(k => {
-                        peakValues[k] = (data.series[k] || []).reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
-                    });
-                }
-                intradaySeriesState = {
-                    startOfDayIso: data.startOfDay,
-                    nowIso: data.now,
-                    labels,
-                    bucketTimes: data.bucketTimes,
-                    series: data.series,
-                    integratedKwh: data.integratedKwh || {},
-                    peakValues
-                };
-            } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
-                resetToEmptyIntradaySeries();
+        if (backendRes.ok && data && data.success && Array.isArray(data.bucketTimes) && data.bucketTimes.length > 0 && data.series) {
+            const labels = data.bucketTimes.map(ts => formatHistoryBucketLabel(ts, tf));
+            const peakValues = data.peakValues || {};
+            if (Object.keys(peakValues).length === 0) {
+                Object.keys(data.series).forEach(k => {
+                    peakValues[k] = (data.series[k] || []).reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
+                });
             }
-        } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
-            resetToEmptyIntradaySeries();
+            return {
+                timeframe: tf,
+                fetchedAtMs: Date.now(),
+                startOfDayIso: data.startOfDay,
+                nowIso: data.now,
+                labels,
+                bucketTimes: data.bucketTimes,
+                series: data.series,
+                integratedKwh: data.integratedKwh || {},
+                peakValues
+            };
         }
-    } catch (e) {
-        if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
-            resetToEmptyIntradaySeries();
+    } catch (e) {}
+
+    return null;
+}
+
+function prewarmOtherTimeframesInBackground() {
+    if (hasPrewarmedHistoryTimeframes) return;
+    if (!haConfigState.accessToken && haConfigState.mode !== 'webhook') return;
+    hasPrewarmedHistoryTimeframes = true;
+    setTimeout(async () => {
+        for (const tf of ['week', 'month']) {
+            if (!intradayHistoryCache[tf]) {
+                const ds = await fetchTimeframeDataset(tf, null);
+                if (ds) intradayHistoryCache[tf] = ds;
+            }
         }
+    }, 800);
+}
+
+async function fetchAndRenderIntradayHistory(forceRefresh = false) {
+    const baseline = getPlannedSystemBaseline();
+    const targetTf = currentCurveTimeframe;
+
+    if (!haConfigState.accessToken && haConfigState.mode !== 'webhook') {
+        resetToEmptyIntradaySeries();
+        renderIntradayCurveSection(baseline);
+        return;
     }
 
-    renderIntradayCurveSection(baseline);
+    // Instant render from memory cache if available (Stale-While-Revalidate)
+    const cached = intradayHistoryCache[targetTf];
+    if (cached && Array.isArray(cached.bucketTimes) && cached.bucketTimes.length > 0) {
+        intradaySeriesState = {
+            startOfDayIso: cached.startOfDayIso,
+            nowIso: cached.nowIso,
+            labels: cached.labels,
+            bucketTimes: cached.bucketTimes,
+            series: cached.series,
+            integratedKwh: cached.integratedKwh,
+            peakValues: cached.peakValues
+        };
+        renderIntradayCurveSection(baseline);
+        // For 7d/30d, if cache is younger than 90s and not forced, skip redundant heavy download
+        const maxAgeMs = targetTf === 'day' ? 25000 : 90000;
+        if (!forceRefresh && (Date.now() - (cached.fetchedAtMs || 0)) < maxAgeMs) {
+            return;
+        }
+    } else {
+        updateTimeframeButtonsUI(targetTf, true);
+    }
+
+    if (intradayFetchAbortController) {
+        try { intradayFetchAbortController.abort(); } catch (e) {}
+    }
+    const controller = new AbortController();
+    intradayFetchAbortController = controller;
+
+    const freshDataset = await fetchTimeframeDataset(targetTf, controller.signal);
+    if (controller.signal.aborted) return;
+
+    if (freshDataset) {
+        intradayHistoryCache[targetTf] = freshDataset;
+        if (currentCurveTimeframe === targetTf) {
+            intradaySeriesState = {
+                startOfDayIso: freshDataset.startOfDayIso,
+                nowIso: freshDataset.nowIso,
+                labels: freshDataset.labels,
+                bucketTimes: freshDataset.bucketTimes,
+                series: freshDataset.series,
+                integratedKwh: freshDataset.integratedKwh,
+                peakValues: freshDataset.peakValues
+            };
+            renderIntradayCurveSection(baseline);
+        }
+        if (targetTf === 'day') {
+            prewarmOtherTimeframesInBackground();
+        }
+    } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
+        resetToEmptyIntradaySeries();
+        renderIntradayCurveSection(baseline);
+    }
 }
 
 function formatHistoryBucketLabel(ts, tf = currentCurveTimeframe) {
@@ -1698,7 +1804,10 @@ function formatHistoryBucketLabel(ts, tf = currentCurveTimeframe) {
 function setIntradayTimeframe(tf) {
     if (!['day', 'week', 'month'].includes(tf)) tf = 'day';
     currentCurveTimeframe = tf;
-    fetchAndRenderIntradayHistory();
+    activeCrosshairIndex = null;
+    // Immediate 0ms visual feedback on buttons
+    updateTimeframeButtonsUI(tf, !intradayHistoryCache[tf]);
+    fetchAndRenderIntradayHistory(true);
 }
 
 function setLiveTelemetryMode(newMode) {
@@ -2268,7 +2377,7 @@ function renderIntradayCurveSection(baseline) {
         activeCountBadge.innerText = `${activeCount} / ${defs.length} Kanäle aktiv`;
     }
 
-    // 3. Render Fullscreen Overlay Chips
+    // 3. Render Fullscreen Overlay Chips (Theme-Aware for Light & Dark Mode)
     const buildChipsHtml = () => defs.map(d => {
         const isActive = activeCurveKeys.has(d.key);
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
@@ -2276,10 +2385,10 @@ function renderIntradayCurveSection(baseline) {
         <button type="button" onclick="toggleIntradayCurve('${d.key}')"
             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer select-none whitespace-nowrap shrink-0 ${
                 isActive
-                    ? 'bg-slate-800/95 text-white dark:bg-[#192c34] dark:text-white shadow-2xs ring-1 ring-white/15'
-                    : 'bg-slate-200/50 text-slate-400 dark:bg-slate-900/40 dark:text-slate-500 opacity-45 hover:opacity-75'
+                    ? 'bg-slate-900 text-white dark:bg-[#192c34] dark:text-white shadow-2xs ring-1 ring-slate-900/10 dark:ring-white/15'
+                    : 'bg-slate-200/80 text-slate-500 dark:bg-slate-900/40 dark:text-slate-500 opacity-55 hover:opacity-85'
             }"
-            style="border-left: 3px solid ${isActive ? d.color : '#475569'}">
+            style="border-left: 3px solid ${isActive ? d.color : '#64748b'}">
             <span>${safeName}</span>
         </button>`;
     }).join('');
@@ -2288,6 +2397,9 @@ function renderIntradayCurveSection(baseline) {
     if (chipsEl) chipsEl.innerHTML = buildChipsHtml();
     const fsChipsEl = document.getElementById('fs_curve_legend_chips');
     if (fsChipsEl) fsChipsEl.innerHTML = buildChipsHtml();
+
+    // 3B. Apply In-Place Full-Bleed Expansion State to DOM
+    applyIntradayInlineExpandDOM();
 
     // 4. Render Compact 3-Column Technical Channel Cards Below Chart (Theme-Aware for Light & Dark Mode)
     const isDark = document.documentElement.classList.contains('dark');
@@ -2365,6 +2477,50 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+// Custom Chart.js Crosshair Line Plugin (Replaces blocking floating tooltip)
+const intradayCrosshairPlugin = {
+    id: 'intradayCrosshairLine',
+    afterDatasetsDraw(chart) {
+        const idx = activeCrosshairIndex;
+        if (idx === null || idx === undefined || idx < 0) return;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data || !meta.data[idx]) return;
+
+        const pt = meta.data[idx];
+        const x = pt.x;
+        const { top, bottom } = chart.chartArea;
+        if (x < chart.chartArea.left || x > chart.chartArea.right) return;
+
+        const ctx = chart.ctx;
+        const isDark = document.documentElement.classList.contains('dark');
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = isDark ? 'rgba(45, 212, 191, 0.75)' : 'rgba(13, 148, 136, 0.75)';
+        ctx.setLineDash([4, 3]);
+        ctx.stroke();
+
+        // Draw small highlight dots on each visible dataset at idx
+        chart.data.datasets.forEach((ds, dsIdx) => {
+            const dsMeta = chart.getDatasetMeta(dsIdx);
+            const el = dsMeta?.data?.[idx];
+            if (!el || isNaN(el.y)) return;
+            ctx.beginPath();
+            ctx.arc(el.x, el.y, 3.5, 0, Math.PI * 2);
+            ctx.fillStyle = ds.borderColor || '#14b8a6';
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([]);
+            ctx.strokeStyle = isDark ? '#081116' : '#ffffff';
+            ctx.stroke();
+        });
+        ctx.restore();
+    }
+};
+
 function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === 'undefined') return;
@@ -2372,9 +2528,12 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
 
     const isDark = document.documentElement.classList.contains('dark');
     const ctx = canvas.getContext('2d');
-    const chartHeight = canvas.parentElement?.clientHeight || (isFullscreen ? 420 : 280);
+    const chartHeight = canvas.parentElement?.clientHeight || (isFullscreen ? 420 : (isIntradayChartExpanded ? 320 : 240));
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
     const powerCurvesCount = activeDefs.filter(d => d.axis === 'yPower').length;
+
+    // Hide left & right Y-scales when in-place expanded OR in fullscreen mode to gain +20% full-bleed width
+    const hideSideScales = isFullscreen || isIntradayChartExpanded;
 
     const datasets = activeDefs.map((d) => {
         const dataArr = intradaySeriesState.series[d.key] || [];
@@ -2389,13 +2548,10 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             borderColor: d.color,
             backgroundColor: grad,
             yAxisID: d.axis,
-            borderWidth: isFullscreen ? 2.5 : (isPrimaryFocus ? 2.4 : 2.0),
+            borderWidth: (isFullscreen || isIntradayChartExpanded) ? 2.4 : (isPrimaryFocus ? 2.3 : 1.9),
             borderDash: d.axis === 'ySoc' ? [4, 3] : [],
             pointRadius: 0,
-            pointHoverRadius: isFullscreen ? 5 : 4,
-            pointHoverBackgroundColor: d.color,
-            pointHoverBorderColor: isDark ? '#081116' : '#ffffff',
-            pointHoverBorderWidth: 2,
+            pointHoverRadius: 0,
             tension: 0.28,
             fill: d.axis === 'yPower' && (powerCurvesCount <= 3 || d.key === 'pv_total')
         };
@@ -2424,6 +2580,13 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     if (existingChart && existingChart.canvas === canvas) {
         existingChart.data.labels = intradaySeriesState.labels;
         existingChart.data.datasets = datasets;
+        if (existingChart.options) {
+            existingChart.options.layout = {
+                padding: hideSideScales
+                    ? { left: 0, right: 0, top: 4, bottom: 0 }
+                    : { left: 2, right: 2, top: 2, bottom: 0 }
+            };
+        }
         if (existingChart.options && existingChart.options.scales) {
             const sx = existingChart.options.scales.x;
             const sy = existingChart.options.scales.yPower;
@@ -2431,8 +2594,10 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             if (sx) {
                 sx.grid.color = gridColorX;
                 sx.ticks.color = tickColorX;
+                sx.ticks.maxTicksLimit = (isFullscreen || isIntradayChartExpanded) ? 10 : 7;
             }
             if (sy) {
+                sy.display = !hideSideScales;
                 sy.beginAtZero = minPowerW >= 0;
                 sy.suggestedMin = minPowerW < 0 ? Math.floor(minPowerW * 1.05) : 0;
                 sy.suggestedMax = Math.ceil(maxPowerW * 1.06);
@@ -2440,7 +2605,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                 sy.ticks.color = tickColorPower;
             }
             if (ss) {
-                ss.display = hasSocCurve;
+                ss.display = !hideSideScales && hasSocCurve;
                 ss.ticks.color = tickColorSoc;
             }
         }
@@ -2452,47 +2617,62 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         try { existingChart.destroy(); } catch (e) {}
     }
 
+    const handleScrubEvent = (event, chart) => {
+        const nativeEvt = event?.native || event;
+        if (!nativeEvt || !chart?.chartArea) return;
+        const rect = canvas.getBoundingClientRect();
+        let clientX = nativeEvt.clientX;
+        if (clientX === undefined && nativeEvt.touches && nativeEvt.touches.length > 0) {
+            clientX = nativeEvt.touches[0].clientX;
+        }
+        if (clientX === undefined) return;
+        const relX = clientX - rect.left;
+        const { left, right } = chart.chartArea;
+        const totalPts = (intradaySeriesState.labels || []).length;
+        if (totalPts <= 0 || right <= left) return;
+        const ratio = Math.max(0, Math.min(1, (relX - left) / (right - left)));
+        const idx = Math.round(ratio * (totalPts - 1));
+        isIntradayHovering = true;
+        activeCrosshairIndex = idx;
+        updateIntradayHoverReadout(idx, getAvailableCurveDefinitions());
+        chart.draw();
+    };
+
     const chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: intradaySeriesState.labels,
             datasets
         },
+        plugins: [intradayCrosshairPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            layout: {
+                padding: hideSideScales
+                    ? { left: 0, right: 0, top: 4, bottom: 0 }
+                    : { left: 2, right: 2, top: 2, bottom: 0 }
+            },
             interaction: {
                 mode: 'index',
                 intersect: false
             },
-            onHover: (event, elements) => {
+            onHover: (event, elements, chart) => {
                 if (elements && elements.length > 0) {
                     isIntradayHovering = true;
                     const idx = elements[0].index;
-                    updateIntradayHoverReadout(idx, defs);
+                    activeCrosshairIndex = idx;
+                    updateIntradayHoverReadout(idx, getAvailableCurveDefinitions());
+                    chart.draw();
                 } else {
-                    isIntradayHovering = false;
+                    handleScrubEvent(event, chart);
                 }
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: isDark ? 'rgba(8, 17, 22, 0.94)' : 'rgba(15, 23, 42, 0.94)',
-                    titleColor: '#94a3b8',
-                    bodyColor: '#f8fafc',
-                    titleFont: { family: 'JetBrains Mono, monospace', size: 11, weight: 'bold' },
-                    bodyFont: { family: 'JetBrains Mono, monospace', size: 11 },
-                    borderColor: 'rgba(45, 212, 191, 0.35)',
-                    borderWidth: 1,
-                    padding: 9,
-                    callbacks: {
-                        label: (c) => {
-                            const val = c.parsed.y;
-                            const isSoc = c.dataset.yAxisID === 'ySoc';
-                            return ` ${c.dataset.label}: ${val.toLocaleString('de-DE', { maximumFractionDigits: 1 })} ${isSoc ? '%' : 'W'}`;
-                        }
-                    }
+                    enabled: false // Disabled so floating popup never blocks the curves; values show in top readout bar!
                 }
             },
             scales: {
@@ -2500,13 +2680,14 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                     grid: { color: gridColorX, drawBorder: false },
                     ticks: {
                         color: tickColorX,
-                        maxTicksLimit: isFullscreen ? 12 : 7,
+                        maxTicksLimit: (isFullscreen || isIntradayChartExpanded) ? 10 : 7,
                         font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 }
                     }
                 },
                 yPower: {
                     type: 'linear',
                     position: 'left',
+                    display: !hideSideScales,
                     beginAtZero: minPowerW >= 0,
                     suggestedMin: minPowerW < 0 ? Math.floor(minPowerW * 1.05) : 0,
                     suggestedMax: Math.ceil(maxPowerW * 1.06),
@@ -2521,7 +2702,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                 ySoc: {
                     type: 'linear',
                     position: 'right',
-                    display: hasSocCurve,
+                    display: !hideSideScales && hasSocCurve,
                     min: 0,
                     max: 100,
                     grid: { drawOnChartArea: false },
@@ -2574,16 +2755,110 @@ function updateIntradayHoverReadout(index, defs) {
 }
 
 // ============================================================================
-// 5B. FULLSCREEN & 90° LANDSCAPE OVERLAY FOR INTRADAY CHART
+// 5B. IN-PLACE FULL-BLEED EXPANSION & FULLSCREEN / 90° LANDSCAPE OVERLAY
 // ============================================================================
 
-function openIntradayFullscreenModal() {
+function applyIntradayInlineExpandDOM() {
+    const stickyOuter = document.getElementById('intradayStickyOuter');
+    const stickyCard = document.getElementById('intradayStickyCard');
+    const stageWrap = document.getElementById('intradayChartStageWrapper');
+    const axisHeaderRow = document.getElementById('intradayAxisHeaderRow');
+    const canvasContainer = document.getElementById('intradayCanvasContainer');
+    const expandBtnIcon = document.getElementById('intradayInlineExpandIcon');
+    const expandBtnLabel = document.getElementById('intradayInlineExpandLabel');
+
+    if (stickyOuter) {
+        if (isIntradayChartExpanded) {
+            stickyOuter.className = "sticky top-0 z-30 pt-0.5 pb-1 backdrop-blur-md bg-white/95 dark:bg-slate-950/95 -mx-3 sm:-mx-5 shadow-md transition-all duration-200";
+        } else {
+            stickyOuter.className = "sticky top-0 z-30 pt-1 pb-1.5 backdrop-blur-md bg-white/90 dark:bg-slate-950/90 rounded-b-[24px] shadow-sm transition-all duration-200";
+        }
+    }
+    if (stickyCard) {
+        if (isIntradayChartExpanded) {
+            stickyCard.className = "dash-main-card rounded-none overflow-hidden border-y border-x-0 border-slate-200/80 dark:border-teal-500/25 shadow-sm";
+        } else {
+            stickyCard.className = "dash-main-card rounded-[24px] overflow-hidden border border-slate-200/80 dark:border-teal-500/25 shadow-sm";
+        }
+    }
+    if (stageWrap) {
+        if (isIntradayChartExpanded) {
+            stageWrap.className = "px-0 pt-0.5 pb-0.5 bg-white/60 dark:bg-[#081015]/80 cursor-pointer relative group select-none";
+        } else {
+            stageWrap.className = "px-1 sm:px-2 pt-1 pb-1 bg-white/40 dark:bg-[#081015]/70 cursor-pointer relative group select-none";
+        }
+    }
+    if (axisHeaderRow) {
+        if (isIntradayChartExpanded) axisHeaderRow.classList.add('hidden');
+        else axisHeaderRow.classList.remove('hidden');
+    }
+    if (canvasContainer) {
+        if (isIntradayChartExpanded) {
+            canvasContainer.className = "relative h-60 sm:h-80 md:h-96 w-full transition-all duration-200";
+        } else {
+            canvasContainer.className = "relative h-44 sm:h-64 md:h-72 w-full transition-all duration-200";
+        }
+    }
+    if (expandBtnIcon) {
+        expandBtnIcon.innerText = isIntradayChartExpanded ? 'collapse_content' : 'expand_content';
+    }
+    if (expandBtnLabel) {
+        expandBtnLabel.innerText = isIntradayChartExpanded ? 'Kompakt' : 'Randlos';
+    }
+}
+
+function toggleIntradayInlineExpand(event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    isIntradayChartExpanded = !isIntradayChartExpanded;
+    try {
+        localStorage.setItem('pvpro_intraday_expanded', isIntradayChartExpanded ? '1' : '0');
+    } catch (e) {}
+    applyIntradayInlineExpandDOM();
+    const defs = getAvailableCurveDefinitions();
+    renderIntradayCanvasInstance('intradayTelemetryChart', defs, false);
+    if (chartIntraday) {
+        try { chartIntraday.resize(); } catch (e) {}
+    }
+}
+
+function onIntradayStagePointerDown(e) {
+    const pt = e.touches && e.touches[0] ? e.touches[0] : e;
+    intradayPointerStart = { x: pt.clientX, y: pt.clientY, time: Date.now() };
+}
+
+function onIntradayStageClick(e) {
+    // Only toggle inline full-bleed expansion on a clean tap/click (not when scrubbing/dragging across the curve)
+    if (intradayPointerStart) {
+        const dx = Math.abs((e.clientX || 0) - intradayPointerStart.x);
+        const dy = Math.abs((e.clientY || 0) - intradayPointerStart.y);
+        if (dx > 10 || dy > 10) {
+            return;
+        }
+    }
+    toggleIntradayInlineExpand(e);
+}
+
+if (typeof window !== 'undefined') {
+    window.toggleIntradayInlineExpand = toggleIntradayInlineExpand;
+    window.onIntradayStagePointerDown = onIntradayStagePointerDown;
+    window.onIntradayStageClick = onIntradayStageClick;
+}
+
+function openIntradayFullscreenModal(startRotated = false) {
     const modal = document.getElementById('modal-intraday-fullscreen');
     if (!modal) return;
+    if (startRotated === true) {
+        isIntradayFsRotated = true;
+    }
     modal.classList.remove('hidden');
     applyIntradayFullscreenRotationStyle();
     setTimeout(() => {
         renderIntradayCurveSection();
+        if (chartIntradayFullscreen) {
+            try { chartIntradayFullscreen.resize(); } catch (e) {}
+        }
     }, 40);
 }
 
@@ -2603,6 +2878,9 @@ function toggleIntradayFullscreenRotate() {
     setTimeout(() => {
         const defs = getAvailableCurveDefinitions();
         renderIntradayCanvasInstance('intradayFullscreenChart', defs, true);
+        if (chartIntradayFullscreen) {
+            try { chartIntradayFullscreen.resize(); } catch (e) {}
+        }
     }, 120);
 }
 

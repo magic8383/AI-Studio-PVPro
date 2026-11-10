@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.5 (Monatliche Ertrags-Zusammenfassung auf der Analyse-Hauptseite mit automatischem PVGIS-Soll-Ist-Abgleich, taggenauem Pro-Rata-Soll für den laufenden Monat, prozentualer Abweichungsanzeige & Live-HA-Quellenkennzeichnung)  
+**Aktuelle Version:** 9.6 (In-Place Full-Bleed Diagramm-Vergrößerung bis zum Bildschirmrand ohne seitliche Achsenskalen, verdeckungsfreie Fadenkreuz-Messwertanzeige, Light/Dark-Mode-Konsistenz im Vollbild & verzögerungsfreier Tag/Woche/Monat-Cache)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
