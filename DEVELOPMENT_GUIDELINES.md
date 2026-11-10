@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 8.7 (2-Stufiges Home Assistant Komfort-Sensor-Picker-Modal mit Geräte-/Helfer-Gruppen & Echtzeit-Suche, kompakte High-Contrast Kurven-Kacheln, Vollbild- & 90°-Querformat-Tagesdiagramm sowie Bereinigung des Demo-Modus)  
+**Aktuelle Version:** 8.9 (Interaktive Dashboard-Kacheln mit Direkt-Sprung zum Kurven-Fokus, Out-of-the-Box Vollbreiten-Technik-Tagesdiagramm mit 3-Spalten-Telemetriekacheln & Sankey-Energieberechnung direkt aus `kWh Total`-Gesamtzählern ohne HA-Helfer)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

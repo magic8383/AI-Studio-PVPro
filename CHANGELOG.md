@@ -4,6 +4,44 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 8.9] – 2026-11-09
+
+### 📈 Interaktive Dashboard-Kacheln (Kurven-Fokus), Out-of-the-Box Vollbreiten-Technik-Chart & Helferfreie Sankey-Berechnung aus `kWh Total`-Zählern
+
+#### 1. Interaktive Dashboard-Kacheln & Verbraucher-Zeilen mit Direkt-Sprung zum Kurven-Fokus (Ebene 1 → Ebene 2)
+* **Tap auf Kachel = Verlaufskurve im Fokus (`openLiveCurveFocus`):**
+  - Alle 4 Status-Kacheln auf dem Start-Dashboard (**`PV gesamt · DC`**, **`Hausverbrauch · AC`**, **`BYD HVS+`**, **`Netz · Bezug / Einspeisung`**) sowie jede Zeile in **„Aktive Verbraucher“** sind nun direkt anklickbar und mit einem dezenten Kurven-Indikator versehen.
+  - Ein Tap wechselt unmittelbar in das große Tagesverlauf-Diagramm (Ebene 2) und **isoliert automatisch die gewählte Kurve** (z. B. PV + aktive Strings, Hauslast, Batterie-Leistung + SoC %, Netzbezug + Einspeisung oder den konkreten Einzelverbraucher wie *Wäschetrockner* / *Wärmepumpe*).
+  - Über den eingeblendeten Button **„Alle Kurven“** oben rechts oder einen erneuten Tap auf den **`◎` Solo-Fokus** kehrt man jederzeit zur kombinierten Gesamtansicht zurück.
+
+#### 2. Out-of-the-Box Technisches Redesign der Tagesverlauf-Seite (`#live-detail-intraday`)
+* **Randloses Vollbreiten-Technik-Diagramm oben:**
+  - Das Diagramm spannt sich im oberen Bereich über die gesamte Breite – ohne verschachtelte Kartenränder, mit feiner technischer Rasterung (`W` links, `SoC %` rechts), weichem vertikalem Flächen-Gradienten und einer **Oszilloskop-Fadenkreuz-Messleiste** (`#dash_curve_hover_readout`) für zeitgenaues Touch- und Maus-Scrubbing.
+* **Kompaktes 3-Spalten Telemetrie-Grid darunter (`#dash_curve_tiles_grid`):**
+  - Unterhalb des Charts sitzt ein modernes, platzsparendes 3-Spalten-Raster (`grid-cols-2 sm:grid-cols-3`) für alle Kanäle inkl. **`Netzeinspeisung`**, **`Batterie · Leistung`** und sämtlicher **Einzelverbraucher**.
+  - Jede kompakte Technik-Kachel zeigt auf einen Blick:
+    1. Farb-Dot + Kanalname + **`◎` Solo-Fokus-Button**
+    2. Aktuellen Live-Messwert in großer Monospace-Typografie (`tabular-nums`, z. B. `682 W` / `84 %`) + `AN`/`AUS`-Indikator
+    3. Integrierte **Tages-Energie (`kWh`)** + **Tages-Spitzenwert (`Max W`)** in einer klaren, ungerahmten Fußzeile.
+
+#### 3. Sankey-Energiefluss direkt aus `kWh Total`-Gesamtzählern ohne Home-Assistant-Helfer
+* **Kein Erstellen von Tages- oder Monats-Utility-Metern in Home Assistant mehr nötig:**
+  - In den Home-Assistant-Einstellungen (Sektion 5 sowie direkt über den neuen Button **„Zähler (kWh total)“** im Sankey-Kopf) werden einfach die vorhandenen **Gesamt-Energiezähler (`kWh Total` / `total_increasing`)** ausgewählt (`PV-Erzeugung Gesamt`, `Netzbezug Gesamt`, `Netzeinspeisung Gesamt`, `Batterie-Ladung Gesamt`, `Batterie-Entladung Gesamt`).
+  - Die App ermittelt über die Home-Assistant-Historie (`/api/history/period`) automatisch den Zählerstand um **`00:00` Uhr heute** sowie am **1. des Monats um `00:00` Uhr** (mit lokalem Baseline-Cache) und berechnet daraus präzise die Differenz $\Delta\text{kWh} = \text{Zählerstand}_{\text{jetzt}} - \text{Zählerstand}_{\text{Start}}$.
+  - **Intelligenter Watt-Integrations-Fallback:** Ist für einen Zweig noch kein `kWh`-Zähler hinterlegt, berechnet das Sankey-Diagramm die Tages-kWh automatisch per direktionaler Trapez-Integration ($\int P(t)\,\mathrm{d}t$) aus den Watt-Sensoren.
+
+---
+
+## [Version 8.8] – 2026-11-09
+
+### ⚡ Sofortiger Dev-Server-Boot & Bereinigung nativer Build-Abhängigkeiten
+
+* **Beseitigung der `bun install` Start-Blockade:**
+  - Das nur einmalig zur statischen Icon-Generierung genutzte native Paket `sharp` (mit 25 plattformspezifischen `@img/sharp-libvips-*` Binär-Tarballs in `bun.lock`) führte beim Container-Start dazu, dass `bun install` beim Download der Binärpakete hing und der Express-Server (`node server.js` auf Port `3000`) nicht rechtzeitig gestartet wurde.
+  - Durch die Beschränkung der Laufzeit-Dependencies in `package.json` auf die tatsächlich benötigten Pakete (`express` und `qrcode`) sowie Bereinigung des Lockfiles startet der Dev-Server ab sofort verzögerungsfrei in unter einer Sekunde.
+
+---
+
 ## [Version 8.7] – 2026-11-09
 
 ### 🎛️ Komfort-Sensor-Picker mit Geräte- & Helfer-Gruppen, Vollbild-/Querformat-Tagesdiagramm, High-Contrast Kurven-Kacheln & Demo-Bereinigung

@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.7)
-// Komfort-Sensor-Picker (Geräte & Helfer + Suche), Vollbild-Tagesdiagramm,
-// GitHub Pages Browser-First HA Client, Liquid-Glass UI & Sankey-Analyse
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.9)
+// Interaktive Kachel-Fokus-Sprünge, Randloses Technik-Chart (3-Spalten-Grid),
+// kWh-Total Differenz-Engine (Ohne HA-Helfer) + Watt-Integration & Vollbild
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -18,7 +18,7 @@ const DEFAULT_CUSTOM_CONSUMERS = [
 ];
 
 let haConfigState = {
-    mode: 'poll', // 'poll' | 'webhook' (Demo-Modus ab v8.7 entfernt)
+    mode: 'poll', // 'poll' | 'webhook'
     baseUrl: 'https://home.mb10.org',
     accessToken: '',
     pollIntervalSec: 10,
@@ -50,6 +50,15 @@ let discoveredHaSensors = [];
 let liveTelemetryTimer = null;
 let intradayHistoryTimer = null;
 
+// Baseline cache for computing Today & Month deltas from total_increasing kWh counters without HA helpers
+let energyCounterBaselines = {
+    dayKey: '',
+    monthKey: '',
+    dayStartByEntity: {},
+    monthStartByEntity: {},
+    lastHistorySyncMs: 0
+};
+
 let currentLiveTelemetry = {
     updatedAt: null,
     pvPowerW: 682,
@@ -58,6 +67,10 @@ let currentLiveTelemetry = {
     batteryPowerW: 0, // >0 charging, <0 discharging
     batterySocPct: 8.4,
     pvEnergyTodayKwh: 1.325,
+    gridImportTodayKwh: null,
+    gridExportTodayKwh: null,
+    batteryChargeTodayKwh: null,
+    batteryDischargeTodayKwh: null,
     pvEnergyMonthKwh: 0,
     gridImportMonthKwh: 0,
     gridExportMonthKwh: 0,
@@ -75,13 +88,16 @@ let currentLiveTelemetry = {
 let chartIntraday = null;
 let chartIntradayFullscreen = null;
 let isIntradayFsRotated = false;
+let currentFocusedCurveMode = false;
+let currentFocusedCurveTitle = 'Tagesverlauf · Telemetrie';
 let intradaySeriesState = {
     startOfDayIso: null,
     nowIso: null,
     labels: [],
     bucketTimes: [],
     series: {}, // key -> array of values
-    integratedKwh: {} // key -> kWh number
+    integratedKwh: {}, // key -> kWh number
+    peakValues: {} // key -> max value today
 };
 
 let activeCurveKeys = new Set(['str_fronius_1', 'str_fronius_2', 'str_hoymiles', 'pv_total', 'battery_soc']);
@@ -135,6 +151,9 @@ async function initTelemetryAndAnalysis() {
         }
     } catch (e) {}
 
+    // Load cached kWh total counter baselines for Today / Month delta calculation
+    loadEnergyCounterBaselines();
+
     // 1. Load local cached HA config & performance records
     try {
         const localHa = localStorage.getItem('pvpro_ha_config');
@@ -183,7 +202,7 @@ async function initTelemetryAndAnalysis() {
         }
     } catch (e) {}
 
-    // Migrate legacy 'demo' mode to 'poll' (Demo mode removed in v8.7)
+    // Migrate legacy 'demo' mode to 'poll'
     if (!haConfigState.mode || haConfigState.mode === 'demo') {
         haConfigState.mode = 'poll';
     }
@@ -509,6 +528,188 @@ async function safeFetchBackendJson(url, options = {}) {
     }
 }
 
+function getTodayAndMonthKeys() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return {
+        dayKey: `${y}-${m}-${d}`,
+        monthKey: `${y}-${m}`,
+        startOfDayIso: new Date(y, now.getMonth(), now.getDate(), 0, 0, 0).toISOString(),
+        startOfMonthIso: new Date(y, now.getMonth(), 1, 0, 0, 0).toISOString()
+    };
+}
+
+function loadEnergyCounterBaselines() {
+    const keys = getTodayAndMonthKeys();
+    try {
+        const raw = localStorage.getItem('pvpro_energy_counter_baselines');
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                energyCounterBaselines = {
+                    dayKey: parsed.dayKey === keys.dayKey ? keys.dayKey : keys.dayKey,
+                    monthKey: parsed.monthKey === keys.monthKey ? keys.monthKey : keys.monthKey,
+                    dayStartByEntity: parsed.dayKey === keys.dayKey ? (parsed.dayStartByEntity || {}) : {},
+                    monthStartByEntity: parsed.monthKey === keys.monthKey ? (parsed.monthStartByEntity || {}) : {},
+                    lastHistorySyncMs: parsed.dayKey === keys.dayKey ? (parsed.lastHistorySyncMs || 0) : 0
+                };
+                return;
+            }
+        }
+    } catch (e) {}
+    energyCounterBaselines = {
+        dayKey: keys.dayKey,
+        monthKey: keys.monthKey,
+        dayStartByEntity: {},
+        monthStartByEntity: {},
+        lastHistorySyncMs: 0
+    };
+}
+
+function saveEnergyCounterBaselines() {
+    try {
+        localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines));
+    } catch (e) {}
+}
+
+function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap) {
+    if (currentValKwh === null || currentValKwh === undefined || isNaN(currentValKwh)) return null;
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return currentValKwh;
+
+    const baseVal = baselineMap?.[cleanId];
+    if (baseVal === undefined || baseVal === null || isNaN(baseVal)) {
+        // If no history baseline is recorded yet and value looks like a daily/monthly counter (< 150 kWh), return as-is;
+        // if it looks like a large lifetime counter (> 150 kWh), record current reading as initial anchor until history arrives
+        if (currentValKwh > 150) {
+            baselineMap[cleanId] = currentValKwh;
+            saveEnergyCounterBaselines();
+            return 0;
+        }
+        return +currentValKwh.toFixed(3);
+    }
+
+    // If sensor is a lifetime total_increasing counter (baseline > 0.05 and current >= baseline), return the delta!
+    // If sensor already resets at midnight/month-start (baseline ~ 0 or current < baseline), return current value directly.
+    if (baseVal > 0.05 && currentValKwh >= baseVal) {
+        return +Math.max(0, currentValKwh - baseVal).toFixed(3);
+    }
+    return +Math.max(0, currentValKwh).toFixed(3);
+}
+
+async function syncEnergyCounterBaselinesFromHaHistory(cfg) {
+    const keys = getTodayAndMonthKeys();
+    if (energyCounterBaselines.dayKey !== keys.dayKey) {
+        energyCounterBaselines.dayKey = keys.dayKey;
+        energyCounterBaselines.dayStartByEntity = {};
+        energyCounterBaselines.lastHistorySyncMs = 0;
+    }
+    if (energyCounterBaselines.monthKey !== keys.monthKey) {
+        energyCounterBaselines.monthKey = keys.monthKey;
+        energyCounterBaselines.monthStartByEntity = {};
+        energyCounterBaselines.lastHistorySyncMs = 0;
+    }
+
+    const e = cfg.entities || {};
+    const counterEntities = [
+        e.pvEnergyToday,
+        e.pvEnergyMonth,
+        e.pvEnergyTotal,
+        e.gridImportMonth,
+        e.gridExportMonth,
+        e.batteryChargeMonth,
+        e.batteryDischargeMonth,
+        ...(cfg.customStrings || []).map(cs => cs?.energyEntity)
+    ].map(x => String(x || '').trim()).filter(Boolean);
+
+    const uniqueEntities = [...new Set(counterEntities)];
+    if (uniqueEntities.length === 0) return;
+
+    const allHaveBaselines = uniqueEntities.every(
+        id => energyCounterBaselines.dayStartByEntity[id] !== undefined && energyCounterBaselines.monthStartByEntity[id] !== undefined
+    );
+    if (allHaveBaselines && (Date.now() - (energyCounterBaselines.lastHistorySyncMs || 0) < 15 * 60 * 1000)) {
+        return;
+    }
+
+    const extractPeriodStartReading = (entityHistoryArr, periodStartMs, unitMap) => {
+        if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return null;
+        const entId = entityHistoryArr[0]?.entity_id;
+        const scale = unitMap.get(entId) || 1;
+        const windowEndMs = periodStartMs + 45 * 60 * 1000;
+        let minEarlyVal = null;
+        let firstValidVal = null;
+
+        for (let i = 0; i < entityHistoryArr.length; i++) {
+            const pt = entityHistoryArr[i];
+            const rawNum = parseFloat(String(pt.state).replace(',', '.'));
+            if (isNaN(rawNum) || rawNum < 0) continue;
+            const val = rawNum * scale;
+            if (firstValidVal === null) firstValidVal = val;
+            const ts = new Date(pt.last_changed || pt.last_updated || periodStartMs).getTime();
+            if (ts <= windowEndMs) {
+                if (minEarlyVal === null || val < minEarlyVal) minEarlyVal = val;
+            } else if (minEarlyVal !== null) {
+                break;
+            }
+        }
+        return minEarlyVal !== null ? minEarlyVal : firstValidVal;
+    };
+
+    const unitScaleByEntity = new Map();
+    discoveredHaSensors.forEach(s => {
+        const u = String(s.unit || '').toLowerCase();
+        if (u === 'wh') unitScaleByEntity.set(s.entity_id, 0.001);
+        else if (u === 'mwh') unitScaleByEntity.set(s.entity_id, 1000);
+    });
+
+    try {
+        const filterParam = encodeURIComponent(uniqueEntities.join(','));
+        const dayEndIso = new Date(new Date(keys.startOfDayIso).getTime() + 2 * 3600000).toISOString();
+        const monthEndIso = new Date(new Date(keys.startOfMonthIso).getTime() + 6 * 3600000).toISOString();
+
+        const [dayHistRes, monthHistRes] = await Promise.all([
+            fetchHaDirectFromBrowser(
+                cfg.baseUrl,
+                cfg.accessToken,
+                `/api/history/period/${encodeURIComponent(keys.startOfDayIso)}?end_time=${encodeURIComponent(dayEndIso)}&filter_entity_id=${filterParam}&minimal_response&no_attributes`
+            ),
+            fetchHaDirectFromBrowser(
+                cfg.baseUrl,
+                cfg.accessToken,
+                `/api/history/period/${encodeURIComponent(keys.startOfMonthIso)}?end_time=${encodeURIComponent(monthEndIso)}&filter_entity_id=${filterParam}&minimal_response&no_attributes`
+            )
+        ]);
+
+        const dayStartMs = new Date(keys.startOfDayIso).getTime();
+        if (dayHistRes.ok && Array.isArray(dayHistRes.data)) {
+            dayHistRes.data.forEach(arr => {
+                const entId = arr?.[0]?.entity_id;
+                const val = extractPeriodStartReading(arr, dayStartMs, unitScaleByEntity);
+                if (entId && val !== null) {
+                    energyCounterBaselines.dayStartByEntity[entId] = +val.toFixed(3);
+                }
+            });
+        }
+
+        const monthStartMs = new Date(keys.startOfMonthIso).getTime();
+        if (monthHistRes.ok && Array.isArray(monthHistRes.data)) {
+            monthHistRes.data.forEach(arr => {
+                const entId = arr?.[0]?.entity_id;
+                const val = extractPeriodStartReading(arr, monthStartMs, unitScaleByEntity);
+                if (entId && val !== null) {
+                    energyCounterBaselines.monthStartByEntity[entId] = +val.toFixed(3);
+                }
+            });
+        }
+
+        energyCounterBaselines.lastHistorySyncMs = Date.now();
+        saveEnergyCounterBaselines();
+    } catch (err) {}
+}
+
 function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
     if (!entityId || typeof entityId !== 'string') return null;
     const st = statesMap.get(entityId.trim());
@@ -544,12 +745,29 @@ function parseHaStatesInBrowser(statesArray, cfg) {
 
     const batteryPowerW = extractHaNumericClient(statesMap, e.batteryPower, 'W');
     const batterySocPct = extractHaNumericClient(statesMap, e.batterySoc, '%');
-    const pvEnergyTodayKwh = extractHaNumericClient(statesMap, e.pvEnergyToday, 'kWh');
-    const pvEnergyMonthKwh = extractHaNumericClient(statesMap, e.pvEnergyMonth, 'kWh');
-    const gridImportMonthKwh = extractHaNumericClient(statesMap, e.gridImportMonth, 'kWh');
-    const gridExportMonthKwh = extractHaNumericClient(statesMap, e.gridExportMonth, 'kWh');
-    const batteryChargeMonthKwh = extractHaNumericClient(statesMap, e.batteryChargeMonth, 'kWh');
-    const batteryDischargeMonthKwh = extractHaNumericClient(statesMap, e.batteryDischargeMonth, 'kWh');
+
+    // Read raw kWh counter states (works with both total_increasing lifetime counters and daily/monthly counters)
+    const primaryPvCounterId = (e.pvEnergyMonth || e.pvEnergyTotal || e.pvEnergyToday || '').trim();
+    const todayPvCounterId = (e.pvEnergyToday || e.pvEnergyMonth || e.pvEnergyTotal || '').trim();
+    const rawPvTodayReading = extractHaNumericClient(statesMap, todayPvCounterId, 'kWh');
+    const rawPvMonthReading = extractHaNumericClient(statesMap, primaryPvCounterId, 'kWh');
+    const rawGridImpReading = extractHaNumericClient(statesMap, e.gridImportMonth, 'kWh');
+    const rawGridExpReading = extractHaNumericClient(statesMap, e.gridExportMonth, 'kWh');
+    const rawBatChgReading = extractHaNumericClient(statesMap, e.batteryChargeMonth, 'kWh');
+    const rawBatDisReading = extractHaNumericClient(statesMap, e.batteryDischargeMonth, 'kWh');
+
+    // Compute Today (seit 00:00) and Month (seit 1. des Monats) deltas automatically
+    const pvEnergyTodayKwh = resolveEnergyCounterDelta(todayPvCounterId, rawPvTodayReading, energyCounterBaselines.dayStartByEntity);
+    const gridImportTodayKwh = resolveEnergyCounterDelta(e.gridImportMonth, rawGridImpReading, energyCounterBaselines.dayStartByEntity);
+    const gridExportTodayKwh = resolveEnergyCounterDelta(e.gridExportMonth, rawGridExpReading, energyCounterBaselines.dayStartByEntity);
+    const batteryChargeTodayKwh = resolveEnergyCounterDelta(e.batteryChargeMonth, rawBatChgReading, energyCounterBaselines.dayStartByEntity);
+    const batteryDischargeTodayKwh = resolveEnergyCounterDelta(e.batteryDischargeMonth, rawBatDisReading, energyCounterBaselines.dayStartByEntity);
+
+    const pvEnergyMonthKwh = resolveEnergyCounterDelta(primaryPvCounterId, rawPvMonthReading, energyCounterBaselines.monthStartByEntity);
+    const gridImportMonthKwh = resolveEnergyCounterDelta(e.gridImportMonth, rawGridImpReading, energyCounterBaselines.monthStartByEntity);
+    const gridExportMonthKwh = resolveEnergyCounterDelta(e.gridExportMonth, rawGridExpReading, energyCounterBaselines.monthStartByEntity);
+    const batteryChargeMonthKwh = resolveEnergyCounterDelta(e.batteryChargeMonth, rawBatChgReading, energyCounterBaselines.monthStartByEntity);
+    const batteryDischargeMonthKwh = resolveEnergyCounterDelta(e.batteryDischargeMonth, rawBatDisReading, energyCounterBaselines.monthStartByEntity);
 
     const stringTelemetry = {};
     const customStringsTelemetry = [];
@@ -557,7 +775,8 @@ function parseHaStatesInBrowser(statesArray, cfg) {
         cfg.customStrings.forEach(cs => {
             if (!cs || !cs.id) return;
             const pW = extractHaNumericClient(statesMap, cs.powerEntity, 'W');
-            const eKwh = extractHaNumericClient(statesMap, cs.energyEntity, 'kWh');
+            const rawStrKwh = extractHaNumericClient(statesMap, cs.energyEntity, 'kWh');
+            const eKwh = resolveEnergyCounterDelta(cs.energyEntity, rawStrKwh, energyCounterBaselines.dayStartByEntity);
             stringTelemetry[cs.id] = {
                 powerW: pW !== null ? pW : 0,
                 energyKwh: eKwh,
@@ -617,6 +836,10 @@ function parseHaStatesInBrowser(statesArray, cfg) {
         batteryPowerW: Math.round(batteryPowerW || 0),
         batterySocPct,
         pvEnergyTodayKwh,
+        gridImportTodayKwh,
+        gridExportTodayKwh,
+        batteryChargeTodayKwh,
+        batteryDischargeTodayKwh,
         pvEnergyMonthKwh,
         gridImportMonthKwh,
         gridExportMonthKwh,
@@ -732,9 +955,14 @@ async function fetchHaHistoryInBrowser(cfg) {
     if (e.loadPower) entitySet.add(e.loadPower.trim());
     if (e.gridPower) entitySet.add(e.gridPower.trim());
     if (e.gridImportPower) entitySet.add(e.gridImportPower.trim());
+    if (e.gridExportPower) entitySet.add(e.gridExportPower.trim());
+    if (e.batteryPower) entitySet.add(e.batteryPower.trim());
     if (e.batterySoc) entitySet.add(e.batterySoc.trim());
     (cfg.customStrings || []).forEach(cs => {
         if (cs && cs.powerEntity) entitySet.add(cs.powerEntity.trim());
+    });
+    (cfg.customConsumers || []).forEach(cc => {
+        if (cc && cc.powerEntity) entitySet.add(cc.powerEntity.trim());
     });
 
     const entityList = [...entitySet].filter(Boolean);
@@ -753,16 +981,24 @@ async function fetchHaHistoryInBrowser(cfg) {
         bucketTimes.push(now.getTime());
     }
 
+    const unitScaleByEntity = new Map();
+    discoveredHaSensors.forEach(s => {
+        const u = String(s.unit || '').toLowerCase();
+        if (u === 'kw') unitScaleByEntity.set(s.entity_id, 1000);
+        else if (u === 'mw') unitScaleByEntity.set(s.entity_id, 1000000);
+    });
+
     const rawSeriesByEntity = new Map();
     histRes.data.forEach(entityHistoryArr => {
         if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return;
         const entId = entityHistoryArr[0]?.entity_id;
         if (!entId) return;
+        const scale = unitScaleByEntity.get(entId) || 1;
         const points = [];
         entityHistoryArr.forEach(pt => {
             const val = parseFloat(String(pt.state).replace(',', '.'));
             const ts = new Date(pt.last_changed || pt.last_updated || startIso).getTime();
-            if (!isNaN(val) && !isNaN(ts)) points.push({ ts, val });
+            if (!isNaN(val) && !isNaN(ts)) points.push({ ts, val: val * scale });
         });
         points.sort((a, b) => a.ts - b.ts);
         rawSeriesByEntity.set(entId, points);
@@ -794,6 +1030,7 @@ async function fetchHaHistoryInBrowser(cfg) {
 
     const series = {};
     const integratedKwh = {};
+    const peakValues = {};
 
     (cfg.customStrings || []).forEach(cs => {
         if (!cs || !cs.id) return;
@@ -819,17 +1056,45 @@ async function fetchHaHistoryInBrowser(cfg) {
     integratedKwh.house_load = integrateKwh(series.house_load);
 
     const gridRaw = sampleEntity(e.gridPower || e.gridImportPower, 1);
+    const gridExpExplicit = (e.gridExportPower && rawSeriesByEntity.has(e.gridExportPower.trim()))
+        ? sampleEntity(e.gridExportPower, 1)
+        : null;
+
     series.grid_power = gridRaw.map(v => Math.max(0, v));
+    series.grid_feedin = bucketTimes.map((_, i) => gridExpExplicit ? Math.max(0, gridExpExplicit[i]) : Math.max(0, -(gridRaw[i] || 0)));
     integratedKwh.grid_power = integrateKwh(series.grid_power);
+    integratedKwh.grid_feedin = integrateKwh(series.grid_feedin);
+
+    const batRaw = sampleEntity(e.batteryPower, 1);
+    series.battery_power = batRaw;
+    const batChgArr = batRaw.map(v => Math.max(0, v));
+    const batDisArr = batRaw.map(v => Math.max(0, -v));
+    integratedKwh.battery_charge = integrateKwh(batChgArr);
+    integratedKwh.battery_discharge = integrateKwh(batDisArr);
+    integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
 
     series.battery_soc = sampleEntity(e.batterySoc, 1);
+
+    (cfg.customConsumers || []).forEach(cc => {
+        if (!cc || !cc.id) return;
+        const cKey = `consumer_${cc.id}`;
+        const arr = sampleEntity(cc.powerEntity, 1).map(v => Math.max(0, v));
+        series[cKey] = arr;
+        integratedKwh[cKey] = integrateKwh(arr);
+    });
+
+    Object.keys(series).forEach(k => {
+        const arr = series[k] || [];
+        peakValues[k] = arr.reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
+    });
 
     return {
         startOfDay: startIso,
         now: now.toISOString(),
         bucketTimes,
         series,
-        integratedKwh
+        integratedKwh,
+        peakValues
     };
 }
 
@@ -846,6 +1111,9 @@ async function refreshLiveTelemetryNow() {
         renderIntradayCurveSection(baseline);
         return;
     }
+
+    // Ensure today & month start counter baselines are loaded for total_increasing kWh sensors
+    await syncEnergyCounterBaselinesFromHaHistory(haConfigState);
 
     // 1. Try Browser-Direct Home Assistant API first (works on GitHub Pages & local LAN/VPN)
     const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
@@ -882,6 +1150,10 @@ async function refreshLiveTelemetryNow() {
     if (backendRes.ok && backendRes.data && backendRes.data.success && backendRes.data.telemetry) {
         const data = backendRes.data;
         const t = data.telemetry;
+        const e = haConfigState.entities || {};
+        const primaryPvCounterId = (e.pvEnergyMonth || e.pvEnergyTotal || e.pvEnergyToday || '').trim();
+        const todayPvCounterId = (e.pvEnergyToday || e.pvEnergyMonth || e.pvEnergyTotal || '').trim();
+
         currentLiveTelemetry = {
             updatedAt: data.updatedAt || new Date().toISOString(),
             pvPowerW: Math.round(t.pvPowerW || 0),
@@ -889,12 +1161,16 @@ async function refreshLiveTelemetryNow() {
             gridPowerW: Math.round(t.gridPowerW || 0),
             batteryPowerW: Math.round(t.batteryPowerW || 0),
             batterySocPct: t.batterySocPct !== null && t.batterySocPct !== undefined ? +(Number(t.batterySocPct).toFixed(1)) : (baseline.totalBatteryKwh > 0 ? 50 : null),
-            pvEnergyTodayKwh: t.pvEnergyTodayKwh,
-            pvEnergyMonthKwh: t.pvEnergyMonthKwh,
-            gridImportMonthKwh: t.gridImportMonthKwh,
-            gridExportMonthKwh: t.gridExportMonthKwh,
-            batteryChargeMonthKwh: t.batteryChargeMonthKwh,
-            batteryDischargeMonthKwh: t.batteryDischargeMonthKwh,
+            pvEnergyTodayKwh: resolveEnergyCounterDelta(todayPvCounterId, t.pvEnergyTodayKwh ?? t.pvEnergyMonthKwh, energyCounterBaselines.dayStartByEntity),
+            gridImportTodayKwh: resolveEnergyCounterDelta(e.gridImportMonth, t.gridImportMonthKwh, energyCounterBaselines.dayStartByEntity),
+            gridExportTodayKwh: resolveEnergyCounterDelta(e.gridExportMonth, t.gridExportMonthKwh, energyCounterBaselines.dayStartByEntity),
+            batteryChargeTodayKwh: resolveEnergyCounterDelta(e.batteryChargeMonth, t.batteryChargeMonthKwh, energyCounterBaselines.dayStartByEntity),
+            batteryDischargeTodayKwh: resolveEnergyCounterDelta(e.batteryDischargeMonth, t.batteryDischargeMonthKwh, energyCounterBaselines.dayStartByEntity),
+            pvEnergyMonthKwh: resolveEnergyCounterDelta(primaryPvCounterId, t.pvEnergyMonthKwh, energyCounterBaselines.monthStartByEntity),
+            gridImportMonthKwh: resolveEnergyCounterDelta(e.gridImportMonth, t.gridImportMonthKwh, energyCounterBaselines.monthStartByEntity),
+            gridExportMonthKwh: resolveEnergyCounterDelta(e.gridExportMonth, t.gridExportMonthKwh, energyCounterBaselines.monthStartByEntity),
+            batteryChargeMonthKwh: resolveEnergyCounterDelta(e.batteryChargeMonth, t.batteryChargeMonthKwh, energyCounterBaselines.monthStartByEntity),
+            batteryDischargeMonthKwh: resolveEnergyCounterDelta(e.batteryDischargeMonth, t.batteryDischargeMonthKwh, energyCounterBaselines.monthStartByEntity),
             stringTelemetry: data.stringTelemetry || {},
             customStringsTelemetry: Array.isArray(data.customStringsTelemetry) ? data.customStringsTelemetry : [],
             consumersTelemetry: Array.isArray(data.consumersTelemetry) ? data.consumersTelemetry : [],
@@ -903,7 +1179,7 @@ async function refreshLiveTelemetryNow() {
             lastError: null
         };
 
-        if (haConfigState.autoSyncMonthly && t.pvEnergyMonthKwh !== null && t.pvEnergyMonthKwh !== undefined && t.pvEnergyMonthKwh > 0) {
+        if (haConfigState.autoSyncMonthly && currentLiveTelemetry.pvEnergyMonthKwh !== null && currentLiveTelemetry.pvEnergyMonthKwh > 0) {
             syncCurrentMonthFromLiveTelemetry(false);
         }
     } else {
@@ -927,7 +1203,6 @@ function computeDemoLiveTelemetry(baseline) {
         ? haConfigState.customStrings
         : DEFAULT_CUSTOM_STRINGS;
 
-    // Distribute realistic string powers matching screenshot 2 around 11:16 (291 W, 275 W, 105 W -> ~682 W total)
     const baseWeights = [0.43, 0.41, 0.16, 0.25, 0.25];
     let totalPvW = 0;
     const strTele = {};
@@ -937,7 +1212,6 @@ function computeDemoLiveTelemetry(baseline) {
 
     customStrings.forEach((cs, idx) => {
         const w = baseWeights[idx % baseWeights.length];
-        // At hour=11.27, sunFactor is ~0.78 -> scale so totalPvW is ~682 W (or scaled to kWp if user changed slider)
         const refPeak = 920;
         const pW = Math.max(0, Math.round(refPeak * w * (sunFactor / 0.778) * jitter));
         totalPvW += pW;
@@ -956,13 +1230,11 @@ function computeDemoLiveTelemetry(baseline) {
         });
     });
 
-    // Also populate legacy stringSummaries telemetry
-    baseline.stringSummaries.forEach((s, idx) => {
+    baseline.stringSummaries.forEach((s) => {
         const pW = Math.round(totalPvW / Math.max(1, baseline.stringSummaries.length));
         strTele[s.id] = { powerW: pW, energyKwh: +(pW * dayProgress * 1.8 / 1000).toFixed(2) };
     });
 
-    // Individual active consumers (matching Screenshot 1: Trockner 429 W, TV-Verstärker 76 W, Esszimmer Licht 36 W, Küche Licht 36 W)
     const customConsumers = Array.isArray(haConfigState.customConsumers) ? haConfigState.customConsumers : DEFAULT_CUSTOM_CONSUMERS;
     const demoConsumerWattPresets = [429, 76, 36, 36, 120, 48, 18];
     const consumersTele = customConsumers.map((cc, idx) => {
@@ -979,11 +1251,9 @@ function computeDemoLiveTelemetry(baseline) {
         };
     });
 
-    // Total house load (~2,1 kW at 11:16 as in Screenshot 1)
     const sumConsumersW = consumersTele.reduce((acc, c) => acc + c.powerW, 0);
     const loadW = Math.round(Math.max(sumConsumersW + 350, (hour >= 10 && hour <= 14 ? 2100 : 1250) * jitter));
 
-    // Battery SoC curve: discharging overnight from 48.5% at 00:00 down to 8.4% at 08:45, then standby or charging if surplus
     let soc = 8.4;
     let batW = 0;
     if (hour <= 8.75) {
@@ -997,7 +1267,6 @@ function computeDemoLiveTelemetry(baseline) {
         batW = 0;
     }
 
-    // Grid Power: >0 = Bezug aus dem Netz (e.g. 1.48 kW), <0 = Einspeisung
     const gridW = Math.round(loadW + batW - totalPvW);
     const pvTodayKwh = +(customStringsTele.reduce((a, b) => a + (b.powerW * dayProgress * 1.9 / 1000), 0)).toFixed(3);
 
@@ -1014,6 +1283,10 @@ function computeDemoLiveTelemetry(baseline) {
         batteryPowerW: batW,
         batterySocPct: soc,
         pvEnergyTodayKwh: pvTodayKwh,
+        gridImportTodayKwh: null,
+        gridExportTodayKwh: null,
+        batteryChargeTodayKwh: null,
+        batteryDischargeTodayKwh: null,
         pvEnergyMonthKwh: +(sollThisMonth * monthFrac * 1.04).toFixed(1),
         gridImportMonthKwh: +(baseline.plannedConsKwh / 12 * monthFrac * 0.24).toFixed(1),
         gridExportMonthKwh: +(sollThisMonth * monthFrac * 0.58).toFixed(1),
@@ -1036,6 +1309,7 @@ function buildDemoIntradaySeries(baseline) {
     const customStrings = Array.isArray(haConfigState.customStrings) && haConfigState.customStrings.length > 0
         ? haConfigState.customStrings
         : DEFAULT_CUSTOM_STRINGS;
+    const customConsumers = Array.isArray(haConfigState.customConsumers) ? haConfigState.customConsumers : DEFAULT_CUSTOM_CONSUMERS;
 
     // 10-minute steps from 00:00 up to demoSimHour
     const stepHours = 10 / 60;
@@ -1045,11 +1319,15 @@ function buildDemoIntradaySeries(baseline) {
         pv_total: [],
         house_load: [],
         grid_power: [],
+        grid_feedin: [],
+        battery_power: [],
         battery_soc: []
     };
     customStrings.forEach(cs => { series[cs.id] = []; });
+    customConsumers.forEach(cc => { if (cc && cc.id) series[`consumer_${cc.id}`] = []; });
 
     const baseWeights = [0.43, 0.41, 0.16, 0.25, 0.25];
+    const demoConsumerPresets = [429, 76, 36, 36, 120, 48, 18];
 
     for (let h = 0; h <= endHour + 0.001; h += stepHours) {
         const clampedH = Math.min(endHour, h);
@@ -1060,11 +1338,9 @@ function buildDemoIntradaySeries(baseline) {
         const mins = Math.round((clampedH - hrs) * 60);
         labels.push(`${String(hrs).padStart(2, '0')}:${String(mins === 60 ? 59 : mins).padStart(2, '0')}`);
 
-        // Realistic morning ramp & cloud fluctuations like Screenshot 2
         let sun = 0;
         if (clampedH > 7.4 && clampedH < 20.0) {
             const rawSun = Math.pow(Math.sin(((clampedH - 7.4) / 11.5) * Math.PI), 1.45);
-            // Dynamic cloud spikes like in Screenshot 2 between 08:00 and 11:16
             const cloudWave = 0.68 + 0.35 * Math.sin(clampedH * 14.2) * Math.cos(clampedH * 6.7) + 0.22 * Math.sin(clampedH * 29.0);
             sun = Math.max(0.02, rawSun * Math.max(0.25, cloudWave));
         }
@@ -1080,46 +1356,85 @@ function buildDemoIntradaySeries(baseline) {
 
         series.pv_total.push(Math.round(stepPvSum * 10) / 10);
 
-        // Battery SoC curve matching Screenshot 2 (48.5% at 00:00 -> linear/smooth drop to 8.4% at 08:40 -> flat 8.4%)
         let socVal = 8.4;
+        let batW = 0;
         if (clampedH < 5.5) {
             socVal = 48.5 - (clampedH / 5.5) * (48.5 - 32.0);
+            batW = -210;
         } else if (clampedH < 8.65) {
             socVal = 32.0 - ((clampedH - 5.5) / 3.15) * (32.0 - 8.4);
+            batW = -340;
         } else if (stepPvSum > 1800) {
             socVal = Math.min(95, 8.4 + (clampedH - 8.65) * 4.5);
+            batW = Math.round(stepPvSum - 1200);
         }
         series.battery_soc.push(+(socVal.toFixed(1)));
+        series.battery_power.push(batW);
 
-        // House load & Grid import
+        // Individual consumers
+        customConsumers.forEach((cc, idx) => {
+            if (!cc || !cc.id) return;
+            const cKey = `consumer_${cc.id}`;
+            const presetW = demoConsumerPresets[idx % demoConsumerPresets.length];
+            let cVal = 0;
+            if (idx === 0) {
+                cVal = (clampedH >= 9.6 && clampedH <= 12.2) ? Math.round(presetW * (0.85 + 0.2 * Math.sin(clampedH * 8))) : 0;
+            } else if (idx === 1) {
+                cVal = clampedH >= 7.5 ? presetW : 12;
+            } else {
+                cVal = (clampedH >= 6.5 && clampedH <= 9.0) || clampedH >= 10.5 ? presetW : 0;
+            }
+            series[cKey].push(cVal);
+        });
+
+        // House load, Grid import & Grid export
         const loadVal = Math.round(420 + (clampedH >= 7 && clampedH <= 9 ? 950 : 0) + (clampedH >= 10.2 ? 1680 : 180) + 120 * Math.sin(clampedH * 5));
         series.house_load.push(loadVal);
-        series.grid_power.push(Math.max(0, Math.round(loadVal - stepPvSum)));
+        const netGrid = Math.round(loadVal + batW - stepPvSum);
+        series.grid_power.push(Math.max(0, netGrid));
+        series.grid_feedin.push(Math.max(0, -netGrid));
     }
 
-    // Force final point to match currentLiveTelemetry exactly
+    // Force final point to match currentLiveTelemetry
     const lastIdx = bucketTimes.length - 1;
     if (lastIdx >= 0) {
         series.pv_total[lastIdx] = currentLiveTelemetry.pvPowerW;
         series.house_load[lastIdx] = currentLiveTelemetry.loadPowerW;
         series.grid_power[lastIdx] = Math.max(0, currentLiveTelemetry.gridPowerW);
+        series.grid_feedin[lastIdx] = Math.max(0, -(currentLiveTelemetry.gridPowerW || 0));
+        series.battery_power[lastIdx] = currentLiveTelemetry.batteryPowerW || 0;
         series.battery_soc[lastIdx] = currentLiveTelemetry.batterySocPct ?? 8.4;
         (currentLiveTelemetry.customStringsTelemetry || []).forEach(cs => {
             if (series[cs.id]) series[cs.id][lastIdx] = cs.powerW;
         });
+        (currentLiveTelemetry.consumersTelemetry || []).forEach(cc => {
+            const cKey = `consumer_${cc.id}`;
+            if (series[cKey]) series[cKey][lastIdx] = cc.powerW || 0;
+        });
     }
 
-    // Integrate kWh for each power series
-    const integratedKwh = {};
-    Object.keys(series).forEach(key => {
-        if (key === 'battery_soc') return;
-        const arr = series[key];
+    const integratePositive = (arr) => {
         let wh = 0;
         for (let i = 1; i < arr.length; i++) {
             const dtH = (bucketTimes[i] - bucketTimes[i - 1]) / 3600000;
             wh += Math.max(0, (arr[i] + arr[i - 1]) / 2) * dtH;
         }
-        integratedKwh[key] = +(wh / 1000).toFixed(3);
+        return +(wh / 1000).toFixed(3);
+    };
+
+    const integratedKwh = {};
+    const peakValues = {};
+    Object.keys(series).forEach(key => {
+        const arr = series[key] || [];
+        peakValues[key] = arr.reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
+        if (key === 'battery_soc') return;
+        if (key === 'battery_power') {
+            integratedKwh.battery_charge = integratePositive(arr.map(v => Math.max(0, v)));
+            integratedKwh.battery_discharge = integratePositive(arr.map(v => Math.max(0, -v)));
+            integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
+            return;
+        }
+        integratedKwh[key] = integratePositive(arr);
     });
 
     intradaySeriesState = {
@@ -1128,7 +1443,8 @@ function buildDemoIntradaySeries(baseline) {
         labels,
         bucketTimes,
         series,
-        integratedKwh
+        integratedKwh,
+        peakValues
     };
 }
 
@@ -1154,7 +1470,8 @@ async function fetchAndRenderIntradayHistory() {
                 labels,
                 bucketTimes: directHist.bucketTimes,
                 series: directHist.series,
-                integratedKwh: directHist.integratedKwh || {}
+                integratedKwh: directHist.integratedKwh || {},
+                peakValues: directHist.peakValues || {}
             };
             renderIntradayCurveSection(baseline);
             return;
@@ -1176,45 +1493,18 @@ async function fetchAndRenderIntradayHistory() {
                     const d = new Date(ts);
                     return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
                 });
+                const peakValues = {};
+                Object.keys(data.series).forEach(k => {
+                    peakValues[k] = (data.series[k] || []).reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
+                });
                 intradaySeriesState = {
                     startOfDayIso: data.startOfDay,
                     nowIso: data.now,
                     labels,
                     bucketTimes: data.bucketTimes,
                     series: data.series,
-                    integratedKwh: data.integratedKwh || {}
-                };
-            } else if (Array.isArray(data.snapshots) && data.snapshots.length > 0) {
-                const snaps = data.snapshots;
-                const bucketTimes = snaps.map(s => s.ts);
-                const labels = snaps.map(s => new Date(s.ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
-                const series = {
-                    pv_total: snaps.map(s => s.pvPowerW || 0),
-                    house_load: snaps.map(s => s.loadPowerW || 0),
-                    grid_power: snaps.map(s => s.gridImportW || 0),
-                    battery_soc: snaps.map(s => s.batterySocPct || 0)
-                };
-                (haConfigState.customStrings || []).forEach(cs => {
-                    series[cs.id] = snaps.map(s => (s.strings && s.strings[cs.id]) ? s.strings[cs.id] : 0);
-                });
-                const integratedKwh = {};
-                Object.keys(series).forEach(k => {
-                    if (k === 'battery_soc') return;
-                    const arr = series[k];
-                    let wh = 0;
-                    for (let i = 1; i < arr.length; i++) {
-                        const dtH = (bucketTimes[i] - bucketTimes[i - 1]) / 3600000;
-                        wh += Math.max(0, (arr[i] + arr[i - 1]) / 2) * dtH;
-                    }
-                    integratedKwh[k] = +(wh / 1000).toFixed(3);
-                });
-                intradaySeriesState = {
-                    startOfDayIso: data.startOfDay || new Date().toISOString(),
-                    nowIso: data.now || new Date().toISOString(),
-                    labels,
-                    bucketTimes,
-                    series,
-                    integratedKwh
+                    integratedKwh: data.integratedKwh || {},
+                    peakValues
                 };
             } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
                 buildDemoIntradaySeries(baseline);
@@ -1289,6 +1579,7 @@ function renderAnalyseTab() {
 function renderLiveCockpitUI(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const t = currentLiveTelemetry;
+    const intKwh = intradaySeriesState.integratedKwh || {};
 
     // 1. Update Connection Status Pill
     const statusText = document.getElementById('liveConnectionStatusText');
@@ -1303,11 +1594,12 @@ function renderLiveCockpitUI(baseline) {
         }
     }
 
-    // 2. Render "Energie · jetzt" 2x2 Status Tiles
+    // 2. Render "Energie · jetzt" 2x2 Interactive Status Tiles
     const maxPvRefW = Math.max(1500, baseline.totalKwp * 1000);
     const pvBarPct = Math.min(100, Math.max(t.pvPowerW > 0 ? 4 : 0, Math.round((t.pvPowerW / maxPvRefW) * 100)));
     setElText('dash_pv_power', formatPowerDe(t.pvPowerW, t.pvPowerW < 1000));
-    const pvSubText = t.pvPowerW > 15 ? 'Erzeugung läuft' : 'Standby / Nacht';
+    const pvTodayVal = t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 0;
+    const pvSubText = `${t.pvPowerW > 15 ? 'Erzeugung' : 'Standby'} · Heute ${formatKwhDe(pvTodayVal, 2)}`;
     setElText('dash_pv_status', pvSubText);
     setElText('dash_pv_sub', pvSubText);
     const pvBar = document.getElementById('dash_pv_bar');
@@ -1315,8 +1607,10 @@ function renderLiveCockpitUI(baseline) {
 
     const loadBarPct = Math.min(100, Math.max(6, Math.round((t.loadPowerW / 5000) * 100)));
     setElText('dash_load_power', formatPowerDe(t.loadPowerW));
-    setElText('dash_load_status', 'Aktueller Hausverbrauch');
-    setElText('dash_load_sub', 'Aktueller Hausverbrauch');
+    const loadTodayVal = intKwh.house_load ?? 0;
+    const loadSubText = loadTodayVal > 0 ? `Hauslast · Heute ${formatKwhDe(loadTodayVal, 2)}` : 'Aktueller Hausverbrauch';
+    setElText('dash_load_status', loadSubText);
+    setElText('dash_load_sub', loadSubText);
     const loadBar = document.getElementById('dash_load_bar');
     if (loadBar) loadBar.style.width = `${loadBarPct}%`;
 
@@ -1339,22 +1633,22 @@ function renderLiveCockpitUI(baseline) {
     const absGridW = Math.abs(t.gridPowerW || 0);
     const gridBarPct = Math.min(100, Math.max(absGridW > 10 ? 5 : 0, Math.round((absGridW / 5000) * 100)));
     setElText('dash_grid_power', formatPowerDe(absGridW));
-    let gridSub = 'Netz ausgeglichen';
-    if (t.gridPowerW > 15) gridSub = 'Bezug aus dem Netz';
-    else if (t.gridPowerW < -15) gridSub = 'Einspeisung ins Netz';
+    const gridImpToday = t.gridImportTodayKwh ?? intKwh.grid_power ?? 0;
+    let gridSub = gridImpToday > 0 ? `Ausgeglichen · ${formatKwhDe(gridImpToday, 2)}` : 'Netz ausgeglichen';
+    if (t.gridPowerW > 15) gridSub = `Bezug · Heute ${formatKwhDe(gridImpToday, 2)}`;
+    else if (t.gridPowerW < -15) gridSub = `Einspeisung · ${formatPowerDe(absGridW)}`;
     setElText('dash_grid_status', gridSub);
     setElText('dash_grid_sub', gridSub);
     const gridBar = document.getElementById('dash_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
 
-    // 3. Render "Aktive Verbraucher" List (Matching Screenshot 1)
+    // 3. Render Interactive "Aktive Verbraucher" List (Tap -> Jump to Telemetry Curve Focus)
     const consContainer = document.getElementById('dash_active_consumers_list');
     if (consContainer) {
         const consumers = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
             ? [...t.consumersTelemetry]
             : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, powerW: 0, available: false }));
 
-        // Sort descending by live powerW
         consumers.sort((a, b) => (b.powerW || 0) - (a.powerW || 0));
 
         if (consumers.length === 0) {
@@ -1367,10 +1661,25 @@ function renderLiveCockpitUI(baseline) {
             consContainer.innerHTML = consumers.map(c => {
                 const safeName = typeof escapeHtml === 'function' ? escapeHtml(c.name) : c.name;
                 const valStr = `${Math.round(c.powerW || 0).toLocaleString('de-DE')} W`;
+                const consKwh = intKwh[`consumer_${c.id}`] ?? 0;
+                const sharePct = t.loadPowerW > 20 ? Math.min(100, Math.round(((c.powerW || 0) / t.loadPowerW) * 100)) : 0;
+                const metaText = consKwh > 0.005
+                    ? `${formatKwhDe(consKwh, 2)}${sharePct > 0 ? ` · ${sharePct}%` : ''}`
+                    : (sharePct > 0 ? `${sharePct}% Hauslast` : 'Kurve');
+                const safeIdJs = String(c.id || '').replace(/'/g, "\\'");
+
                 return `
-                <div class="rounded-2xl bg-white dark:bg-[#162329] border border-slate-200/90 dark:border-slate-700/70 px-4 py-3.5 flex items-center justify-between shadow-2xs transition-all">
-                    <span class="text-sm font-medium text-slate-800 dark:text-slate-100 truncate pr-3">${safeName}</span>
-                    <span class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white font-mono tabular-nums shrink-0">${valStr}</span>
+                <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
+                    role="button" tabindex="0" title="Tippen für Verlaufskurve (${safeName})"
+                    class="rounded-2xl bg-white dark:bg-[#162329] border border-slate-200/90 dark:border-slate-700/70 hover:border-teal-500/50 px-4 py-3 flex items-center justify-between shadow-2xs transition-all cursor-pointer group active:scale-[0.99]">
+                    <div class="flex items-center gap-2.5 min-w-0 pr-3">
+                        <span class="material-symbols-rounded text-base text-slate-400 group-hover:text-teal-400 transition-colors shrink-0">show_chart</span>
+                        <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate">${safeName}</span>
+                    </div>
+                    <div class="flex items-baseline gap-2.5 shrink-0 font-mono tabular-nums">
+                        <span class="text-[11px] text-slate-400 dark:text-slate-400 hidden sm:inline">${metaText}</span>
+                        <span class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">${valStr}</span>
+                    </div>
                 </div>`;
             }).join('');
         }
@@ -1379,7 +1688,7 @@ function renderLiveCockpitUI(baseline) {
         if (fnEl) {
             const unavail = t.unavailableConsumersCount || 0;
             const unavailText = unavail > 0 ? ` ${unavail} Messwert(e) nicht verfügbar.` : '';
-            fnEl.innerText = `Größte aktive Einzelverbraucher.${unavailText}`;
+            fnEl.innerText = `Tippe auf einen Verbraucher für dessen 24h-Verlaufskurve.${unavailText}`;
         }
     }
 
@@ -1387,31 +1696,125 @@ function renderLiveCockpitUI(baseline) {
     const intradaySumEl = document.getElementById('live_hub_intraday_summary');
     if (intradaySumEl) {
         const customStrNames = (haConfigState.customStrings || []).slice(0, 2).map(s => s.name).join(', ');
-        const todayPv = t.pvEnergyTodayKwh ?? intradaySeriesState.integratedKwh?.pv_total ?? 1.325;
-        intradaySumEl.innerText = `${customStrNames || 'Strings'}, Haus & Batterie · Heute ≈ ${formatKwhDe(todayPv, 2)} (${activeCurveKeys.size} aktive Kurven)`;
+        const todayPv = t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 1.325;
+        intradaySumEl.innerText = `${customStrNames || 'Strings'}, Haus & Batterie · Heute ${formatKwhDe(todayPv, 2)} (${activeCurveKeys.size} Kanäle aktiv)`;
     }
 }
 
 // ============================================================================
-// 5. RENDERING: INTRADAY CURVE & SELECTABLE SENSOR TILES (SCREENSHOT 2)
+// 5. INTERACTIVE CURVE FOCUS & LEVEL-2 TECHNICAL TELEMETRY STAGE
 // ============================================================================
 
-function getAvailableCurveDefinitions() {
-    const t = currentLiveTelemetry;
-    const intKwh = intradaySeriesState.integratedKwh || {};
+function getDefaultActiveCurveSet() {
+    const customStrings = Array.isArray(haConfigState.customStrings) && haConfigState.customStrings.length > 0
+        ? haConfigState.customStrings
+        : DEFAULT_CUSTOM_STRINGS;
+    const keys = customStrings.map(cs => cs.id);
+    keys.push('pv_total', 'house_load', 'battery_soc');
+    return new Set(keys);
+}
+
+function openLiveCurveFocus(target = 'all') {
+    if (typeof openLiveDrillDown === 'function') {
+        openLiveDrillDown('intraday');
+    }
+
     const customStrings = Array.isArray(haConfigState.customStrings) && haConfigState.customStrings.length > 0
         ? haConfigState.customStrings
         : DEFAULT_CUSTOM_STRINGS;
 
+    if (!target || target === 'all') {
+        resetIntradayCurveFocus();
+        return;
+    }
+
+    currentFocusedCurveMode = true;
+
+    if (target === 'pv') {
+        activeCurveKeys = new Set(['pv_total', ...customStrings.map(cs => cs.id)]);
+        currentFocusedCurveTitle = 'Fokus: PV-Erzeugung & Strings · DC';
+    } else if (target === 'load') {
+        activeCurveKeys = new Set(['house_load']);
+        currentFocusedCurveTitle = 'Fokus: Hausverbrauch · AC';
+    } else if (target === 'battery') {
+        activeCurveKeys = new Set(['battery_soc', 'battery_power']);
+        currentFocusedCurveTitle = `Fokus: ${haConfigState.batteryName || 'Batterie'} · SoC & Leistung`;
+    } else if (target === 'grid') {
+        activeCurveKeys = new Set(['grid_power', 'grid_feedin']);
+        currentFocusedCurveTitle = 'Fokus: Netzbezug & Einspeisung';
+    } else if (String(target).startsWith('consumer:')) {
+        const consId = String(target).slice('consumer:'.length);
+        const consObj = (haConfigState.customConsumers || []).find(c => String(c.id) === consId);
+        const cKey = `consumer_${consId}`;
+        activeCurveKeys = new Set([cKey]);
+        currentFocusedCurveTitle = `Fokus: ${consObj ? consObj.name : 'Verbraucher'}`;
+    } else {
+        activeCurveKeys = new Set([target]);
+        currentFocusedCurveTitle = 'Fokus: Einzelkurve';
+    }
+
+    try {
+        localStorage.setItem('pvpro_active_curves', JSON.stringify([...activeCurveKeys]));
+    } catch (e) {}
+
+    setTimeout(() => {
+        renderIntradayCurveSection();
+    }, 30);
+}
+
+function focusSingleIntradayCurve(curveKey, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const defs = getAvailableCurveDefinitions();
+    const found = defs.find(d => d.key === curveKey);
+
+    // If already solo-focused on this exact curve, restore all default curves
+    if (currentFocusedCurveMode && activeCurveKeys.size === 1 && activeCurveKeys.has(curveKey)) {
+        resetIntradayCurveFocus();
+        return;
+    }
+
+    currentFocusedCurveMode = true;
+    activeCurveKeys = new Set([curveKey]);
+    currentFocusedCurveTitle = found ? `Fokus: ${found.name}` : 'Fokus: Einzelkanal';
+
+    try {
+        localStorage.setItem('pvpro_active_curves', JSON.stringify([...activeCurveKeys]));
+    } catch (e) {}
+
+    renderIntradayCurveSection();
+}
+
+function resetIntradayCurveFocus() {
+    currentFocusedCurveMode = false;
+    currentFocusedCurveTitle = 'Tagesverlauf · Telemetrie';
+    activeCurveKeys = getDefaultActiveCurveSet();
+    try {
+        localStorage.setItem('pvpro_active_curves', JSON.stringify([...activeCurveKeys]));
+    } catch (e) {}
+    renderIntradayCurveSection();
+}
+
+function getAvailableCurveDefinitions() {
+    const t = currentLiveTelemetry;
+    const intKwh = intradaySeriesState.integratedKwh || {};
+    const peaks = intradaySeriesState.peakValues || {};
+    const customStrings = Array.isArray(haConfigState.customStrings) && haConfigState.customStrings.length > 0
+        ? haConfigState.customStrings
+        : DEFAULT_CUSTOM_STRINGS;
+    const customConsumers = Array.isArray(haConfigState.customConsumers) ? haConfigState.customConsumers : [];
+
     const defs = [];
 
-    // 1. Custom PV Strings / Inverters (e.g., Fronius String 1 DC, Fronius String 2 DC, Hoymiles gesamt DC)
+    // 1. Custom PV Strings / Inverters
     customStrings.forEach((cs, idx) => {
         const teleItem = (t.customStringsTelemetry || []).find(x => x.id === cs.id);
         const liveW = teleItem ? teleItem.powerW : (t.stringTelemetry?.[cs.id]?.powerW || 0);
         const explicitKwh = teleItem?.energyKwh ?? t.stringTelemetry?.[cs.id]?.energyKwh ?? null;
         const calcKwh = intKwh[cs.id] ?? 0;
-        const hasExplicitEnergy = explicitKwh !== null && explicitKwh !== undefined;
+        const kwhVal = (explicitKwh !== null && explicitKwh !== undefined) ? explicitKwh : calcKwh;
+        const peakW = Math.max(liveW, peaks[cs.id] || 0);
 
         defs.push({
             key: cs.id,
@@ -1419,61 +1822,129 @@ function getAvailableCurveDefinitions() {
             color: cs.color || '#14b8a6',
             axis: 'yPower',
             unit: 'W',
+            category: 'pv',
             liveDisplay: formatPowerDe(liveW, true),
-            subDisplay: hasExplicitEnergy
-                ? `${formatKwhDe(explicitKwh, 3)} · erfasster Zeitraum`
-                : `≈ ${formatKwhDe(calcKwh, 3)} · aus Leistung`
+            subDisplay: `${formatKwhDe(kwhVal, 2)} · Max ${formatPowerDe(peakW, true)}`
         });
     });
 
     // 2. PV gesamt · DC
-    const pvTotalExplicit = t.pvEnergyTodayKwh;
-    const pvTotalCalc = intKwh.pv_total ?? 0;
+    const pvTotalKwh = (t.pvEnergyTodayKwh !== null && t.pvEnergyTodayKwh !== undefined)
+        ? t.pvEnergyTodayKwh
+        : (intKwh.pv_total ?? 0);
+    const pvPeakW = Math.max(t.pvPowerW || 0, peaks.pv_total || 0);
     defs.push({
         key: 'pv_total',
         name: 'PV gesamt · DC',
         color: '#38bdf8',
         axis: 'yPower',
         unit: 'W',
+        category: 'pv',
         liveDisplay: formatPowerDe(t.pvPowerW, t.pvPowerW < 1000),
-        subDisplay: (pvTotalExplicit !== null && pvTotalExplicit !== undefined && haConfigState.entities?.pvEnergyToday)
-            ? `≈ ${formatKwhDe(pvTotalExplicit, 3)} · aus Leistung`
-            : `≈ ${formatKwhDe(pvTotalCalc, 3)} · aus Leistung`
+        subDisplay: `${formatKwhDe(pvTotalKwh, 2)} · Max ${formatPowerDe(pvPeakW, true)}`
     });
 
     // 3. Hausverbrauch · AC
+    const loadKwh = intKwh.house_load ?? 0;
+    const loadPeakW = Math.max(t.loadPowerW || 0, peaks.house_load || 0);
     defs.push({
         key: 'house_load',
         name: 'Hausverbrauch · AC',
         color: '#f472b6',
         axis: 'yPower',
         unit: 'W',
+        category: 'load',
         liveDisplay: formatPowerDe(t.loadPowerW),
-        subDisplay: `≈ ${formatKwhDe(intKwh.house_load ?? 0, 3)} · aus Leistung`
+        subDisplay: `${formatKwhDe(loadKwh, 2)} · Max ${formatPowerDe(loadPeakW, true)}`
     });
 
     // 4. Netzbezug
     const gridImportLive = Math.max(0, t.gridPowerW || 0);
+    const gridImportKwh = (t.gridImportTodayKwh !== null && t.gridImportTodayKwh !== undefined)
+        ? t.gridImportTodayKwh
+        : (intKwh.grid_power ?? 0);
+    const gridImpPeakW = Math.max(gridImportLive, peaks.grid_power || 0);
     defs.push({
         key: 'grid_power',
         name: 'Netzbezug',
         color: '#60a5fa',
         axis: 'yPower',
         unit: 'W',
+        category: 'grid',
         liveDisplay: formatPowerDe(gridImportLive),
-        subDisplay: `${formatKwhDe(intKwh.grid_power ?? 0, 3)} · erfasster Zeitraum`
+        subDisplay: `${formatKwhDe(gridImportKwh, 2)} · Max ${formatPowerDe(gridImpPeakW, true)}`
     });
 
-    // 5. Batterie · Ladezustand
+    // 5. Netzeinspeisung
+    const gridExportLive = Math.max(0, -(t.gridPowerW || 0));
+    const gridExportKwh = (t.gridExportTodayKwh !== null && t.gridExportTodayKwh !== undefined)
+        ? t.gridExportTodayKwh
+        : (intKwh.grid_feedin ?? 0);
+    const gridExpPeakW = Math.max(gridExportLive, peaks.grid_feedin || 0);
+    defs.push({
+        key: 'grid_feedin',
+        name: 'Netzeinspeisung',
+        color: '#22d3ee',
+        axis: 'yPower',
+        unit: 'W',
+        category: 'grid',
+        liveDisplay: formatPowerDe(gridExportLive),
+        subDisplay: `${formatKwhDe(gridExportKwh, 2)} · Max ${formatPowerDe(gridExpPeakW, true)}`
+    });
+
+    // 6. Batterie · Leistung (W)
+    const batName = haConfigState.batteryName || 'Batterie';
+    const batLiveW = t.batteryPowerW || 0;
+    const batChgKwh = t.batteryChargeTodayKwh ?? intKwh.battery_charge ?? 0;
+    const batDisKwh = t.batteryDischargeTodayKwh ?? intKwh.battery_discharge ?? 0;
+    const batLiveSign = batLiveW > 20 ? '+' : (batLiveW < -20 ? '−' : '');
+    defs.push({
+        key: 'battery_power',
+        name: `${batName} · Leistung`,
+        color: '#a855f7',
+        axis: 'yPower',
+        unit: 'W',
+        category: 'battery',
+        liveDisplay: `${batLiveSign}${formatPowerDe(Math.abs(batLiveW), true)}`,
+        subDisplay: `↑${formatKwhDe(batChgKwh, 1)} · ↓${formatKwhDe(batDisKwh, 1)}`
+    });
+
+    // 7. Batterie · Ladezustand (%)
     const socVal = t.batterySocPct !== null && t.batterySocPct !== undefined ? Number(t.batterySocPct) : 0;
+    const socSeries = intradaySeriesState.series.battery_soc || [];
+    const minSoc = socSeries.length > 0 ? Math.min(...socSeries) : socVal;
+    const maxSoc = socSeries.length > 0 ? Math.max(...socSeries) : socVal;
     defs.push({
         key: 'battery_soc',
-        name: 'Batterie · Ladezustand',
+        name: `${batName} · SoC`,
         color: '#d8b4fe',
         axis: 'ySoc',
         unit: '%',
+        category: 'battery',
         liveDisplay: `${socVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} %`,
-        subDisplay: `${haConfigState.batteryName || 'Batterie'} · SoC-Verlauf (rechte Achse)`
+        subDisplay: `Min ${minSoc.toFixed(0)}% · Max ${maxSoc.toFixed(0)}%`
+    });
+
+    // 8. Einzelverbraucher (Consumers)
+    const consumerPalette = ['#fb923c', '#facc15', '#818cf8', '#34d399', '#f87171', '#a3e635'];
+    customConsumers.forEach((cc, idx) => {
+        if (!cc || !cc.id) return;
+        const cKey = `consumer_${cc.id}`;
+        const teleCons = (t.consumersTelemetry || []).find(x => x.id === cc.id);
+        const liveW = teleCons ? (teleCons.powerW || 0) : 0;
+        const cKwh = intKwh[cKey] ?? 0;
+        const cPeakW = Math.max(liveW, peaks[cKey] || 0);
+
+        defs.push({
+            key: cKey,
+            name: cc.name || `Verbraucher ${idx + 1}`,
+            color: consumerPalette[idx % consumerPalette.length],
+            axis: 'yPower',
+            unit: 'W',
+            category: 'consumer',
+            liveDisplay: formatPowerDe(liveW, true),
+            subDisplay: `${formatKwhDe(cKwh, 2)} · Max ${formatPowerDe(cPeakW, true)}`
+        });
     });
 
     return defs;
@@ -1487,6 +1958,8 @@ function toggleIntradayCurve(curveKey) {
     } else {
         activeCurveKeys.add(curveKey);
     }
+    currentFocusedCurveMode = false;
+    currentFocusedCurveTitle = 'Tagesverlauf · Telemetrie';
     try {
         localStorage.setItem('pvpro_active_curves', JSON.stringify([...activeCurveKeys]));
     } catch (e) {}
@@ -1497,11 +1970,22 @@ function renderIntradayCurveSection(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const defs = getAvailableCurveDefinitions();
 
-    // 1. Update Single-Line Timestamp Range Header (Never wraps!)
+    // 1. Update View Title & Reset-Focus Button
+    const titleEl = document.getElementById('intraday_view_title');
+    if (titleEl) {
+        titleEl.innerText = currentFocusedCurveMode ? currentFocusedCurveTitle : 'Tagesverlauf · Telemetrie';
+    }
+    const resetBtn = document.getElementById('btnResetCurveFocus');
+    if (resetBtn) {
+        if (currentFocusedCurveMode) resetBtn.classList.remove('hidden');
+        else resetBtn.classList.add('hidden');
+    }
+
+    // 2. Update Single-Line Timestamp Range Header
     const now = intradaySeriesState.nowIso ? new Date(intradaySeriesState.nowIso) : new Date();
     const dateStr = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const rangeString = `${dateStr}, 00:00 — ${dateStr}, ${timeStr} · Kachelwerte: jetzt`;
+    const rangeString = `${dateStr} · 00:00 – ${timeStr} Uhr`;
 
     const rangeEl = document.getElementById('dash_curve_timerange');
     if (rangeEl) rangeEl.innerText = rangeString;
@@ -1511,21 +1995,21 @@ function renderIntradayCurveSection(baseline) {
     const activeCountBadge = document.getElementById('dash_active_curves_badge');
     if (activeCountBadge) {
         const activeCount = defs.filter(d => activeCurveKeys.has(d.key)).length;
-        activeCountBadge.innerText = `${activeCount} von ${defs.length} Kurven aktiv`;
+        activeCountBadge.innerText = `${activeCount} / ${defs.length} Kanäle aktiv`;
     }
 
-    // 2. Render Top Interactive Legend Chips (with colored left accent bar like Screenshot 2)
+    // 3. Render Fullscreen Overlay Chips
     const buildChipsHtml = () => defs.map(d => {
         const isActive = activeCurveKeys.has(d.key);
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
         return `
         <button type="button" onclick="toggleIntradayCurve('${d.key}')"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] sm:text-xs font-bold transition-all cursor-pointer select-none whitespace-nowrap shrink-0 ${
+            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer select-none whitespace-nowrap shrink-0 ${
                 isActive
                     ? 'bg-slate-800/95 text-white dark:bg-[#192c34] dark:text-white shadow-2xs ring-1 ring-white/15'
                     : 'bg-slate-200/50 text-slate-400 dark:bg-slate-900/40 dark:text-slate-500 opacity-45 hover:opacity-75'
             }"
-            style="border-left: 3.5px solid ${isActive ? d.color : '#475569'}">
+            style="border-left: 3px solid ${isActive ? d.color : '#475569'}">
             <span>${safeName}</span>
         </button>`;
     }).join('');
@@ -1535,38 +2019,52 @@ function renderIntradayCurveSection(baseline) {
     const fsChipsEl = document.getElementById('fs_curve_legend_chips');
     if (fsChipsEl) fsChipsEl.innerHTML = buildChipsHtml();
 
-    // 3. Render Compact Selectable Measurement Tiles with Unmistakable Active vs. Inactive Contrast
+    // 4. Render Compact 3-Column Technical Channel Cards Below Chart
     const tilesGrid = document.getElementById('dash_curve_tiles_grid');
     if (tilesGrid) {
         tilesGrid.innerHTML = defs.map(d => {
             const isActive = activeCurveKeys.has(d.key);
+            const isSoloFocused = currentFocusedCurveMode && activeCurveKeys.size === 1 && isActive;
             const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
-            const tileStyle = isActive
-                ? `border: 2px solid ${d.color}; background: linear-gradient(135deg, ${d.color}24 0%, rgba(15, 29, 36, 0.94) 100%); box-shadow: 0 6px 18px -4px ${d.color}40, inset 0 1px 0 rgba(255,255,255,0.18);`
-                : `border: 1px solid rgba(100, 116, 139, 0.22); background: rgba(15, 23, 30, 0.35); opacity: 0.42;`;
+            const safeKeyJs = String(d.key).replace(/'/g, "\\'");
 
-            const badgeHtml = isActive
-                ? `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase tracking-wider shrink-0" style="background:${d.color}30; color:${d.color}; border:1px solid ${d.color}75"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span>Aktiv</span>`
-                : `<span class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-500 bg-slate-800/50 shrink-0">Aus</span>`;
+            const cardStyle = isActive
+                ? `border-left: 3px solid ${d.color}; border-top: 1px solid ${d.color}55; border-right: 1px solid rgba(148,163,184,0.16); border-bottom: 1px solid rgba(148,163,184,0.16); background: linear-gradient(135deg, ${d.color}16 0%, rgba(13, 24, 30, 0.95) 100%);`
+                : `border-left: 3px solid rgba(100,116,139,0.3); border-top: 1px solid rgba(100,116,139,0.14); border-right: 1px solid rgba(100,116,139,0.14); border-bottom: 1px solid rgba(100,116,139,0.14); background: rgba(11, 20, 25, 0.45); opacity: 0.48;`;
 
             return `
-            <div onclick="toggleIntradayCurve('${d.key}')"
-                style="${tileStyle}"
-                class="rounded-xl p-2.5 sm:p-3 cursor-pointer select-none transition-all duration-150 hover:opacity-95">
-                <div class="flex items-center justify-between gap-1.5">
-                    <p class="text-[11px] sm:text-xs ${isActive ? 'font-bold text-slate-900 dark:text-white' : 'font-medium text-slate-500 dark:text-slate-400'} truncate">${safeName}</p>
-                    ${badgeHtml}
+            <div onclick="toggleIntradayCurve('${safeKeyJs}')"
+                style="${cardStyle}"
+                class="rounded-xl px-2.5 py-2 cursor-pointer select-none transition-all duration-150 hover:opacity-100 group">
+                <div class="flex items-center justify-between gap-1">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${isActive ? d.color : '#64748b'}"></span>
+                        <p class="text-[11px] ${isActive ? 'font-bold text-slate-900 dark:text-slate-100' : 'font-medium text-slate-500 dark:text-slate-400'} truncate">${safeName}</p>
+                    </div>
+                    <button type="button"
+                        onclick="focusSingleIntradayCurve('${safeKeyJs}', event)"
+                        title="${isSoloFocused ? 'Alle Kurven einblenden' : 'Nur diese Kurve fokussieren (Solo)'}"
+                        class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                            isSoloFocused
+                                ? 'bg-teal-500 text-slate-950 font-black'
+                                : 'text-slate-400 hover:text-white hover:bg-white/10'
+                        }">
+                        <span class="material-symbols-rounded text-[13px]">center_focus_strong</span>
+                    </button>
                 </div>
-                <p class="text-base sm:text-lg font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'} font-mono tabular-nums leading-tight mt-1">${d.liveDisplay}</p>
-                <p class="text-[10px] sm:text-[11px] ${isActive ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500'} font-mono tabular-nums truncate mt-0.5">${d.subDisplay}</p>
+                <div class="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums">
+                    <p class="text-sm sm:text-base font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
+                    <span class="text-[9px] font-bold uppercase tracking-wider ${isActive ? 'text-teal-400' : 'text-slate-500'}">${isActive ? 'AN' : 'AUS'}</span>
+                </div>
+                <p class="text-[10px] ${isActive ? 'text-slate-600 dark:text-slate-300/90' : 'text-slate-400 dark:text-slate-500'} font-mono tabular-nums truncate mt-0.5">${d.subDisplay}</p>
             </div>`;
         }).join('');
     }
 
-    // 4. Update Default Readout Line Below Chart
-    updateIntradayHoverReadout(intradaySeriesState.labels.length - 1, defs);
+    // 5. Update Crosshair Readout Ribbon
+    updateIntradayHoverReadout((intradaySeriesState.labels.length || 1) - 1, defs);
 
-    // 5. Render Dual-Axis Chart.js Line Chart (Main + Fullscreen if open)
+    // 6. Render Dual-Axis Chart.js Line Chart (Main + Fullscreen if open)
     renderIntradayCanvasInstance('intradayTelemetryChart', defs, false);
 
     const fsModal = document.getElementById('modal-intraday-fullscreen');
@@ -1575,33 +2073,61 @@ function renderIntradayCurveSection(baseline) {
     }
 }
 
+function hexToRgba(hex, alpha) {
+    const clean = String(hex || '#14b8a6').replace('#', '');
+    if (clean.length !== 6) return `rgba(20, 184, 166, ${alpha})`;
+    const r = parseInt(clean.slice(0, 2), 16) || 20;
+    const g = parseInt(clean.slice(2, 4), 16) || 184;
+    const b = parseInt(clean.slice(4, 6), 16) || 166;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === 'undefined') return;
     if (!defs) defs = getAvailableCurveDefinitions();
 
+    const ctx = canvas.getContext('2d');
+    const chartHeight = canvas.parentElement?.clientHeight || (isFullscreen ? 420 : 280);
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
-    const datasets = activeDefs.map(d => {
+    const powerCurvesCount = activeDefs.filter(d => d.axis === 'yPower').length;
+
+    const datasets = activeDefs.map((d) => {
         const dataArr = intradaySeriesState.series[d.key] || [];
+        const isPrimaryFocus = powerCurvesCount <= 2 && d.axis === 'yPower';
+        const grad = ctx.createLinearGradient(0, 0, 0, chartHeight);
+        grad.addColorStop(0, hexToRgba(d.color, isPrimaryFocus ? 0.34 : 0.14));
+        grad.addColorStop(1, hexToRgba(d.color, 0.0));
+
         return {
             label: d.name,
             data: dataArr,
             borderColor: d.color,
-            backgroundColor: d.color + '18',
+            backgroundColor: grad,
             yAxisID: d.axis,
-            borderWidth: isFullscreen ? 2.6 : 2.2,
+            borderWidth: isFullscreen ? 2.5 : (isPrimaryFocus ? 2.4 : 1.9),
+            borderDash: d.axis === 'ySoc' ? [4, 3] : [],
             pointRadius: 0,
             pointHoverRadius: isFullscreen ? 5 : 4,
-            tension: 0.25,
-            fill: false
+            pointHoverBackgroundColor: d.color,
+            pointHoverBorderColor: '#081116',
+            pointHoverBorderWidth: 2,
+            tension: 0.28,
+            fill: d.axis === 'yPower' && (powerCurvesCount <= 3 || d.key === 'pv_total')
         };
     });
 
-    let maxPowerW = 500;
+    let maxPowerW = 300;
+    let minPowerW = 0;
     activeDefs.filter(d => d.axis === 'yPower').forEach(d => {
         const arr = intradaySeriesState.series[d.key] || [];
-        arr.forEach(v => { if (v > maxPowerW) maxPowerW = v; });
+        arr.forEach(v => {
+            if (v > maxPowerW) maxPowerW = v;
+            if (v < minPowerW) minPowerW = v;
+        });
     });
+
+    const hasSocCurve = activeDefs.some(d => d.axis === 'ySoc');
 
     if (isFullscreen) {
         if (chartIntradayFullscreen) chartIntradayFullscreen.destroy();
@@ -1609,7 +2135,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         if (chartIntraday) chartIntraday.destroy();
     }
 
-    const chartInstance = new Chart(canvas.getContext('2d'), {
+    const chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: intradaySeriesState.labels,
@@ -1618,7 +2144,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 180 },
+            animation: { duration: 160 },
             interaction: {
                 mode: 'index',
                 intersect: false
@@ -1632,53 +2158,58 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: 'rgba(11, 21, 26, 0.95)',
-                    titleColor: '#e2e8f0',
+                    backgroundColor: 'rgba(8, 17, 22, 0.94)',
+                    titleColor: '#94a3b8',
                     bodyColor: '#f8fafc',
+                    titleFont: { family: 'JetBrains Mono, monospace', size: 11, weight: 'bold' },
+                    bodyFont: { family: 'JetBrains Mono, monospace', size: 11 },
                     borderColor: 'rgba(45, 212, 191, 0.35)',
                     borderWidth: 1,
-                    padding: 10,
+                    padding: 9,
                     callbacks: {
-                        label: (ctx) => {
-                            const val = ctx.parsed.y;
-                            const isSoc = ctx.dataset.yAxisID === 'ySoc';
-                            return ` ${ctx.dataset.label}: ${val.toLocaleString('de-DE', { maximumFractionDigits: 1 })} ${isSoc ? '%' : 'W'}`;
+                        label: (c) => {
+                            const val = c.parsed.y;
+                            const isSoc = c.dataset.yAxisID === 'ySoc';
+                            return ` ${c.dataset.label}: ${val.toLocaleString('de-DE', { maximumFractionDigits: 1 })} ${isSoc ? '%' : 'W'}`;
                         }
                     }
                 }
             },
             scales: {
                 x: {
-                    grid: { color: 'rgba(148, 163, 184, 0.08)', drawBorder: false },
+                    grid: { color: 'rgba(148, 163, 184, 0.06)', drawBorder: false },
                     ticks: {
-                        color: '#94a3b8',
-                        maxTicksLimit: isFullscreen ? 10 : 6,
-                        font: { size: isFullscreen ? 12 : 11 }
+                        color: '#64748b',
+                        maxTicksLimit: isFullscreen ? 12 : 7,
+                        font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 }
                     }
                 },
                 yPower: {
                     type: 'linear',
                     position: 'left',
-                    beginAtZero: true,
-                    suggestedMax: Math.ceil(maxPowerW * 1.05),
-                    grid: { color: 'rgba(148, 163, 184, 0.12)', drawBorder: false },
+                    beginAtZero: minPowerW >= 0,
+                    suggestedMin: minPowerW < 0 ? Math.floor(minPowerW * 1.05) : 0,
+                    suggestedMax: Math.ceil(maxPowerW * 1.06),
+                    grid: { color: 'rgba(148, 163, 184, 0.09)', drawBorder: false },
                     ticks: {
                         color: '#94a3b8',
                         count: isFullscreen ? 6 : 5,
-                        font: { size: isFullscreen ? 12 : 11 },
-                        callback: (val) => val.toLocaleString('de-DE', { maximumFractionDigits: 1 })
+                        font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 },
+                        callback: (val) => `${val.toLocaleString('de-DE', { maximumFractionDigits: 0 })} W`
                     }
                 },
                 ySoc: {
                     type: 'linear',
                     position: 'right',
+                    display: hasSocCurve,
                     min: 0,
                     max: 100,
                     grid: { drawOnChartArea: false },
                     ticks: {
-                        color: '#94a3b8',
+                        color: '#d8b4fe',
                         stepSize: 25,
-                        font: { size: isFullscreen ? 12 : 11 }
+                        font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 },
+                        callback: (val) => `${val}%`
                     }
                 }
             }
@@ -1698,22 +2229,24 @@ function updateIntradayHoverReadout(index, defs) {
     const idx = Math.max(0, Math.min(index, (intradaySeriesState.labels.length || 1) - 1));
     const ts = intradaySeriesState.bucketTimes?.[idx] || Date.now();
     const dObj = new Date(ts);
-    const datePart = dObj.toLocaleDateString('de-DE');
-    const timePart = dObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const timePart = dObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
-    const parts = activeDefs.map(d => {
+    const htmlItems = activeDefs.map(d => {
         const arr = intradaySeriesState.series[d.key] || [];
         const val = arr[idx] !== undefined ? arr[idx] : 0;
         const unit = d.axis === 'ySoc' ? '%' : 'W';
-        return `${d.name}: ${Number(val).toLocaleString('de-DE', { maximumFractionDigits: 1 })} ${unit}`;
+        const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
+        const fmtVal = Number(val).toLocaleString('de-DE', { maximumFractionDigits: d.axis === 'ySoc' ? 1 : 0 });
+        return `<span class="inline-flex items-center gap-1 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span><span class="text-slate-400">${safeName}:</span><strong class="text-white">${fmtVal} ${unit}</strong></span>`;
     });
 
-    const text = `${datePart}, ${timePart} · ${parts.join(' · ')}`;
+    const fullHtml = `<span class="text-teal-400 font-bold whitespace-nowrap">${timePart} Uhr</span><span class="text-slate-600">·</span>${htmlItems.join('<span class="text-slate-700 mx-0.5">·</span>')}`;
+
     const readoutEl = document.getElementById('dash_curve_hover_readout');
-    if (readoutEl) readoutEl.innerText = text;
+    if (readoutEl) readoutEl.innerHTML = fullHtml;
     const fsReadoutEl = document.getElementById('fs_curve_hover_readout');
-    if (fsReadoutEl) fsReadoutEl.innerText = text;
+    if (fsReadoutEl) fsReadoutEl.innerHTML = fullHtml;
 }
 
 // ============================================================================
@@ -1982,7 +2515,7 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     if (!metrics) metrics = computeAggregatedPerformanceMetrics(baseline);
 
-    const hasBattery = baseline.totalBatteryKwh > 0;
+    const hasBattery = baseline.totalBatteryKwh > 0 || Boolean(haConfigState.entities?.batterySoc || haConfigState.entities?.batteryPower);
     let pvTotal = 0;
     let gridImp = 0;
     let gridExp = 0;
@@ -1995,28 +2528,49 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
     let decimals = 0;
 
     if (horizon === 'today') {
-        decimals = 1;
+        decimals = 2;
         const t = currentLiveTelemetry || {};
         const intKwh = intradaySeriesState.integratedKwh || {};
-        pvTotal = Math.max(0.2, Number(t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 4.8));
-        const rawHouse = Math.max(0.5, Number(intKwh.house_load ?? 7.4));
 
-        if (hasBattery) {
-            batChg = +(Math.min(pvTotal * 0.42, baseline.totalBatteryKwh * 0.65)).toFixed(2);
-            batDis = +(batChg * 0.91).toFixed(2);
-            batLoss = +(Math.max(0, batChg - batDis)).toFixed(2);
+        // 1. Primary: Today's delta from total_increasing kWh counters; 2. Fallback: Directional Watt integration
+        const pvFromCounter = (t.pvEnergyTodayKwh !== null && t.pvEnergyTodayKwh !== undefined && t.pvEnergyTodayKwh > 0) ? Number(t.pvEnergyTodayKwh) : null;
+        const strSumKwh = (t.customStringsTelemetry || []).reduce((acc, s) => acc + (Number(s.energyKwh) || 0), 0);
+        pvTotal = +(pvFromCounter ?? (intKwh.pv_total > 0 ? intKwh.pv_total : (strSumKwh > 0 ? strSumKwh : 1.33))).toFixed(2);
+
+        const rawHouseLoad = Number(intKwh.house_load ?? 0);
+        const rawGridImp = Number(t.gridImportTodayKwh ?? intKwh.grid_power ?? 0);
+        const rawGridExp = Number(t.gridExportTodayKwh ?? intKwh.grid_feedin ?? 0);
+        const rawBatChg = hasBattery ? Number(t.batteryChargeTodayKwh ?? intKwh.battery_charge ?? 0) : 0;
+        const rawBatDis = hasBattery ? Number(t.batteryDischargeTodayKwh ?? intKwh.battery_discharge ?? 0) : 0;
+
+        batChg = +Math.min(pvTotal, Math.max(0, rawBatChg)).toFixed(2);
+        batDis = +Math.max(0, rawBatDis).toFixed(2);
+        batLoss = +Math.max(0, batChg - batDis).toFixed(2);
+
+        if (rawGridExp > 0 || t.gridExportTodayKwh !== null) {
+            gridExp = +Math.min(Math.max(0, pvTotal - batChg), Math.max(0, rawGridExp)).toFixed(2);
+            pvDirect = +Math.max(0, pvTotal - batChg - gridExp).toFixed(2);
+        } else {
+            const estSelf = rawHouseLoad > 0 ? Math.min(rawHouseLoad, Math.max(0, pvTotal - batChg)) : Math.max(0, pvTotal - batChg);
+            pvDirect = +estSelf.toFixed(2);
+            gridExp = +Math.max(0, pvTotal - batChg - pvDirect).toFixed(2);
         }
 
-        pvDirect = +(Math.min(rawHouse * 0.55, Math.max(0.1, pvTotal - batChg) * 0.72)).toFixed(2);
-        gridExp = +(Math.max(0, pvTotal - pvDirect - batChg)).toFixed(2);
-        const covered = pvDirect + batDis;
-        gridImp = +(Math.max(0.1, Number(intKwh.grid_power ?? Math.max(0.4, rawHouse - covered)))).toFixed(2);
-        houseTotal = +(covered + gridImp).toFixed(2);
-        periodLabel = 'Heute (Tagesbilanz bis jetzt)';
+        const coveredByPvAndBat = pvDirect + batDis;
+        if (rawGridImp > 0 || t.gridImportTodayKwh !== null) {
+            gridImp = +Math.max(0, rawGridImp).toFixed(2);
+        } else {
+            gridImp = +Math.max(0, rawHouseLoad - coveredByPvAndBat).toFixed(2);
+        }
+
+        houseTotal = +Math.max(0.05, coveredByPvAndBat + gridImp, rawHouseLoad).toFixed(2);
+        periodLabel = 'Heute · Zähler-Differenz & Watt-Integral (ohne Helfer)';
     } else if (horizon === 'month') {
-        decimals = 0;
+        decimals = 1;
         const curMonthIdx = new Date().getMonth();
-        // Find current month if recorded, or latest recorded month
+        const t = currentLiveTelemetry || {};
+
+        // If live total_increasing counter month deltas are available, prefer them or synced month record
         let mRec = metrics.monthlyComparison[curMonthIdx];
         if (!mRec || !mRec.hasReal) {
             const recordedList = metrics.monthlyComparison.filter(m => m.hasReal);
@@ -2025,7 +2579,18 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
             }
         }
 
-        if (mRec && mRec.hasReal && mRec.realPv > 0) {
+        const hasLiveMonthCounter = t.pvEnergyMonthKwh !== null && t.pvEnergyMonthKwh !== undefined && t.pvEnergyMonthKwh > 0;
+        if (hasLiveMonthCounter) {
+            pvTotal = +Math.max(0.5, Number(t.pvEnergyMonthKwh)).toFixed(1);
+            gridExp = +Math.max(0, Number(t.gridExportMonthKwh ?? mRec?.expKwh ?? 0)).toFixed(1);
+            gridImp = +Math.max(0, Number(t.gridImportMonthKwh ?? mRec?.impKwh ?? 0)).toFixed(1);
+            batChg = +Math.max(0, Number(t.batteryChargeMonthKwh ?? mRec?.bChg ?? 0)).toFixed(1);
+            batDis = +Math.max(0, Number(t.batteryDischargeMonthKwh ?? mRec?.bDis ?? 0)).toFixed(1);
+            pvDirect = +Math.max(0, pvTotal - gridExp - batChg).toFixed(1);
+            batLoss = +Math.max(0, batChg - batDis).toFixed(1);
+            houseTotal = +Math.max(0.5, pvDirect + batDis + gridImp).toFixed(1);
+            periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} ${selectedAnalysisYear} (aus Gesamt-Zählern)`;
+        } else if (mRec && mRec.hasReal && mRec.realPv > 0) {
             pvTotal = Math.max(1, mRec.realPv);
             gridExp = Math.max(0, mRec.expKwh);
             gridImp = Math.max(0, mRec.impKwh);
@@ -2045,7 +2610,7 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
             gridExp = Math.max(0, pvTotal - pvDirect - batChg);
             gridImp = Math.round((baseline.plannedConsKwh / 12) * 0.28);
             houseTotal = pvDirect + batDis + gridImp;
-            periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} (Prognose)`;
+            periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} (PVGIS-Prognose)`;
         }
     } else {
         decimals = 0;
@@ -2814,6 +3379,10 @@ function openHaConfigModal(focusSection = null) {
     } else if (focusSection === 'strings') {
         setTimeout(() => {
             document.getElementById('haStringsSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+    } else if (focusSection === 'counters') {
+        setTimeout(() => {
+            document.getElementById('haCountersSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
     }
 }
@@ -3638,6 +4207,7 @@ function pickHaEntityFromModal(entityId) {
 async function saveHaConfigFromModal() {
     readHaModalIntoState();
     localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+    energyCounterBaselines.lastHistorySyncMs = 0;
 
     try {
         await fetch('/api/ha/config', {

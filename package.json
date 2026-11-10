@@ -1,6 +1,6 @@
 {
   "name": "pv-planung-pro",
-  "version": "8.7",
+  "version": "8.9",
   "description": "Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung",
   "type": "module",
   "scripts": {
@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "express": "^4.21.2",
-    "qrcode": "^1.5.4",
-    "sharp": "^0.35.4"
+    "qrcode": "^1.5.4"
   }
 }
