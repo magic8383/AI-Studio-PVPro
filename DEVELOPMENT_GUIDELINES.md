@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.2 (Multi-Wechselrichter PV-Erzeugung mit `+ Wechselrichter-Zähler` & automatischer String-Summierung für `W` und `kWh` sowie neues Liquid-Glass Türkis/Smaragd App-Icon)  
+**Aktuelle Version:** 9.3 (Getrennte Netzbezugs- & Einspeisungs-Leistungssensoren in W, oben fixiertes Kompakt-Diagramm mit scrollbarem Messwert-Raster, Zeitauswahl Tag/Woche/Monat, automatische Ist-Ertrags-Berechnung aus Live-Zählern, interaktiver Sankey-Detail-Inspektor & Dark-Mode-Menü)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

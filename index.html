@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 9.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 9.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=9.2">
+    <link rel="manifest" href="manifest.json?v=9.3">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.2">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.2">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.2">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.2">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.3">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.3">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.3">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.3">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -387,10 +387,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=9.2" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=9.3" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.2</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.3</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1451,64 +1451,75 @@
             <!-- ========================================================= -->
             <!-- LIVE EBENE 2 (DETAIL): RANDLOSES TECHNIK-CHART + 3-SPALTEN-KACHELN -->
             <!-- ========================================================= -->
-            <div id="live-detail-intraday" class="hidden space-y-3.5">
-                <!-- TOP: EDGE-TO-EDGE PRECISION TELEMETRY STAGE -->
-                <div class="dash-main-card rounded-[26px] overflow-hidden border border-slate-200/80 dark:border-teal-500/20">
-                    <!-- Compact Technical Top Bar -->
-                    <div class="px-4 pt-3.5 pb-2.5 flex items-center justify-between gap-2 border-b border-slate-200/60 dark:border-white/10">
-                        <div class="flex items-center gap-2.5 min-w-0">
-                            <button onclick="refreshIntradayHistoryAndLive()" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-[#162730] hover:bg-slate-200 dark:hover:bg-[#1f3642] border border-slate-200/80 dark:border-teal-400/25 text-teal-700 dark:text-teal-300 flex items-center justify-center transition-all cursor-pointer shrink-0" title="Tagesverlauf & Live-Messwerte jetzt aktualisieren">
-                                <span class="material-symbols-rounded text-base">refresh</span>
-                            </button>
-                            <div class="min-w-0">
-                                <h2 id="intraday_view_title" class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight truncate">Telemetrie · Tagesverlauf</h2>
-                                <p id="dash_curve_timerange" class="text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums whitespace-nowrap overflow-x-auto hide-scroll">
-                                    Heute, 00:00 — jetzt
-                                </p>
+            <div id="live-detail-intraday" class="hidden space-y-3">
+                <!-- TOP: STICKY COMPACT PRECISION TELEMETRY STAGE (BLEIBT OBEN FIXIERT BEIM SCROLLEN) -->
+                <div class="sticky top-0 z-30 pt-1 pb-1.5 backdrop-blur-md bg-white/90 dark:bg-slate-950/90 rounded-b-[24px] shadow-sm">
+                    <div class="dash-main-card rounded-[24px] overflow-hidden border border-slate-200/80 dark:border-teal-500/25 shadow-sm">
+                        <!-- Compact Technical Top Bar mit Tag / Woche / Monat Umschalter -->
+                        <div class="px-3 sm:px-4 pt-2.5 pb-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 dark:border-white/10">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <button onclick="refreshIntradayHistoryAndLive()" class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-100 dark:bg-[#162730] hover:bg-slate-200 dark:hover:bg-[#1f3642] border border-slate-200/80 dark:border-teal-400/25 text-teal-700 dark:text-teal-300 flex items-center justify-center transition-all cursor-pointer shrink-0" title="Verlauf &amp; Live-Messwerte jetzt aktualisieren">
+                                    <span class="material-symbols-rounded text-base">refresh</span>
+                                </button>
+                                <div class="min-w-0">
+                                    <h2 id="intraday_view_title" class="text-xs sm:text-sm font-black text-slate-900 dark:text-white tracking-tight truncate">Telemetrie · Verlauf</h2>
+                                    <p id="dash_curve_timerange" class="text-[10px] text-slate-500 dark:text-slate-400 font-mono tabular-nums whitespace-nowrap overflow-x-auto hide-scroll">
+                                        Heute, 00:00 — jetzt
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <!-- Zeitauswahl: Tag | Woche | Monat (Direkt über dem Diagramm platziert) -->
+                                <div class="inline-flex rounded-xl p-0.5 bg-slate-200/80 dark:bg-white/10 border border-slate-300/60 dark:border-white/10 text-[10px] font-bold">
+                                    <button type="button" id="btn-timerange-day" onclick="setIntradayTimeframe('day')" class="px-2.5 py-1 rounded-lg bg-teal-600 text-white shadow-xs transition-all cursor-pointer">
+                                        Tag
+                                    </button>
+                                    <button type="button" id="btn-timerange-week" onclick="setIntradayTimeframe('week')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                        Woche
+                                    </button>
+                                    <button type="button" id="btn-timerange-month" onclick="setIntradayTimeframe('month')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                        Monat
+                                    </button>
+                                </div>
+
+                                <button type="button" id="btnResetCurveFocus" onclick="resetIntradayCurveFocus()" class="px-2 py-1 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap" title="Alle Standard-Kurven gemeinsam einblenden">
+                                    <span class="material-symbols-rounded text-sm">layers</span>
+                                    <span class="hidden xs:inline">Alle</span>
+                                </button>
+                                <button type="button" onclick="openIntradayFullscreenModal()" class="px-2 py-1 rounded-xl bg-slate-900 dark:bg-teal-600/25 hover:bg-slate-800 dark:hover:bg-teal-600/35 border border-slate-800 dark:border-teal-400/35 text-white dark:text-teal-200 text-[10px] font-extrabold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap" title="Diagramm im Vollbild / 90°-Querformat öffnen">
+                                    <span class="material-symbols-rounded text-sm">open_in_full</span>
+                                    <span class="hidden xs:inline">Vollbild</span>
+                                </button>
                             </div>
                         </div>
 
-                        <div class="flex items-center gap-1.5 shrink-0">
-                            <button type="button" id="btnResetCurveFocus" onclick="resetIntradayCurveFocus()" class="px-2.5 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap" title="Alle Standard-Kurven gemeinsam einblenden">
-                                <span class="material-symbols-rounded text-sm">layers</span>
-                                <span>Alle Kurven</span>
-                            </button>
-                            <button type="button" onclick="openHaConfigModal('strings')" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-white/10 hover:bg-slate-200 dark:hover:bg-white/15 border border-slate-200/70 dark:border-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap">
-                                <span class="material-symbols-rounded text-sm text-teal-500">tune</span>
-                                <span class="hidden xs:inline">Kanäle</span>
-                            </button>
-                            <button type="button" onclick="openIntradayFullscreenModal()" class="px-2.5 py-1.5 rounded-xl bg-slate-900 dark:bg-teal-600/25 hover:bg-slate-800 dark:hover:bg-teal-600/35 border border-slate-800 dark:border-teal-400/35 text-white dark:text-teal-200 text-[11px] font-extrabold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap" title="Diagramm im Vollbild / 90°-Querformat öffnen">
-                                <span class="material-symbols-rounded text-sm">open_in_full</span>
-                                <span class="hidden sm:inline">Vollbild</span>
+                        <!-- Precision Crosshair Readout Ribbon (Oscilloscope HUD) -->
+                        <div class="px-3 sm:px-4 py-1.5 bg-slate-50/90 dark:bg-[#091217]/80 border-b border-slate-200/50 dark:border-white/5 flex items-center justify-between gap-2">
+                            <p id="dash_curve_hover_readout" class="text-[10px] sm:text-[11px] text-slate-700 dark:text-slate-200 font-mono tabular-nums truncate">
+                                <!-- Gefüllt durch updateIntradayHoverReadout() -->
+                            </p>
+                            <button type="button" onclick="openIntradayFullscreenModal()" class="text-[10px] font-mono text-teal-600 dark:text-teal-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer">
+                                <span class="material-symbols-rounded text-xs">screen_rotation</span>
+                                <span>90°</span>
                             </button>
                         </div>
-                    </div>
 
-                    <!-- Precision Crosshair Readout Ribbon (Oscilloscope HUD) -->
-                    <div class="px-4 py-2 bg-slate-50/90 dark:bg-[#091217]/80 border-b border-slate-200/50 dark:border-white/5 flex items-center justify-between gap-2">
-                        <p id="dash_curve_hover_readout" class="text-[11px] sm:text-xs text-slate-700 dark:text-slate-200 font-mono tabular-nums truncate">
-                            <!-- Gefüllt durch updateIntradayHoverReadout() -->
-                        </p>
-                        <button type="button" onclick="openIntradayFullscreenModal()" class="text-[10px] font-mono text-teal-600 dark:text-teal-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer">
-                            <span class="material-symbols-rounded text-xs">screen_rotation</span>
-                            <span>90°</span>
-                        </button>
-                    </div>
-
-                    <!-- Full-Bleed Minimalist Technical Chart Stage (Zero inner card box, edge-to-edge) -->
-                    <div onclick="openIntradayFullscreenModal()" class="px-1.5 sm:px-3 pt-2 pb-1.5 bg-white/40 dark:bg-[#081015]/70 cursor-crosshair relative group" title="Antippen für Vollbild- & 90°-Querformat-Ansicht">
-                        <div class="flex items-center justify-between text-[10px] font-mono text-slate-400 dark:text-slate-500 px-2 mb-0.5 select-none">
-                            <span>LEISTUNG (W)</span>
-                            <span id="dash_active_curves_badge" class="text-[10px] font-mono text-slate-400 dark:text-slate-400">Aktiv</span>
-                            <span>SOC (%)</span>
+                        <!-- Full-Bleed Minimalist Technical Chart Stage (Kompakte Smartphone-Höhe für 2+ Kachelreihen darunter) -->
+                        <div onclick="openIntradayFullscreenModal()" class="px-1 sm:px-2 pt-1 pb-1 bg-white/40 dark:bg-[#081015]/70 cursor-crosshair relative group" title="Antippen für Vollbild- &amp; 90°-Querformat-Ansicht">
+                            <div class="flex items-center justify-between text-[9px] font-mono text-slate-400 dark:text-slate-500 px-2 mb-0.5 select-none">
+                                <span>LEISTUNG (W)</span>
+                                <span id="dash_active_curves_badge" class="text-[9px] font-mono text-slate-400 dark:text-slate-400">Aktiv</span>
+                                <span>SOC (%)</span>
+                            </div>
+                            <div class="relative h-44 sm:h-64 md:h-72 w-full">
+                                <canvas id="intradayTelemetryChart"></canvas>
+                            </div>
                         </div>
-                        <div class="relative h-64 sm:h-80 w-full">
-                            <canvas id="intradayTelemetryChart"></canvas>
-                        </div>
-                    </div>
 
-                    <!-- Hidden legacy chip container kept for DOM compatibility -->
-                    <div id="dash_curve_legend_chips" class="hidden"></div>
+                        <!-- Hidden legacy chip container kept for DOM compatibility -->
+                        <div id="dash_curve_legend_chips" class="hidden"></div>
+                    </div>
                 </div>
 
                 <!-- BOTTOM: COMPACT 3-COLUMN TECHNICAL METRIC & CHANNEL TILES -->
@@ -2069,78 +2080,78 @@
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (V9.0: AUFGERÄUMT AUF EXAKT 4 ZENTRALE PUNKTE) -->
+    <!-- M3 More Bottom Sheet (V9.3: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
-    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 m3-surface rounded-t-3xl border-t border-white/20 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
-        <div class="w-12 h-1.5 bg-slate-500/60 rounded-full mx-auto mb-3.5"></div>
+    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1820]/95 backdrop-blur-2xl rounded-t-3xl border-t border-slate-200/90 dark:border-white/15 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
+        <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
         <div class="flex justify-between items-center mb-3.5">
-            <h3 class="text-base font-black text-white flex items-center gap-2">
-                <span class="material-symbols-rounded text-teal-400">tune</span> Zentrale Steuerung &amp; Menü
+            <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400">tune</span> Zentrale Steuerung &amp; Menü
             </h3>
-            <button onclick="closeMoreSheet()" class="text-slate-400 hover:text-white p-1 cursor-pointer">
+            <button onclick="closeMoreSheet()" class="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 cursor-pointer">
                 <span class="material-symbols-rounded text-xl">close</span>
             </button>
         </div>
 
         <div class="space-y-2.5">
             <!-- 1. Design & Erscheinungsbild -->
-            <div class="flex items-center justify-between p-3.5 rounded-2xl bg-white/10 border border-white/15">
+            <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center shrink-0">
-                        <span id="bnavThemeIcon" class="material-symbols-rounded text-xl text-amber-400 fill-1">dark_mode</span>
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                        <span id="bnavThemeIcon" class="material-symbols-rounded text-xl text-amber-500 fill-1">dark_mode</span>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-white">1. Design &amp; Darstellung</p>
-                        <p class="text-[11px] text-slate-300 truncate">Liquid Glass Hell- / Dunkel-Modus umschalten</p>
+                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">1. Design &amp; Darstellung</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Liquid Glass Hell- / Dunkel-Modus umschalten</p>
                     </div>
                 </div>
-                <button onclick="toggleDarkMode()" id="bnav-theme" class="px-3.5 py-2 rounded-xl bg-teal-500/25 hover:bg-teal-500/35 border border-teal-400/40 text-teal-200 text-xs font-bold transition-all cursor-pointer shrink-0">
+                <button onclick="toggleDarkMode()" id="bnav-theme" class="px-3.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-xs font-bold transition-all cursor-pointer shrink-0">
                     Wechseln
                 </button>
             </div>
 
             <!-- 2. Home Assistant & Sensoren -->
-            <button onclick="closeMoreSheet(); openHaConfigModal('connection');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-teal-950/60 hover:bg-teal-900/60 border border-teal-500/40 text-left transition-all cursor-pointer">
+            <button onclick="closeMoreSheet(); openHaConfigModal('connection');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-teal-500/10 dark:bg-teal-950/40 hover:bg-teal-500/15 dark:hover:bg-teal-900/50 border border-teal-500/30 dark:border-teal-500/30 text-left transition-all cursor-pointer">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl text-teal-300">settings_input_antenna</span>
+                    <div class="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl text-teal-600 dark:text-teal-400">settings_input_antenna</span>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-white">2. Home Assistant &amp; Sensoren</p>
-                        <p class="text-[11px] text-slate-300 truncate">Domain, eigener Token, Sensor-Picker &amp; Reverse-Proxy Hilfe</p>
+                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">2. Home Assistant &amp; Sensoren</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Domain, eigener Token, Sensor-Picker &amp; Reverse-Proxy Hilfe</p>
                     </div>
                 </div>
-                <span class="material-symbols-rounded text-teal-300 shrink-0">chevron_right</span>
+                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 shrink-0">chevron_right</span>
             </button>
 
             <!-- 3. Projekte & GitHub-Sync (Zentrales Speichern ohne Token-Weitergabe) -->
-            <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-400/40 text-left transition-all cursor-pointer">
+            <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/40 hover:bg-indigo-500/15 dark:hover:bg-indigo-900/50 border border-indigo-500/30 dark:border-indigo-500/30 text-left transition-all cursor-pointer">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl text-indigo-300">cloud_sync</span>
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl text-indigo-600 dark:text-indigo-400">cloud_sync</span>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-white">3. Projekte &amp; GitHub-Sync</p>
-                        <p class="text-[11px] text-slate-300 truncate">Zentral speichern (inkl. Sensoren, ohne Token), Varianten &amp; QR/Datei</p>
+                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">3. Projekte &amp; GitHub-Sync</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Zentral speichern (inkl. Sensoren, ohne Token), Varianten &amp; QR/Datei</p>
                     </div>
                 </div>
-                <span class="material-symbols-rounded text-indigo-300 shrink-0">chevron_right</span>
+                <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 shrink-0">chevron_right</span>
             </button>
 
             <!-- 4. VDE-Projektdossier (PDF) & Handbuch -->
             <div class="grid grid-cols-2 gap-2.5">
-                <button onclick="closeMoreSheet(); openDossierModal();" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-left transition-all cursor-pointer">
-                    <span class="material-symbols-rounded text-xl text-emerald-400 shrink-0">picture_as_pdf</span>
+                <button onclick="closeMoreSheet(); openDossierModal();" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/40 hover:bg-emerald-500/15 dark:hover:bg-emerald-900/50 border border-emerald-500/30 dark:border-emerald-500/30 text-left transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-xl text-emerald-600 dark:text-emerald-400 shrink-0">picture_as_pdf</span>
                     <div class="min-w-0">
-                        <p class="text-xs font-black text-white truncate">4a. VDE-Dossier</p>
-                        <p class="text-[10px] text-slate-300 truncate">PDF &amp; Schaltplan</p>
+                        <p class="text-xs font-black text-slate-900 dark:text-white truncate">4a. VDE-Dossier</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">PDF &amp; Schaltplan</p>
                     </div>
                 </button>
-                <button onclick="closeMoreSheet(); openPlanungDrillDown('faq');" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                    <span class="material-symbols-rounded text-xl text-sky-400 shrink-0">menu_book</span>
+                <button onclick="closeMoreSheet(); openPlanungDrillDown('faq');" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 hover:bg-slate-200/80 dark:hover:bg-white/10 border border-slate-200/80 dark:border-white/10 text-left transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-xl text-sky-600 dark:text-sky-400 shrink-0">menu_book</span>
                     <div class="min-w-0">
-                        <p class="text-xs font-black text-white truncate">4b. Handbuch</p>
-                        <p class="text-[10px] text-slate-300 truncate">Formeln &amp; v9.0</p>
+                        <p class="text-xs font-black text-slate-900 dark:text-white truncate">4b. Handbuch</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.3</p>
                     </div>
                 </button>
             </div>
@@ -2748,10 +2759,30 @@
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzleistung (+ Bezug / - Einspeisung)</label>
+                                <label class="block text-[11px] font-semibold text-blue-600 dark:text-blue-300 mb-1">Netzbezug · Leistung (W / kW)</label>
                                 <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="sensor.grid_power" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_power', unitFilter: 'power', title: 'Netzleistung (Bezug / Einspeisung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_power" placeholder="z.B. sensor.solarnet_leistung_netzbezug" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-blue-300 dark:border-blue-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-blue-500">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_imp_power', unitFilter: 'power', title: 'Netzbezug · Leistung (W)' })" class="px-2.5 py-2 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Netzbezug-Leistungssensor auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-sky-600 dark:text-sky-300 mb-1">Netzeinspeisung · Leistung (W / kW)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_power" placeholder="z.B. sensor.solarnet_leistung_netzeinspeisung" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-sky-300 dark:border-sky-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-sky-500">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_exp_power', unitFilter: 'power', title: 'Netzeinspeisung · Leistung (W)' })" class="px-2.5 py-2 rounded-xl bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Netzeinspeisung-Leistungssensor auswählen">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Optional: Netz Kombi-Leistung (+/- W, nur falls kein getrennter Bezugs-/Einspeisesensor)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="Leer lassen, wenn oben Netzbezug &amp; Einspeisung getrennt gewählt sind" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_power', unitFilter: 'power', title: 'Netzleistung Kombi (+/- W)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
                                     </button>
@@ -3113,13 +3144,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V9.2 (Multi-Wechselrichter PV-Zähler mit + Button, String-Summierung & Liquid-Glass App Icon) -->
-    <script src="qrcode.client.js?v=9.2"></script>
-    <script src="database.js?v=9.2"></script>
-    <script src="content.js?v=9.2"></script>
-    <script src="app.js?v=9.2"></script>
-    <script src="wiring.js?v=9.2"></script>
-    <script src="dossier.js?v=9.2"></script>
-    <script src="telemetry.js?v=9.2"></script>
+    <!-- MODULARE ARCHITEKTUR V9.3 (Getrennte Netz-Watt-Sensoren, Sticky-Chart mit Tag/Woche/Monat, reale HA-Ertragsanalyse & Dark-Mode-Menü) -->
+    <script src="qrcode.client.js?v=9.3"></script>
+    <script src="database.js?v=9.3"></script>
+    <script src="content.js?v=9.3"></script>
+    <script src="app.js?v=9.3"></script>
+    <script src="wiring.js?v=9.3"></script>
+    <script src="dossier.js?v=9.3"></script>
+    <script src="telemetry.js?v=9.3"></script>
 </body>
 </html>

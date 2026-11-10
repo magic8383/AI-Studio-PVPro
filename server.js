@@ -1235,14 +1235,30 @@ app.all('/api/ha/history', async (req, res) => {
     const token = cleanHaToken(cfg.accessToken || '');
 
     const now = new Date();
+    const range = (req.body?.range || req.query?.range || 'day').toLowerCase();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+
+    let startTime;
+    let stepMs;
+    if (range === 'month') {
+      startTime = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+      stepMs = 3 * 3600 * 1000; // 3-hour steps for 30 days
+    } else if (range === 'week') {
+      startTime = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+      stepMs = 60 * 60 * 1000; // 1-hour steps for 7 days
+    } else {
+      startTime = startOfDay;
+      stepMs = 5 * 60 * 1000; // 5-minute steps for today
+    }
 
     // If in webhook mode or missing credentials, return buffered intraday snapshots
     if (cfg.mode !== 'poll' || !baseUrlRaw || !token) {
       return res.json({
         success: true,
         source: 'buffer',
+        range,
         startOfDay: startOfDay.toISOString(),
+        startTime: startTime.toISOString(),
         now: now.toISOString(),
         snapshots: intradaySnapshots
       });
@@ -1256,6 +1272,8 @@ app.all('/api/ha/history', async (req, res) => {
     if (ent.pvPower) entityKeyMap.push({ key: 'pv_total', entityId: ent.pvPower, type: 'power' });
     if (ent.loadPower) entityKeyMap.push({ key: 'house_load', entityId: ent.loadPower, type: 'power' });
     if (ent.gridPower) entityKeyMap.push({ key: 'grid_power', entityId: ent.gridPower, type: 'power' });
+    if (ent.gridImportPower) entityKeyMap.push({ key: 'grid_power_import', entityId: ent.gridImportPower, type: 'power' });
+    if (ent.gridExportPower) entityKeyMap.push({ key: 'grid_power_export', entityId: ent.gridExportPower, type: 'power' });
     if (ent.batteryChargePower) entityKeyMap.push({ key: 'battery_charge_power', entityId: ent.batteryChargePower, type: 'power' });
     if (ent.batteryDischargePower) entityKeyMap.push({ key: 'battery_discharge_power', entityId: ent.batteryDischargePower, type: 'power' });
     if (ent.batteryPower) entityKeyMap.push({ key: 'battery_power', entityId: ent.batteryPower, type: 'power' });
@@ -1272,13 +1290,15 @@ app.all('/api/ha/history', async (req, res) => {
       return res.json({
         success: true,
         source: 'empty',
+        range,
         startOfDay: startOfDay.toISOString(),
+        startTime: startTime.toISOString(),
         now: now.toISOString(),
         snapshots: intradaySnapshots
       });
     }
 
-    const historyApiPath = `/api/history/period/${encodeURIComponent(startOfDay.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(now.toISOString())}&minimal_response`;
+    const historyApiPath = `/api/history/period/${encodeURIComponent(startTime.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(now.toISOString())}&minimal_response`;
 
     const response = await requestHomeAssistant(baseUrlRaw, token, historyApiPath, 8500);
 
@@ -1286,17 +1306,18 @@ app.all('/api/ha/history', async (req, res) => {
       return res.json({
         success: true,
         source: 'buffer-fallback',
+        range,
         startOfDay: startOfDay.toISOString(),
+        startTime: startTime.toISOString(),
         now: now.toISOString(),
         snapshots: intradaySnapshots
       });
     }
 
     const rawHistoryArrays = response.json;
-    // Build 5-minute time buckets from startOfDay to now
-    const stepMs = 5 * 60 * 1000;
+    // Build time buckets from startTime to now
     const bucketTimes = [];
-    for (let t = startOfDay.getTime(); t <= now.getTime(); t += stepMs) {
+    for (let t = startTime.getTime(); t <= now.getTime(); t += stepMs) {
       bucketTimes.push(t);
     }
     if (bucketTimes.length === 0 || bucketTimes[bucketTimes.length - 1] < now.getTime()) {
@@ -1377,6 +1398,24 @@ app.all('/api/ha/history', async (req, res) => {
           whSum += avgW * dtHours;
         }
         integratedKwh.pv_total = +(whSum / 1000).toFixed(3);
+      }
+    }
+
+    if (series.grid_power_import || series.grid_power_export) {
+      const impArr = series.grid_power_import || new Array(bucketTimes.length).fill(0);
+      const expArr = series.grid_power_export || new Array(bucketTimes.length).fill(0);
+      series.grid_power = bucketTimes.map((_, i) => Math.max(0, impArr[i] || 0));
+      series.grid_feedin = bucketTimes.map((_, i) => Math.max(0, expArr[i] || 0));
+      if (bucketTimes.length > 1) {
+        let impWh = 0;
+        let expWh = 0;
+        for (let i = 1; i < bucketTimes.length; i++) {
+          const dtH = (bucketTimes[i] - bucketTimes[i - 1]) / 3600000;
+          impWh += Math.max(0, (impArr[i] + impArr[i - 1]) / 2) * dtH;
+          expWh += Math.max(0, (expArr[i] + expArr[i - 1]) / 2) * dtH;
+        }
+        integratedKwh.grid_power = +(impWh / 1000).toFixed(3);
+        integratedKwh.grid_feedin = +(expWh / 1000).toFixed(3);
       }
     }
 

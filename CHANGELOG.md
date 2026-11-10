@@ -4,6 +4,54 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.3] – 2026-11-10
+
+### ✨ Getrennte Netzbezugs- & Einspeisungs-Leistungssensoren (W), Sticky Kompakt-Diagramm mit Scroll-Kacheln, Zeitauswahl Tag/Woche/Monat, automatische Ist-Ertrags-Berechnung aus Live-Zählern & Interaktiver Sankey-Detail-Inspektor
+
+#### 1. Getrennte Netzbezugs- und Netzeinspeisungs-Leistungssensoren in Watt (Sektion 2 & Server)
+* **Zwei separate Leistungsfelder in Home Assistant Setup Sektion 2 (`#ha_ent_grid_imp_power` & `#ha_ent_grid_exp_power`):**
+  - Statt nur eines einzelnen kombinierten Felds stehen nun zwei dedizierte Eingabefelder mit Komfort-Sensor-Picker zur Verfügung:
+    - **Netzbezug · Leistung (W / kW):** z. B. `sensor.keller_solarnet_leistung_netzbezug`
+    - **Netzeinspeisung · Leistung (W / kW):** z. B. `sensor.keller_solarnet_leistung_netzeinspeisung`
+  - Dies eliminiert Vorzeichen-Konflikte (wie bei Fronius Modbus üblich, wo beide Werte als positive Watt-Zahlen gemeldet werden). Die Berechnungs-Engine bildet automatisch `gridPower = import - export` und führt beide Kanäle auch in der Historie und im Sankey-Diagramm getrennt.
+  - Das bisherige kombinierte Feld `Netzbezug / Einspeisung (kombiniert +/-)` bleibt als aufklappbare Fallback-Option für Smart-Meter mit vorzeichenbehaftetem Gesamtwert erhalten.
+
+#### 2. Oben fixiertes Diagramm (Sticky Top) mit durchscrollbarem Kachel-Raster auf Ebene 2
+* **Kompakte Sticky-Kopfkarte (`#live-detail-intraday`):**
+  - Der Diagramm-Container ist als `sticky top-0 z-30` mit leicht transparentem Glas-Hintergrund und Randbegrenzung ausgeführt.
+  - Die Höhe auf Smartphones wurde auf `h-44 sm:h-64 md:h-72` optimiert, sodass darunter auf jedem Smartphone-Display mindestens 2 vollständige Reihen der Messkanal-Kacheln sichtbar bleiben.
+  - Beim Scrollen durch die Kacheln bleibt die Verlaufskurve oben stets im Blick. Ein Tap auf eine Kachel blendet die jeweilige Kurve sofort im fixierten Diagramm ein/aus, ohne dass die Seite nach oben gescrollt werden muss.
+
+#### 3. Zeitauswahl direkt über dem Diagramm & Entfernung des Einstellungsbuttons
+* **Segmentierte Zeitauswahl-Pills (`#btn-timerange-day`, `#btn-timerange-week`, `#btn-timerange-month`):**
+  - Direkt über dem fixierten Diagramm befindet sich eine intuitive Zeitauswahl:
+    - **Tag:** Heute ab 00:00 Uhr in 5-Minuten-Auflösung
+    - **Woche:** Letzte 7 Tage in 1-Stunden-Schritten
+    - **Monat:** Letzte 30 Tage in 3-Stunden-Schritten
+  - Das Backend (`/api/ha/history`) und der Browser-First History-Client unterstützen den `range`-Parameter nahtlos für alle Systemkanäle, PV-Strings und Einzelverbraucher.
+* **Entfernung des gefährlichen Zahnrad-/Einstellungs-Buttons:**
+  - Der irreführende Button, der direkt in die Sensorkonfiguration führte, wurde am Diagramm entfernt, um versehentliche Fehlkonfigurationen im laufenden Betrieb zu verhindern.
+
+#### 4. Bereinigung der Ist-Ertrags-Berechnung & automatische Übernahme aus Live-HA-Zählern
+* **Beseitigung der künstlichen Dummy-Monate:**
+  - `ensureProjectYearInitialized` erzeugt keine zufälligen 10-Monats-Musterdaten (`isSampleSeed`) mehr, sobald Home Assistant eingerichtet ist. Vorhandene Dummy-Monate werden automatisch bereinigt.
+* **Automatische Ist-Ertrags-Übernahme für den laufenden Monat:**
+  - `computeAggregatedPerformanceMetrics` übernimmt für den aktuellen Kalendermonat automatisch die echten Zählerwerte (`pvEnergyMonthKwh`, `gridExportMonthKwh`, `gridImportMonthKwh`, Speicher) aus Home Assistant, falls noch kein manueller Eintrag im Logbuch existiert.
+  - Im Monats-Logbuch wird dieser Monat klar mit dem Badge **`Live HA`** gekennzeichnet. Die KPI-Karten zeigen den exakten realen Ertrag und die Soll-Erfüllung.
+
+#### 5. Interaktives Sankey-Diagramm mit Detail-Inspektor & Klick-Hervorhebung
+* **Klickbare Energie-Pfade und Knoten (`selectSankeyFlow(flowId)`):**
+  - Jeder Fluss (PV-Direkt, Akku-Ladung, Akku-Entladung, Netzeinspeisung, Netzbezug) und jeder Knoten (PV-Generator, Haus, Speicher, Netz) kann angetippt werden.
+  - Ausgewählte Flüsse werden hervorgehoben und erhalten einen leuchtenden Glow-Effekt, während nicht beteiligte Flüsse dezent abgedunkelt werden.
+* **Detail-Auswertungskarte unter dem Sankey-Diagramm:**
+  - Zeigt bei Klick die exakte kWh-Menge, den prozentualen Anteil an Erzeugung/Verbrauch und den finanziellen Nutzen (z. B. eingesparter Netzstrom zum konfigurierten Strompreis oder EEG-Einspeisevergütung) sowie einen Button zum Zurücksetzen aller Flüsse.
+
+#### 6. Material Design 3 Dark-Mode-Harmonisierung des Hauptmenüs
+* **Theme-treues M3 More Sheet (`#m3MoreSheet`):**
+  - Entfernung von statisch weißen Texten und dunkelgrünen Containern. Das Menü passt sich nun im Light Mode (strahlendes Weiß, zarte Slate-Rahmen) und Dark Mode (Deep Dark Slate `#0c1820`, Teal-Akzente) nahtlos an die gewählte Systemeinstellung an.
+
+---
+
 ## [Version 9.2] – 2026-11-10
 
 ### ✨ Multi-Wechselrichter PV-Erzeugung (`+ Wechselrichter-Zähler` & String-Summierung) & Neues Liquid-Glass Türkis/Smaragd App-Icon

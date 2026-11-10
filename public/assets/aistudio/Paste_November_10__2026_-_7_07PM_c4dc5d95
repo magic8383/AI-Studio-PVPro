@@ -1,0 +1,784 @@
+entity_id;friendly_name;state
+ai_task.google_ai_task;Google AI Task;unknown
+automation.linus_lichtwandschalter;Linus Lichtwandschalter ;on
+automation.silas_licht_schalter;Silas Licht Schalter;on
+automation.silas_toggle_switch;1% Toggle Silas;on
+binary_sensor.daikinap63620_climatecontrol_fehler_zustand;DaikinAP63620 ClimateControl Fehler-Zustand;off
+binary_sensor.daikinap63620_climatecontrol_power_modus;DaikinAP63620 ClimateControl Power-Modus;off
+binary_sensor.daikinap63620_climatecontrol_urlaubsmodus;DaikinAP63620 ClimateControl Urlaubsmodus;off
+binary_sensor.daikinap63620_climatecontrol_vorsicht_zustand;DaikinAP63620 ClimateControl Vorsicht-Zustand;off
+binary_sensor.daikinap63620_climatecontrol_warn_zustand;DaikinAP63620 ClimateControl Warn-Zustand;off
+binary_sensor.daikinap63620_gateway_fehler_zustand;DaikinAP63620 Gateway Fehler-Zustand;off
+binary_sensor.daikinap63620_gateway_firmware_update_unterstutzung;DaikinAP63620 Gateway Firmware-Update Unterstützung;on
+binary_sensor.daikinap63620_outdoorunit_fehler_zustand;DaikinAP63620 OutdoorUnit Fehler-Zustand;off
+binary_sensor.daikinap63620_outdoorunit_vorsicht_zustand;DaikinAP63620 OutdoorUnit Vorsicht-Zustand;off
+binary_sensor.daikinap63620_outdoorunit_warn_zustand;DaikinAP63620 OutdoorUnit Warn-Zustand;off
+binary_sensor.esszimmer_heizung_esszimmer_batteriestand;Heizung Esszimmer Batteriestand;off
+binary_sensor.f2_425plus_drive_1_max_fehlerhafte_sektoren_uberschritten;F2-425Plus (Drive 1) Max. fehlerhafte Sektoren überschritten;off
+binary_sensor.f2_425plus_drive_1_unterhalb_der_mindestrestlebensdauer;F2-425Plus (Drive 1) Unterhalb der Mindestrestlebensdauer;off
+binary_sensor.f2_425plus_drive_2_max_fehlerhafte_sektoren_uberschritten;F2-425Plus (Drive 2) Max. fehlerhafte Sektoren überschritten;off
+binary_sensor.f2_425plus_drive_2_unterhalb_der_mindestrestlebensdauer;F2-425Plus (Drive 2) Unterhalb der Mindestrestlebensdauer;off
+binary_sensor.f2_425plus_drive_3_max_fehlerhafte_sektoren_uberschritten;F2-425Plus (Drive 3) Max. fehlerhafte Sektoren überschritten;off
+binary_sensor.f2_425plus_drive_3_unterhalb_der_mindestrestlebensdauer;F2-425Plus (Drive 3) Unterhalb der Mindestrestlebensdauer;off
+binary_sensor.f2_425plus_sicherheitsstatus;F2-425Plus Sicherheitsstatus;off
+binary_sensor.garage_hoymiles_shelly_eingang_0;Hoymiles Shelly  Eingang 0;on
+binary_sensor.garage_hoymiles_shelly_uberhitzung;Hoymiles Shelly  Shelly Hoymiles  Überhitzung;off
+binary_sensor.garage_hoymiles_shelly_uberlast;Hoymiles Shelly  Shelly Hoymiles  Überlast;off
+binary_sensor.garage_hoymiles_shelly_uberspannung;Hoymiles Shelly  Shelly Hoymiles  Überspannung;off
+binary_sensor.garage_hoymiles_shelly_uberstrom;Hoymiles Shelly  Shelly Hoymiles  Überstrom;off
+binary_sensor.heizung_esszimmer_fernmessung_der_aussentemperatur;Heizung Esszimmer Fernmessung der Außentemperatur;unavailable
+binary_sensor.heizung_esszimmer_fernmessung_der_lokalen_temperatur;Heizung Esszimmer Fernmessung der lokalen Temperatur;off
+binary_sensor.hymiles_producing;Hoymiles HMS1600 4T Producing;off
+binary_sensor.hymiles_reachable;Hoymiles HMS1600 4T Reachable;off
+binary_sensor.keller_solarnet_akku_standby;SolarNet Akku-Standby;on
+binary_sensor.keller_solarnet_backup_modus;SolarNet Backup-Modus;off
+binary_sensor.matter_server_aktiv;Matter Server Betriebszustand;on
+binary_sensor.opendtu_4d5150_status;OpenDTU-4D5150 Status;on
+binary_sensor.reolinkklingel_besucher;Front door Besucher;off
+binary_sensor.reolinkklingel_bewegung;Front door Bewegung;off
+binary_sensor.reolinkklingel_fahrzeug;Front door Fahrzeug;off
+binary_sensor.reolinkklingel_haustier;Front door Haustier;off
+binary_sensor.reolinkklingel_person;Front door Person;off
+binary_sensor.shelly1pmminig3_543204706fd8_garage_shelly;Shelly 1PM Mini TV Verstärker Eingang 0;off
+binary_sensor.shelly1pmminig3_543204708418_input_0;Shelly 1PM Mini TV Wand Eingang 0;off
+binary_sensor.shelly1pmminig3_d0cf13cea03c_input_0;Shelly 1PM Mini Silas Licht Eingang 0;on
+binary_sensor.shelly1pmminig3_d0cf13cea03c_overcurrent;Shelly 1PM Mini Silas Licht Überstrom;off
+binary_sensor.shelly1pmminig3_d0cf13cea03c_overheating;Shelly 1PM Mini Silas Licht Überhitzung;off
+binary_sensor.shelly1pmminig3_d0cf13cea03c_overpowering;Shelly 1PM Mini Silas Licht Überlast;off
+binary_sensor.shelly1pmminig3_d0cf13cea03c_overvoltage;Shelly 1PM Mini Silas Licht Überspannung;off
+binary_sensor.shelly1pmminig3_d0cf13cf69cc_input_0;Shelly 1PM Mini Linus Licht Eingang 0;off
+binary_sensor.shelly2pmg4_98a316748330_input_0;Shelly 2PM Gen4 System Eingang 0;off
+binary_sensor.shelly2pmg4_98a316748330_input_1;Shelly 2PM Gen4 System Eingang 1;off
+binary_sensor.shelly2pmg4_98a316748330_switch_0_overcurrent;Shelly 2PM Gen4 Esszimmer Licht Überstrom;off
+binary_sensor.shelly2pmg4_98a316748330_switch_0_overheating;Shelly 2PM Gen4 Esszimmer Licht Überhitzung;off
+binary_sensor.shelly2pmg4_98a316748330_switch_0_overpowering;Shelly 2PM Gen4 Esszimmer Licht Überlast;off
+binary_sensor.shelly2pmg4_98a316748330_switch_0_overvoltage;Shelly 2PM Gen4 Esszimmer Licht Überspannung;off
+binary_sensor.shelly2pmg4_98a316748330_switch_1_overcurrent;Shelly 2PM Gen4 Küche Licht Überstrom;off
+binary_sensor.shelly2pmg4_98a316748330_switch_1_overheating;Shelly 2PM Gen4 Küche Licht Überhitzung;off
+binary_sensor.shelly2pmg4_98a316748330_switch_1_overpowering;Shelly 2PM Gen4 Küche Licht Überlast;off
+binary_sensor.shelly2pmg4_98a316748330_switch_1_overvoltage;Shelly 2PM Gen4 Küche Licht Überspannung;off
+binary_sensor.shelly_1pm_mini_garage_overcurrent;Shelly 1PM Mini TV Verstärker Überstrom;off
+binary_sensor.shelly_1pm_mini_garage_overheating;Shelly 1PM Mini TV Verstärker Überhitzung;off
+binary_sensor.shelly_1pm_mini_garage_overpowering;Shelly 1PM Mini TV Verstärker Überlast;off
+binary_sensor.shelly_1pm_mini_garage_overvoltage;Shelly 1PM Mini TV Verstärker Überspannung;off
+binary_sensor.shelly_1pm_mini_gen3_schlafzimmer_input_0;Shelly 1PM Mini Gen3 Schlafzimmer  Eingang 0;off
+binary_sensor.shelly_1pm_mini_gen3_schlafzimmer_overcurrent;Shelly 1PM Mini Gen3 Schlafzimmer  Überstrom;off
+binary_sensor.shelly_1pm_mini_gen3_schlafzimmer_overheating;Shelly 1PM Mini Gen3 Schlafzimmer  Überhitzung;off
+binary_sensor.shelly_1pm_mini_gen3_schlafzimmer_overpowering;Shelly 1PM Mini Gen3 Schlafzimmer  Überlast;off
+binary_sensor.shelly_1pm_mini_gen3_schlafzimmer_overvoltage;Shelly 1PM Mini Gen3 Schlafzimmer  Überspannung;off
+binary_sensor.shelly_1pm_mini_linus_licht_overcurrent;Shelly 1PM Mini Linus Licht Überstrom;off
+binary_sensor.shelly_1pm_mini_linus_licht_overheating;Shelly 1PM Mini Linus Licht Überhitzung;off
+binary_sensor.shelly_1pm_mini_linus_licht_overpowering;Shelly 1PM Mini Linus Licht Überlast;off
+binary_sensor.shelly_1pm_mini_linus_licht_overvoltage;Shelly 1PM Mini Linus Licht Überspannung;off
+binary_sensor.shelly_1pm_mini_tv_wand_overcurrent;Shelly 1PM Mini TV Wand Überstrom;off
+binary_sensor.shelly_1pm_mini_tv_wand_overheating;Shelly 1PM Mini TV Wand Überhitzung;off
+binary_sensor.shelly_1pm_mini_tv_wand_overpowering;Shelly 1PM Mini TV Wand Überlast;off
+binary_sensor.shelly_1pm_mini_tv_wand_overvoltage;Shelly 1PM Mini TV Wand Überspannung;off
+binary_sensor.shelly_1pm_mini_wohnzimmer_licht_input_0;Shelly 1PM Mini Wohnzimmer Licht  Eingang 0;on
+binary_sensor.shelly_1pm_mini_wohnzimmer_licht_overcurrent;Shelly 1PM Mini Wohnzimmer Licht  Überstrom;off
+binary_sensor.shelly_1pm_mini_wohnzimmer_licht_overheating;Shelly 1PM Mini Wohnzimmer Licht  Überhitzung;off
+binary_sensor.shelly_1pm_mini_wohnzimmer_licht_overpowering;Shelly 1PM Mini Wohnzimmer Licht  Überlast;off
+binary_sensor.shelly_1pm_mini_wohnzimmer_licht_overvoltage;Shelly 1PM Mini Wohnzimmer Licht  Überspannung;off
+binary_sensor.shelly_plug_s_3d_drucker_overcurrent;3D-Drucker Überstrom;off
+binary_sensor.shelly_plug_s_3d_drucker_overheating;3D-Drucker Überhitzung;off
+binary_sensor.shelly_plug_s_3d_drucker_overpowering;3D-Drucker Überlast;off
+binary_sensor.shelly_plug_s_3d_drucker_overvoltage;3D-Drucker Überspannung;off
+binary_sensor.shelly_plug_s_pc_overcurrent;Klimaanlage Wohnzimmer Überstrom;unavailable
+binary_sensor.shelly_plug_s_pc_overheating;Klimaanlage Wohnzimmer Überhitzung;unavailable
+binary_sensor.shelly_plug_s_pc_overpowering;Klimaanlage Wohnzimmer Überlast;unavailable
+binary_sensor.shelly_plug_s_pc_overvoltage;Klimaanlage Wohnzimmer Überspannung;unavailable
+binary_sensor.smart_lock_ultra_aktor;Smart Lock Ultra Aktor;on
+binary_sensor.smart_lock_ultra_batteriestand;Smart Lock Ultra Batteriestand;off
+binary_sensor.tapo_lampe_linus_cloud_verbindung;Tapo Linus Cloud-Verbindung;on
+binary_sensor.tapo_lampe_linus_uberhitzt;Tapo Linus Überhitzt;off
+binary_sensor.tapo_lampe_silas_cloud_verbindung;Tapo Lampe Silas  Cloud-Verbindung;on
+binary_sensor.tapo_lampe_silas_uberhitzt;Tapo Lampe Silas  Überhitzt;off
+button.daikinap63620_refresh;DaikinAP63620 Refresh;unknown
+button.f2_425plus_herunterfahren;F2-425Plus Herunterfahren;unknown
+button.f2_425plus_neu_starten;F2-425Plus Neu starten;unknown
+button.fronius_symo_gen24_12_0_plus_sc_reset_modbus_control;Fronius Symo GEN24 12.0 Plus SC Modbus-Steuerung zurücksetzen;unknown
+button.garage_hoymiles_shelly_neu_starten;Hoymiles Shelly  Neu starten;unknown
+button.google_tv_aktuellen_titel_favorisieren;Google TV Aktuellen Titel favorisieren;unavailable
+button.google_tv_bad_aktuellen_titel_favorisieren;Google TV Bad Aktuellen Titel favorisieren;unavailable
+button.heizung_esszimmer_identifizieren;Heizung Esszimmer Identifizieren;unknown
+button.hymiles_reset_radio_statistics;Hoymiles HMS1600 4T Reset Radio Statistics;unknown
+button.hymiles_restart_inverter;Hoymiles HMS1600 4T Restart Inverter;unknown
+button.hymiles_turn_inverter_off;Hoymiles HMS1600 4T Turn Inverter Off;unknown
+button.hymiles_turn_inverter_on;Hoymiles HMS1600 4T Turn Inverter On;unknown
+button.kiflu_aktuellen_titel_favorisieren;KiFlu Aktuellen Titel favorisieren;unknown
+button.kinderzimmer_aktuellen_titel_favorisieren;Kinderzimmer Aktuellen Titel favorisieren;unknown
+button.nest_audio_aktuellen_titel_favorisieren;Nest Audio Aktuellen Titel favorisieren;unknown
+button.nest_hub_aktuellen_titel_favorisieren;Nest Hub Aktuellen Titel favorisieren;unknown
+button.party_aktuellen_titel_favorisieren;Party Aktuellen Titel favorisieren;unknown
+button.shelly1pmminig3_d0cf13cea03c_reboot;Shelly 1PM Mini Silas Licht Neu starten;unknown
+button.shelly2pmg4_98a316748330_restart;Shelly 2PM Gen4 System Neu starten;unknown
+button.shelly_1pm_mini_garage_reboot;Shelly 1PM Mini TV Verstärker Neu starten;unknown
+button.shelly_1pm_mini_gen3_schlafzimmer_restart;Shelly 1PM Mini Gen3 Schlafzimmer  Neu starten;unknown
+button.shelly_1pm_mini_linus_licht_reboot;Shelly 1PM Mini Linus Licht Neu starten;unknown
+button.shelly_1pm_mini_tv_wand_reboot;Shelly 1PM Mini TV Wand Neu starten;unknown
+button.shelly_1pm_mini_wohnzimmer_licht_restart;Shelly 1PM Mini Wohnzimmer Licht  Neu starten;unknown
+button.shelly_plug_s_3d_drucker_reboot;3D-Drucker Neu starten;unknown
+button.shelly_plug_s_pc_reboot;Klimaanlage Wohnzimmer Neu starten;unavailable
+button.shelly_pm_mini_gen3_restart;Shelly PM Mini Gen3 Daikin Neu starten;unknown
+button.shelly_pm_mini_gen3_weiss_restart;Shelly PM Mini Gen3 weiß  Badezimmer Neu starten;unknown
+button.shelly_pm_mini_gen3_weiss_spulmaschine_neu_starten;Shelly PM Mini Gen3 weiß Spülmaschine Neu starten;unknown
+button.shelly_pm_mini_gen3_weiss_trockner_neu_starten;Shelly PM Mini Gen3 Weiß Trockner  Neu starten;unknown
+button.shelly_pm_mini_gen3_weiss_waschmaschine_neu_starten;Shelly PM Mini Gen3 Weiß Waschmaschine  Neu starten;unknown
+button.shield_1_aktuellen_titel_favorisieren;SHIELD 1 Aktuellen Titel favorisieren;unknown
+button.smart_bulb_p3_identifizieren;Nous Lampe Esszimmer Identifizieren;unavailable
+button.smart_lock_ultra_identifizieren;Smart Lock Ultra Identifizieren;unknown
+button.sony_garten_aktuellen_titel_favorisieren;Sony Garten Aktuellen Titel favorisieren;unknown
+button.sony_keller_aktuellen_titel_favorisieren;Sony Keller Aktuellen Titel favorisieren;unknown
+button.switchbot_hub_2_identifizieren;SwitchBot Hub 2 Identifizieren;unknown
+button.ug_aktuellen_titel_favorisieren;UG Aktuellen Titel favorisieren;unknown
+button.wiim_amp1_aktuellen_titel_favorisieren;WiiM Amp1 Aktuellen Titel favorisieren;unknown
+camera.reolinkklingel_standardauflosung;Front door Standardauflösung;idle
+camera.tapo_cam_live_ansicht;Tapo_Cam Live-Ansicht;idle
+climate.daikinap63620_room_temperature;DaikinAP63620 Room Temperature;off
+climate.heizung_esszimmer;Heizung Esszimmer;heat
+conversation.google_generative_ai;Google Generative AI;unknown
+conversation.home_assistant;Home Assistant;2025-11-03T23:09:06.334799+00:00
+device_tracker.nexus_7;Nexus 7;unknown
+device_tracker.pixel_10a;Pixel 10a;unknown
+device_tracker.pixel_3;Pixel 3;unknown
+device_tracker.pixel_7;Pixel 7;unknown
+device_tracker.pixel_tablet;Pixel Tablet;unknown
+event.backup_automatisches_backup;Backup Automatisches Backup;2026-11-10T04:38:55.103+00:00
+input_boolean.material_you_appbar;Material You Show Application Bar;on
+input_boolean.material_you_appbar_244697f951c24d32bd01d50aaa4f3968;Material You Show Application Bar Mark;on
+input_boolean.material_you_appbar_30e04c22a8824dcc9231becd60d36cd7;Material You Show Application Bar Linus;on
+input_boolean.material_you_harmonize;Material You Harmonize Semantic Colors;on
+input_boolean.material_you_harmonize_244697f951c24d32bd01d50aaa4f3968;Material You Harmonize Semantic Colors Mark;on
+input_boolean.material_you_harmonize_30e04c22a8824dcc9231becd60d36cd7;Material You Harmonize Semantic Colors Linus;on
+input_boolean.material_you_navbar;Material You Show Navigation Bar;on
+input_boolean.material_you_navbar_244697f951c24d32bd01d50aaa4f3968;Material You Show Navigation Bar Mark;on
+input_boolean.material_you_navbar_30e04c22a8824dcc9231becd60d36cd7;Material You Show Navigation Bar Linus;on
+input_boolean.material_you_styles;Material You Style Upgrades;on
+input_boolean.material_you_styles_244697f951c24d32bd01d50aaa4f3968;Material You Style Upgrades Mark;on
+input_boolean.material_you_styles_30e04c22a8824dcc9231becd60d36cd7;Material You Style Upgrades Linus;on
+input_number.material_you_contrast;Material You Contrast Level;0.0
+input_number.material_you_contrast_244697f951c24d32bd01d50aaa4f3968;Material You Contrast Level Mark;-0.6
+input_number.material_you_contrast_30e04c22a8824dcc9231becd60d36cd7;Material You Contrast Level Linus;0.0
+input_select.klima_zeitraum;Klima Zeitraum ;4h
+input_select.material_you_card_type;Material You Card Type;elevated
+input_select.material_you_card_type_244697f951c24d32bd01d50aaa4f3968;Material You Card Type Mark;filled
+input_select.material_you_card_type_30e04c22a8824dcc9231becd60d36cd7;Material You Card Type Linus;elevated
+input_select.material_you_platform;Material You Platform;phone
+input_select.material_you_platform_244697f951c24d32bd01d50aaa4f3968;Material You Platform Mark;phone
+input_select.material_you_platform_30e04c22a8824dcc9231becd60d36cd7;Material You Platform Linus;phone
+input_select.material_you_scheme;Material You Scheme Name;fidelity
+input_select.material_you_scheme_244697f951c24d32bd01d50aaa4f3968;Material You Scheme Name Mark;expressive
+input_select.material_you_scheme_30e04c22a8824dcc9231becd60d36cd7;Material You Scheme Name Linus;tonalspot
+input_select.material_you_spec;Material You Specification;2025
+input_select.material_you_spec_244697f951c24d32bd01d50aaa4f3968;Material You Specification Mark;2025
+input_select.material_you_spec_30e04c22a8824dcc9231becd60d36cd7;Material You Specification Linus;2025
+input_select.pv_zeitraum;PV Zeitraum ;16h
+input_text.material_you_base_color;Material You Base Color;#0BD5D5
+input_text.material_you_base_color_244697f951c24d32bd01d50aaa4f3968;Material You Base Color Mark;#E5EAFF
+input_text.material_you_base_color_30e04c22a8824dcc9231becd60d36cd7;Material You Base Color Linus;#00E0A1
+input_text.material_you_css_file;Material You CSS Path/URL;
+input_text.material_you_css_file_244697f951c24d32bd01d50aaa4f3968;Material You CSS Path/URL Mark;
+input_text.material_you_css_file_30e04c22a8824dcc9231becd60d36cd7;Material You CSS Path/URL Linus;
+input_text.material_you_image_url;Material You Base Color Source Image Path/URL;
+input_text.material_you_image_url_244697f951c24d32bd01d50aaa4f3968;Material You Base Color Source Image Path/URL Mark;
+input_text.material_you_image_url_30e04c22a8824dcc9231becd60d36cd7;Material You Base Color Source Image Path/URL Linus;
+light.shelly_1pm_mini_wohnzimmer_licht;Shelly 1PM Mini Wohnzimmer Licht ;on
+light.shelly_2pm_gen4_esszimmer_licht;Shelly 2PM Gen4 Esszimmer Licht;off
+light.shelly_2pm_gen4_kuche_licht;Shelly 2PM Gen4 Küche Licht;off
+light.smart_bulb_p3;Nous Lampe Esszimmer;unavailable
+light.tapo_lampe_linus;Tapo Linus;off
+light.tapo_lampe_silas;Tapo Lampe Silas ;off
+lock.smart_lock_ultra;Smart Lock Ultra;unlocked
+media_player.google_tv;Google TV;unavailable
+media_player.google_tv_2;Google TV;unavailable
+media_player.google_tv_bad;Google TV Bad;unavailable
+media_player.google_tv_bad_2;Google TV Bad;unavailable
+media_player.google_tv_bad_3;Google TV Bad;unavailable
+media_player.kiflu;KiFlu;off
+media_player.kiflu_2;KiFlu;off
+media_player.kinderzimmer;Kinderzimmer;off
+media_player.kinderzimmer_2;Kinderzimmer;idle
+media_player.kinderzimmer_3;Kinderzimmer;unavailable
+media_player.nest_audio;Nest Audio;off
+media_player.nest_audio_2;Nest Audio;idle
+media_player.nest_audio_3;Nest Audio;unavailable
+media_player.nest_hub;Nest Hub;off
+media_player.nest_hub_2;Nest Hub;idle
+media_player.nest_hub_3;Nest Hub;idle
+media_player.party;Party;off
+media_player.party_2;Party;off
+media_player.schlafzimmer_chromecast;Schlafzimmer Chromecast;unavailable
+media_player.shield;SHIELD;unavailable
+media_player.shield_1;SHIELD 1;off
+media_player.shield_1_2;SHIELD 1;off
+media_player.shield_1_3;SHIELD 1;idle
+media_player.shield_1_4;SHIELD 1;idle
+media_player.shield_2;SHIELD;unavailable
+media_player.shield_tv;SHIELD TV;unavailable
+media_player.sony_esszimmer;Sony Garten;off
+media_player.sony_garten;Sony Garten;idle
+media_player.sony_keller;Sony Keller;off
+media_player.sony_keller_2;Sony Keller;idle
+media_player.ug;UG;off
+media_player.ug_2;UG;off
+media_player.wiim_amp1;WiiM Amp1;off
+media_player.wiim_amp1_2;WiiM Amp1;idle
+media_player.wiim_amp1_3;WiiM Amp1;unavailable
+notify.nexus_7;Nexus 7;unknown
+notify.pixel_10a;Pixel 10a;unknown
+notify.pixel_3;Pixel 3;unknown
+notify.pixel_7;Pixel 7;unknown
+notify.pixel_tablet;Pixel Tablet;unknown
+number.esszimmer_nous_lampe_esszimmer_wiedereinschalt_farbtemperatur;Nous Lampe Esszimmer Wiedereinschalt-Farbtemperatur;unavailable
+number.fronius_symo_gen24_12_0_plus_sc_ac_limit_rate;Fronius Symo GEN24 12.0 Plus SC AC-Leistungsbegrenzung;12000
+number.fronius_symo_gen24_12_0_plus_sc_export_soft_limit;Fronius Symo GEN24 12.0 Plus SC Export soft limit;unknown
+number.fronius_symo_gen24_12_0_plus_sc_power_factor;Fronius Symo GEN24 12.0 Plus SC Leistungsfaktor;1.0
+number.heizung_esszimmer_temperatur_offset;Heizung Esszimmer Temperatur-Offset;-2.0
+number.hvs_backup_reserve;HVS+ Notstromreserve;7
+number.hvs_discharge_limit;HVS+ Entladebegrenzung;unavailable
+number.hvs_grid_charge_power;HVS+ Netz-Ladeleistung;unavailable
+number.hvs_grid_discharge_power;HVS+ Netz-Entladeleistung;unavailable
+number.hvs_pv_charge_limit;HVS+ PV-Ladebegrenzung;unavailable
+number.hvs_soc_maximum;HVS+ Maximaler SoC;unavailable
+number.hvs_soc_minimum;HVS+ Minimaler SoC;5
+number.hvs_target_feed_in;HVS+ Ziel-Einspeisung;unavailable
+number.hymiles_limit_nonpersistent_absolute;Hoymiles HMS1600 4T Limit NonPersistent Absolute;1600.0
+number.hymiles_limit_nonpersistent_relative;Hoymiles HMS1600 4T Limit NonPersistent Relative;100.0
+number.hymiles_limit_persistent_absolute;Hoymiles HMS1600 4T Limit Persistent Absolute;1600.0
+number.hymiles_limit_persistent_relative;Hoymiles HMS1600 4T Limit Persistent Relative;100.0
+number.keller_fronius_brusche_ac_leistungsgrenzwert;Fronius AC-Leistungsgrenzwert;100.0
+number.keller_fronius_brusche_grenzwert_fur_die_entladeleistung_der_batterie;Fronius Grenzwert für die Entladeleistung der Batterie;100.0
+number.keller_fronius_brusche_grenzwert_fur_die_ladeleistung_der_batterie;Fronius Grenzwert für die Ladeleistung der Batterie;100.0
+number.keller_fronius_brusche_mindestreserve_der_batterie;Fronius Mindestreserve der Batterie;5.0
+number.nous_lampe_esszimmer_wiedereinschalt_level;Nous Lampe Esszimmer Wiedereinschalt-Level;unavailable
+number.reolink_chime_lautstarke;Reolink Chime Lautstärke;4
+number.reolink_chime_stille_zeit;Reolink Chime Stille Zeit;0
+number.reolinkklingel_automatische_schnellantwortzeit;Front door Automatische Schnellantwortzeit;15
+number.reolinkklingel_bewegungsempfindlichkeit;Front door Bewegungsempfindlichkeit;41
+number.reolinkklingel_ki_fahrzeug_empfindlichkeit;Front door KI-Fahrzeug-Empfindlichkeit;60
+number.reolinkklingel_ki_haustier_empfindlichkeit;Front door KI-Haustier-Empfindlichkeit;60
+number.reolinkklingel_ki_personen_empfindlichkeit;Front door KI-Personen-Empfindlichkeit;60
+number.reolinkklingel_lautstarke;Front door Lautstärke;100
+number.reolinkklingel_sprechlautstarke;Front door Sprechlautstärke;100
+number.reolinkklingel_turklingellautstarke;Front door Türklingellautstärke;100
+number.smart_bulb_p3_ein_level;Nous Lampe Esszimmer Ein-Level;unavailable
+number.tapo_lampe_linus_fliessend_abschalten;Tapo Linus Fließend abschalten;0
+number.tapo_lampe_linus_sanft_einschalten;Tapo Linus Sanft einschalten;0
+number.tapo_lampe_silas_fliessend_abschalten;Tapo Lampe Silas  Fließend abschalten;0
+number.tapo_lampe_silas_sanft_einschalten;Tapo Lampe Silas  Sanft einschalten;10
+person.hichi;Hichi;unknown
+person.linus;Linus;unknown
+person.mark;Mark;unknown
+person.mqtt;mqtt;unknown
+person.silas;Silas;unknown
+remote.shield_1;SHIELD 1;off
+scene.100_licht_linus_duplizieren;100% Licht Linus;2026-11-06T18:21:49.277097+00:00
+scene.100_licht_silas;100% Licht Silas;2026-10-06T04:49:38.574306+00:00
+scene.1_licht_silas;1% Licht Silas;2026-11-10T05:41:29.927423+00:00
+scene.1_linus_licht_duplizieren;1% Licht Linus;2026-10-20T18:02:43.642200+00:00
+scene.wz_an;WZ an;2026-10-21T18:39:20.209082+00:00
+scene.wz_aus;WZ aus;2026-11-02T19:28:47.296411+00:00
+select.daikinap63620_climatecontrol_zeitplan;DaikinAP63620 ClimateControl Zeitplan;off
+select.fronius_symo_gen24_12_0_plus_sc_ac_limit_enable;Fronius Symo GEN24 12.0 Plus SC AC-Begrenzung aktivieren;Disabled
+select.fronius_symo_gen24_12_0_plus_sc_inverter_connection;Fronius Symo GEN24 12.0 Plus SC Wechselrichterverbindung;Enabled
+select.fronius_symo_gen24_12_0_plus_sc_power_factor_control;Fronius Symo GEN24 12.0 Plus SC Leistungsfaktor-Steuerung;Disabled
+select.heizung_esszimmer_temperaturanzeigemodus;Heizung Esszimmer Temperaturanzeigemodus;Celsius
+select.hvs_battery_api_mode;HVS+ Batterie-API-Modus;Auto
+select.hvs_storage_control_mode;HVS+ Speicher-Steuermodus;Auto
+select.reolink_chime_besucher_klingelton;Reolink Chime Besucher-Klingelton;citybird
+select.reolink_chime_bewegungsklingelton;Reolink Chime Bewegungsklingelton;off
+select.reolink_chime_fahrzeug_klingelton;Reolink Chime Fahrzeug-Klingelton;off
+select.reolink_chime_haustier_klingelton;Reolink Chime Haustier-Klingelton;off
+select.reolink_chime_personen_klingelton;Reolink Chime Personen-Klingelton;off
+select.reolinkklingel_automatische_schnellantwort;Front door Automatische Schnellantwort;off
+select.reolinkklingel_schnellantwort_nachricht_abspielen;Front door Schnellantwort-Nachricht abspielen;unknown
+select.reolinkklingel_tag_nacht_modus;Front door Tag-Nacht-Modus;auto
+select.reolinkklingel_turklingel_led;Front door Türklingel-LED;alwaysonatnight
+select.smart_bulb_p3_wiedereinschaltverhalten;Nous Lampe Esszimmer Wiedereinschaltverhalten;unavailable
+select.smart_lock_ultra_betriebsart;Smart Lock Ultra Betriebsart;normal
+select.tapo_lampe_linus_lichtvoreinstellung;Tapo Linus Lichtvoreinstellung;Not set
+select.tapo_lampe_silas_lichtvoreinstellung;Tapo Lampe Silas  Lichtvoreinstellung;Brightness preset 1
+sensor.backup_backup_manager_state;Backup Backup-Manager-Zustand;idle
+sensor.backup_grosse_des_letzten_erfolgreichen_automatischen_backups;Backup Größe des letzten erfolgreichen automatischen Backups;15.380859375
+sensor.backup_last_successful_automatic_backup;Backup Letztes erfolgreiches automatisches Backup;2026-11-10T04:38:54+00:00
+sensor.backup_next_scheduled_automatic_backup;Backup Nächstes geplantes automatisches Backup;2026-11-11T04:26:56+00:00
+sensor.backup_zuletzt_versuchtes_automatisches_backup;Backup Letztes versuchtes automatisches Backup;2026-11-10T04:38:40+00:00
+sensor.bkw_einspeisung;Shelly PM Mini Gen3 Daikin BKW Einspeisung ;0
+sensor.daikinap63620_climatecontrol_aussentemperatur;DaikinAP63620 ClimateControl Außentemperatur;11.5
+sensor.daikinap63620_climatecontrol_ein_aus_modus;DaikinAP63620 ClimateControl Ein/Aus-Modus;unavailable
+sensor.daikinap63620_climatecontrol_fehlercode;DaikinAP63620 ClimateControl Fehlercode;00-00
+sensor.daikinap63620_climatecontrol_jahrlicher_stromverbrauch_heizung;DaikinAP63620 ClimateControl Jährlicher Stromverbrauch Heizung;23.3
+sensor.daikinap63620_climatecontrol_jahrlicher_stromverbrauch_kuhlung;DaikinAP63620 ClimateControl Jährlicher Stromverbrauch Kühlung;47.5
+sensor.daikinap63620_climatecontrol_monatlicher_stromverbrauch_heizung;DaikinAP63620 ClimateControl Monatlicher Stromverbrauch Heizung;4.1
+sensor.daikinap63620_climatecontrol_monatlicher_stromverbrauch_kuhlung;DaikinAP63620 ClimateControl Monatlicher Stromverbrauch Kühlung;0
+sensor.daikinap63620_climatecontrol_power_modus;DaikinAP63620 ClimateControl Power-Modus;unavailable
+sensor.daikinap63620_climatecontrol_raumtemperatur;DaikinAP63620 ClimateControl Raumtemperatur;24
+sensor.daikinap63620_climatecontrol_taglicher_stromverbrauch_heizung;DaikinAP63620 ClimateControl Täglicher Stromverbrauch Heizung;0.9
+sensor.daikinap63620_climatecontrol_taglicher_stromverbrauch_kuhlung;DaikinAP63620 ClimateControl Täglicher Stromverbrauch Kühlung;0
+sensor.daikinap63620_climatecontrol_wochentlicher_stromverbrauch_heizung;DaikinAP63620 ClimateControl Wöchentlicher Stromverbrauch Heizung;0.9
+sensor.daikinap63620_climatecontrol_wochentlicher_stromverbrauch_kuhlung;DaikinAP63620 ClimateControl Wöchentlicher Stromverbrauch Kühlung;0
+sensor.daikinap63620_gateway_fehlercode;DaikinAP63620 Gateway Fehlercode;
+sensor.daikinap63620_gateway_ip_adresse;DaikinAP63620 Gateway IP-Adresse;192.168.1.238
+sensor.daikinap63620_gateway_ssid;DaikinAP63620 Gateway SSID;DaikinAP63620
+sensor.daikinap63620_gateway_verbleibende_fur_tag;DaikinAP63620 Gateway Verbleibende für Tag;117
+sensor.daikinap63620_gateway_zeitzone;DaikinAP63620 Gateway Zeitzone;Europe/Berlin
+sensor.daikinap63620_outdoorunit_fehlercode;DaikinAP63620 OutdoorUnit Fehlercode;00-00
+sensor.energy_battery_keller_solarnet_entladeleistung_keller_solarnet_ladeleistung_net_power;SolarNet Battery Power;332.4399
+sensor.esszimmer_shelly_2pm_gen4_esszimmer_licht_leistungsfaktor;Shelly 2PM Gen4 Esszimmer Licht Leistungsfaktor;0.0
+sensor.f2_425plus_cpu_auslastung_benutzer;F2-425Plus CPU-Auslastung (Benutzer);0
+sensor.f2_425plus_cpu_auslastung_gesamt;F2-425Plus CPU-Auslastung (gesamt);2
+sensor.f2_425plus_download_durchsatz;F2-425Plus Download-Durchsatz;0.917
+sensor.f2_425plus_drive_1_status;F2-425Plus (Drive 1) Status;normal
+sensor.f2_425plus_drive_1_temperatur;F2-425Plus (Drive 1) Temperatur;31
+sensor.f2_425plus_drive_2_status;F2-425Plus (Drive 2) Status;normal
+sensor.f2_425plus_drive_2_temperatur;F2-425Plus (Drive 2) Temperatur;31
+sensor.f2_425plus_drive_3_status;F2-425Plus (Drive 3) Status;normal
+sensor.f2_425plus_drive_3_temperatur;F2-425Plus (Drive 3) Temperatur;31
+sensor.f2_425plus_durchschnittliche_cpu_last_15_min;F2-425Plus Durchschnittliche CPU-Auslastung (15 min);0.0
+sensor.f2_425plus_durchschnittliche_cpu_last_5_min;F2-425Plus Durchschnittliche CPU-Auslastung (5 min);0.04
+sensor.f2_425plus_speicher_gesamt_real;F2-425Plus Speicher gesamt (real);1851.629568
+sensor.f2_425plus_speicher_gesamt_swap;F2-425Plus Speicher gesamt (Swap);3257.905152
+sensor.f2_425plus_speicher_verfugbar_real;F2-425Plus Speicher verfügbar (real);107.749376
+sensor.f2_425plus_speicher_verfugbar_swap;F2-425Plus Speicher verfügbar (Swap);3250.56512
+sensor.f2_425plus_speichernutzung_real;F2-425Plus Speichernutzung (real);38
+sensor.f2_425plus_temperatur;F2-425Plus Temperatur;57
+sensor.f2_425plus_upload_durchsatz;F2-425Plus Upload-Durchsatz;0.211
+sensor.f2_425plus_volume_1_belegter_speicherplatz;F2-425Plus (Volume 1) Belegter Speicherplatz;0.001361719296
+sensor.f2_425plus_volume_1_durchschnittliche_festplattentemperatur;F2-425Plus (Volume 1) Durchschnittliche Festplattentemperatur;31.0
+sensor.f2_425plus_volume_1_status;F2-425Plus (Volume 1) Status;normal
+sensor.f2_425plus_volume_1_volume_nutzung;F2-425Plus (Volume 1) Volume-Nutzung;2.5
+sensor.f2_425plus_volume_2_belegter_speicherplatz;F2-425Plus (Volume 2) Belegter Speicherplatz;0.398407520256
+sensor.f2_425plus_volume_2_durchschnittliche_festplattentemperatur;F2-425Plus (Volume 2) Durchschnittliche Festplattentemperatur;31.0
+sensor.f2_425plus_volume_2_status;F2-425Plus (Volume 2) Status;normal
+sensor.f2_425plus_volume_2_volume_nutzung;F2-425Plus (Volume 2) Volume-Nutzung;5.2
+sensor.f2_425plus_volume_4_belegter_speicherplatz;F2-425Plus (Volume 4) Belegter Speicherplatz;12.064010948608
+sensor.f2_425plus_volume_4_durchschnittliche_festplattentemperatur;F2-425Plus (Volume 4) Durchschnittliche Festplattentemperatur;31.0
+sensor.f2_425plus_volume_4_status;F2-425Plus (Volume 4) Status;normal
+sensor.f2_425plus_volume_4_volume_nutzung;F2-425Plus (Volume 4) Volume-Nutzung;78.6
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_current;Fronius Smart Meter TS 65A-3 Meter 1 AC-Strom;0.14
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_current_l1;Fronius Smart Meter TS 65A-3 Meter 1 AC-Strom L1;1.104
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_current_l2;Fronius Smart Meter TS 65A-3 Meter 1 AC-Strom L2;-0.663
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_current_l3;Fronius Smart Meter TS 65A-3 Meter 1 AC-Strom L3;-0.301
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_voltage_l1_n;Fronius Smart Meter TS 65A-3 Meter 1 AC-Spannung L1-N;233.2
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_voltage_l2_n;Fronius Smart Meter TS 65A-3 Meter 1 AC-Spannung L2-N;233.6
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_voltage_l3_n;Fronius Smart Meter TS 65A-3 Meter 1 AC-Spannung L3-N;234.9
+sensor.fronius_smart_meter_ts_65a_3_meter_1_ac_voltage_line_to_line;Fronius Smart Meter TS 65A-3 Meter 1 AC-Spannung Leiter-Leiter;405.1
+sensor.fronius_smart_meter_ts_65a_3_meter_1_exported;Fronius Smart Meter TS 65A-3 Meter 1 Exportiert;55128.0
+sensor.fronius_smart_meter_ts_65a_3_meter_1_imported;Fronius Smart Meter TS 65A-3 Meter 1 Importiert;631926.0
+sensor.fronius_smart_meter_ts_65a_3_meter_1_line_frequency;Fronius Smart Meter TS 65A-3 Meter 1 Netzfrequenz;50.0
+sensor.fronius_smart_meter_ts_65a_3_meter_1_modbus_id;Fronius Smart Meter TS 65A-3 Meter 1 Modbus-ID;200
+sensor.fronius_smart_meter_ts_65a_3_meter_1_power;Fronius Smart Meter TS 65A-3 Meter 1 Leistung;6.3
+sensor.fronius_smart_meter_ts_65a_3_meter_1_power_l1;Fronius Smart Meter TS 65A-3 Meter 1 Leistung L1;65.0
+sensor.fronius_smart_meter_ts_65a_3_meter_1_power_l2;Fronius Smart Meter TS 65A-3 Meter 1 Leistung L2;-54.9
+sensor.fronius_smart_meter_ts_65a_3_meter_1_power_l3;Fronius Smart Meter TS 65A-3 Meter 1 Leistung L3;-3.7
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_current;Fronius Symo GEN24 12.0 Plus SC AC-Strom;1.276
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_current_l1;Fronius Symo GEN24 12.0 Plus SC AC-Strom L1;0.424
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_current_l2;Fronius Symo GEN24 12.0 Plus SC AC-Strom L2;0.427
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_current_l3;Fronius Symo GEN24 12.0 Plus SC AC-Strom L3;0.426
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_energy;Fronius Symo GEN24 12.0 Plus SC AC-Energie;30657
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_limit_enabled;Fronius Symo GEN24 12.0 Plus SC AC-Leistungsbegrenzung aktiv;Disabled
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_limit_rate;Fronius Symo GEN24 12.0 Plus SC AC-Leistungsbegrenzung;12000
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_module_temperature;Fronius Symo GEN24 12.0 Plus SC Temperatur AC-Modul;34.4833374023438
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_power;Fronius Symo GEN24 12.0 Plus SC AC-Leistung;296.59
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_voltage_l1_l2;Fronius Symo GEN24 12.0 Plus SC AC-Spannung L1-L2;403
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_voltage_l1_n;Fronius Symo GEN24 12.0 Plus SC AC-Spannung L1-N;233
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_voltage_l2_l3;Fronius Symo GEN24 12.0 Plus SC AC-Spannung L2-L3;405
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_voltage_l2_n;Fronius Symo GEN24 12.0 Plus SC AC-Spannung L2-N;233
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_voltage_l3_l1;Fronius Symo GEN24 12.0 Plus SC AC-Spannung L3-L1;405
+sensor.fronius_symo_gen24_12_0_plus_sc_ac_voltage_l3_n;Fronius Symo GEN24 12.0 Plus SC AC-Spannung L3-N;234
+sensor.fronius_symo_gen24_12_0_plus_sc_battery_module_temperature;Fronius Symo GEN24 12.0 Plus SC Temperatur Batteriemodul;32.5792541503906
+sensor.fronius_symo_gen24_12_0_plus_sc_connection_control;Fronius Symo GEN24 12.0 Plus SC Verbindungssteuerung;Enabled
+sensor.fronius_symo_gen24_12_0_plus_sc_core_storage_control_mode;Fronius Symo GEN24 12.0 Plus SC Interner Speicher-Steuermodus;Normal
+sensor.fronius_symo_gen24_12_0_plus_sc_dc_module_temperature;Fronius Symo GEN24 12.0 Plus SC Temperatur DC-Modul;32.6593933105469
+sensor.fronius_symo_gen24_12_0_plus_sc_electrical_connection;Fronius Symo GEN24 12.0 Plus SC Netzverbindung;Connected
+sensor.fronius_symo_gen24_12_0_plus_sc_events;Fronius Symo GEN24 12.0 Plus SC Ereignisse;None
+sensor.fronius_symo_gen24_12_0_plus_sc_export_soft_limit;Fronius Symo GEN24 12.0 Plus SC Export soft limit;unknown
+sensor.fronius_symo_gen24_12_0_plus_sc_fixed_power_factor_status;Fronius Symo GEN24 12.0 Plus SC Fester Leistungsfaktor aktiv;Disabled
+sensor.fronius_symo_gen24_12_0_plus_sc_grid_status;Fronius Symo GEN24 12.0 Plus SC Netzstatus;On grid operating
+sensor.fronius_symo_gen24_12_0_plus_sc_isolation_resistance;Fronius Symo GEN24 12.0 Plus SC Isolationswiderstand;18
+sensor.fronius_symo_gen24_12_0_plus_sc_limit_var_control;Fronius Symo GEN24 12.0 Plus SC Blindleistungsbegrenzung aktiv;Disabled
+sensor.fronius_symo_gen24_12_0_plus_sc_line_frequency;Fronius Symo GEN24 12.0 Plus SC Netzfrequenz;50.0
+sensor.fronius_symo_gen24_12_0_plus_sc_load;Fronius Symo GEN24 12.0 Plus SC Hauslast;302.89
+sensor.fronius_symo_gen24_12_0_plus_sc_maximum_power;Fronius Symo GEN24 12.0 Plus SC Maximale Leistung;12000
+sensor.fronius_symo_gen24_12_0_plus_sc_modbus_id;Fronius Symo GEN24 12.0 Plus SC Modbus-ID;1
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_0_dc_current;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 0 DC-Strom;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_0_dc_power;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 0 DC-Leistung;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_0_dc_voltage;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 0 DC-Spannung;70.44
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_0_lifetime_energy;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 0 Energie gesamt;17636.33
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_1_dc_current;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 1 DC-Strom;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_1_dc_power;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 1 DC-Leistung;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_1_dc_voltage;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 1 DC-Spannung;73.12
+sensor.fronius_symo_gen24_12_0_plus_sc_mppt_module_1_lifetime_energy;Fronius Symo GEN24 12.0 Plus SC MPPT-Modul 1 Energie gesamt;15036.85
+sensor.fronius_symo_gen24_12_0_plus_sc_pv_connection;Fronius Symo GEN24 12.0 Plus SC PV-Verbindung;Operating
+sensor.fronius_symo_gen24_12_0_plus_sc_pv_power;Fronius Symo GEN24 12.0 Plus SC PV-Leistung;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_reactive_power;Fronius Symo GEN24 12.0 Plus SC Blindleistung;2.35
+sensor.fronius_symo_gen24_12_0_plus_sc_reference_voltage;Fronius Symo GEN24 12.0 Plus SC Referenzspannung;231
+sensor.fronius_symo_gen24_12_0_plus_sc_reference_voltage_offset;Fronius Symo GEN24 12.0 Plus SC Referenzspannungs-Offset;0
+sensor.fronius_symo_gen24_12_0_plus_sc_status;Fronius Symo GEN24 12.0 Plus SC Status;Normal
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_charging_current;Fronius Symo GEN24 12.0 Plus SC Speicher-Ladestrom;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_charging_lifetime_energy;Fronius Symo GEN24 12.0 Plus SC Speicher-Ladeenergie gesamt;23403.82
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_charging_power;Fronius Symo GEN24 12.0 Plus SC Speicher-Ladeleistung;0.0
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_charging_voltage;Fronius Symo GEN24 12.0 Plus SC Speicher-Ladespannung;507.71
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_connection;Fronius Symo GEN24 12.0 Plus SC Speicherverbindung;Operating
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_discharging_current;Fronius Symo GEN24 12.0 Plus SC Speicher-Entladestrom;0.66
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_discharging_lifetime_energy;Fronius Symo GEN24 12.0 Plus SC Speicher-Entladeenergie gesamt;23273.84
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_discharging_power;Fronius Symo GEN24 12.0 Plus SC Speicher-Entladeleistung;334.14
+sensor.fronius_symo_gen24_12_0_plus_sc_storage_discharging_voltage;Fronius Symo GEN24 12.0 Plus SC Speicher-Entladespannung;507.71
+sensor.fronius_symo_gen24_12_0_plus_sc_temperature;Fronius Symo GEN24 12.0 Plus SC Temperatur;48.5035400390625
+sensor.fronius_symo_gen24_12_0_plus_sc_throttle_control;Fronius Symo GEN24 12.0 Plus SC Leistungsbegrenzung aktiv;Disabled
+sensor.fronius_symo_gen24_12_0_plus_sc_vendor_status;Fronius Symo GEN24 12.0 Plus SC Herstellerstatus;Normal
+sensor.fronius_symo_gen24_12_0_plus_sc_web_api_modbus_control;Fronius Symo GEN24 12.0 Plus SC Web-API-Modbus aktiv;Enabled
+sensor.fronius_symo_gen24_12_0_plus_sc_web_api_modbus_mode;Fronius Symo GEN24 12.0 Plus SC Web-API-Modbus-Modus;TCP
+sensor.fronius_symo_gen24_12_0_plus_sc_web_api_modbus_restriction;Fronius Symo GEN24 12.0 Plus SC Web-API-Modbus-IP-Beschränkung;Disabled
+sensor.fronius_symo_gen24_12_0_plus_sc_web_api_modbus_restriction_ip;Fronius Symo GEN24 12.0 Plus SC Web-API-Modbus-Beschränkungs-IP;
+sensor.fronius_symo_gen24_12_0_plus_sc_web_api_sunspec_mode;Fronius Symo GEN24 12.0 Plus SC Web-API-SunSpec-Modus;int
+sensor.garage_hoymiles_shelly_energie;Hoymiles Shelly  Shelly Hoymiles  Energie;86.3073
+sensor.garage_hoymiles_shelly_energieeinspeisung;Hoymiles Shelly  Shelly Hoymiles  Energieeinspeisung;86.296083
+sensor.garage_hoymiles_shelly_leistung;Hoymiles Shelly  Shelly Hoymiles  Leistung;0.0
+sensor.hausverbrauch_gesamt;Hausverbrauch gesamt;310.3
+sensor.heizung_esszimmer_batterie;Heizung Esszimmer Batterie;45
+sensor.heizung_esszimmer_batteriespannung;Heizung Esszimmer Batteriespannung;2.65
+sensor.heizung_esszimmer_temperatur;Heizung Esszimmer Temperatur;19.0
+sensor.heizung_esszimmer_ventilstellung;Heizung Esszimmer Ventilstellung;0
+sensor.hoymiles_solarleistung;Hoymiles Solarleistung;0.0
+sensor.hub_2_tempsensor_temperatur;Hub 2 TempSensor Temperatur;22.0
+sensor.hvs_capacity;HVS+ Nennkapazität;12800
+sensor.hvs_cell_temperature;HVS+ Zelltemperatur;18.35
+sensor.hvs_charge_status;HVS+ Ladestatus;Discharging
+sensor.hvs_charging_power;HVS+ Ladeleistung;100.0
+sensor.hvs_core_storage_control_mode;HVS+ Interner Speicher-Steuermodus;Auto
+sensor.hvs_discharging_power;HVS+ Entladeleistung;100.0
+sensor.hvs_grid_charging;HVS+ Netzladen;Enabled
+sensor.hvs_max_charging_power;HVS+ Lade-Referenzwert;12800
+sensor.hvs_maximum_charge_rate;HVS+ Maximale Ladeleistung;12800
+sensor.hvs_maximum_discharge_rate;HVS+ Maximale Entladeleistung;12800
+sensor.hvs_soc_minimum;HVS+ Minimaler SoC;5
+sensor.hvs_state_of_charge;HVS+ Ladezustand;12.5
+sensor.hymiles_ch1_current;Hoymiles HMS1600 4T CH1 Current;unavailable
+sensor.hymiles_ch1_irradiation;Hoymiles HMS1600 4T CH1 Irradiation;unavailable
+sensor.hymiles_ch1_power;Hoymiles HMS1600 4T CH1 Power;unavailable
+sensor.hymiles_ch1_voltage;Hoymiles HMS1600 4T CH1 Voltage;unavailable
+sensor.hymiles_ch1_yieldday;Hoymiles HMS1600 4T CH1 YieldDay;unavailable
+sensor.hymiles_ch1_yieldtotal;Hoymiles HMS1600 4T CH1 YieldTotal;unavailable
+sensor.hymiles_ch2_current;Hoymiles HMS1600 4T CH2 Current;unavailable
+sensor.hymiles_ch2_irradiation;Hoymiles HMS1600 4T CH2 Irradiation;unavailable
+sensor.hymiles_ch2_power;Hoymiles HMS1600 4T CH2 Power;unavailable
+sensor.hymiles_ch2_voltage;Hoymiles HMS1600 4T CH2 Voltage;unavailable
+sensor.hymiles_ch2_yieldday;Hoymiles HMS1600 4T CH2 YieldDay;unavailable
+sensor.hymiles_ch2_yieldtotal;Hoymiles HMS1600 4T CH2 YieldTotal;unavailable
+sensor.hymiles_ch3_current;Hoymiles HMS1600 4T CH3 Current;unavailable
+sensor.hymiles_ch3_irradiation;Hoymiles HMS1600 4T CH3 Irradiation;unavailable
+sensor.hymiles_ch3_power;Hoymiles HMS1600 4T CH3 Power;unavailable
+sensor.hymiles_ch3_voltage;Hoymiles HMS1600 4T CH3 Voltage;unavailable
+sensor.hymiles_ch3_yieldday;Hoymiles HMS1600 4T CH3 YieldDay;unavailable
+sensor.hymiles_ch3_yieldtotal;Hoymiles HMS1600 4T CH3 YieldTotal;unavailable
+sensor.hymiles_ch4_current;Hoymiles HMS1600 4T CH4 Current;unavailable
+sensor.hymiles_ch4_irradiation;Hoymiles HMS1600 4T CH4 Irradiation;unavailable
+sensor.hymiles_ch4_power;Hoymiles HMS1600 4T CH4 Power;unavailable
+sensor.hymiles_ch4_voltage;Hoymiles HMS1600 4T CH4 Voltage;unavailable
+sensor.hymiles_ch4_yieldday;Hoymiles HMS1600 4T CH4 YieldDay;unavailable
+sensor.hymiles_ch4_yieldtotal;Hoymiles HMS1600 4T CH4 YieldTotal;unavailable
+sensor.hymiles_current;Hoymiles HMS1600 4T Current;unavailable
+sensor.hymiles_efficiency;Hoymiles HMS1600 4T Efficiency;unavailable
+sensor.hymiles_frequency;Hoymiles HMS1600 4T Frequency;unavailable
+sensor.hymiles_power;Hoymiles HMS1600 4T Power;unavailable
+sensor.hymiles_powerdc;Hoymiles HMS1600 4T PowerDC;unavailable
+sensor.hymiles_powerfactor;Hoymiles HMS1600 4T PowerFactor;unavailable
+sensor.hymiles_reactivepower;Hoymiles HMS1600 4T ReactivePower;unavailable
+sensor.hymiles_rssi;Hoymiles HMS1600 4T RSSI;-38
+sensor.hymiles_rx_fail_receive_corrupt;Hoymiles HMS1600 4T RX Fail Receive Corrupt;14
+sensor.hymiles_rx_fail_receive_nothing;Hoymiles HMS1600 4T RX Fail Receive Nothing;19422
+sensor.hymiles_rx_fail_receive_partial;Hoymiles HMS1600 4T RX Fail Receive Partial;0
+sensor.hymiles_rx_success;Hoymiles HMS1600 4T RX Success;7474
+sensor.hymiles_temperature;Hoymiles HMS1600 4T Temperature;unavailable
+sensor.hymiles_tx_re_request_fragment;Hoymiles HMS1600 4T TX Re-Request Fragment;1
+sensor.hymiles_tx_requests;Hoymiles HMS1600 4T TX Requests;26910
+sensor.hymiles_voltage;Hoymiles HMS1600 4T Voltage;unavailable
+sensor.hymiles_yieldday;Hoymiles HMS1600 4T YieldDay;unavailable
+sensor.hymiles_yieldtotal;Hoymiles HMS1600 4T YieldTotal;unavailable
+sensor.keller_fronius_brusche_energie_gesamt;Fronius Energie gesamt;30656.9333
+sensor.keller_fronius_brusche_fehlermeldung;Fronius Fehlermeldung;no_error
+sensor.keller_fronius_brusche_gesamtenergie_batterieaufladung;Fronius Gesamtenergie Batterieaufladung;23403.8233
+sensor.keller_fronius_brusche_gesamtenergie_batterieentladung;Fronius Gesamtenergie Batterieentladung;23273.8389
+sensor.keller_fronius_brusche_leistung_ac;Fronius Leistung AC;296.1609
+sensor.keller_fronius_brusche_mppt_1_dc_leistung;MPPT 1 DC-Leistung;0.0
+sensor.keller_fronius_brusche_mppt_1_energie;MPPT 1 Energie;17636.3261
+sensor.keller_fronius_brusche_mppt_1_spannung_dc;MPPT 1 Spannung DC;71.9098
+sensor.keller_fronius_brusche_mppt_1_stromstarke_dc;MPPT 1 Stromstärke DC;0.0
+sensor.keller_fronius_brusche_mppt_2_dc_leistung;MPPT 2 DC-Leistung;0.0
+sensor.keller_fronius_brusche_mppt_2_energie;MPPT 2 Energie;15036.8547
+sensor.keller_fronius_brusche_mppt_2_spannung_dc;MPPT 2 Spannung DC;73.1799
+sensor.keller_fronius_brusche_mppt_2_stromstarke_dc;MPPT 2 Stromstärke DC;0.0
+sensor.keller_fronius_brusche_mppt_3_dc_leistung;MPPT 3 DC-Leistung;0.0
+sensor.keller_fronius_brusche_mppt_3_energie;MPPT 3 Energie;23403.8233
+sensor.keller_fronius_brusche_mppt_4_dc_leistung;MPPT 4 DC-Leistung;328.27
+sensor.keller_fronius_brusche_mppt_4_energie;MPPT 4 Energie;23273.8389
+sensor.keller_fronius_brusche_pv_energie_insgesamt;Fronius PV-Energie insgesamt;32673.1808
+sensor.keller_fronius_brusche_statusnachricht;Fronius Statusnachricht;running
+sensor.keller_fronius_brusche_stromstarke_ac;Fronius Stromstärke AC;1.2758
+sensor.keller_fronius_brusche_wechselrichterstatus;Fronius Wechselrichterstatus;Running
+sensor.keller_hvs_ausgelegte_kapazitat;HVS+ Ausgelegte Kapazität;12800.0
+sensor.keller_hvs_ladezustand;HVS+ Ladezustand;12.5
+sensor.keller_hvs_maximale_kapazitat;HVS+ Maximale Kapazität;12800.0
+sensor.keller_hvs_spannung_dc;HVS+ Spannung DC;507.7
+sensor.keller_hvs_stromstarke_dc;HVS+ Stromstärke DC;-0.6992
+sensor.keller_hvs_temperatur;HVS+ Temperatur;18.35
+sensor.keller_smart_meter_ts_65a_3_bezogene_wirkenergie;Smart Meter TS 65A-3 Bezogene Wirkenergie;631926.0
+sensor.keller_smart_meter_ts_65a_3_eingespeiste_wirkenergie;Smart Meter TS 65A-3 Eingespeiste Wirkenergie;55128.0
+sensor.keller_smart_meter_ts_65a_3_leistungsfaktor;Smart Meter TS 65A-3 Leistungsfaktor;0.035
+sensor.keller_smart_meter_ts_65a_3_netzfrequenz;Smart Meter TS 65A-3 Netzfrequenz;49.9
+sensor.keller_smart_meter_ts_65a_3_wirkleistung;Smart Meter TS 65A-3 Wirkleistung;14.1
+sensor.keller_smart_meter_ts_65a_3_zahlerposition;Smart Meter TS 65A-3 Zählerposition;0
+sensor.keller_smart_meter_ts_65a_3_zahlerstandort;Smart Meter TS 65A-3 Zählerstandort;feed_in
+sensor.keller_solarnet_autarkiegrad;SolarNet Autarkiegrad;98.7439
+sensor.keller_solarnet_entladeleistung;SolarNet Entladeleistung;332.4399
+sensor.keller_solarnet_ladeleistung;SolarNet Ladeleistung;0
+sensor.keller_solarnet_leistung_netzbezug;SolarNet Leistung Netzbezug;3.8
+sensor.keller_solarnet_leistung_netzeinspeisung;SolarNet Leistung Netzeinspeisung;0
+sensor.keller_solarnet_leistung_verbrauch;SolarNet Leistung Verbrauch;302.5255
+sensor.keller_solarnet_pv_leistung;SolarNet PV-Leistung;0.0
+sensor.keller_solarnet_relativer_eigenverbrauch;SolarNet Relativer Eigenverbrauch;100.0
+sensor.keller_solarnet_zahlermodus;SolarNet Zählermodus;bidirectional
+sensor.keller_tasmota_dzg_leistung_aktuell;Tasmota DZG Leistung_aktuell;14
+sensor.kuche_shelly_2pm_gen4_kuche_licht_leistungsfaktor;Shelly 2PM Gen4 Küche Licht Leistungsfaktor;0.0
+sensor.linus_musik;Linus Musik;bereit
+sensor.matter_server_arbeitsspeicher_in_prozent;Matter Server Speicher-Auslastung;8.96
+sensor.matter_server_cpu_prozent;Matter Server CPU-Auslastung;0.0
+sensor.matter_server_neueste_version;Matter Server Neueste Version;9.3.0
+sensor.matter_server_version;Matter Server Version;9.3.0
+sensor.meter_plus_26_luftfeuchtigkeit;Switchbot Silas Luftfeuchtigkeit;61.0
+sensor.meter_plus_26_temperatur;Switchbot Silas Temperatur;17.6
+sensor.meter_plus_97_luftfeuchtigkeit;Switchbot Bad Luftfeuchtigkeit;53.0
+sensor.meter_plus_97_temperatur;Switchbot Bad Temperatur;20.4
+sensor.nexus_7_battery_level;Nexus 7 Battery level;100
+sensor.nexus_7_battery_state;Nexus 7 Battery state;not_charging
+sensor.nexus_7_charger_type;Nexus 7 Charger type;none
+sensor.opendtu_4d5150_ac_power;OpenDTU-4D5150 AC Power;0.0
+sensor.opendtu_4d5150_dc_power;OpenDTU-4D5150 DC Power;0.0
+sensor.opendtu_4d5150_heap_free;OpenDTU-4D5150 Heap Free;185580
+sensor.opendtu_4d5150_heap_size;OpenDTU-4D5150 Heap Size;315868
+sensor.opendtu_4d5150_ip;OpenDTU-4D5150 IP;192.168.1.32
+sensor.opendtu_4d5150_largest_free_heap_block;OpenDTU-4D5150 Largest Free Heap Block;167924
+sensor.opendtu_4d5150_lifetime_minimum_free_heap;OpenDTU-4D5150 Lifetime Minimum Free Heap;154572
+sensor.opendtu_4d5150_temperature;OpenDTU-4D5150 Temperature;unknown
+sensor.opendtu_4d5150_uptime;OpenDTU-4D5150 Uptime;296279
+sensor.opendtu_4d5150_wifi_signal;OpenDTU-4D5150 WiFi Signal;-47
+sensor.opendtu_4d5150_yield_day;OpenDTU-4D5150 Yield Day;0
+sensor.opendtu_4d5150_yield_total;OpenDTU-4D5150 Yield Total;87.475
+sensor.openrouter_aktualisierung;OpenRouter Aktualisierung;2026-11-10T18:00:27+00:00
+sensor.openrouter_einzahlungen;OpenRouter Einzahlungen;150.0
+sensor.openrouter_gesamtverbrauch;OpenRouter Gesamtverbrauch;139.678213159
+sensor.openrouter_guthaben;OpenRouter Guthaben;10.321786841
+sensor.openrouter_status;OpenRouter Status;verbunden
+sensor.openrouter_verbrauch_heute;OpenRouter Verbrauch heute;0.781462300
+sensor.openrouter_verbrauch_monat;OpenRouter Verbrauch Monat;60.984556200
+sensor.outdoor_meter_47_luftfeuchtigkeit;Switchbot Linus Luftfeuchtigkeit;58.0
+sensor.outdoor_meter_47_temperatur;Switchbot Linus Temperatur;17.4
+sensor.outdoor_meter_50_luftfeuchtigkeit;Switchbot Keller Luftfeuchtigkeit;68.0
+sensor.outdoor_meter_50_temperatur;Switchbot Keller Temperatur;15.6
+sensor.outdoor_meter_5d_luftfeuchtigkeit;Switchbot Schlafzimmer Luftfeuchtigkeit;0.0
+sensor.outdoor_meter_5d_temperatur;Switchbot Schlafzimmer Temperatur;0.0
+sensor.outdoor_meter_6b_luftfeuchtigkeit;Switchbot Wohnzimmer Luftfeuchtigkeit;43.0
+sensor.outdoor_meter_6b_temperatur;Switchbot Wohnzimmer Temperatur;24.6
+sensor.outdoor_meter_b9_luftfeuchtigkeit;Switchbot Sensor Garten;94.0
+sensor.outdoor_meter_b9_temperatur;Switchbot Sensor Garten;9.8
+sensor.pixel_10a_battery_level;Pixel 10a Battery level;50
+sensor.pixel_10a_battery_state;Pixel 10a Battery state;discharging
+sensor.pixel_10a_charger_type;Pixel 10a Charger type;none
+sensor.pixel_3_battery_level;Pixel 3 Battery level;20
+sensor.pixel_3_battery_state;Pixel 3 Battery state;discharging
+sensor.pixel_3_charger_type;Pixel 3 Charger type;none
+sensor.pixel_7_battery_level;Pixel 7 Battery level;68
+sensor.pixel_7_battery_state;Pixel 7 Battery state;discharging
+sensor.pixel_7_charger_type;Pixel 7 Charger type;none
+sensor.pixel_tablet_battery_level;Pixel Tablet Battery level;19
+sensor.pixel_tablet_battery_state;Pixel Tablet Battery state;discharging
+sensor.pixel_tablet_charger_type;Pixel Tablet Charger type;none
+sensor.reolinkklingel_tag_nacht_zustand;Front door Tag-Nacht-Zustand;night
+sensor.shelly1pmminig3_543204706fd8_consumed_energy;Shelly 1PM Mini TV Verstärker Energieverbrauch;495.143117
+sensor.shelly1pmminig3_543204706fd8_current;Shelly 1PM Mini TV Verstärker Stromstärke;0.557
+sensor.shelly1pmminig3_543204706fd8_frequency;Shelly 1PM Mini TV Verstärker Frequenz;50.19
+sensor.shelly1pmminig3_543204706fd8_voltage;Shelly 1PM Mini TV Verstärker Spannung;234.9
+sensor.shelly1pmminig3_543204708418_consumed_energy;Shelly 1PM Mini TV Wand Energieverbrauch;1371.076355
+sensor.shelly1pmminig3_543204708418_voltage;Shelly 1PM Mini TV Wand Spannung;234.6
+sensor.shelly1pmminig3_d0cf13c15b5c_energieverbrauch;Hoymiles Shelly  Shelly Hoymiles  Energieverbrauch;0.0112170000000042
+sensor.shelly1pmminig3_d0cf13c15b5c_spannung;Hoymiles Shelly  Shelly Hoymiles  Spannung;234.6
+sensor.shelly1pmminig3_d0cf13c15b5c_stromstarke;Hoymiles Shelly  Shelly Hoymiles  Stromstärke;0.0
+sensor.shelly1pmminig3_d0cf13cea03c_consumed_energy;Shelly 1PM Mini Silas Licht Energieverbrauch;1.269875
+sensor.shelly1pmminig3_d0cf13cea03c_power;Shelly 1PM Mini Silas Licht Leistung;0.0
+sensor.shelly1pmminig3_d0cf13cea03c_returned_energy;Shelly 1PM Mini Silas Licht Energieeinspeisung;0.0
+sensor.shelly1pmminig3_d0cf13cea03c_rssi;Shelly 1PM Mini Silas Licht Signalstärke;-60
+sensor.shelly1pmminig3_d0cf13cea03c_total_energy;Shelly 1PM Mini Silas Licht Energie;1.269875
+sensor.shelly1pmminig3_d0cf13cea03c_voltage;Shelly 1PM Mini Silas Licht Spannung;235.7
+sensor.shelly1pmminig3_d0cf13cf69cc_consumed_energy;Shelly 1PM Mini Linus Licht Energieverbrauch;1.601962
+sensor.shelly2pmg4_98a316748330_switch_0_energy;Shelly 2PM Gen4 Esszimmer Licht Energie;64.83937
+sensor.shelly2pmg4_98a316748330_switch_0_energy_consumed;Shelly 2PM Gen4 Esszimmer Licht Energieverbrauch;64.83937
+sensor.shelly2pmg4_98a316748330_switch_0_energy_returned;Shelly 2PM Gen4 Esszimmer Licht Energieeinspeisung;0.0
+sensor.shelly2pmg4_98a316748330_switch_0_power;Shelly 2PM Gen4 Esszimmer Licht Leistung;0.0
+sensor.shelly2pmg4_98a316748330_switch_1_energy;Shelly 2PM Gen4 Küche Licht Energie;62.909119
+sensor.shelly2pmg4_98a316748330_switch_1_energy_consumed;Shelly 2PM Gen4 Küche Licht Energieverbrauch;62.909119
+sensor.shelly2pmg4_98a316748330_switch_1_energy_returned;Shelly 2PM Gen4 Küche Licht Energieeinspeisung;0.0
+sensor.shelly2pmg4_98a316748330_switch_1_power;Shelly 2PM Gen4 Küche Licht Leistung;0.0
+sensor.shelly_1pm_mini_garage_power;Shelly 1PM Mini TV Verstärker Leistung;76.4
+sensor.shelly_1pm_mini_garage_returned_energy_archiv;Shelly 1PM Mini TV Verstärker Energieeinspeisung;0.0
+sensor.shelly_1pm_mini_garage_total_energy;Shelly 1PM Mini TV Verstärker Energie;495.143117
+sensor.shelly_1pm_mini_gen3_schlafzimmer_energy;Shelly 1PM Mini Gen3 Schlafzimmer  Energie;491.260403
+sensor.shelly_1pm_mini_gen3_schlafzimmer_energy_returned;Shelly 1PM Mini Gen3 Schlafzimmer  Energieeinspeisung;0.0
+sensor.shelly_1pm_mini_gen3_schlafzimmer_power;Shelly 1PM Mini Gen3 Schlafzimmer  Leistung;15.5
+sensor.shelly_1pm_mini_linus_licht_power;Shelly 1PM Mini Linus Licht Leistung;0.0
+sensor.shelly_1pm_mini_linus_licht_returned_energy;Shelly 1PM Mini Linus Licht Energieeinspeisung;0.0
+sensor.shelly_1pm_mini_linus_licht_total_energy;Shelly 1PM Mini Linus Licht Energie;1.601962
+sensor.shelly_1pm_mini_tv_wand_power;Shelly 1PM Mini TV Wand Leistung;21.8
+sensor.shelly_1pm_mini_tv_wand_returned_energy;Shelly 1PM Mini TV Wand Energieeinspeisung;0.0
+sensor.shelly_1pm_mini_tv_wand_total_energy;Shelly 1PM Mini TV Wand Energie;1371.076355
+sensor.shelly_1pm_mini_wohnzimmer_licht_energy;Shelly 1PM Mini Wohnzimmer Licht  Energie;29.463559
+sensor.shelly_1pm_mini_wohnzimmer_licht_energy_returned;Shelly 1PM Mini Wohnzimmer Licht  Energieeinspeisung;0.0
+sensor.shelly_1pm_mini_wohnzimmer_licht_power;Shelly 1PM Mini Wohnzimmer Licht  Leistung;22.7
+sensor.shelly_plug_s_3d_drucker_power;3D-Drucker Leistung;0.0
+sensor.shelly_plug_s_3d_drucker_total_energy;3D-Drucker Energie;161.073
+sensor.shelly_plug_s_pc_power;Klimaanlage Wohnzimmer Leistung;unavailable
+sensor.shelly_plug_s_pc_total_energy;Klimaanlage Wohnzimmer Energie;unavailable
+sensor.shelly_pm_mini_gen3_energy;Shelly PM Mini Gen3 Daikin Energie;1031.664976
+sensor.shelly_pm_mini_gen3_energy_returned;Shelly PM Mini Gen3 Daikin Energieeinspeisung;932.202
+sensor.shelly_pm_mini_gen3_power;Shelly PM Mini Gen3 Daikin Leistung;5.3
+sensor.shelly_pm_mini_gen3_weiss_energy;Shelly PM Mini Gen3 weiß  Badezimmer Energie;91.280658
+sensor.shelly_pm_mini_gen3_weiss_energy_returned;Shelly PM Mini Gen3 weiß  Badezimmer Energieeinspeisung;0.0
+sensor.shelly_pm_mini_gen3_weiss_power;Shelly PM Mini Gen3 weiß  Badezimmer Leistung;5.0
+sensor.shelly_pm_mini_gen3_weiss_spulmaschine_energie;Shelly PM Mini Gen3 weiß Spülmaschine Energie;162.918384
+sensor.shelly_pm_mini_gen3_weiss_spulmaschine_energieeinspeisung;Shelly PM Mini Gen3 weiß Spülmaschine Energieeinspeisung;0.0
+sensor.shelly_pm_mini_gen3_weiss_spulmaschine_leistung;Shelly PM Mini Gen3 weiß Spülmaschine Leistung;0.0
+sensor.shelly_pm_mini_gen3_weiss_trockner_energie;Shelly PM Mini Gen3 Weiß Trockner  Energie;150.60422
+sensor.shelly_pm_mini_gen3_weiss_trockner_energieeinspeisung;Shelly PM Mini Gen3 Weiß Trockner  Energieeinspeisung;0.0
+sensor.shelly_pm_mini_gen3_weiss_trockner_leistung;Shelly PM Mini Gen3 Weiß Trockner  Leistung;0.0
+sensor.shelly_pm_mini_gen3_weiss_waschmaschine_energie;Shelly PM Mini Gen3 Weiß Waschmaschine  Energie;105.372184
+sensor.shelly_pm_mini_gen3_weiss_waschmaschine_energieeinspeisung;Shelly PM Mini Gen3 Weiß Waschmaschine  Energieeinspeisung;0.0
+sensor.shelly_pm_mini_gen3_weiss_waschmaschine_leistung;Shelly PM Mini Gen3 Weiß Waschmaschine  Leistung;0.0
+sensor.shellyplusplugs_08f9e0fea388_current;3D-Drucker Stromstärke;0.0
+sensor.shellyplusplugs_08f9e0fea388_voltage;3D-Drucker Spannung;0.0
+sensor.smart_lock_ultra_batterie;Smart Lock Ultra Batterie;54
+sensor.smart_lock_ultra_batterie_ladezustand;Smart Lock Ultra Batterie-Ladezustand;not_charging
+sensor.smart_meter_63a_bezogene_wirkenergie;Smart Meter 63A Bezogene Wirkenergie;11.2
+sensor.smart_meter_63a_eingespeiste_wirkenergie;Smart Meter 63A Eingespeiste Wirkenergie;86296.0
+sensor.smart_meter_63a_netzfrequenz;Smart Meter 63A Netzfrequenz;50.0
+sensor.smart_meter_63a_wirkleistung;Smart Meter 63A Wirkleistung;0.0
+sensor.smart_meter_63a_zahlerposition;Smart Meter 63A Zählerposition;3
+sensor.smart_meter_63a_zahlerstandort;Smart Meter 63A Zählerstandort;external_generator
+sensor.solarleistung_gesamt_dc;Solarleistung gesamt DC;0.0
+sensor.sun_next_dawn;Sun Nächste Morgendämmerung;2026-11-11T05:47:12+00:00
+sensor.sun_next_dusk;Sun Nächste Abenddämmerung;2026-11-11T16:32:30+00:00
+sensor.sun_next_midnight;Sun Nächste Mitternacht;2026-11-10T23:10:09+00:00
+sensor.sun_next_noon;Sun Nächster Höchststand;2026-11-11T11:10:05+00:00
+sensor.sun_next_rising;Sun Nächster Aufgang;2026-11-11T06:22:36+00:00
+sensor.sun_next_setting;Sun Nächster Untergang;2026-11-11T15:57:08+00:00
+sensor.tapo_cam_signalpegel;Tapo_Cam Signalpegel;3
+sensor.tapo_lampe_linus_signalpegel;Tapo Linus Signalpegel;2
+sensor.tapo_lampe_silas_signalpegel;Tapo Lampe Silas  Signalpegel;2
+sensor.tasmota_dzg_meter_id;Tasmota DZG Meter_ID;445a47
+sensor.tasmota_dzg_total_in;Tasmota DZG Total_in;4803.38
+sensor.tasmota_dzg_total_in_cost;tasmota dzg total in cost;unavailable
+sensor.tasmota_dzg_total_out;Tasmota DZG Total_out;0.0
+sensor.tasmota_last_restart_time;Tasmota Last Restart Time;2026-11-06T13:58:58+00:00
+sensor.tasmota_mqtt_connect_count;Tasmota MQTT Connect Count;5
+sensor.tasmota_restart_reason;Tasmota Restart Reason;Vbat power on reset
+sensor.tasmota_ssid;Tasmota SSID;ASUSLinde
+sensor.tasmota_wifi_connect_count;Tasmota WiFi Connect Count;4
+sensor.tv_wand_helfer;Shelly 1PM Mini TV Wand TV Wand Helfer ;1.974038
+siren.reolinkklingel_sirene;Front door Sirene;unknown
+stt.google_ai_stt;Google AI STT;unknown
+sun.sun;Sun;below_horizon
+switch.fronius_symo_gen24_12_0_plus_sc_solar_api;Fronius Symo GEN24 12.0 Plus SC Solar-API;on
+switch.garage_hoymiles_shelly;Hoymiles Shelly  Shelly Hoymiles ;on
+switch.heizung_esszimmer_kindersicherung;Heizung Esszimmer Kindersicherung;off
+switch.hvs_charge_from_ac;HVS+ Aus AC laden;on
+switch.hvs_charge_from_grid;HVS+ Aus dem Netz laden;off
+switch.keller_fronius_brusche_ac_leistungsbegrenzung;Fronius AC-Leistungsbegrenzung;off
+switch.keller_fronius_brusche_batterieladung_aus_dem_netz;Fronius Batterieladung aus dem Netz;on
+switch.keller_fronius_brusche_begrenzung_der_batterieladeleistung;Fronius Begrenzung der Batterieladeleistung;off
+switch.keller_fronius_brusche_begrenzung_der_entladeleistung_der_batterie;Fronius Begrenzung der Entladeleistung der Batterie;off
+switch.matter_server;Matter Server;on
+switch.reolink_chime_led;Reolink Chime LED;on
+switch.reolinkklingel_audio_aufnehmen;Front door Audio aufnehmen;on
+switch.reolinkklingel_aufzeichnen;Front door Aufzeichnen;on
+switch.reolinkklingel_e_mail_bei_ereignis;Front door E-Mail bei Ereignis;on
+switch.reolinkklingel_ftp_upload;Front door FTP-Upload;on
+switch.reolinkklingel_infrarotlicht_im_nachtmodus;Front door Infrarotlicht im Nachtmodus;on
+switch.reolinkklingel_klingeltastenton;Front door Klingeltastenton;on
+switch.reolinkklingel_privatsphare_modus;Front door Privatsphäre-Modus;off
+switch.reolinkklingel_push_benachrichtigungen;Front door Push-Benachrichtigungen;on
+switch.reolinkklingel_sirene_bei_ereignis;Front door Sirene bei Ereignis;off
+switch.schedule_04cffd;Scheduler Schedule #04cffd;on
+switch.shelly1pmminig3_d0cf13cea03c;Shelly 1PM Mini Silas Licht;on
+switch.shelly2pmg4_98a316748330_switch_0;Shelly 2PM Gen4 Esszimmer Licht;off
+switch.shelly2pmg4_98a316748330_switch_1;Shelly 2PM Gen4 Küche Licht;off
+switch.shelly_1pm_mini_garage;Shelly 1PM Mini TV Verstärker;on
+switch.shelly_1pm_mini_gen3_schlafzimmer;Shelly 1PM Mini Gen3 Schlafzimmer ;on
+switch.shelly_1pm_mini_linus_licht;Shelly 1PM Mini Linus Licht;on
+switch.shelly_1pm_mini_tv_wand;Shelly 1PM Mini TV Wand;on
+switch.shelly_1pm_mini_wohnzimmer_licht;Shelly 1PM Mini Wohnzimmer Licht ;on
+switch.shelly_plug_s_3d_drucker;3D-Drucker;off
+switch.shelly_plug_s_pc;Klimaanlage Wohnzimmer;unavailable
+switch.tapo_cam;Tapo_Cam;on
+switch.tapo_cam_bewegungserkennung;Tapo_Cam Bewegungserkennung;on
+switch.tapo_cam_led;Tapo_Cam LED;on
+switch.tapo_cam_manipulationserkennung;Tapo_Cam Manipulationserkennung;on
+switch.tapo_cam_personenerkennung;Tapo_Cam Personenerkennung;on
+switch.tapo_lampe_linus_automatisches_update_aktiviert;Tapo Linus Automatisches Update aktiviert;on
+switch.tapo_lampe_silas_automatisches_update_aktiviert;Tapo Lampe Silas  Automatisches Update aktiviert;on
+todo.einkaufsliste;Einkaufsliste;0
+tts.google_ai_tts;Google AI TTS;unknown
+tts.google_translate_en_com;Google Übersetzer en com Google Translate en com;unknown
+update.advanced_ssh_web_terminal_update;Advanced SSH & Web Terminal Update;off
+update.anker_solix_update;Anker Solix;off
+update.apexcharts_card_update;apexcharts-card;off
+update.better_thermostat_ui_update;Better Thermostat UI;off
+update.better_thermostat_update;Better Thermostat;off
+update.button_card_update;button-card;off
+update.daikin_onecta_update;Daikin Onecta;off
+update.daikinap63620_gateway_firmware_update;DaikinAP63620 Gateway Firmware-Update;off
+update.daikinap63620_indoorunit_firmware_update;DaikinAP63620 IndoorUnit Firmware-Update;off
+update.daikinap63620_outdoorunit_firmware_update;DaikinAP63620 OutdoorUnit Firmware-Update;off
+update.f2_425plus_dsm_update;F2-425Plus DSM-Update;on
+update.file_editor_update;File editor Update;on
+update.fronius_modbus;Fronius Modbus;off
+update.garage_hoymiles_shelly_firmware;Hoymiles Shelly  Firmware;off
+update.ha_mcp_custom_component_update;HA-MCP — Manage Home Assistant with AI;off
+update.heizung_esszimmer_firmware;Heizung Esszimmer Firmware;off
+update.home_assistant_core_update;Home Assistant Core Update;on
+update.home_assistant_operating_system_update;Home Assistant Operating System Update;off
+update.home_assistant_supervisor_update;Home Assistant Supervisor Update;off
+update.hue_like_light_card_update;Hue-Like Light Card;off
+update.kiosk_mode_update;Kiosk Mode;off
+update.light_entity_card_update;Light Entity Card;off
+update.material_symbols_update;Material Symbols;off
+update.material_you_theme_a_fully_featured_implementation_of_material_design_3_update;Material You Theme - A Fully Featured Implementation of Material Design 3;off
+update.material_you_utilities_material_design_3_color_theme_generation_and_component_modification_update;Material You Utilities - Material Design 3 Color Theme Generation and Component Modification;off
+update.matter_server_update;Matter Server Update;off
+update.mini_graph_card_update;mini-graph-card;off
+update.mosquitto_broker_update;Mosquitto broker Update;off
+update.mushroom_update;Mushroom;off
+update.music_assistant_update;Music Assistant Update;off
+update.power_flow_card_plus_update;Power Flow Card Plus;on
+update.reolinkklingel_firmware;Front door Firmware;off
+update.room_summary_card_update;Room Summary Card;off
+update.samba_share_update;Samba share Update;off
+update.scheduler_card_update;Scheduler Card;off
+update.scheduler_component_update;Scheduler component;off
+update.shelly1pmminig3_d0cf13cea03c_firmware;Shelly 1PM Mini Silas Licht Firmware;off
+update.shelly2pmg4_98a316748330_firmware;Shelly 2PM Gen4 System Firmware;off
+update.shelly_1pm_mini_garage_firmware;Shelly 1PM Mini TV Verstärker Firmware;off
+update.shelly_1pm_mini_gen3_schlafzimmer_firmware;Shelly 1PM Mini Gen3 Schlafzimmer  Firmware;off
+update.shelly_1pm_mini_linus_licht_firmware;Shelly 1PM Mini Linus Licht Firmware;off
+update.shelly_1pm_mini_tv_wand_firmware;Shelly 1PM Mini TV Wand Firmware;off
+update.shelly_1pm_mini_wohnzimmer_licht_firmware;Shelly 1PM Mini Wohnzimmer Licht  Firmware;off
+update.shelly_plug_s_3d_drucker_firmware;3D-Drucker Firmware;off
+update.shelly_plug_s_pc_firmware;Klimaanlage Wohnzimmer Firmware;unavailable
+update.shelly_pm_mini_gen3_firmware;Shelly PM Mini Gen3 Daikin Firmware;off
+update.shelly_pm_mini_gen3_weiss_firmware;Shelly PM Mini Gen3 weiß  Badezimmer Firmware;off
+update.shelly_pm_mini_gen3_weiss_spulmaschine_firmware;Shelly PM Mini Gen3 weiß Spülmaschine Firmware;off
+update.shelly_pm_mini_gen3_weiss_trockner_firmware;Shelly PM Mini Gen3 Weiß Trockner  Firmware;off
+update.shelly_pm_mini_gen3_weiss_waschmaschine_firmware;Shelly PM Mini Gen3 Weiß Waschmaschine  Firmware;off
+update.smart_bulb_p3_firmware;Nous Lampe Esszimmer Firmware;unavailable
+update.studio_code_server_update;Studio Code Server Update;off
+update.tapo_controller_update;Tapo Controller;off
+weather.forecast_home;Home;rainy
+zone.home;Home;0

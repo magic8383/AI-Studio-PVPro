@@ -109,6 +109,8 @@ let intradaySeriesState = {
 };
 
 let activeCurveKeys = new Set(['str_fronius_1', 'str_fronius_2', 'str_hoymiles', 'pv_total', 'battery_soc']);
+let currentCurveTimeframe = 'day'; // 'day' | 'week' | 'month'
+let selectedSankeyFlow = null; // null | 'pv_direct' | 'pv_bat' | 'pv_exp' | 'bat_house' | 'grid_house'
 
 let demoSimHour = 11.27;
 let activeAnalysisSubTab = 'soll-ist'; // 'soll-ist' | 'autarkie-bat' | 'amortisation' | 'logbuch'
@@ -239,11 +241,20 @@ function ensureProjectYearInitialized(year) {
     if (!performanceRecordsByProject[projId]) {
         performanceRecordsByProject[projId] = {};
     }
+    const hasHaCredentials = Boolean(haConfigState.accessToken || (haConfigState.baseUrl && haConfigState.baseUrl !== 'https://home.mb10.org'));
     if (!performanceRecordsByProject[projId][String(year)] || !Array.isArray(performanceRecordsByProject[projId][String(year)].months)) {
         performanceRecordsByProject[projId][String(year)] = {
-            months: generateRealisticSampleMonths(year, 10),
+            months: hasHaCredentials ? createEmptyYearMonths() : generateRealisticSampleMonths(year, 10),
             updatedAt: new Date().toISOString(),
-            isSampleSeed: true
+            isSampleSeed: !hasHaCredentials
+        };
+        savePerformanceRecordsLocalAndServer();
+    } else if (hasHaCredentials && performanceRecordsByProject[projId][String(year)].isSampleSeed) {
+        // Bereinige synthetische Demo-Werte, sobald ein echter Home Assistant Server hinterlegt ist
+        performanceRecordsByProject[projId][String(year)] = {
+            months: createEmptyYearMonths(),
+            updatedAt: new Date().toISOString(),
+            isSampleSeed: false
         };
         savePerformanceRecordsLocalAndServer();
     }
@@ -890,11 +901,13 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
     const e = cfg.entities || {};
     const pvPowerW = extractHaNumericClient(statesMap, e.pvPower, 'W');
     const loadPowerW = extractHaNumericClient(statesMap, e.loadPower, 'W');
-    let gridPowerW = extractHaNumericClient(statesMap, e.gridPower, 'W');
     const gridImpW = extractHaNumericClient(statesMap, e.gridImportPower, 'W');
     const gridExpW = extractHaNumericClient(statesMap, e.gridExportPower, 'W');
-    if (gridPowerW === null && (gridImpW !== null || gridExpW !== null)) {
+    let gridPowerW = null;
+    if (gridImpW !== null || gridExpW !== null) {
         gridPowerW = (gridImpW || 0) - (gridExpW || 0);
+    } else {
+        gridPowerW = extractHaNumericClient(statesMap, e.gridPower, 'W');
     }
 
     // Support 2 separate battery power sensors (Ladeleistung W & Entladeleistung W) + optional combined sensor
@@ -1212,11 +1225,21 @@ async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/a
     };
 }
 
-async function fetchHaHistoryInBrowser(cfg) {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const startIso = startOfDay.toISOString();
+async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe) {
     const now = new Date();
+    let startTime;
+    let stepMs;
+    if (timeframe === 'month') {
+        startTime = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
+        stepMs = 3 * 3600 * 1000; // 3-Stunden-Schritte für 30 Tage
+    } else if (timeframe === 'week') {
+        startTime = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+        stepMs = 60 * 60 * 1000; // 1-Stunden-Schritte für 7 Tage
+    } else {
+        startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        stepMs = 5 * 60 * 1000; // 5-Minuten-Schritte für heute
+    }
+    const startIso = startTime.toISOString();
 
     const e = cfg.entities || {};
     const entitySet = new Set();
@@ -1243,9 +1266,8 @@ async function fetchHaHistoryInBrowser(cfg) {
     const histRes = await fetchHaDirectFromBrowser(cfg.baseUrl, cfg.accessToken, endpoint);
     if (!histRes.ok || !Array.isArray(histRes.data)) return null;
 
-    const stepMs = 5 * 60 * 1000;
     const bucketTimes = [];
-    for (let t = startOfDay.getTime(); t <= now.getTime(); t += stepMs) {
+    for (let t = startTime.getTime(); t <= now.getTime(); t += stepMs) {
         bucketTimes.push(t);
     }
     if (bucketTimes.length === 0 || bucketTimes[bucketTimes.length - 1] < now.getTime()) {
@@ -1319,15 +1341,23 @@ async function fetchHaHistoryInBrowser(cfg) {
     series.house_load = sampleEntity(e.loadPower, 1);
     integratedKwh.house_load = integrateKwh(series.house_load);
 
-    const gridRaw = sampleEntity(e.gridPower || e.gridImportPower, 1);
-    const gridExpExplicit = (e.gridExportPower && rawSeriesByEntity.has(e.gridExportPower.trim()))
-        ? sampleEntity(e.gridExportPower, 1)
-        : null;
+    const hasSeparateGridImp = Boolean(e.gridImportPower && rawSeriesByEntity.has(e.gridImportPower.trim()));
+    const hasSeparateGridExp = Boolean(e.gridExportPower && rawSeriesByEntity.has(e.gridExportPower.trim()));
 
-    series.grid_power = gridRaw.map(v => Math.max(0, v));
-    series.grid_feedin = bucketTimes.map((_, i) => gridExpExplicit ? Math.max(0, gridExpExplicit[i]) : Math.max(0, -(gridRaw[i] || 0)));
-    integratedKwh.grid_power = integrateKwh(series.grid_power);
-    integratedKwh.grid_feedin = integrateKwh(series.grid_feedin);
+    if (hasSeparateGridImp || hasSeparateGridExp) {
+        const impArr = hasSeparateGridImp ? sampleEntity(e.gridImportPower, 1).map(v => Math.max(0, v)) : bucketTimes.map(() => 0);
+        const expArr = hasSeparateGridExp ? sampleEntity(e.gridExportPower, 1).map(v => Math.max(0, v)) : bucketTimes.map(() => 0);
+        series.grid_power = impArr;
+        series.grid_feedin = expArr;
+        integratedKwh.grid_power = integrateKwh(impArr);
+        integratedKwh.grid_feedin = integrateKwh(expArr);
+    } else {
+        const gridRaw = sampleEntity(e.gridPower, 1);
+        series.grid_power = gridRaw.map(v => Math.max(0, v));
+        series.grid_feedin = gridRaw.map(v => Math.max(0, -v));
+        integratedKwh.grid_power = integrateKwh(series.grid_power);
+        integratedKwh.grid_feedin = integrateKwh(series.grid_feedin);
+    }
 
     // Dual Battery Power Sensors (Ladeleistung & Entladeleistung) or single signed batteryPower sensor
     const hasSeparateBatChg = Boolean(e.batteryChargePower && rawSeriesByEntity.has(e.batteryChargePower.trim()));
@@ -1753,15 +1783,12 @@ async function fetchAndRenderIntradayHistory() {
 
     // 1. Try Browser-Direct Home Assistant History API first (GitHub Pages compatible)
     try {
-        const directHist = await fetchHaHistoryInBrowser(haConfigState);
+        const directHist = await fetchHaHistoryInBrowser(haConfigState, currentCurveTimeframe);
         if (directHist && Array.isArray(directHist.bucketTimes) && directHist.bucketTimes.length > 0) {
-            const labels = directHist.bucketTimes.map(ts => {
-                const d = new Date(ts);
-                return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-            });
+            const labels = directHist.bucketTimes.map(ts => formatHistoryBucketLabel(ts, currentCurveTimeframe));
             intradaySeriesState = {
-                startOfDayIso: directHist.startOfDay,
-                nowIso: directHist.now,
+                startOfDayIso: directHist.startOfDay || new Date().toISOString(),
+                nowIso: directHist.now || new Date().toISOString(),
                 labels,
                 bucketTimes: directHist.bucketTimes,
                 series: directHist.series,
@@ -1778,16 +1805,13 @@ async function fetchAndRenderIntradayHistory() {
         const backendRes = await safeFetchBackendJson('/api/ha/history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: haConfigState })
+            body: JSON.stringify({ config: haConfigState, range: currentCurveTimeframe })
         });
         const data = backendRes.data;
 
         if (backendRes.ok && data && data.success) {
             if (Array.isArray(data.bucketTimes) && data.bucketTimes.length > 0 && data.series) {
-                const labels = data.bucketTimes.map(ts => {
-                    const d = new Date(ts);
-                    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                });
+                const labels = data.bucketTimes.map(ts => formatHistoryBucketLabel(ts, currentCurveTimeframe));
                 const peakValues = {};
                 Object.keys(data.series).forEach(k => {
                     peakValues[k] = (data.series[k] || []).reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
@@ -1814,6 +1838,43 @@ async function fetchAndRenderIntradayHistory() {
     }
 
     renderIntradayCurveSection(baseline);
+}
+
+function formatHistoryBucketLabel(ts, tf = currentCurveTimeframe) {
+    const d = new Date(ts);
+    if (tf === 'month') {
+        return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    if (tf === 'week') {
+        const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+        return `${dayNames[d.getDay()]} ${String(d.getHours()).padStart(2, '0')}:00`;
+    }
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+}
+
+function setIntradayTimeframe(tf) {
+    if (!['day', 'week', 'month'].includes(tf)) tf = 'day';
+    currentCurveTimeframe = tf;
+
+    ['day', 'week', 'month'].forEach(t => {
+        const btn = document.getElementById(`btn-timerange-${t}`);
+        if (btn) {
+            if (t === tf) {
+                btn.className = "px-2.5 py-1 rounded-lg bg-teal-600 text-white shadow-xs transition-all cursor-pointer font-bold";
+            } else {
+                btn.className = "px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer font-bold";
+            }
+        }
+    });
+
+    const timerangeEl = document.getElementById('dash_curve_timerange');
+    if (timerangeEl) {
+        if (tf === 'week') timerangeEl.textContent = 'Letzte 7 Tage · Stundenauflösung';
+        else if (tf === 'month') timerangeEl.textContent = 'Letzte 30 Tage · Verlauf';
+        else timerangeEl.textContent = 'Heute, 00:00 — jetzt';
+    }
+
+    fetchAndRenderIntradayHistory();
 }
 
 function setLiveTelemetryMode(newMode) {
@@ -2765,6 +2826,10 @@ function changeAnalysisYear(yearVal) {
 function computeAggregatedPerformanceMetrics(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const months = getCurrentYearMonthsData(selectedAnalysisYear);
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonthIdx = now.getMonth();
+    const t = (typeof currentLiveTelemetry !== 'undefined' && currentLiveTelemetry) ? currentLiveTelemetry : null;
 
     let realPvSum = 0;
     let sollPvForRecordedMonths = 0;
@@ -2776,15 +2841,28 @@ function computeAggregatedPerformanceMetrics(baseline) {
 
     const monthlyComparison = months.map((mObj, idx) => {
         const sollKwh = baseline.monthlySollTotal[idx] || 0;
-        const hasReal = mObj.pvYieldKwh !== null && mObj.pvYieldKwh !== undefined && mObj.pvYieldKwh !== '';
-        const realPv = hasReal ? Math.max(0, parseFloat(mObj.pvYieldKwh) || 0) : null;
-        const expKwh = hasReal ? Math.max(0, parseFloat(mObj.gridExportKwh) || 0) : 0;
-        const impKwh = hasReal ? Math.max(0, parseFloat(mObj.gridImportKwh) || 0) : 0;
-        const bChg = hasReal ? Math.max(0, parseFloat(mObj.batteryChargedKwh) || 0) : 0;
-        const bDis = hasReal ? Math.max(0, parseFloat(mObj.batteryDischargedKwh) || 0) : 0;
+        let hasReal = mObj.pvYieldKwh !== null && mObj.pvYieldKwh !== undefined && mObj.pvYieldKwh !== '';
+        let isLiveCurrentMonth = false;
 
-        const directKwh = hasReal ? Math.max(0, realPv - expKwh - bChg) : 0;
-        const totalSelfUsedKwh = hasReal ? Math.max(0, realPv - expKwh) : 0;
+        let realPv = hasReal ? Math.max(0, parseFloat(mObj.pvYieldKwh) || 0) : null;
+        let expKwh = hasReal ? Math.max(0, parseFloat(mObj.gridExportKwh) || 0) : 0;
+        let impKwh = hasReal ? Math.max(0, parseFloat(mObj.gridImportKwh) || 0) : 0;
+        let bChg = hasReal ? Math.max(0, parseFloat(mObj.batteryChargedKwh) || 0) : 0;
+        let bDis = hasReal ? Math.max(0, parseFloat(mObj.batteryDischargedKwh) || 0) : 0;
+
+        // Auto-feed from HA live month counters if current month has no manual entry yet
+        if (!hasReal && selectedAnalysisYear === curYear && idx === curMonthIdx && t && (t.pvEnergyMonthKwh > 0 || t.gridImportMonthKwh > 0)) {
+            hasReal = true;
+            isLiveCurrentMonth = true;
+            realPv = Math.max(0, parseFloat(t.pvEnergyMonthKwh) || 0);
+            expKwh = Math.max(0, parseFloat(t.gridExportMonthKwh) || 0);
+            impKwh = Math.max(0, parseFloat(t.gridImportMonthKwh) || 0);
+            bChg = Math.max(0, parseFloat(t.batteryChargeMonthKwh) || 0);
+            bDis = Math.max(0, parseFloat(t.batteryDischargeMonthKwh) || 0);
+        }
+
+        const directKwh = hasReal ? Math.max(0, (realPv || 0) - expKwh - bChg) : 0;
+        const totalSelfUsedKwh = hasReal ? Math.max(0, (realPv || 0) - expKwh) : 0;
         const houseConsKwh = hasReal ? (directKwh + bDis + impKwh) : 0;
 
         const selfSavedEur = (directKwh + bDis) * baseline.gridPriceEur;
@@ -2794,7 +2872,7 @@ function computeAggregatedPerformanceMetrics(baseline) {
         const sollSelfShare = baseline.totalBatteryKwh > 0 ? 0.58 : 0.34;
         const sollMonthEur = (sollKwh * sollSelfShare * baseline.gridPriceEur) + (sollKwh * (1 - sollSelfShare) * baseline.eegRateEur);
 
-        if (hasReal) {
+        if (hasReal && realPv !== null) {
             realPvSum += realPv;
             sollPvForRecordedMonths += sollKwh;
             recordedMonthsCount++;
@@ -2804,13 +2882,14 @@ function computeAggregatedPerformanceMetrics(baseline) {
             batDischargedSum += bDis;
         }
 
-        const perfIndexPct = (hasReal && sollKwh > 0) ? ((realPv / sollKwh) * 100) : null;
+        const perfIndexPct = (hasReal && sollKwh > 0 && realPv !== null) ? ((realPv / sollKwh) * 100) : null;
 
         return {
             month: idx,
             labelShort: MONTH_LABELS_SHORT[idx],
             labelLong: MONTH_LABELS_LONG[idx],
             hasReal,
+            isLiveCurrentMonth,
             sollKwh,
             realPv,
             expKwh,
@@ -2935,6 +3014,20 @@ function setSankeyHorizon(horizon) {
     const baseline = getPlannedSystemBaseline();
     const metrics = computeAggregatedPerformanceMetrics(baseline);
     renderSankeyDiagram(currentSankeyHorizon, baseline, metrics);
+}
+
+function selectSankeyFlow(flowId) {
+    if (selectedSankeyFlow === flowId) {
+        selectedSankeyFlow = null;
+    } else {
+        selectedSankeyFlow = flowId;
+    }
+    const baseline = getPlannedSystemBaseline();
+    const metrics = computeAggregatedPerformanceMetrics(baseline);
+    renderSankeyDiagram(currentSankeyHorizon, baseline, metrics);
+}
+if (typeof window !== 'undefined') {
+    window.selectSankeyFlow = selectSankeyFlow;
 }
 
 function computeSankeyFlowData(horizon, baseline, metrics) {
@@ -3082,7 +3175,9 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
         houseTotal,
         autarkyPct,
         eigenQuotaPct,
-        batEffPct
+        batEffPct,
+        gridPriceEur: baseline.gridPriceEur,
+        eegRateEur: baseline.eegRateEur
     };
 }
 
@@ -3131,109 +3226,143 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
     const houseShareBatPct = d.houseTotal > 0 ? Math.round((d.batDis / d.houseTotal) * 100) : 0;
     const houseShareGridPct = d.houseTotal > 0 ? Math.max(0, 100 - houseShareDirectPct - houseShareBatPct) : 0;
 
-    // SVG Layout (780 x 330 viewBox, responsive)
-    // Left Column (Sources): x = 14..184
-    //   Node 1: PV-Erzeugung (y = 22..168)
-    //   Node 2: Netzbezug    (y = 198..308)
-    // Middle Column (Routing & Storage): x = 295..475
-    //   Node 3: PV-Direkt    (y = 22..118)
-    //   Node 4: Batterie     (y = 138..246)
-    // Right Column (Sinks): x = 586..766
-    //   Node 5: Hausverbrauch   (y = 22..192)
-    //   Node 6: Netzeinspeisung (y = 212..308)
-
     const batName = typeof escapeHtml === 'function'
         ? escapeHtml(haConfigState.batteryName || 'Batteriespeicher')
         : (haConfigState.batteryName || 'Batteriespeicher');
 
+    // Selection opacity helpers: if a flow/node is selected, dim others
+    const sel = selectedSankeyFlow;
+    const isFlowActive = (flowKey) => {
+        if (!sel) return true;
+        if (sel === flowKey) return true;
+        if (sel === 'node_pv' && (flowKey === 'pv_direct' || flowKey === 'pv_bat' || flowKey === 'pv_exp')) return true;
+        if (sel === 'node_grid_imp' && flowKey === 'grid_house') return true;
+        if (sel === 'node_direct' && (flowKey === 'pv_direct' || flowKey === 'direct_house')) return true;
+        if (sel === 'node_bat' && (flowKey === 'pv_bat' || flowKey === 'bat_house')) return true;
+        if (sel === 'node_house' && (flowKey === 'direct_house' || flowKey === 'bat_house' || flowKey === 'grid_house')) return true;
+        if (sel === 'node_grid_exp' && flowKey === 'pv_exp') return true;
+        return false;
+    };
+
+    const getFlowOpacity = (flowKey) => isFlowActive(flowKey) ? 1.0 : 0.16;
+    const getFlowFilter = (flowKey) => (sel && isFlowActive(flowKey)) ? 'filter="url(#glowFilter)"' : '';
+
     container.innerHTML = `
-    <svg viewBox="0 0 780 332" class="w-full h-auto min-w-[600px] select-none overflow-visible" role="img" aria-label="Sankey Energiefluss-Diagramm">
+    <svg viewBox="0 0 780 332" class="w-full h-auto min-w-[600px] select-none overflow-visible" role="img" aria-label="Interaktives Sankey Energiefluss-Diagramm">
         <defs>
+            <filter id="glowFilter" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
             <linearGradient id="sankeyGradPvDirect" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.72" />
-                <stop offset="100%" stop-color="#10b981" stop-opacity="0.72" />
+                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.80" />
+                <stop offset="100%" stop-color="#10b981" stop-opacity="0.85" />
             </linearGradient>
             <linearGradient id="sankeyGradPvBat" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.68" />
-                <stop offset="100%" stop-color="#a855f7" stop-opacity="0.72" />
+                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.75" />
+                <stop offset="100%" stop-color="#a855f7" stop-opacity="0.82" />
             </linearGradient>
             <linearGradient id="sankeyGradPvExport" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.55" />
-                <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.68" />
+                <stop offset="0%" stop-color="#14b8a6" stop-opacity="0.65" />
+                <stop offset="100%" stop-color="#06b6d4" stop-opacity="0.80" />
             </linearGradient>
             <linearGradient id="sankeyGradDirectHouse" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#10b981" stop-opacity="0.72" />
-                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.75" />
+                <stop offset="0%" stop-color="#10b981" stop-opacity="0.85" />
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.85" />
             </linearGradient>
             <linearGradient id="sankeyGradBatHouse" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#a855f7" stop-opacity="0.72" />
-                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.75" />
+                <stop offset="0%" stop-color="#a855f7" stop-opacity="0.82" />
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.85" />
             </linearGradient>
             <linearGradient id="sankeyGradGridHouse" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.65" />
-                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.72" />
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.75" />
+                <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.82" />
             </linearGradient>
         </defs>
 
-        <!-- FLOW RIBBONS (Cubic Bézier Paths) -->
+        <!-- FLOW RIBBONS (Cubic Bézier Paths with Click Handlers) -->
         <!-- 1. PV -> PV-Direkt -->
         <path d="M 184 56 C 240 56, 240 66, 295 66"
             fill="none" stroke="url(#sankeyGradPvDirect)" stroke-width="${swPvToDirect}" stroke-linecap="butt"
-            class="transition-all duration-500 hover:opacity-95" />
+            opacity="${getFlowOpacity('pv_direct')}" ${getFlowFilter('pv_direct')}
+            class="transition-all duration-300 cursor-pointer hover:opacity-100"
+            onclick="selectSankeyFlow('pv_direct')">
+            <title>PV-Direktfluss: ${fmt(d.pvDirect)} kWh (${pvShareDirectPct}%)</title>
+        </path>
 
         <!-- 2. PV -> Batteriespeicher (Ladung) -->
         ${d.batChg > 0 ? `
         <path d="M 184 96 C 242 96, 242 184, 295 184"
             fill="none" stroke="url(#sankeyGradPvBat)" stroke-width="${swPvToBat}" stroke-linecap="butt"
-            class="transition-all duration-500 hover:opacity-95" />
+            opacity="${getFlowOpacity('pv_bat')}" ${getFlowFilter('pv_bat')}
+            class="transition-all duration-300 cursor-pointer hover:opacity-100"
+            onclick="selectSankeyFlow('pv_bat')">
+            <title>Batterie-Ladung: ${fmt(d.batChg)} kWh (${pvShareBatPct}%)</title>
+        </path>
         ` : ''}
 
         <!-- 3. PV -> Netzeinspeisung -->
         ${d.gridExp > 0 ? `
         <path d="M 184 138 C 360 138, 410 262, 586 262"
             fill="none" stroke="url(#sankeyGradPvExport)" stroke-width="${swPvToGridExp}" stroke-linecap="butt"
-            class="transition-all duration-500 hover:opacity-95" />
+            opacity="${getFlowOpacity('pv_exp')}" ${getFlowFilter('pv_exp')}
+            class="transition-all duration-300 cursor-pointer hover:opacity-100"
+            onclick="selectSankeyFlow('pv_exp')">
+            <title>Netzeinspeisung: ${fmt(d.gridExp)} kWh (${pvShareExpPct}%)</title>
+        </path>
         ` : ''}
 
         <!-- 4. PV-Direkt -> Hausverbrauch -->
         <path d="M 475 66 C 530 66, 530 64, 586 64"
             fill="none" stroke="url(#sankeyGradDirectHouse)" stroke-width="${swDirectToHouse}" stroke-linecap="butt"
-            class="transition-all duration-500 hover:opacity-95" />
+            opacity="${getFlowOpacity('direct_house')}" ${getFlowFilter('direct_house')}
+            class="transition-all duration-300 cursor-pointer hover:opacity-100"
+            onclick="selectSankeyFlow('direct_house')">
+            <title>Direktverbrauch im Haus: ${fmt(d.pvDirect)} kWh (${houseShareDirectPct}%)</title>
+        </path>
 
         <!-- 5. Batteriespeicher (Entladung) -> Hausverbrauch -->
         ${d.batDis > 0 ? `
         <path d="M 475 184 C 532 184, 532 114, 586 114"
             fill="none" stroke="url(#sankeyGradBatHouse)" stroke-width="${swBatToHouse}" stroke-linecap="butt"
-            class="transition-all duration-500 hover:opacity-95" />
+            opacity="${getFlowOpacity('bat_house')}" ${getFlowFilter('bat_house')}
+            class="transition-all duration-300 cursor-pointer hover:opacity-100"
+            onclick="selectSankeyFlow('bat_house')">
+            <title>Speicherentladung ins Haus: ${fmt(d.batDis)} kWh (${houseShareBatPct}%)</title>
+        </path>
         ` : ''}
 
         <!-- 6. Netzbezug -> Hausverbrauch -->
         ${d.gridImp > 0 ? `
         <path d="M 184 252 C 390 252, 460 160, 586 160"
             fill="none" stroke="url(#sankeyGradGridHouse)" stroke-width="${swGridToHouse}" stroke-linecap="butt"
-            class="transition-all duration-500 hover:opacity-95" />
+            opacity="${getFlowOpacity('grid_house')}" ${getFlowFilter('grid_house')}
+            class="transition-all duration-300 cursor-pointer hover:opacity-100"
+            onclick="selectSankeyFlow('grid_house')">
+            <title>Netzbezug für Restlast: ${fmt(d.gridImp)} kWh (${houseShareGridPct}%)</title>
+        </path>
         ` : ''}
 
         <!-- FLOW VALUE PILLS ON RIBBONS -->
-        <g transform="translate(239, 46)">
-            <rect x="-34" y="-10" width="68" height="19" rx="9" fill="#0f1b21" fill-opacity="0.82" stroke="#14b8a6" stroke-opacity="0.45" />
+        <g transform="translate(239, 46)" class="cursor-pointer" onclick="selectSankeyFlow('pv_direct')">
+            <rect x="-34" y="-10" width="68" height="19" rx="9" fill="#0f1b21" fill-opacity="0.88" stroke="#14b8a6" stroke-opacity="${isFlowActive('pv_direct') ? 0.9 : 0.3}" />
             <text x="0" y="3" text-anchor="middle" fill="#5eead4" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${pvShareDirectPct}% Direkt</text>
         </g>
         ${d.batChg > 0 ? `
-        <g transform="translate(240, 142)">
-            <rect x="-34" y="-10" width="68" height="19" rx="9" fill="#0f1b21" fill-opacity="0.82" stroke="#a855f7" stroke-opacity="0.45" />
+        <g transform="translate(240, 142)" class="cursor-pointer" onclick="selectSankeyFlow('pv_bat')">
+            <rect x="-34" y="-10" width="68" height="19" rx="9" fill="#0f1b21" fill-opacity="0.88" stroke="#a855f7" stroke-opacity="${isFlowActive('pv_bat') ? 0.9 : 0.3}" />
             <text x="0" y="3" text-anchor="middle" fill="#d8b4fe" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${pvShareBatPct}% Akku</text>
         </g>` : ''}
         ${d.gridExp > 0 ? `
-        <g transform="translate(385, 224)">
-            <rect x="-46" y="-10" width="92" height="19" rx="9" fill="#0f1b21" fill-opacity="0.82" stroke="#06b6d4" stroke-opacity="0.45" />
+        <g transform="translate(385, 224)" class="cursor-pointer" onclick="selectSankeyFlow('pv_exp')">
+            <rect x="-46" y="-10" width="92" height="19" rx="9" fill="#0f1b21" fill-opacity="0.88" stroke="#06b6d4" stroke-opacity="${isFlowActive('pv_exp') ? 0.9 : 0.3}" />
             <text x="0" y="3" text-anchor="middle" fill="#67e8f9" font-size="10" font-weight="700" font-family="JetBrains Mono, monospace">${fmt(d.gridExp)} kWh (${pvShareExpPct}%)</text>
         </g>` : ''}
 
         <!-- LEFT COLUMN NODES (SOURCES) -->
         <!-- Node 1: PV-Erzeugung -->
-        <g transform="translate(14, 20)">
-            <rect width="170" height="148" rx="18" fill="#11242b" fill-opacity="0.92" stroke="#14b8a6" stroke-width="1.8" />
+        <g transform="translate(14, 20)" class="cursor-pointer transition-transform hover:scale-[1.01]" onclick="selectSankeyFlow('node_pv')">
+            <rect width="170" height="148" rx="18" fill="#11242b" fill-opacity="${sel === 'node_pv' ? 0.98 : 0.92}" stroke="#14b8a6" stroke-width="${sel === 'node_pv' ? 2.6 : 1.8}" />
             <rect x="0" y="0" width="6" height="148" rx="3" fill="#14b8a6" />
             <text x="16" y="26" fill="#5eead4" font-size="11" font-weight="800" letter-spacing="0.04em">PV-ERZEUGUNG</text>
             <text x="16" y="54" fill="#ffffff" font-size="21" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.pvTotal)} kWh</text>
@@ -3245,8 +3374,8 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
         </g>
 
         <!-- Node 2: Netzbezug -->
-        <g transform="translate(14, 194)">
-            <rect width="170" height="114" rx="18" fill="#112233" fill-opacity="0.92" stroke="#3b82f6" stroke-width="1.8" />
+        <g transform="translate(14, 194)" class="cursor-pointer transition-transform hover:scale-[1.01]" onclick="selectSankeyFlow('node_grid_imp')">
+            <rect width="170" height="114" rx="18" fill="#112233" fill-opacity="${sel === 'node_grid_imp' ? 0.98 : 0.92}" stroke="#3b82f6" stroke-width="${sel === 'node_grid_imp' ? 2.6 : 1.8}" />
             <rect x="0" y="0" width="6" height="114" rx="3" fill="#3b82f6" />
             <text x="16" y="26" fill="#93c5fd" font-size="11" font-weight="800" letter-spacing="0.04em">NETZBEZUG</text>
             <text x="16" y="54" fill="#ffffff" font-size="20" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.gridImp)} kWh</text>
@@ -3256,8 +3385,8 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
 
         <!-- MIDDLE COLUMN NODES (DIRECT & BATTERY) -->
         <!-- Node 3: PV-Direktverbrauch -->
-        <g transform="translate(295, 20)">
-            <rect width="180" height="96" rx="18" fill="#102924" fill-opacity="0.92" stroke="#10b981" stroke-width="1.8" />
+        <g transform="translate(295, 20)" class="cursor-pointer transition-transform hover:scale-[1.01]" onclick="selectSankeyFlow('node_direct')">
+            <rect width="180" height="96" rx="18" fill="#102924" fill-opacity="${sel === 'node_direct' ? 0.98 : 0.92}" stroke="#10b981" stroke-width="${sel === 'node_direct' ? 2.6 : 1.8}" />
             <rect x="0" y="0" width="6" height="96" rx="3" fill="#10b981" />
             <text x="16" y="25" fill="#6ee7b7" font-size="11" font-weight="800" letter-spacing="0.04em">PV-DIREKTVERBRAUCH</text>
             <text x="16" y="52" fill="#ffffff" font-size="20" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.pvDirect)} kWh</text>
@@ -3265,8 +3394,8 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
         </g>
 
         <!-- Node 4: Batteriespeicher -->
-        <g transform="translate(295, 132)">
-            <rect width="180" height="118" rx="18" fill="#211730" fill-opacity="0.92" stroke="#a855f7" stroke-width="1.8" />
+        <g transform="translate(295, 132)" class="cursor-pointer transition-transform hover:scale-[1.01]" onclick="selectSankeyFlow('node_bat')">
+            <rect width="180" height="118" rx="18" fill="#211730" fill-opacity="${sel === 'node_bat' ? 0.98 : 0.92}" stroke="#a855f7" stroke-width="${sel === 'node_bat' ? 2.6 : 1.8}" />
             <rect x="0" y="0" width="6" height="118" rx="3" fill="#a855f7" />
             <text x="16" y="24" fill="#d8b4fe" font-size="11" font-weight="800" letter-spacing="0.04em">${batName.toUpperCase()}</text>
             <text x="16" y="50" fill="#ffffff" font-size="19" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.batDis)} kWh</text>
@@ -3277,8 +3406,8 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
 
         <!-- RIGHT COLUMN NODES (SINKS) -->
         <!-- Node 5: Hausverbrauch Gesamt -->
-        <g transform="translate(586, 20)">
-            <rect width="180" height="168" rx="18" fill="#291f12" fill-opacity="0.92" stroke="#f59e0b" stroke-width="1.8" />
+        <g transform="translate(586, 20)" class="cursor-pointer transition-transform hover:scale-[1.01]" onclick="selectSankeyFlow('node_house')">
+            <rect width="180" height="168" rx="18" fill="#291f12" fill-opacity="${sel === 'node_house' ? 0.98 : 0.92}" stroke="#f59e0b" stroke-width="${sel === 'node_house' ? 2.6 : 1.8}" />
             <rect x="174" y="0" width="6" height="168" rx="3" fill="#f59e0b" />
             <text x="16" y="26" fill="#fcd34d" font-size="11" font-weight="800" letter-spacing="0.04em">HAUSVERBRAUCH</text>
             <text x="16" y="54" fill="#ffffff" font-size="21" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.houseTotal)} kWh</text>
@@ -3290,8 +3419,8 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
         </g>
 
         <!-- Node 6: Netzeinspeisung -->
-        <g transform="translate(586, 204)">
-            <rect width="180" height="104" rx="18" fill="#0f252e" fill-opacity="0.92" stroke="#06b6d4" stroke-width="1.8" />
+        <g transform="translate(586, 204)" class="cursor-pointer transition-transform hover:scale-[1.01]" onclick="selectSankeyFlow('node_grid_exp')">
+            <rect width="180" height="104" rx="18" fill="#0f252e" fill-opacity="${sel === 'node_grid_exp' ? 0.98 : 0.92}" stroke="#06b6d4" stroke-width="${sel === 'node_grid_exp' ? 2.6 : 1.8}" />
             <rect x="174" y="0" width="6" height="104" rx="3" fill="#06b6d4" />
             <text x="16" y="26" fill="#67e8f9" font-size="11" font-weight="800" letter-spacing="0.04em">NETZEINSPEISUNG</text>
             <text x="16" y="54" fill="#ffffff" font-size="20" font-weight="900" font-family="JetBrains Mono, monospace">${fmt(d.gridExp)} kWh</text>
@@ -3300,29 +3429,119 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
         </g>
     </svg>`;
 
-    // 2. Render Summary Ribbon Below Sankey
+    // 2. Render Interactive Detail Callout Card or Quick-Filter Pills
+    let flowDetailHtml = '';
+    if (sel) {
+        let title = '';
+        let icon = '';
+        let kwhVal = 0;
+        let subText = '';
+        let eurText = '';
+        let badgeColor = '';
+
+        if (sel === 'pv_direct' || sel === 'direct_house' || sel === 'node_direct') {
+            title = 'PV-Direktverbrauch im Haus';
+            icon = 'wb_sunny';
+            kwhVal = d.pvDirect;
+            const savedEur = (kwhVal * d.gridPriceEur).toFixed(2);
+            subText = `${pvShareDirectPct} % der PV-Erzeugung · Deckt ${houseShareDirectPct} % des Hausverbrauchs sofort`;
+            eurText = `+${savedEur} € vermiedener Netzstrom-Zukauf (bei ${d.gridPriceEur.toFixed(2)} €/kWh)`;
+            badgeColor = 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400';
+        } else if (sel === 'pv_bat') {
+            title = 'Solar-Ladung in den Batteriespeicher';
+            icon = 'battery_charging_full';
+            kwhVal = d.batChg;
+            subText = `${pvShareBatPct} % der PV-Erzeugung zwischengespeichert für Nacht & Dämmerung`;
+            eurText = `Zwischengespeichert: ${fmt(d.batDis)} kWh nutzbar nach Wirkungsgrad (ca. ${d.batEffPct.toFixed(0)}%)`;
+            badgeColor = 'border-purple-500/40 bg-purple-500/10 text-purple-400';
+        } else if (sel === 'bat_house' || sel === 'node_bat') {
+            title = 'Batterie-Entladung ins Hausnetz';
+            icon = 'battery_android';
+            kwhVal = d.batDis;
+            const savedEur = (kwhVal * d.gridPriceEur).toFixed(2);
+            subText = `Deckt ${houseShareBatPct} % des gesamten Hausverbrauchs aus Speicher`;
+            eurText = `+${savedEur} € gespart durch Nacht-Eigenstrom`;
+            badgeColor = 'border-purple-500/40 bg-purple-500/10 text-purple-400';
+        } else if (sel === 'pv_exp' || sel === 'node_grid_exp') {
+            title = 'Netzeinspeisung (EEG-Überschuss)';
+            icon = 'upload';
+            kwhVal = d.gridExp;
+            const revEur = (kwhVal * d.eegRateEur).toFixed(2);
+            subText = `${pvShareExpPct} % der PV-Erzeugung über den Eigenbedarf hinaus eingespeist`;
+            eurText = `+${revEur} € EEG-Einspeisevergütung (bei ${(d.eegRateEur * 100).toFixed(1)} ct/kWh)`;
+            badgeColor = 'border-cyan-500/40 bg-cyan-500/10 text-cyan-400';
+        } else if (sel === 'grid_house' || sel === 'node_grid_imp') {
+            title = 'Netzbezug für ungedeckte Resthauslast';
+            icon = 'power';
+            kwhVal = d.gridImp;
+            const costEur = (kwhVal * d.gridPriceEur).toFixed(2);
+            subText = `${houseShareGridPct} % des Hausbedarfs mussten konventionell zugekauft werden`;
+            eurText = `Stromkosten: ${costEur} € (bei ${d.gridPriceEur.toFixed(2)} €/kWh)`;
+            badgeColor = 'border-blue-500/40 bg-blue-500/10 text-blue-400';
+        } else if (sel === 'node_pv') {
+            title = 'PV-Generator Gesamt';
+            icon = 'solar_power';
+            kwhVal = d.pvTotal;
+            subText = `Eigenverbrauchsquote: ${d.eigenQuotaPct.toFixed(1)} % (${fmt(d.pvDirect + d.batChg)} kWh vor Ort genutzt)`;
+            eurText = `Direkt: ${fmt(d.pvDirect)} kWh · Akku: ${fmt(d.batChg)} kWh · Einspeisung: ${fmt(d.gridExp)} kWh`;
+            badgeColor = 'border-teal-500/40 bg-teal-500/10 text-teal-400';
+        } else if (sel === 'node_house') {
+            title = 'Hausverbrauch Gesamt';
+            icon = 'home';
+            kwhVal = d.houseTotal;
+            subText = `Autarkiegrad: ${d.autarkyPct.toFixed(1)} % durch PV + Batterie`;
+            eurText = `PV: ${houseShareDirectPct}% · Akku: ${houseShareBatPct}% · Netz: ${houseShareGridPct}%`;
+            badgeColor = 'border-amber-500/40 bg-amber-500/10 text-amber-400';
+        }
+
+        flowDetailHtml = `
+            <div class="col-span-full p-3 rounded-2xl border ${badgeColor} backdrop-blur-md flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center">
+                        <span class="material-symbols-rounded text-2xl">${icon}</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-black uppercase tracking-wider">${title}</span>
+                            <span class="text-[11px] font-mono px-2 py-0.5 rounded-full bg-white/15 font-bold">${fmt(kwhVal)} kWh</span>
+                        </div>
+                        <p class="text-[11px] opacity-80 mt-0.5">${subText}</p>
+                        <p class="text-[11px] font-semibold mt-0.5">${eurText}</p>
+                    </div>
+                </div>
+                <button type="button" onclick="selectSankeyFlow(null)" class="px-3 py-1.5 rounded-xl bg-white/15 hover:bg-white/25 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-sm">filter_alt_off</span>
+                    Alle Flüsse anzeigen
+                </button>
+            </div>
+        `;
+    }
+
+    // 3. Render Summary Ribbon Below Sankey
     const ribbon = document.getElementById('sankeySummaryRibbon');
     if (ribbon) {
         ribbon.innerHTML = `
+            ${flowDetailHtml}
             <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Zeitraum</span>
                 <span class="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate block mt-0.5">${d.periodLabel}</span>
             </div>
-            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20 cursor-pointer hover:border-emerald-500/40 transition-all" onclick="selectSankeyFlow('node_house')">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">Autarkiequote</span>
                 <span class="text-sm font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 block mt-0.5">${d.autarkyPct.toFixed(1)} %</span>
             </div>
-            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20 cursor-pointer hover:border-teal-500/40 transition-all" onclick="selectSankeyFlow('node_pv')">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-teal-600 dark:text-teal-400 block">Eigenverbrauch</span>
                 <span class="text-sm font-black font-mono tabular-nums text-teal-600 dark:text-teal-400 block mt-0.5">${d.eigenQuotaPct.toFixed(1)} %</span>
             </div>
-            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20">
+            <div class="p-2.5 rounded-xl bg-white/75 dark:bg-[#13232b]/80 border border-slate-200/80 dark:border-teal-500/20 cursor-pointer hover:border-purple-500/40 transition-all" onclick="selectSankeyFlow('pv_direct')">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-400 block">Selbst gedeckt</span>
                 <span class="text-sm font-black font-mono tabular-nums text-purple-600 dark:text-purple-300 block mt-0.5">${fmt(d.pvDirect + d.batDis)} kWh</span>
             </div>
         `;
     }
 }
+
 
 function renderSollIstPanel(baseline, metrics) {
     const ctx = document.getElementById('sollIstComparisonChart');
@@ -3533,23 +3752,27 @@ function renderMonthlyLogbookTable(baseline, metrics) {
 
     tbody.innerHTML = metrics.monthlyComparison.map((m, idx) => {
         const raw = monthsRaw[idx] || {};
-        const pvVal = raw.pvYieldKwh !== null && raw.pvYieldKwh !== undefined ? raw.pvYieldKwh : '';
-        const expVal = raw.gridExportKwh !== null && raw.gridExportKwh !== undefined ? raw.gridExportKwh : '';
-        const impVal = raw.gridImportKwh !== null && raw.gridImportKwh !== undefined ? raw.gridImportKwh : '';
-        const bChgVal = raw.batteryChargedKwh !== null && raw.batteryChargedKwh !== undefined ? raw.batteryChargedKwh : '';
-        const bDisVal = raw.batteryDischargedKwh !== null && raw.batteryDischargedKwh !== undefined ? raw.batteryDischargedKwh : '';
+        const isLive = m.isLiveCurrentMonth;
+        const pvVal = raw.pvYieldKwh !== null && raw.pvYieldKwh !== undefined ? raw.pvYieldKwh : (isLive ? Math.round(m.realPv || 0) : '');
+        const expVal = raw.gridExportKwh !== null && raw.gridExportKwh !== undefined ? raw.gridExportKwh : (isLive ? Math.round(m.expKwh || 0) : '');
+        const impVal = raw.gridImportKwh !== null && raw.gridImportKwh !== undefined ? raw.gridImportKwh : (isLive ? Math.round(m.impKwh || 0) : '');
+        const bChgVal = raw.batteryChargedKwh !== null && raw.batteryChargedKwh !== undefined ? raw.batteryChargedKwh : (isLive ? Math.round(m.bChg || 0) : '');
+        const bDisVal = raw.batteryDischargedKwh !== null && raw.batteryDischargedKwh !== undefined ? raw.batteryDischargedKwh : (isLive ? Math.round(m.bDis || 0) : '');
 
         const perfStr = m.hasReal && m.perfIndexPct !== null ? `${m.perfIndexPct.toFixed(0)} %` : '—';
         const perfCls = !m.hasReal ? 'text-slate-400' : (m.perfIndexPct >= 100 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-bold');
 
         return `
         <tr class="border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
-            <td class="py-2.5 px-3 font-bold text-xs text-slate-800 dark:text-slate-200 whitespace-nowrap">${m.labelLong}</td>
+            <td class="py-2.5 px-3 font-bold text-xs text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                ${m.labelLong}
+                ${isLive ? '<span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-teal-500/15 text-teal-600 dark:text-teal-400 font-bold">Live HA</span>' : ''}
+            </td>
             <td class="py-2.5 px-3 font-mono tabular-nums text-xs text-slate-500 dark:text-slate-400 text-right">${Math.round(m.sollKwh)} kWh</td>
             <td class="py-2 px-2">
-                <input type="number" step="1" min="0" value="${pvVal}" placeholder="kWh"
+                <input type="number" step="1" min="0" value="${pvVal}" placeholder="${isLive ? 'Live HA' : 'kWh'}"
                     onchange="onMonthlyRecordFieldChange(${idx}, 'pvYieldKwh', this.value)"
-                    class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:border-teal-500 outline-none">
+                    class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border ${isLive ? 'border-teal-500/50 bg-teal-500/5' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950'} text-slate-900 dark:text-white focus:border-teal-500 outline-none">
             </td>
             <td class="py-2 px-2">
                 <input type="number" step="1" min="0" value="${expVal}" placeholder="kWh"
@@ -3774,6 +3997,8 @@ function openHaConfigModal(focusSection = null) {
     const ent = haConfigState.entities || {};
     setElVal('ha_ent_pv_power', ent.pvPower || '');
     setElVal('ha_ent_load_power', ent.loadPower || '');
+    setElVal('ha_ent_grid_imp_power', ent.gridImportPower || '');
+    setElVal('ha_ent_grid_exp_power', ent.gridExportPower || '');
     setElVal('ha_ent_grid_power', ent.gridPower || '');
     setElVal('ha_ent_bat_chg_power', ent.batteryChargePower || '');
     setElVal('ha_ent_bat_dis_power', ent.batteryDischargePower || '');
@@ -4089,6 +4314,8 @@ function readHaModalIntoState() {
         ...haConfigState.entities,
         pvPower: (document.getElementById('ha_ent_pv_power')?.value || '').trim(),
         loadPower: (document.getElementById('ha_ent_load_power')?.value || '').trim(),
+        gridImportPower: (document.getElementById('ha_ent_grid_imp_power')?.value || '').trim(),
+        gridExportPower: (document.getElementById('ha_ent_grid_exp_power')?.value || '').trim(),
         gridPower: (document.getElementById('ha_ent_grid_power')?.value || '').trim(),
         batteryChargePower: (document.getElementById('ha_ent_bat_chg_power')?.value || '').trim(),
         batteryDischargePower: (document.getElementById('ha_ent_bat_dis_power')?.value || '').trim(),
