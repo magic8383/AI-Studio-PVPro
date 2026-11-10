@@ -1,87 +1,93 @@
-# Tiefen-Audit, Zentralisierung & Code-Bereinigung (Version 9.4)
+# Monatliche Ertrags-Zusammenfassung & PVGIS-Soll-Ist-Abgleich (Version 9.5)
 
-Umfassende Code-Prüfung und Architektur-Konsolidierung über alle Module hinweg: Einführung einer zentralen Versions- und System-Basissteuerung (Single Source of Truth), vollständige Entfernung alter Demo-Generatoren und toter Code-Schnipsel sowie Angleichung aller Berechnungs- und Zeitraum-Logiken zwischen Browser-Engine und Backend.
+Direkt auf der **Analyse-Hauptseite** (`#analyse-hub-view`) wird eine eigenständige, übersichtliche **Monats-Übersichtskarte („Monatliche Ertragsleistung · Ist vs. PVGIS-Soll“)** ergänzt, die den tatsächlichen Monatsertrag (aus Live-Home-Assistant-Zählern oder dem Monats-Logbuch) vollautomatisch mit dem standortgenauen PVGIS-Soll abgleicht, für den laufenden Monat ein taggenaues **Pro-Rata-Soll bis heute** berechnet und die prozentuale Abweichung (`+/- %`) samt Fortschrittsbalken darstellt.
 
-## User Review & Critical Decisions
+---
+
+## User Review & Bestätigte Entscheidungen
 
 > [!IMPORTANT]
-> Die folgenden Architekturentscheidungen wurden im Vorfeld bestätigt und bilden die verbindliche Grundlage für Version 9.4:
+> Die folgenden Punkte wurden auf Basis deiner Antworten festgelegt:
 
-- **Bestätigte Entscheidung 1 (Saubere 0-Werte ohne Demo-Generator)**: Solange kein Home Assistant Token hinterlegt oder erreichbar ist, zeigt das Live-Dashboard saubere `0 W` / `0,00 kWh`-Werte und einen klaren Verbindungs-Hinweis statt synthetischer Demo-Kurven (`computeDemoLiveTelemetry`, `buildDemoIntradaySeries` und `demoSimHour` werden restlos entfernt).
-- **Bestätigte Entscheidung 2 (Zentrale `APP_VERSION` & gemeinsame Berechnungs-Helfer)**: Eine zentrale `APP_VERSION = '9.4'` sowie gemeinsame Berechnungs-Helfer für Anlagenleistung (kWp), Speicherkapazität (kWh) und Jahresverbrauch versorgen alle Module (UI, Export, Dossier, Analyse) aus einer einzigen Quelle.
-
----
-
-## 1. Overview & Core Concept
-
-- **What It Does**: Beseitigt sämtliche historisch gewachsenen Code-Duplikate, veraltete Versions-Strings (`v7.0.0`, `v7.9.0`, `v8.1`, `v8.3`, `v8.5`, `v9.1`), tote Event-Handler und Logik-Abweichungen zwischen direktem Browser-Abruf und Node.js-Proxy.
-- **Target Audience / Persona**: Anlagenplaner, Installateure und Betreiber, die sich in Echtzeit-Monitoring, Ertragsanalyse und VDE-Dokumentation auf 100 % konsistente, echte Messwerte ohne Geister- oder Demo-Daten verlassen müssen.
-- **Key Value**: Maximale Wartbarkeit, strikte Einhaltung des Prinzips „Keine Insellösungen“, identische Ergebnisse auf allen Endgeräten (Cloud, Lokal, GitHub Pages) und fehlerfreie Zeitraum-Umschaltung (`Tag` / `Woche` / `Monat`).
+- **Platzierung direkt auf der Analyse-Hauptseite**: Eigene Hauptkarte im Analyse-Hub zwischen den Jahres-KPIs / dem Sankey-Energiefluss und den Detail-Kacheln, sodass du sofort beim Öffnen von „Analyse“ den aktuellen Monatsstand und alle Monate im Blick hast.
+- **Taggenaues anteiliges Monats-Soll (Pro-Rata bis heute) + Monats-Gesamtsoll**: Für den aktuell laufenden Kalendermonat wird das PVGIS-Monatssoll zusätzlich anteilig auf den heutigen Kalendertag umgerechnet ($\text{Soll}_{\text{bis heute}} = \text{Soll}_{\text{Monat}} \times \frac{\text{Tag}}{\text{Tage im Monat}}$). Damit zeigt die prozentuale Abweichung (`+/- %`) auch mitten im Monat ein faires, realistisches Ergebnis statt eines künstlichen Minuswerts.
+- **Fortschrittsbalken, `+/- %` Abweichung & Datenquellen-Kennzeichnung**: Jeder Monat zeigt Ist-kWh vs. Soll-kWh, einen visuellen Erfüllungsbalken, die prozentuale Abweichung (`+12,4 %` / `-4,2 %`) sowie die Datenquelle (`Live HA` bei automatischer Zählerübernahme bzw. `Logbuch` bei manueller Eintragung).
 
 ---
 
-## 2. User Experience & Visual Design
+## 1. Überblick & Kernkonzept
 
-- **Key User Flows**:
-  1. **Zero-State ohne Token**: Ist noch kein Home Assistant Token eingetragen, zeigen alle Kacheln und das Diagramm ehrliche `0 W` / `0,00 kWh` mit direktem Konfigurations-Hinweis statt erfundener Sonnenkurven.
-  2. **Nahtlose Zeitraum-Umschaltung (`Tag` / `Woche` / `Monat`)**: Beim Wechsel über dem fixierten Diagramm bleiben der gewählte Zeitraum-Untertitel (`Heute, 00:00 – HH:MM Uhr`, `Letzte 7 Tage · 1h-Auflösung`, `Letzte 30 Tage · 3h-Auflösung`), die aktiven Button-Stile, die Kachel-Summen (`heute` vs. `7 Tage` vs. `30 Tage`) und die Fadenkreuz-Zeitstempel (inkl. Datum bei Woche/Monat) auch bei laufenden Live-Refreshes dauerhaft synchron.
-  3. **Konsistente Versions- & Dossier-Ausgabe**: Header-Badge, Menü-Fußzeile, Projekt-Exporte und die Fußzeilen des DIN VDE 0100-712 Druck-Dossiers zeigen automatisch dieselbe zentrale Version (`9.4`).
-- **Visual Identity & Theme**:
-  - Unverändertes *Material Design 3 Expressive* mit Liquid-Glass-Oberflächen und Google Material Symbols Rounded (`.material-symbols-rounded`).
-  - Einheitliche Farb- und Kontraststeuerung in Light- und Dark-Mode ohne konkurrierende Inline-Overrides.
+- **Was die Funktion leistet**:
+  1. **Fokus-Banner für den aktuellen / zuletzt erfassten Monat**: Hebt oben in der neuen Karte den laufenden Monat prominent hervor – inklusive Ist-Ertrag (`kWh`), taggenauem PVGIS-Soll bis heute (`Pro-Rata kWh`), vollem PVGIS-Monatssoll (`kWh`), prozentualer Abweichung (`+/- %` ggü. Pro-Rata-Soll sowie Erfüllungsgrad des Gesamtmonats) und Herkunftskennzeichnung (`Live HA · Zähler-Differenz` oder `Manuell · Logbuch`).
+  2. **Kompakte 12-Monats-Übersichtsmatrix / Vergleichsliste**: Zeigt darunter alle Monate des gewählten Betriebsjahres mit Fortschrittsbalken, Ist- vs. Soll-kWh, prozentualer Abweichung (`+/- %`) und Status-Indikator. Ein Filter-Umschalter erlaubt den Wechsel zwischen **„Erfasste & aktueller Monat“** (kompakt für Mobilgeräte) und **„Alle 12 Monate“**.
+  3. **Konsistenter Jahres-PR mit Pro-Rata-Gewichtung**: Auch in der oberen Jahres-KPI-Karte (`Erfüllungsgrad (PR)` und `Soll im Zeitraum`) wird für den laufenden Monat das taggenaue Pro-Rata-Soll berücksichtigt, damit ein erst zur Hälfte vergangener Monat den Jahres-Erfüllungsgrad nicht künstlich nach unten zieht.
+- **Mehrwert**: Du siehst auf einen Blick und ohne Klick in Untermenüs, ob deine PV-Anlage im aktuellen Monat und in den bisherigen Monaten über oder unter der standortgenauen PVGIS-Ertragsprognose liegt.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## 2. User Experience & Visuelles Design
 
-- **Entscheidung 1: Restlose Entfernung synthetischer Live-Demo-Generatoren**
-  - *Gewählter Ansatz*: Ersatz von `computeDemoLiveTelemetry()`, `buildDemoIntradaySeries()` und `onDemoHourSliderChange()` durch eine schlanke Null-Initialisierung (`createCleanZeroTelemetryState()` / `createEmptyIntradaySeries()`). Auch beim Initialisieren eines neuen Analysejahres werden immer leere Monate (`createEmptyYearMonths()`) statt Zufallswerte angelegt.
-  - *Warum*: Verhindert, dass bei kurzen Verbindungsabbrüchen oder fehlendem Token plötzlich fiktive Watt- und kWh-Zahlen (wie `682 W` oder `1,33 kWh`) angezeigt werden und den Nutzer verwirren.
-- **Entscheidung 2: Zentrale `APP_VERSION` & Berechnungs-Helfer (Single Source of Truth)**
-  - *Gewählter Ansatz*: Definition von `window.APP_VERSION = '9.4'` an zentraler Stelle sowie Bündelung der System-Basisberechnung (Generator-kWp, Batterie-kWh, geplanter Jahresverbrauch), sodass Projekt-Manager, Planungs-Hub, Telemetrie-Baseline und Druck-Dossier exakt dieselben Funktionen aufrufen.
-  - *Warum*: Eliminiert vierfach duplizierte Schleifen über `strings`, `flatPanels`, `flatBatteries` und `getConsumptionConfig()`.
-- **Entscheidung 3: 1:1-Parität zwischen Browser-Client und Backend-Proxy**
-  - *Gewählter Ansatz*: Angleichung der Prioritätslogik für getrennte Netz-Sensoren (`gridImportPower` / `gridExportPower` vor `gridPower`), Einbindung von `pvEnergyExtraEntities` (Wechselrichter 3+) und `customConsumers` im Backend sowie Zusammenführung des doppelt definierten Default-Konfigurations-Objekts (inkl. Korrektur des Tippfehlers `sensor.gridExport_monthly` -> `sensor.grid_export_monthly`).
-  - *Warum*: Stellt sicher, dass der Server-Proxy exakt dieselben Werte liefert wie der direkte Browser-Modus.
+- **Darstellung & Hierarchie**:
+  - **Ästhetik**: Liquid-Glass / Material Design 3 Expressive passend zum bestehenden Analyse-Cockpit, vollständig harmonisiert für Light- und Dark-Mode.
+  - **Typografie & Zahlen-Disziplin**: Alle Ertrags-, Soll- und Prozentwerte nutzen `font-mono tabular-nums`, damit kWh-Zahlen und Prozentwerte vertikal exakt fluchten.
+  - **Semantische Farbgebung für Abweichungen**:
+    - **Über Soll ($\ge 0\,\%$ Abweichung)**: Smaragdgrün (`text-emerald-600 dark:text-emerald-400`, Balken `bg-emerald-500`) mit `+X,X %`
+    - **Leicht unter Soll ($-10\,\%$ bis $< 0\,\%$)**: Amber (`text-amber-600 dark:text-amber-400`, Balken `bg-amber-500`) mit `-X,X %`
+    - **Deutlich unter Soll ($< -10\,\%$)**: Rose/Rot (`text-rose-600 dark:text-rose-400`, Balken `bg-rose-500`) mit `-X,X %`
+    - **Zukünftige / noch offene Monate**: Ruhiges Slate-Grau mit ausgewiesenem PVGIS-Sollwert als Ausblick.
+- **Interaktive Bedienelemente**:
+  - Segmentierter Umschalter im Kartenkopf: **„Aktuell & Erfasst“** vs. **„Alle 12 Monate“**.
+  - Direkt-Links zum Öffnen des detaillierten 12-Monats-Balkendiagramms (`Soll-Ist-Vergleich`) oder des `Monatswerte-Logbuchs`.
 
 ---
 
-## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+## 3. Produktentscheidungen & Berechnungslogik
+
+- **Entscheidung 1: Pro-Rata-Berechnung im laufenden Monat**
+  - *Gewählter Ansatz*: Für den aktuellen Monat im aktuellen Kalenderjahr wird anhand des Kalendertages $d$ und der Gesamtanzahl der Tage im Monat $D_{\text{Monat}}$ das anteilige Soll berechnet:
+    $$\text{Soll}_{\text{Pro-Rata}} = \text{Soll}_{\text{PVGIS, Monat}} \times \frac{d}{D_{\text{Monat}}}$$
+    Die prozentuale Abweichung im laufenden Monat bemisst sich gegen $\text{Soll}_{\text{Pro-Rata}}$:
+    $$\Delta \% = \left(\frac{\text{Ist}_{\text{Monat}} - \text{Soll}_{\text{Pro-Rata}}}{\text{Soll}_{\text{Pro-Rata}}}\right) \times 100$$
+    Zusätzlich wird weiterhin das volle Monats-Gesamtsoll ($\text{Soll}_{\text{PVGIS, Monat}}$) und dessen bisheriger Erreichungsgrad ausgewiesen.
+  - *Warum*: Ohne Pro-Rata-Abgleich hätte jede Anlage am 10. eines Monats scheinbar `-66 %` Minderertrag, obwohl sie exakt auf Kurs liegt.
+- **Entscheidung 2: Zentrale Berechnung in `computeAggregatedPerformanceMetrics`**
+  - *Gewählter Ansatz*: Alle Pro-Rata-Werte, prozentualen Abweichungen (`deviationPct`, `proRataSollKwh`, `daysElapsed`, `daysInMonth`, `dataSourceLabel`) werden zentral in `computeAggregatedPerformanceMetrics()` berechnet und sowohl von der neuen Analyse-Hauptkarte als auch von den Detail-Ansichten genutzt (Single Source of Truth).
+
+---
+
+## 4. Technische Architektur & Datenfluss
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                 SINGLE SOURCE OF TRUTH (Zentrale Steuerung)              │
-│  • APP_VERSION = '9.4' (Header, Export, Dossier-Footer, Server-Logs)     │
-│  • DEFAULT_HA_CONFIG (Einmalige Definition ohne Duplikate/Tippfehler)    │
-│  • System-Baseline-Helfer (kWp, Batterie-kWh, Jahresverbrauch, Tarife)   │
-└───────────────────┬──────────────────────────────────┬───────────────────┘
-                    │                                  │
-                    ▼                                  ▼
-┌──────────────────────────────────────┐  ┌────────────────────────────────┐
-│   LIVE & ZEITRAUM-ENGINE (Client)    │  │   BACKEND-PROXY (Server)       │
-│  • Echte 0-Werte ohne Token (kein    │  │  • Getrennte Netz-W vor Kombi  │
-│    Demo-Generator / kein 1,33 kWh)   │  │  • Multi-WR kWh-Summierung     │
-│  • Zeitraum-State (Tag/Woche/Monat)  │  │  • Custom Consumers & Peaks    │
-│    steuert Header, Kachel-kWh &      │  │    in /api/ha/history          │
-│    Fadenkreuz-Datum konsistent       │  │  • Bereinigung alter Legacy-   │
-│  • Bereinigung toter Funktionen      │  │    Felder (stringEntities)     │
-└──────────────────────────────────────┘  └────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│              Zentrale Datenquellen (Single Source of Truth)               │
+│  • PVGIS-Monatsprognose: getPlannedSystemBaseline().monthlySollTotal[0..11]│
+│  • Live HA Monatszähler: currentLiveTelemetry.pvEnergyMonthKwh            │
+│  • Manuelles Logbuch:    getCurrentYearMonthsData(selectedAnalysisYear)   │
+└────────────────────────────────────┬──────────────────────────────────────┘
+                                     │
+                                     ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                 computeAggregatedPerformanceMetrics()                     │
+│  Je Monat m (0..11):                                                      │
+│  1. Ist-Ertrag bestimmen (Manuell im Logbuch ODER automatisch Live HA)    │
+│  2. Prüfen ob laufender Monat (selectedAnalysisYear == curYear & m == cur)│
+│  3. Pro-Rata-Soll berechnen: sollKwh * (curDay / daysInMonth)             │
+│  4. Effektives Vergleichs-Soll: isCurrentMonth ? proRataSoll : sollKwh    │
+│  5. Abweichung (%) = ((realPv - effectiveSoll) / effectiveSoll) * 100     │
+└──────────────────┬───────────────────────────────────┬────────────────────┘
+                   │                                   │
+                   ▼                                   ▼
+┌──────────────────────────────────────┐ ┌──────────────────────────────────┐
+│   Analyse-Hauptseite (Hub View)      │ │   Analyse Ebene 2 (Drill-Down)   │
+│  • Jahres-KPIs (mit Pro-Rata-Soll)   │ │  • 12-Monats-Balkendiagramm      │
+│  • NEU: Monats-Ertrags-Zusammenf.    │ │  • Detailkarten mit +/- %        │
+│    - Fokus-Block Aktueller Monat     │ │  • Monatswerte-Logbuch           │
+│    - Monats-Liste mit Fortschritt    │ │    (Live HA / Manuell)           │
+│      & Filter (Erfasst / Alle 12)    │ └──────────────────────────────────┘
+└──────────────────────────────────────┘
 ```
 
-### Geplante Bereinigungen im Detail:
-1. **Zentralisierung der Versionsnummer (`9.4`)**:
-   - Einführung von `APP_VERSION = '9.4'` und automatische Synchronisation in Header, neuen Projekten (bisher `7.9.0` hartcodiert), Konfigurationsexporten, Dossier-Fußzeilen (bisher `v8.1` und `v7.0.0` hartcodiert) sowie Server-Headern (bisher `8.3` / `8.5`).
-2. **Aufräumen alter Code-Schnipsel (Dead Code Removal)**:
-   - Entfernung von `demoSimHour`, `onDemoHourSliderChange`, `computeDemoLiveTelemetry`, `buildDemoIntradaySeries`.
-   - Entfernung der ungenutzten Alias-Konstanten `addHaCustomStringRow`, `addHaCustomConsumerRow` sowie der veralteten `toggleHeaderSubmenu` / `closeHeaderSubmenu` Wrapper.
-   - Entfernung der veralteten `stringEntities`- und `inverterEntities`-Objekte aus v8.3 (vollständig abgelöst durch `customStrings` und `pvEnergyExtraEntities`).
-   - Bereinigung der initialen `currentLiveTelemetry`-Startwerte von fiktiven Demo-Zahlen (`pvPowerW: 682`, `loadPowerW: 2100`, `pvEnergyTodayKwh: 1.325`) auf saubere `0`-Werte.
-3. **Korrektur der Zeitraum- & Kachel-Logik (`Tag` / `Woche` / `Monat`)**:
-   - `renderIntradayCurveSection()` respektiert `currentCurveTimeframe` (`day`, `week`, `month`), aktualisiert die Auswahl-Buttons konsistent und überschreibt den Zeitraum-Text nicht mehr mit `00:00 – HH:MM Uhr`.
-   - `getAvailableCurveDefinitions()` zeigt in den Messkanal-Kacheln passend zum gewählten Zeitraum `... kWh heute`, `... kWh (7 Tage)` oder `... kWh (30 Tage)` auf Basis der jeweiligen Zeitreihen-Integration bzw. Monatszähler.
-   - `updateIntradayHoverReadout()` zeigt im Fadenkreuz bei `Woche` und `Monat` das Datum samt Uhrzeit (`DD.MM. HH:MM Uhr`).
-   - Im Sankey-Diagramm (`computeSankeyFlowData`) wird der letzte verbleibende Fallback `1.33` kWh durch `0` ersetzt.
-4. **Parität & Deduplizierung im Server-Backend**:
-   - Eine einzige zentrale Funktion `createDefaultHaConfig()` statt doppelter Objekt-Literale; Korrektur von `sensor.gridExport_monthly` zu `sensor.grid_export_monthly`.
-   - Vorrang für `gridImportPower` und `gridExportPower` vor `gridPower` analog zum Browser-Client.
-   - Einbindung von `customConsumers` (`consumer_<id>`) und `peakValues` in `/api/ha/history`.
+### Interaktive Komponenten & State-Mapping
+- **`monthlyYieldFilterMode` (`'recorded'` | `'all'`)**: Steuert, ob in der Zusammenfassungskarte auf der Analyse-Hauptseite kompakt die bereits erfassten Monate inkl. aktuellem Monat oder alle 12 Kalendermonate angezeigt werden.
+- **`setMonthlyYieldSummaryFilter(mode)`**: Wechselt den Ansichtsfilter und rendert die Monats-Zusammenfassung sofort neu.
+- **`renderMonthlyYieldSummaryCard(baseline, metrics)`**: Aktualisiert das Fokus-Banner des aktuellen Monats (Ist, Pro-Rata-Soll, Gesamt-Soll, `+/- %` Abweichung, `Live HA`-Kennzeichnung) sowie die darunterliegende Monatsliste.

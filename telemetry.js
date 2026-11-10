@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.4)
-// Zentrale Single Source of Truth, saubere 0-Werte ohne Demo-Generator,
-// konsistente Zeitraum-Auswertung (Tag/Woche/Monat) & Multi-WR-Zähler
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.5)
+// Monatliche Ertrags-Zusammenfassung mit Pro-Rata-PVGIS-Soll & %-Abweichung,
+// Zentrale Single Source of Truth, saubere 0-Werte & Zeitraum-Konsistenz
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -2660,16 +2660,30 @@ function changeAnalysisYear(yearVal) {
     renderAnalysisSection();
 }
 
+let monthlyYieldSummaryFilter = 'recorded'; // 'recorded' | 'all'
+
+function setMonthlyYieldSummaryFilter(mode) {
+    monthlyYieldSummaryFilter = mode === 'all' ? 'all' : 'recorded';
+    const baseline = getPlannedSystemBaseline();
+    const metrics = computeAggregatedPerformanceMetrics(baseline);
+    renderMonthlyYieldSummaryCard(baseline, metrics);
+}
+if (typeof window !== 'undefined') {
+    window.setMonthlyYieldSummaryFilter = setMonthlyYieldSummaryFilter;
+}
+
 function computeAggregatedPerformanceMetrics(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const months = getCurrentYearMonthsData(selectedAnalysisYear);
     const now = new Date();
     const curYear = now.getFullYear();
     const curMonthIdx = now.getMonth();
+    const curDayOfMonth = now.getDate();
     const t = (typeof currentLiveTelemetry !== 'undefined' && currentLiveTelemetry) ? currentLiveTelemetry : null;
 
     let realPvSum = 0;
     let sollPvForRecordedMonths = 0;
+    let fullSollPvForRecordedMonths = 0;
     let recordedMonthsCount = 0;
     let gridExportSum = 0;
     let gridImportSum = 0;
@@ -2678,6 +2692,12 @@ function computeAggregatedPerformanceMetrics(baseline) {
 
     const monthlyComparison = months.map((mObj, idx) => {
         const sollKwh = baseline.monthlySollTotal[idx] || 0;
+        const isCurrentRunningMonth = (selectedAnalysisYear === curYear && idx === curMonthIdx);
+        const daysInMonth = new Date(selectedAnalysisYear, idx + 1, 0).getDate() || 30;
+        const daysElapsed = isCurrentRunningMonth ? Math.max(1, Math.min(daysInMonth, curDayOfMonth)) : daysInMonth;
+        const proRataRatio = isCurrentRunningMonth ? (daysElapsed / daysInMonth) : 1;
+        const proRataSollKwh = sollKwh * proRataRatio;
+
         let hasReal = mObj.pvYieldKwh !== null && mObj.pvYieldKwh !== undefined && mObj.pvYieldKwh !== '';
         let isLiveCurrentMonth = false;
 
@@ -2688,15 +2708,18 @@ function computeAggregatedPerformanceMetrics(baseline) {
         let bDis = hasReal ? Math.max(0, parseFloat(mObj.batteryDischargedKwh) || 0) : 0;
 
         // Auto-feed from HA live month counters if current month has no manual entry yet
-        if (!hasReal && selectedAnalysisYear === curYear && idx === curMonthIdx && t && (t.pvEnergyMonthKwh > 0 || t.gridImportMonthKwh > 0)) {
+        if (!hasReal && isCurrentRunningMonth && t && (t.pvEnergyMonthKwh > 0 || t.gridImportMonthKwh > 0 || t.pvEnergyTodayKwh > 0)) {
             hasReal = true;
             isLiveCurrentMonth = true;
-            realPv = Math.max(0, parseFloat(t.pvEnergyMonthKwh) || 0);
-            expKwh = Math.max(0, parseFloat(t.gridExportMonthKwh) || 0);
-            impKwh = Math.max(0, parseFloat(t.gridImportMonthKwh) || 0);
-            bChg = Math.max(0, parseFloat(t.batteryChargeMonthKwh) || 0);
-            bDis = Math.max(0, parseFloat(t.batteryDischargeMonthKwh) || 0);
+            realPv = Math.max(0, parseFloat(t.pvEnergyMonthKwh ?? t.pvEnergyTodayKwh) || 0);
+            expKwh = Math.max(0, parseFloat(t.gridExportMonthKwh ?? t.gridExportTodayKwh) || 0);
+            impKwh = Math.max(0, parseFloat(t.gridImportMonthKwh ?? t.gridImportTodayKwh) || 0);
+            bChg = Math.max(0, parseFloat(t.batteryChargeMonthKwh ?? t.batteryChargeTodayKwh) || 0);
+            bDis = Math.max(0, parseFloat(t.batteryDischargeMonthKwh ?? t.batteryDischargeTodayKwh) || 0);
         }
+
+        // For the running calendar month, compare against pro-rata target up to today unless manually closed
+        const effectiveSollKwh = isCurrentRunningMonth ? Math.max(0.1, proRataSollKwh) : sollKwh;
 
         const directKwh = hasReal ? Math.max(0, (realPv || 0) - expKwh - bChg) : 0;
         const totalSelfUsedKwh = hasReal ? Math.max(0, (realPv || 0) - expKwh) : 0;
@@ -2711,7 +2734,8 @@ function computeAggregatedPerformanceMetrics(baseline) {
 
         if (hasReal && realPv !== null) {
             realPvSum += realPv;
-            sollPvForRecordedMonths += sollKwh;
+            sollPvForRecordedMonths += effectiveSollKwh;
+            fullSollPvForRecordedMonths += sollKwh;
             recordedMonthsCount++;
             gridExportSum += expKwh;
             gridImportSum += impKwh;
@@ -2719,7 +2743,13 @@ function computeAggregatedPerformanceMetrics(baseline) {
             batDischargedSum += bDis;
         }
 
-        const perfIndexPct = (hasReal && sollKwh > 0 && realPv !== null) ? ((realPv / sollKwh) * 100) : null;
+        const perfIndexPct = (hasReal && effectiveSollKwh > 0 && realPv !== null) ? ((realPv / effectiveSollKwh) * 100) : null;
+        const deviationPct = perfIndexPct !== null ? (perfIndexPct - 100) : null;
+        const fullMonthCompletionPct = (hasReal && sollKwh > 0 && realPv !== null) ? ((realPv / sollKwh) * 100) : null;
+        const diffEffectiveKwh = (hasReal && realPv !== null) ? (realPv - effectiveSollKwh) : null;
+        const diffFullMonthKwh = (hasReal && realPv !== null) ? (realPv - sollKwh) : null;
+        const dataSource = !hasReal ? 'open' : (isLiveCurrentMonth ? 'live_ha' : 'logbook');
+        const dataSourceLabel = !hasReal ? 'PVGIS-Prognose' : (isLiveCurrentMonth ? 'Live HA · Zähler' : 'Manuell · Logbuch');
 
         return {
             month: idx,
@@ -2727,6 +2757,12 @@ function computeAggregatedPerformanceMetrics(baseline) {
             labelLong: MONTH_LABELS_LONG[idx],
             hasReal,
             isLiveCurrentMonth,
+            isCurrentRunningMonth,
+            daysElapsed,
+            daysInMonth,
+            proRataRatio,
+            proRataSollKwh,
+            effectiveSollKwh,
             sollKwh,
             realPv,
             expKwh,
@@ -2737,12 +2773,19 @@ function computeAggregatedPerformanceMetrics(baseline) {
             totalSelfUsedKwh,
             houseConsKwh,
             perfIndexPct,
+            deviationPct,
+            fullMonthCompletionPct,
+            diffEffectiveKwh,
+            diffFullMonthKwh,
+            dataSource,
+            dataSourceLabel,
             totalBenefitEur,
             sollMonthEur
         };
     });
 
     const overallPerfIndexPct = sollPvForRecordedMonths > 0 ? ((realPvSum / sollPvForRecordedMonths) * 100) : 100;
+    const overallDeviationPct = overallPerfIndexPct - 100;
     const directTotalKwh = Math.max(0, realPvSum - gridExportSum - batChargedSum);
     const selfConsumedTotalKwh = directTotalKwh + batDischargedSum;
     const totalHouseConsKwh = selfConsumedTotalKwh + gridImportSum;
@@ -2759,7 +2802,7 @@ function computeAggregatedPerformanceMetrics(baseline) {
     const recordedTotalEur = recordedSelfSavingsEur + recordedFeedInEur;
 
     const projectedAnnualRealEur = monthlyComparison.reduce((acc, m) => {
-        if (m.hasReal) return acc + m.totalBenefitEur;
+        if (m.hasReal && !m.isCurrentRunningMonth) return acc + m.totalBenefitEur;
         return acc + (m.sollMonthEur * (overallPerfIndexPct / 100));
     }, 0);
 
@@ -2772,8 +2815,10 @@ function computeAggregatedPerformanceMetrics(baseline) {
         recordedMonthsCount,
         realPvSum,
         sollPvForRecordedMonths,
+        fullSollPvForRecordedMonths,
         totalSollYearKwh: baseline.totalSollYearKwh,
         overallPerfIndexPct,
+        overallDeviationPct,
         specificRealYield: baseline.totalKwp > 0 ? (realPvSum / baseline.totalKwp) : 0,
         specificSollYield: baseline.totalKwp > 0 ? (baseline.totalSollYearKwh / baseline.totalKwp) : 0,
         gridExportSum,
@@ -2796,6 +2841,233 @@ function computeAggregatedPerformanceMetrics(baseline) {
         realAmortYears,
         plannedAmortYears
     };
+}
+
+function renderMonthlyYieldSummaryCard(baseline, metrics) {
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    if (!metrics) metrics = computeAggregatedPerformanceMetrics(baseline);
+
+    // 1. Update segmented filter buttons
+    const btnRec = document.getElementById('btn-monthly-filter-recorded');
+    const btnAll = document.getElementById('btn-monthly-filter-all');
+    if (btnRec && btnAll) {
+        const activeCls = "px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer whitespace-nowrap";
+        const idleCls = "px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer whitespace-nowrap";
+        btnRec.className = monthlyYieldSummaryFilter === 'recorded' ? activeCls : idleCls;
+        btnAll.className = monthlyYieldSummaryFilter === 'all' ? activeCls : idleCls;
+    }
+
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonthIdx = now.getMonth();
+
+    // Determine spotlight month: current running month (if viewing current year) or latest recorded month
+    let spotlightMonth = metrics.monthlyComparison.find(m => m.isCurrentRunningMonth);
+    if (!spotlightMonth) {
+        const recorded = metrics.monthlyComparison.filter(m => m.hasReal);
+        spotlightMonth = recorded.length > 0 ? recorded[recorded.length - 1] : metrics.monthlyComparison[curMonthIdx] || metrics.monthlyComparison[0];
+    }
+
+    const subEl = document.getElementById('monthly_yield_summary_subtitle');
+    if (subEl) {
+        const recCount = metrics.recordedMonthsCount;
+        subEl.innerText = recCount > 0
+            ? `Automatischer Soll-Ist-Abgleich (${recCount}/12 Monate erfasst · Pro-Rata bis Tag ${now.getDate()})`
+            : `Standortgenaue PVGIS-Monatsprognose · Taggenaues Pro-Rata-Soll für ${MONTH_LABELS_LONG[curMonthIdx]}`;
+    }
+
+    // 2. Render Spotlight Banner for Current / Active Month
+    const bannerEl = document.getElementById('monthlyYieldCurrentFocusBanner');
+    if (bannerEl && spotlightMonth) {
+        const m = spotlightMonth;
+        const realVal = m.hasReal && m.realPv !== null ? m.realPv : 0;
+        const proRataSoll = m.effectiveSollKwh || m.sollKwh || 0;
+        const fullSoll = m.sollKwh || 0;
+
+        // Calculate deviation against pro-rata target (if running month) or full month target
+        const devPct = m.hasReal && m.deviationPct !== null
+            ? m.deviationPct
+            : (proRataSoll > 0 && realVal > 0 ? (((realVal - proRataSoll) / proRataSoll) * 100) : 0);
+        const devSign = devPct >= 0 ? '+' : '';
+        const diffKwh = realVal - proRataSoll;
+        const diffKwhSign = diffKwh >= 0 ? '+' : '';
+
+        const fullReachPct = fullSoll > 0 ? Math.min(100, (realVal / fullSoll) * 100) : 0;
+        const proRataMarkerPct = m.isCurrentRunningMonth && fullSoll > 0
+            ? Math.min(100, Math.max(2, (m.daysElapsed / m.daysInMonth) * 100))
+            : 100;
+
+        let toneText = 'text-slate-600 dark:text-slate-300';
+        let barColor = 'bg-teal-500';
+        let statusLabel = 'Noch keine Zählerdaten';
+        if (m.hasReal) {
+            if (devPct >= -2) {
+                toneText = 'text-emerald-600 dark:text-emerald-400';
+                barColor = 'bg-emerald-500';
+                statusLabel = devPct >= 2 ? 'Über PVGIS-Soll' : 'Exakt auf PVGIS-Kurs';
+            } else if (devPct >= -12) {
+                toneText = 'text-amber-600 dark:text-amber-400';
+                barColor = 'bg-amber-500';
+                statusLabel = 'Leicht unter PVGIS-Soll';
+            } else {
+                toneText = 'text-rose-600 dark:text-rose-400';
+                barColor = 'bg-rose-500';
+                statusLabel = 'Unter PVGIS-Soll';
+            }
+        }
+
+        const fmt1 = (v) => Number(v || 0).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        const fmt0 = (v) => Math.round(Number(v || 0)).toLocaleString('de-DE');
+
+        const sourceText = m.hasReal
+            ? (m.isLiveCurrentMonth ? 'Live HA · Automatische Zähler-Differenz' : 'Manuell · Monats-Logbuch')
+            : 'Warte auf Live-HA-Zähler oder Logbuch-Eintrag';
+
+        const proRataInfoText = m.isCurrentRunningMonth
+            ? `Tag ${m.daysElapsed} von ${m.daysInMonth} (${Math.round(m.proRataRatio * 100)} % des Monats)`
+            : `Abgeschlossener Kalendermonat`;
+
+        bannerEl.innerHTML = `
+            <div class="rounded-2xl bg-slate-100/85 dark:bg-[#13232b]/90 border border-slate-200/90 dark:border-teal-500/25 p-4 space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                        <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span class="font-bold text-teal-700 dark:text-teal-300">${m.isCurrentRunningMonth ? 'Aktueller Monat' : 'Fokus-Monat'}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>${proRataInfoText}</span>
+                            <span aria-hidden="true">·</span>
+                            <span class="font-medium text-slate-600 dark:text-slate-300">${sourceText}</span>
+                        </div>
+                        <h4 class="text-base sm:text-lg font-black text-slate-900 dark:text-white mt-0.5">
+                            ${m.labelLong} ${selectedAnalysisYear}
+                        </h4>
+                    </div>
+
+                    <div class="flex items-baseline gap-2 sm:text-right font-mono tabular-nums">
+                        <div>
+                            <span class="text-xl sm:text-2xl font-black ${toneText}">
+                                ${m.hasReal ? `${devSign}${devPct.toFixed(1).replace('.', ',')} %` : '0,0 %'}
+                            </span>
+                            <span class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                ${statusLabel} (${m.hasReal ? `${diffKwhSign}${fmt1(diffKwh)} kWh` : `Soll bis heute: ${fmt1(proRataSoll)} kWh`})
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 3-Column Metric Strip: Ist-Ertrag | Anteiliges Soll bis heute | Monats-Gesamtsoll -->
+                <div class="grid grid-cols-3 gap-2.5 pt-1 font-mono tabular-nums">
+                    <div class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200/70 dark:border-white/10">
+                        <span class="text-[10px] font-sans font-semibold text-slate-500 dark:text-slate-400 block">Ist-Ertrag (${m.hasReal ? (m.isLiveCurrentMonth ? 'Live HA' : 'Logbuch') : 'Aktuell'})</span>
+                        <span class="text-sm sm:text-base font-black text-slate-900 dark:text-white mt-0.5 block">${fmt1(realVal)} kWh</span>
+                    </div>
+                    <div class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200/70 dark:border-white/10">
+                        <span class="text-[10px] font-sans font-semibold text-slate-500 dark:text-slate-400 block">${m.isCurrentRunningMonth ? `PVGIS-Soll bis heute (Tag ${m.daysElapsed})` : 'PVGIS-Vergleichssoll'}</span>
+                        <span class="text-sm sm:text-base font-black text-sky-700 dark:text-sky-300 mt-0.5 block">${fmt1(proRataSoll)} kWh</span>
+                    </div>
+                    <div class="p-2.5 rounded-xl bg-white/80 dark:bg-slate-900/60 border border-slate-200/70 dark:border-white/10">
+                        <span class="text-[10px] font-sans font-semibold text-slate-500 dark:text-slate-400 block">PVGIS Monats-Gesamtsoll</span>
+                        <span class="text-sm sm:text-base font-black text-slate-700 dark:text-slate-200 mt-0.5 block">${fmt0(fullSoll)} kWh <span class="text-[11px] font-normal text-slate-400">(${fullReachPct.toFixed(0)}%)</span></span>
+                    </div>
+                </div>
+
+                <!-- Progress Bar with Pro-Rata Marker -->
+                <div class="space-y-1 pt-0.5">
+                    <div class="relative w-full h-2.5 rounded-full bg-slate-200/90 dark:bg-slate-800 overflow-hidden">
+                        <div class="h-full rounded-full ${barColor} transition-all duration-500" style="width: ${Math.min(100, Math.max(realVal > 0 ? 2 : 0, fullReachPct)).toFixed(1)}%"></div>
+                        ${m.isCurrentRunningMonth ? `
+                        <div class="absolute top-0 bottom-0 w-0.5 bg-sky-500 dark:bg-sky-300 z-10" style="left: ${proRataMarkerPct.toFixed(1)}%" title="Anteiliges PVGIS-Soll bis heute (${fmt1(proRataSoll)} kWh)"></div>
+                        ` : ''}
+                    </div>
+                    <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                        <span>0 kWh</span>
+                        ${m.isCurrentRunningMonth ? `<span class="text-sky-600 dark:text-sky-300 font-semibold">▲ Heute Soll: ${fmt1(proRataSoll)} kWh</span>` : `<span>Erfüllungsgrad: ${m.perfIndexPct !== null ? m.perfIndexPct.toFixed(1).replace('.', ',') : '0,0'} %</span>`}
+                        <span>Monatssoll: ${fmt0(fullSoll)} kWh</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    // 3. Render Monthly Comparison Rows / Grid
+    const listEl = document.getElementById('monthlyYieldSummaryList');
+    if (listEl) {
+        let monthsToRender = metrics.monthlyComparison;
+        if (monthlyYieldSummaryFilter === 'recorded') {
+            monthsToRender = metrics.monthlyComparison.filter(m => m.hasReal || m.isCurrentRunningMonth);
+            if (monthsToRender.length === 0) {
+                monthsToRender = metrics.monthlyComparison.slice(Math.max(0, curMonthIdx - 1), Math.min(12, curMonthIdx + 2));
+            }
+        }
+
+        listEl.innerHTML = monthsToRender.map(m => {
+            const hasReal = m.hasReal && m.realPv !== null;
+            const realVal = hasReal ? m.realPv : 0;
+            const compareSoll = m.effectiveSollKwh || m.sollKwh || 0;
+            const fullSoll = m.sollKwh || 0;
+            const devPct = hasReal && m.deviationPct !== null ? m.deviationPct : null;
+            const devSign = devPct !== null && devPct >= 0 ? '+' : '';
+            const diffKwh = hasReal && m.diffEffectiveKwh !== null ? m.diffEffectiveKwh : null;
+            const diffSign = diffKwh !== null && diffKwh >= 0 ? '+' : '';
+
+            // Bar width relative to effective target (capped at 100% visually)
+            const barPct = hasReal && compareSoll > 0
+                ? Math.min(100, Math.max(3, (realVal / compareSoll) * 100))
+                : 0;
+
+            let statusColor = 'text-slate-400 dark:text-slate-500';
+            let barClass = 'bg-slate-300 dark:bg-slate-700';
+            if (hasReal && devPct !== null) {
+                if (devPct >= -2) {
+                    statusColor = 'text-emerald-600 dark:text-emerald-400';
+                    barClass = 'bg-emerald-500';
+                } else if (devPct >= -12) {
+                    statusColor = 'text-amber-600 dark:text-amber-400';
+                    barClass = 'bg-amber-500';
+                } else {
+                    statusColor = 'text-rose-600 dark:text-rose-400';
+                    barClass = 'bg-rose-500';
+                }
+            }
+
+            const sourceTag = hasReal
+                ? (m.isLiveCurrentMonth ? 'Live HA' : 'Logbuch')
+                : (m.isCurrentRunningMonth ? `Tag ${m.daysElapsed}/${m.daysInMonth}` : 'Prognose');
+
+            const sollDisplay = m.isCurrentRunningMonth
+                ? `${Math.round(compareSoll).toLocaleString('de-DE')} kWh Soll bis heute (${Math.round(fullSoll).toLocaleString('de-DE')} Mon.)`
+                : `${Math.round(fullSoll).toLocaleString('de-DE')} kWh PVGIS-Soll`;
+
+            return `
+            <div onclick="openAnalyseDrillDown('soll-ist')" role="button" tabindex="0"
+                title="Tippen für detaillierten 12-Monats-Vergleich (${m.labelLong})"
+                class="p-3.5 rounded-2xl bg-white/85 dark:bg-[#152228]/90 border ${m.isCurrentRunningMonth ? 'border-teal-500/45 dark:border-teal-400/40' : 'border-slate-200/80 dark:border-slate-700/60'} hover:border-teal-500/60 transition-all cursor-pointer flex flex-col justify-between gap-2">
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <span class="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">${m.labelLong}</span>
+                        <span class="text-[11px] text-slate-400 dark:text-slate-400 shrink-0">· ${sourceTag}</span>
+                    </div>
+                    <span class="text-xs sm:text-sm font-mono tabular-nums font-black ${statusColor} shrink-0">
+                        ${devPct !== null ? `${devSign}${devPct.toFixed(1).replace('.', ',')} %` : 'Offen'}
+                    </span>
+                </div>
+
+                <div class="w-full h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-800 overflow-hidden">
+                    <div class="h-full rounded-full ${barClass} transition-all duration-500" style="width: ${barPct.toFixed(1)}%"></div>
+                </div>
+
+                <div class="flex items-baseline justify-between gap-2 text-[11px] font-mono tabular-nums">
+                    <div class="truncate">
+                        <span class="font-extrabold text-slate-900 dark:text-white">${hasReal ? `${Math.round(realVal).toLocaleString('de-DE')} kWh` : '— kWh'}</span>
+                        <span class="text-slate-500 dark:text-slate-400"> / ${sollDisplay}</span>
+                    </div>
+                    <span class="font-bold ${statusColor} shrink-0">
+                        ${diffKwh !== null ? `${diffSign}${Math.round(diffKwh).toLocaleString('de-DE')} kWh` : ''}
+                    </span>
+                </div>
+            </div>`;
+        }).join('');
+    }
 }
 
 function renderAnalysisSection(baseline) {
@@ -2827,10 +3099,13 @@ function renderAnalysisSection(baseline) {
     setElText('ana_kpi_euro_sub', `Hochrechnung Jahr: ${Math.round(metrics.projectedAnnualRealEur).toLocaleString('de-DE')} €/a · ROI: ${metrics.realAmortYears.toFixed(1)} J.`);
 
     // Update Level 1 Drill-Down Hub Card Subtitles
-    setElText('hub_card_soll_ist_sub', `${metrics.overallPerfIndexPct.toFixed(1)} % Soll-Erfüllung · ${Math.round(metrics.realPvSum).toLocaleString('de-DE')} / ${Math.round(metrics.sollPvForRecordedMonths).toLocaleString('de-DE')} kWh`);
+    setElText('hub_card_soll_ist_sub', `${perfSign}${perfDelta} % Abweichung (${metrics.overallPerfIndexPct.toFixed(1)} % PR) · ${Math.round(metrics.realPvSum).toLocaleString('de-DE')} / ${Math.round(metrics.sollPvForRecordedMonths).toLocaleString('de-DE')} kWh`);
     setElText('hub_card_autarkie_sub', `${metrics.realAutarkyPct.toFixed(1)} % Autarkie · ${metrics.realEigenQuotaPct.toFixed(1)} % Eigenverbrauch · ${baseline.totalBatteryKwh > 0 ? metrics.batFullCycles.toFixed(0) + ' Zyklen' : 'Ohne Speicher'}`);
     setElText('hub_card_amort_sub', `${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} € gespart · ROI ${metrics.realAmortYears.toFixed(1)} J. (Plan: ${metrics.plannedAmortYears.toFixed(1)} J.)`);
     setElText('hub_card_logbuch_sub', `${metrics.recordedMonthsCount} von 12 Monaten für ${selectedAnalysisYear} erfasst · HA-Sync & CSV`);
+
+    // Render Monthly Yield Summary Card directly on Level 1 Hub
+    renderMonthlyYieldSummaryCard(baseline, metrics);
 
     // Render Interactive Sankey Energy Flow Diagram on Level 1
     renderSankeyDiagram(currentSankeyHorizon, baseline, metrics);
@@ -3429,23 +3704,28 @@ function renderSollIstPanel(baseline, metrics) {
     const gridEl = document.getElementById('sollIstMonthlyCardsGrid');
     if (gridEl) {
         gridEl.innerHTML = metrics.monthlyComparison.map(m => {
-            const diffKwh = m.hasReal ? Math.round(m.realPv - m.sollKwh) : null;
+            const compareSoll = m.effectiveSollKwh || m.sollKwh || 0;
+            const diffKwh = m.hasReal ? Math.round(m.realPv - compareSoll) : null;
             const diffSign = diffKwh !== null && diffKwh >= 0 ? '+' : '';
+            const devPct = m.hasReal && m.deviationPct !== null ? m.deviationPct : null;
+            const devSign = devPct !== null && devPct >= 0 ? '+' : '';
             const statusColor = !m.hasReal
                 ? 'text-slate-400'
-                : (m.perfIndexPct >= 100 ? 'text-emerald-600 dark:text-emerald-400' : (m.perfIndexPct >= 90 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'));
+                : (devPct >= -2 ? 'text-emerald-600 dark:text-emerald-400' : (devPct >= -12 ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400'));
+
+            const sourceHint = m.hasReal ? (m.isLiveCurrentMonth ? ' · Live HA' : ' · Logbuch') : '';
 
             return `
-            <div class="p-3 rounded-2xl bg-slate-50 dark:bg-[#152228] border border-slate-200/80 dark:border-slate-700/60 flex flex-col justify-between">
+            <div class="p-3 rounded-2xl bg-slate-50 dark:bg-[#152228] border ${m.isCurrentRunningMonth ? 'border-teal-500/40' : 'border-slate-200/80 dark:border-slate-700/60'} flex flex-col justify-between">
                 <div class="flex items-center justify-between text-xs">
-                    <span class="font-bold text-slate-700 dark:text-slate-200">${m.labelLong}</span>
-                    <span class="font-mono tabular-nums font-bold ${statusColor}">${m.hasReal ? `${m.perfIndexPct.toFixed(0)} %` : 'Offen'}</span>
+                    <span class="font-bold text-slate-700 dark:text-slate-200 truncate">${m.labelLong}${sourceHint}</span>
+                    <span class="font-mono tabular-nums font-bold ${statusColor} shrink-0">${devPct !== null ? `${devSign}${devPct.toFixed(1).replace('.', ',')} %` : 'Offen'}</span>
                 </div>
                 <div class="mt-2 flex items-baseline justify-between font-mono tabular-nums">
                     <div>
-                        <span class="text-[10px] text-slate-400 block">Ist / Soll</span>
+                        <span class="text-[10px] text-slate-400 block">${m.isCurrentRunningMonth ? `Ist / Soll (Tag ${m.daysElapsed})` : 'Ist / Soll'}</span>
                         <span class="text-xs font-extrabold text-slate-900 dark:text-white">${m.hasReal ? Math.round(m.realPv) : '—'}</span>
-                        <span class="text-[11px] text-slate-400"> / ${Math.round(m.sollKwh)} kWh</span>
+                        <span class="text-[11px] text-slate-400"> / ${Math.round(compareSoll)} kWh</span>
                     </div>
                     <div class="text-right">
                         <span class="text-[11px] font-bold ${statusColor}">${diffKwh !== null ? `${diffSign}${diffKwh} kWh` : ''}</span>

@@ -4,6 +4,26 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.5] – 2026-11-10
+
+### ✨ Monatliche Ertrags-Zusammenfassung auf der Analyse-Hauptseite mit automatischem PVGIS-Soll-Ist-Abgleich, taggenauem Pro-Rata-Soll & prozentualer Abweichungsanzeige
+
+#### 1. Neue Übersichtskarte „Monatliche Ertragsleistung“ direkt auf der Analyse-Hauptseite (`#analyse-hub-view`)
+* **Fokus-Banner für den aktuellen / zuletzt aktiven Monat (`#monthlyYieldCurrentFocusBanner`):**
+  - Zeigt auf einen Blick den **Ist-Ertrag (`kWh`)**, das **taggenaue anteilige PVGIS-Soll bis heute (`Pro-Rata kWh`)**, das **volle PVGIS-Monats-Gesamtsoll (`kWh`)** sowie die **prozentuale Abweichung (`+X,X %` / `-X,X %`)** und die absolute Differenz in `kWh`.
+  - Ein kombinierter Fortschrittsbalken stellt den bisherigen Monatsertrag im Verhältnis zum Gesamtmonat dar und markiert mit einer vertikalen Soll-Marke exakt den heutigen Kalendertag (`▲ Heute Soll: X,X kWh`), sodass sofort erkennbar ist, ob die Anlage dem Zeitplan voraus ist oder zurückliegt.
+* **Kompakte Monats-Vergleichsliste mit Filter-Umschalter (`#monthlyYieldSummaryList`):**
+  - Über den Umschalter **„Aktuell & Erfasst“** vs. **„Alle 12 Monate“** lassen sich entweder kompakt die bisherigen Monate inkl. laufendem Monat oder alle 12 Kalendermonate des Jahres einblenden.
+  - Jede Monatskachel zeigt die Datenquelle (`Live HA` bei automatischer Zähler-Differenz bzw. `Logbuch` bei manuellem Eintrag), einen semantisch eingefärbten Fortschrittsbalken, `Ist / Soll kWh` sowie die prozentuale (`+/- %`) und absolute (`+/- kWh`) Abweichung.
+
+#### 2. Taggenaue Pro-Rata-Soll-Berechnung im laufenden Monat (Single Source of Truth)
+* **Unverzerrter Soll-Ist-Abgleich mitten im Monat (`computeAggregatedPerformanceMetrics`):**
+  - Für den aktuell laufenden Kalendermonat wird das PVGIS-Monatssoll anteilig auf den heutigen Kalendertag umgerechnet ($\text{Soll}_{\text{Pro-Rata}} = \text{Soll}_{\text{Monat}} \times \frac{\text{Tag}}{\text{Tage im Monat}}$).
+  - Sowohl die prozentuale Monats-Abweichung (`deviationPct`) als auch der kumulierte Jahres-Erfüllungsgrad (`overallPerfIndexPct` in den oberen Jahres-KPIs) nutzen für den laufenden Monat dieses taggenaue Pro-Rata-Soll, damit ein noch nicht abgeschlossener Monat den Erfüllungsgrad nicht künstlich nach unten zieht.
+  - Auch die 12 Monatskarten in der Detailansicht (`renderSollIstPanel`) zeigen nun einheitlich die prozentuale Abweichung (`+/- %`), das Pro-Rata-Soll für den laufenden Monat und die Datenquelle (`Live HA` / `Logbuch`).
+
+---
+
 ## [Version 9.4] – 2026-11-10
 
 ### ✨ Umfassendes Code-Audit, Zentrale Single Source of Truth (`APP_VERSION` & System-Baseline), Bereinigung aller Demo-Altlasten, Zeitraum-Konsistenz & 1:1 Client/Server-Parität

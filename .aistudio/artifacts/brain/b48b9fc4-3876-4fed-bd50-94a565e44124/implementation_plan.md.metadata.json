@@ -1,6 +1,6 @@
 {
-  "summary":  "Ausführlicher Code-Audit & Zentralisierungs-Plan (Version 9.4): Zentrale APP_VERSION & Single Source of Truth, Bereinigung aller Demo-Generatoren und veralteten Code-Schnipsel, Konsolidierung der Zeitraum-Logik (Tag/Woche/Monat) sowie Angleichung von Browser- und Server-Engine.",
-  "updatedAt":  "2026-11-10T20:10:18.710116415Z",
+  "summary":  "Implementierungsplan (Version 9.5) für die neue monatliche Ertrags-Zusammenfassung auf der Analyse-Hauptseite mit automatischem PVGIS-Soll-Ist-Abgleich, taggenauem Pro-Rata-Soll für den laufenden Monat, prozentualer Abweichungsanzeige und Live-HA-Quellenkennzeichnung.",
+  "updatedAt":  "2026-11-10T20:34:48.276324534Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

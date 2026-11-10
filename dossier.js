@@ -1158,7 +1158,7 @@ function buildCompactReportHtml(data) {
 
         <!-- FOOTER -->
         <footer class="mt-6 pt-3 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-            <span>PV Pro Studio v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '9.4'} • Kompaktbericht</span>
+            <span>PV Pro Studio v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '9.5'} • Kompaktbericht</span>
             <span>Erstellt am: ${escapeHtml(dossierOptions.projectDate)}</span>
         </footer>
     </div>
@@ -1851,7 +1851,7 @@ function buildDossierHtmlContent(isPrintOnly = false) {
 
         <!-- DOKUMENTEN-FUSSZEILE -->
         <footer class="mt-8 pt-4 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-            <span>PV Pro Studio v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '9.4'} • Dokumentation nach DIN VDE 0100-712</span>
+            <span>PV Pro Studio v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '9.5'} • Dokumentation nach DIN VDE 0100-712</span>
             <span>Erstellt am: ${escapeHtml(dossierOptions.projectDate)} • Seite 1 von 1</span>
         </footer>
     </div>

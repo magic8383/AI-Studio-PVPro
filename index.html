@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 9.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 9.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=9.4">
+    <link rel="manifest" href="manifest.json?v=9.5">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.4">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.4">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.4">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.4">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.5">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.5">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.5">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.5">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -387,10 +387,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=9.4" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=9.5" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.4</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.5</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1589,6 +1589,49 @@
                     </div>
                 </div>
 
+                <!-- 1B. MONATLICHE ERTRAGSLEISTUNG · IST VS. PVGIS-SOLL (NEU V9.5: PRO-RATA & %-ABWEICHUNG) -->
+                <div id="analyse-monthly-yield-summary-card" class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">calendar_month</span>
+                                <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Monatliche Ertragsleistung</h3>
+                                <button type="button" onclick="openAnalyseDrillDown('soll-ist')" class="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer whitespace-nowrap">
+                                    <span class="material-symbols-rounded text-xs">bar_chart</span>
+                                    <span>Jahresdiagramm</span>
+                                </button>
+                                <button type="button" onclick="openAnalyseDrillDown('logbuch')" class="text-[11px] font-semibold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5 cursor-pointer whitespace-nowrap">
+                                    <span class="material-symbols-rounded text-xs">edit_note</span>
+                                    <span>Logbuch</span>
+                                </button>
+                            </div>
+                            <p id="monthly_yield_summary_subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                Automatischer Abgleich von Live-HA-Zählern &amp; Logbuch gegen das standortgenaue PVGIS-Soll
+                            </p>
+                        </div>
+
+                        <!-- Filter-Umschalter: Erfasste & Aktuell | Alle 12 Monate -->
+                        <div class="inline-flex rounded-2xl p-1 bg-slate-200/75 dark:bg-white/10 border border-white/60 dark:border-white/10 text-xs font-bold self-start sm:self-auto shrink-0">
+                            <button type="button" id="btn-monthly-filter-recorded" onclick="setMonthlyYieldSummaryFilter('recorded')" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer whitespace-nowrap">
+                                Aktuell &amp; Erfasst
+                            </button>
+                            <button type="button" id="btn-monthly-filter-all" onclick="setMonthlyYieldSummaryFilter('all')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer whitespace-nowrap">
+                                Alle 12 Monate
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Fokus-Banner für den aktuellen / zuletzt aktiven Monat (inkl. Pro-Rata-Soll bis heute) -->
+                    <div id="monthlyYieldCurrentFocusBanner">
+                        <!-- Dynamisch gerendert durch renderMonthlyYieldSummaryCard() in telemetry.js -->
+                    </div>
+
+                    <!-- Monats-Vergleichsliste mit Fortschrittsbalken & prozentualer Abweichung -->
+                    <div id="monthlyYieldSummaryList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        <!-- Dynamisch gerendert durch renderMonthlyYieldSummaryCard() in telemetry.js -->
+                    </div>
+                </div>
+
                 <!-- 2. INTERAKTIVES SANKEY-ENERGIEFLUSS-DIAGRAMM (HEUTE | MONAT | GESAMTJAHR) -->
                 <div class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2080,7 +2123,7 @@
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (V9.4: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
+    <!-- M3 More Bottom Sheet (V9.5: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
     <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1820]/95 backdrop-blur-2xl rounded-t-3xl border-t border-slate-200/90 dark:border-white/15 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
         <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
@@ -2151,7 +2194,7 @@
                     <span class="material-symbols-rounded text-xl text-sky-600 dark:text-sky-400 shrink-0">menu_book</span>
                     <div class="min-w-0">
                         <p class="text-xs font-black text-slate-900 dark:text-white truncate">4b. Handbuch</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.4</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.5</p>
                     </div>
                 </button>
             </div>
@@ -3144,13 +3187,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V9.4 (Single Source of Truth, Bereinigung alter Demo-Schnipsel, Zeitraum-Konsistenz & 1:1 Server/Client-Parität) -->
-    <script src="qrcode.client.js?v=9.4"></script>
-    <script src="database.js?v=9.4"></script>
-    <script src="content.js?v=9.4"></script>
-    <script src="app.js?v=9.4"></script>
-    <script src="wiring.js?v=9.4"></script>
-    <script src="dossier.js?v=9.4"></script>
-    <script src="telemetry.js?v=9.4"></script>
+    <!-- MODULARE ARCHITEKTUR V9.5 (Monatliche Ertrags-Zusammenfassung mit Pro-Rata-PVGIS-Soll & %-Abweichung, Single Source of Truth) -->
+    <script src="qrcode.client.js?v=9.5"></script>
+    <script src="database.js?v=9.5"></script>
+    <script src="content.js?v=9.5"></script>
+    <script src="app.js?v=9.5"></script>
+    <script src="wiring.js?v=9.5"></script>
+    <script src="dossier.js?v=9.5"></script>
+    <script src="telemetry.js?v=9.5"></script>
 </body>
 </html>
