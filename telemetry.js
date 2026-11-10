@@ -42,6 +42,7 @@ let haConfigState = {
         batteryChargeMonth: 'sensor.battery_charge_monthly',
         batteryDischargeMonth: 'sensor.battery_discharge_monthly'
     },
+    pvEnergyExtraEntities: [],
     customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
     customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS)),
     stringEntities: {},
@@ -170,6 +171,7 @@ async function initTelemetryAndAnalysis() {
                 ...haConfigState,
                 ...parsed,
                 entities: { ...haConfigState.entities, ...(parsed.entities || {}) },
+                pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
                 customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : haConfigState.customConsumers,
                 stringEntities: { ...haConfigState.stringEntities, ...(parsed.stringEntities || {}) }
@@ -196,6 +198,7 @@ async function initTelemetryAndAnalysis() {
                 ...haConfigState,
                 ...haRes.data.config,
                 entities: { ...haConfigState.entities, ...(haRes.data.config.entities || {}) },
+                pvEnergyExtraEntities: Array.isArray(haRes.data.config.pvEnergyExtraEntities) ? haRes.data.config.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
                 customStrings: Array.isArray(haRes.data.config.customStrings) && haRes.data.config.customStrings.length > 0 ? haRes.data.config.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(haRes.data.config.customConsumers) ? haRes.data.config.customConsumers : haConfigState.customConsumers,
                 stringEntities: { ...haConfigState.stringEntities, ...(haRes.data.config.stringEntities || {}) }
@@ -707,6 +710,22 @@ function getPowerScaleForEntity(entityId, statesMap = null) {
     return 1;
 }
 
+function getConfiguredPvEnergyEntities(cfg) {
+    const e = cfg?.entities || {};
+    const extras = Array.isArray(cfg?.pvEnergyExtraEntities) ? cfg.pvEnergyExtraEntities : [];
+    const rawList = [
+        e.pvEnergyMonth,
+        e.pvEnergyToday,
+        ...extras
+    ].map(x => String(x || '').trim()).filter(Boolean);
+    const unique = [...new Set(rawList)];
+    if (unique.length === 0 && e.pvEnergyTotal) {
+        const tot = String(e.pvEnergyTotal).trim();
+        if (tot) unique.push(tot);
+    }
+    return unique;
+}
+
 async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
     const keys = getTodayAndMonthKeys();
     if (energyCounterBaselines.dayKey !== keys.dayKey) {
@@ -722,9 +741,7 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
 
     const e = cfg.entities || {};
     const counterEntities = [
-        e.pvEnergyToday,
-        e.pvEnergyMonth,
-        e.pvEnergyTotal,
+        ...getConfiguredPvEnergyEntities(cfg),
         e.gridImportMonth,
         e.gridExportMonth,
         e.batteryChargeMonth,
@@ -893,33 +910,11 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
 
     const batterySocPct = extractHaNumericClient(statesMap, e.batterySoc, '%');
 
-    // Pick first available PV energy sensor for Today and for Month
-    const todayPvPick = pickExistingHaEntityId(statesMap, [
-        { id: e.pvEnergyToday, forceCumulative: false },
-        { id: e.pvEnergyMonth, forceCumulative: true },
-        { id: e.pvEnergyTotal, forceCumulative: true }
-    ]);
-    const monthPvPick = pickExistingHaEntityId(statesMap, [
-        { id: e.pvEnergyMonth, forceCumulative: true },
-        { id: e.pvEnergyTotal, forceCumulative: true },
-        { id: e.pvEnergyToday, forceCumulative: false }
-    ]);
-
     const rawGridImpReading = extractHaNumericClient(statesMap, e.gridImportMonth, 'kWh');
     const rawGridExpReading = extractHaNumericClient(statesMap, e.gridExportMonth, 'kWh');
     const rawBatChgReading = extractHaNumericClient(statesMap, e.batteryChargeMonth, 'kWh');
     const rawBatDisReading = extractHaNumericClient(statesMap, e.batteryDischargeMonth, 'kWh');
 
-    // Compute Today (seit 00:00) deltas – never returns raw Total counter!
-    const pvEnergyTodayKwh = resolveEnergyCounterDelta(
-        todayPvPick.id,
-        todayPvPick.val,
-        energyCounterBaselines.dayStartByEntity,
-        {
-            isCumulative: isEntityCumulativeTotal(todayPvPick.id, statesMap, todayPvPick.forceCumulative),
-            maxPlausibleKwh: maxPlausibleDailyPvKwh
-        }
-    );
     const gridImportTodayKwh = resolveEnergyCounterDelta(
         e.gridImportMonth,
         rawGridImpReading,
@@ -945,13 +940,6 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
         { isCumulative: isEntityCumulativeTotal(e.batteryDischargeMonth, statesMap, true), maxPlausibleKwh: 120 }
     );
 
-    // Compute Month (seit 1. des Monats) deltas
-    const pvEnergyMonthKwh = resolveEnergyCounterDelta(
-        monthPvPick.id,
-        monthPvPick.val,
-        energyCounterBaselines.monthStartByEntity,
-        { isCumulative: isEntityCumulativeTotal(monthPvPick.id, statesMap, monthPvPick.forceCumulative) }
-    );
     const gridImportMonthKwh = resolveEnergyCounterDelta(
         e.gridImportMonth,
         rawGridImpReading,
@@ -979,20 +967,40 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
 
     const stringTelemetry = {};
     const customStringsTelemetry = [];
+    let stringTodayKwhSum = 0;
+    let stringTodayKwhCount = 0;
+    let stringMonthKwhSum = 0;
+    let stringMonthKwhCount = 0;
+
     if (Array.isArray(cfg.customStrings)) {
         cfg.customStrings.forEach(cs => {
             if (!cs || !cs.id) return;
             const pW = extractHaNumericClient(statesMap, cs.powerEntity, 'W');
             const rawStrKwh = extractHaNumericClient(statesMap, cs.energyEntity, 'kWh');
+            const isCumStr = isEntityCumulativeTotal(cs.energyEntity, statesMap, false);
             const eKwh = resolveEnergyCounterDelta(
                 cs.energyEntity,
                 rawStrKwh,
                 energyCounterBaselines.dayStartByEntity,
                 {
-                    isCumulative: isEntityCumulativeTotal(cs.energyEntity, statesMap, false),
+                    isCumulative: isCumStr,
                     maxPlausibleKwh: maxPlausibleDailyPvKwh
                 }
             );
+            const eMonthKwh = resolveEnergyCounterDelta(
+                cs.energyEntity,
+                rawStrKwh,
+                energyCounterBaselines.monthStartByEntity,
+                { isCumulative: isCumStr }
+            );
+            if (eKwh !== null && !isNaN(eKwh)) {
+                stringTodayKwhSum += eKwh;
+                stringTodayKwhCount++;
+            }
+            if (eMonthKwh !== null && !isNaN(eMonthKwh)) {
+                stringMonthKwhSum += eMonthKwh;
+                stringMonthKwhCount++;
+            }
             stringTelemetry[cs.id] = {
                 powerW: pW !== null ? pW : 0,
                 energyKwh: eKwh,
@@ -1010,6 +1018,49 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
             });
         });
     }
+
+    // Multi-Inverter PV Energy Calculation:
+    // Sum all configured inverter PV energy counters (WR 1 + WR 2 + WR 3...).
+    // If no inverter counters are configured in Section 5, automatically fall back to the sum of String kWh counters from Section 3!
+    const pvCounterIds = getConfiguredPvEnergyEntities(cfg);
+    let pvTodaySum = 0;
+    let pvTodayValidCount = 0;
+    let pvMonthSum = 0;
+    let pvMonthValidCount = 0;
+
+    pvCounterIds.forEach(entId => {
+        const rawVal = extractHaNumericClient(statesMap, entId, 'kWh');
+        if (rawVal === null) return;
+        const isCum = isEntityCumulativeTotal(entId, statesMap, false);
+        const dToday = resolveEnergyCounterDelta(
+            entId,
+            rawVal,
+            energyCounterBaselines.dayStartByEntity,
+            { isCumulative: isCum, maxPlausibleKwh: maxPlausibleDailyPvKwh }
+        );
+        if (dToday !== null && !isNaN(dToday)) {
+            pvTodaySum += dToday;
+            pvTodayValidCount++;
+        }
+        const dMonth = resolveEnergyCounterDelta(
+            entId,
+            rawVal,
+            energyCounterBaselines.monthStartByEntity,
+            { isCumulative: isCum }
+        );
+        if (dMonth !== null && !isNaN(dMonth)) {
+            pvMonthSum += dMonth;
+            pvMonthValidCount++;
+        }
+    });
+
+    const pvEnergyTodayKwh = pvTodayValidCount > 0
+        ? +pvTodaySum.toFixed(3)
+        : (stringTodayKwhCount > 0 ? +stringTodayKwhSum.toFixed(3) : null);
+
+    const pvEnergyMonthKwh = pvMonthValidCount > 0
+        ? +pvMonthSum.toFixed(3)
+        : (stringMonthKwhCount > 0 ? +stringMonthKwhSum.toFixed(3) : null);
 
     const consumersTelemetry = [];
     let unavailableConsumersCount = 0;
@@ -3737,6 +3788,7 @@ function openHaConfigModal(focusSection = null) {
 
     renderHaCustomStringsEditor();
     renderHaCustomConsumersEditor();
+    renderHaPvEnergyExtraList();
     updateHaWebhookYamlSnippet();
     updateHaReverseProxyYamlDynamic();
 
@@ -3965,6 +4017,66 @@ function removeHaCustomConsumer(idx) {
     renderHaCustomConsumersEditor();
 }
 
+function renderHaPvEnergyExtraList() {
+    const container = document.getElementById('haPvEnergyExtraContainer');
+    if (!container) return;
+    const list = Array.isArray(haConfigState.pvEnergyExtraEntities) ? haConfigState.pvEnergyExtraEntities : [];
+    if (list.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+    container.innerHTML = list.map((entId, idx) => {
+        const wrNum = idx + 3;
+        const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(entId || '') : (entId || '');
+        return `
+        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-teal-500/30 flex flex-col sm:flex-row sm:items-center gap-2">
+            <label class="text-[11px] font-semibold text-teal-700 dark:text-teal-300 sm:w-64 shrink-0">PV-Erzeugung · Wechselrichter ${wrNum} (kWh)</label>
+            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                <input type="text" id="ha_ent_pv_extra_${idx}" list="haEntitiesDatalist" value="${safeEnt}"
+                    oninput="updateHaPvEnergyExtraField(${idx}, this.value)"
+                    placeholder="sensor.wechselrichter_${wrNum}_energy_total"
+                    class="flex-1 min-w-0 text-xs font-mono px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <button type="button" onclick="openHaEntityPicker({ customType: 'pvEnergyExtra', index: ${idx}, unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter ${wrNum} (kWh)' })"
+                    class="px-2.5 py-1.5 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer">
+                    <span class="material-symbols-rounded text-sm">list_alt</span>
+                    <span>Wählen</span>
+                </button>
+                <button type="button" onclick="removeHaPvEnergyExtra(${idx})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0" title="Wechselrichter-Zähler entfernen">
+                    <span class="material-symbols-rounded text-base">delete</span>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addHaPvEnergyExtra() {
+    readHaModalIntoState();
+    if (!Array.isArray(haConfigState.pvEnergyExtraEntities)) {
+        haConfigState.pvEnergyExtraEntities = [];
+    }
+    haConfigState.pvEnergyExtraEntities.push('');
+    renderHaPvEnergyExtraList();
+    setTimeout(() => {
+        const idx = haConfigState.pvEnergyExtraEntities.length - 1;
+        document.getElementById(`ha_ent_pv_extra_${idx}`)?.focus();
+    }, 40);
+}
+
+function updateHaPvEnergyExtraField(idx, val) {
+    if (!Array.isArray(haConfigState.pvEnergyExtraEntities)) return;
+    haConfigState.pvEnergyExtraEntities[idx] = String(val || '').trim();
+}
+
+function removeHaPvEnergyExtra(idx) {
+    if (!Array.isArray(haConfigState.pvEnergyExtraEntities)) return;
+    haConfigState.pvEnergyExtraEntities.splice(idx, 1);
+    renderHaPvEnergyExtraList();
+}
+
+window.addHaPvEnergyExtra = addHaPvEnergyExtra;
+window.updateHaPvEnergyExtraField = updateHaPvEnergyExtraField;
+window.removeHaPvEnergyExtra = removeHaPvEnergyExtra;
+
 function readHaModalIntoState() {
     const rawMode = document.getElementById('ha_cfg_mode')?.value || 'poll';
     haConfigState.mode = rawMode === 'demo' ? 'poll' : rawMode;
@@ -3989,6 +4101,13 @@ function readHaModalIntoState() {
         batteryChargeMonth: (document.getElementById('ha_ent_bat_chg_month')?.value || '').trim(),
         batteryDischargeMonth: (document.getElementById('ha_ent_bat_dis_month')?.value || '').trim()
     };
+
+    if (Array.isArray(haConfigState.pvEnergyExtraEntities)) {
+        haConfigState.pvEnergyExtraEntities = haConfigState.pvEnergyExtraEntities.map((val, idx) => {
+            const inp = document.getElementById(`ha_ent_pv_extra_${idx}`);
+            return inp ? inp.value.trim() : String(val || '').trim();
+        });
+    }
 }
 
 // ============================================================================
@@ -3997,7 +4116,7 @@ function readHaModalIntoState() {
 
 let haPickerState = {
     targetInputId: null,
-    customType: null, // 'stringPower' | 'stringEnergy' | 'consumerPower'
+    customType: null, // 'stringPower' | 'stringEnergy' | 'consumerPower' | 'pvEnergyExtra'
     index: null,
     title: 'Sensor auswählen',
     category: 'all', // 'all' | 'device' | 'helper'
@@ -4576,6 +4695,9 @@ function pickHaEntityFromModal(entityId) {
             updateHaCustomConsumerField(haPickerState.index, 'name', cleanFriendly);
         }
         renderHaCustomConsumersEditor();
+    } else if (haPickerState.customType === 'pvEnergyExtra' && haPickerState.index !== null) {
+        updateHaPvEnergyExtraField(haPickerState.index, entityId);
+        renderHaPvEnergyExtraList();
     }
 
     closeHaEntityPicker();
@@ -4670,6 +4792,9 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
         autoSyncMonthly: sanitizedCfg.autoSyncMonthly !== undefined ? sanitizedCfg.autoSyncMonthly : true,
         batteryName: sanitizedCfg.batteryName || haConfigState.batteryName || 'BYD HVS+',
         entities: { ...haConfigState.entities, ...(sanitizedCfg.entities || {}) },
+        pvEnergyExtraEntities: Array.isArray(sanitizedCfg.pvEnergyExtraEntities)
+            ? JSON.parse(JSON.stringify(sanitizedCfg.pvEnergyExtraEntities))
+            : (haConfigState.pvEnergyExtraEntities || []),
         customStrings: Array.isArray(sanitizedCfg.customStrings) && sanitizedCfg.customStrings.length > 0
             ? JSON.parse(JSON.stringify(sanitizedCfg.customStrings))
             : haConfigState.customStrings,

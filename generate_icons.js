@@ -1,261 +1,308 @@
-import sharp from 'sharp';
 import fs from 'fs';
+import zlib from 'zlib';
 
-// Master-crafted, high-tech German Engineering PV App Icon (1024x1024)
-// High contrast, deep obsidian & midnight sapphire, monocrystalline silicon matrix,
-// golden precision busbars, high-voltage energy conduit, glass reflection sheen.
-const svgIcon = `<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <!-- Background Gradient: Deep Obsidian & Midnight Sapphire -->
-    <radialGradient id="spaceGlow" cx="50%" cy="38%" r="65%" fx="50%" fy="30%">
-      <stop offset="0%" stop-color="#1e293b" />
-      <stop offset="45%" stop-color="#0f172a" />
-      <stop offset="80%" stop-color="#070b16" />
-      <stop offset="100%" stop-color="#02040a" />
-    </radialGradient>
+// Zero-dependency high-precision PNG generator for the Liquid-Glass Turquoise/Emerald App Icon
+// Renders 512x512, 192x192, 180x180 (apple-touch-icon), and 32x32 (favicon)
 
-    <!-- Squircle Metallic & Electric Cyan Bevel Border -->
-    <linearGradient id="bevelBorder" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
-      <stop offset="25%" stop-color="#818cf8" stop-opacity="0.5" />
-      <stop offset="50%" stop-color="#0ea5e9" stop-opacity="0.3" />
-      <stop offset="75%" stop-color="#f59e0b" stop-opacity="0.6" />
-      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.95" />
-    </linearGradient>
-
-    <linearGradient id="innerRim" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25" />
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.03" />
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.6" />
-    </linearGradient>
-
-    <!-- Solar Cell Silicon Wafer Gradients (Anti-Reflective Optical Coating) -->
-    <linearGradient id="waferMain" x1="160" y1="180" x2="860" y2="860" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0284c7" />
-      <stop offset="30%" stop-color="#0369a1" />
-      <stop offset="65%" stop-color="#075985" />
-      <stop offset="100%" stop-color="#0c4a6e" />
-    </linearGradient>
-
-    <linearGradient id="waferHighlight" x1="200" y1="200" x2="800" y2="500" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#38bdf8" />
-      <stop offset="40%" stop-color="#0284c7" />
-      <stop offset="100%" stop-color="#0369a1" />
-    </linearGradient>
-
-    <linearGradient id="waferDeep" x1="200" y1="500" x2="800" y2="900" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0369a1" />
-      <stop offset="60%" stop-color="#075985" />
-      <stop offset="100%" stop-color="#082f49" />
-    </linearGradient>
-
-    <!-- Precision Gold Busbars & High Voltage Traces -->
-    <linearGradient id="goldBusbar" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#fffbeb" />
-      <stop offset="25%" stop-color="#fef08a" />
-      <stop offset="55%" stop-color="#f59e0b" />
-      <stop offset="85%" stop-color="#d97706" />
-      <stop offset="100%" stop-color="#b45309" />
-    </linearGradient>
-
-    <!-- Electric Energy Pulse Vector -->
-    <linearGradient id="energyPulse" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="30%" stop-color="#fef08a" />
-      <stop offset="70%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#ef4444" />
-    </linearGradient>
-
-    <!-- Glass Module Reflection Sheen -->
-    <linearGradient id="glassSheen" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32" />
-      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.08" />
-      <stop offset="55%" stop-color="#ffffff" stop-opacity="0" />
-    </linearGradient>
-
-    <!-- Ambient Blue Energy Core Glow -->
-    <radialGradient id="coreAura" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.5" />
-      <stop offset="50%" stop-color="#0284c7" stop-opacity="0.25" />
-      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
-    </radialGradient>
-
-    <!-- Deep Elevation Shadow Filter -->
-    <filter id="elevatedShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="28" stdDeviation="32" flood-color="#000000" flood-opacity="0.75" />
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0284c7" flood-opacity="0.35" />
-    </filter>
-
-    <filter id="goldGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="7" result="glow" />
-      <feComposite in="SourceGraphic" in2="glow" operator="over" />
-    </filter>
-
-    <filter id="intenseGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="14" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
-  </defs>
-
-  <!-- Base Icon Squircle (macOS / iOS Super-ellipse curvature) -->
-  <g>
-    <!-- Background Canvas -->
-    <rect x="36" y="36" width="952" height="952" rx="224" fill="url(#spaceGlow)" />
-    <rect x="36" y="36" width="952" height="952" rx="224" fill="url(#innerRim)" />
-    <!-- High-Precision Edge Bevel -->
-    <rect x="36" y="36" width="952" height="952" rx="224" stroke="url(#bevelBorder)" stroke-width="8" />
-  </g>
-
-  <!-- Ambient Energy Halo behind Central Isometric Module -->
-  <circle cx="512" cy="480" r="360" fill="url(#coreAura)" />
-
-  <!-- Diagonal Doppelglas Sheen (Optical Anti-Reflective Glare) -->
-  <path d="M 36 280 C 36 145, 145 36, 280 36 L 780 36 C 440 36, 120 400, 36 820 Z" fill="url(#glassSheen)" />
-
-  <!-- CENTRAL ISOMETRIC SOLAR ARRAY (High-Tech Monocrystalline PV Matrix) -->
-  <g filter="url(#elevatedShadow)" transform="translate(512, 492)">
-    
-    <!-- Heavy Anodized Aluminum Outer Frame (Chassis with Aerospace Bevel) -->
-    <!-- Isometric Diamond Frame -->
-    <polygon points="0,-330 380,-110 380,170 0,390 -380,170 -380,-110" fill="#0b1329" stroke="#1e293b" stroke-width="14" stroke-linejoin="round" />
-    <polygon points="0,-314 362,-100 362,160 0,374 -362,160 -362,-100" fill="#030712" stroke="#38bdf8" stroke-opacity="0.35" stroke-width="3.5" stroke-linejoin="round" />
-
-    <!-- 4-CELL MONOCRYSTALLINE SILICON MATRIX -->
-    
-    <!-- Cell 1: Top-Left (North-West) -->
-    <g>
-      <polygon points="-10,-12 -10,-300 -346,-96 -10,-12" fill="url(#waferHighlight)" stroke="#0c4a6e" stroke-width="2.5"/>
-      <!-- Anti-reflection edge -->
-      <polygon points="-10,-12 -180,-156 -180,-10 -10,-12" fill="url(#waferMain)" opacity="0.6"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="-280" y1="-80" x2="-20" y2="-230" stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-      <line x1="-210" y1="-60" x2="-20" y2="-170" stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-      <line x1="-140" y1="-40" x2="-20" y2="-110" stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-      <line x1="-70"  y1="-20" x2="-20" y2="-50"  stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-    </g>
-
-    <!-- Cell 2: Top-Right (North-East - High Specular Light Angle) -->
-    <g>
-      <polygon points="10,-12 346,-96 10,-300 10,-12" fill="url(#waferHighlight)" stroke="#0284c7" stroke-width="2.5"/>
-      <!-- Subtle internal shadow -->
-      <polygon points="10,-12 180,-156 180,-10 10,-12" fill="#0369a1" opacity="0.4"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="280" y1="-80" x2="20" y2="-230" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-      <line x1="210" y1="-60" x2="20" y2="-170" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-      <line x1="140" y1="-40" x2="20" y2="-110" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-      <line x1="70"  y1="-20" x2="20" y2="-50"  stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-    </g>
-
-    <!-- Cell 3: Bottom-Right (South-East) -->
-    <g>
-      <polygon points="10,12 346,12 346,146 10,354" fill="url(#waferDeep)" stroke="#0369a1" stroke-width="2.5"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="280" y1="80" x2="20" y2="230" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="210" y1="60" x2="20" y2="170" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="140" y1="40" x2="20" y2="110" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-    </g>
-
-    <!-- Cell 4: Bottom-Left (South-West) -->
-    <g>
-      <polygon points="-10,12 -346,12 -346,146 -10,354" fill="url(#waferMain)" stroke="#0c4a6e" stroke-width="2.5"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="-280" y1="80" x2="-20" y2="230" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="-210" y1="60" x2="-20" y2="170" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="-140" y1="40" x2="-20" y2="110" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-    </g>
-
-    <!-- Central Cross Dividers (Module Silicon Isolation Gap) -->
-    <line x1="0" y1="-308" x2="0" y2="366" stroke="#0f172a" stroke-width="12" stroke-linecap="round"/>
-    <line x1="-354" y1="0" x2="354" y2="0" stroke="#0f172a" stroke-width="12" stroke-linecap="round"/>
-
-    <!-- GOLDEN HIGH-EFFICIENCY DC CIRCUIT BUSBAR NETWORK -->
-    <g filter="url(#goldGlow)">
-      <!-- Main Vertical String Collector Busbar -->
-      <path d="M 0 -310 L 0 -50 L -30 0 L 0 50 L 0 360" stroke="url(#goldBusbar)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      
-      <!-- Lateral Cell Interconnection Traces -->
-      <path d="M -340 0 L -50 0 M 50 0 L 340 0" stroke="url(#goldBusbar)" stroke-width="10" stroke-linecap="round" fill="none"/>
-
-      <!-- Peripheral Corner Terminals (Gold Plated PV Connectors) -->
-      <circle cx="0" cy="-310" r="16" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-      <circle cx="0" cy="360" r="16" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-      <circle cx="-340" cy="0" r="14" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-      <circle cx="340" cy="0" r="14" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-    </g>
-
-    <!-- DYNAMIC DC ENERGY VECTOR / HIGH-VOLTAGE POWER PULSE (Der blitzschnelle Energieimpuls) -->
-    <g filter="url(#intenseGlow)">
-      <!-- Electric Energy Lightning Silhouette -->
-      <path d="M 50 -260 L -70 -30 L 70 30 L -30 290" 
-            stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-      <path d="M 50 -260 L -70 -30 L 70 30 L -30 290" 
-            stroke="url(#energyPulse)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-    </g>
-
-    <!-- Central Micro-Inverter MPPT Nexus Core (Hexagonal Microchip / Reactor) -->
-    <g filter="url(#goldGlow)">
-      <!-- Outer Nexus Ring -->
-      <polygon points="0,-48 42,-24 42,24 0,48 -42,24 -42,-24" fill="#0f172a" stroke="url(#goldBusbar)" stroke-width="6" stroke-linejoin="round"/>
-      <!-- Inner Core Reactor -->
-      <polygon points="0,-32 28,-16 28,16 0,32 -28,16 -28,-16" fill="#0284c7" stroke="#38bdf8" stroke-width="3" stroke-linejoin="round"/>
-      <circle cx="0" cy="0" r="12" fill="#ffffff" />
-      <circle cx="0" cy="0" r="6" fill="#f59e0b" />
-    </g>
-
-    <!-- High-Tech Engineering Precision Vernier Markings (Technical Ticks) -->
-    <g stroke="#38bdf8" stroke-opacity="0.6" stroke-width="2">
-      <!-- Top edge ticks -->
-      <line x1="-120" y1="-230" x2="-115" y2="-220" />
-      <line x1="-80"  y1="-260" x2="-75"  y2="-250" />
-      <line x1="80"   y1="-260" x2="75"   y2="-250" />
-      <line x1="120"  y1="-230" x2="115"  y2="-220" />
-    </g>
-  </g>
-
-  <!-- SUBTLE TYPOGRAPHIC BADGE "PV PRO" (Aerospace Titanium Branding at bottom) -->
-  <g transform="translate(512, 915)">
-    <!-- Pill Capsule Container -->
-    <rect x="-105" y="-22" width="210" height="44" rx="22" fill="#0b1329" fill-opacity="0.9" stroke="url(#goldBusbar)" stroke-width="2.5" />
-    <!-- Text: PV PRO -->
-    <text x="-4" y="8" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-weight="900" font-size="22" fill="#ffffff" letter-spacing="4" text-anchor="middle">PV<tspan fill="#f59e0b" font-weight="900">PRO</tspan></text>
-  </g>
-</svg>
-`;
-
-fs.writeFileSync('icon.svg', svgIcon.trim(), 'utf-8');
-
-async function generatePngs() {
-  const svgBuffer = Buffer.from(svgIcon);
-
-  // Generate 512x512
-  await sharp(svgBuffer)
-    .resize(512, 512)
-    .png({ quality: 100, compressionLevel: 9 })
-    .toFile('icon-512.png');
-  console.log('icon-512.png generated (512x512)');
-
-  // Generate 192x192
-  await sharp(svgBuffer)
-    .resize(192, 192)
-    .png({ quality: 100, compressionLevel: 9 })
-    .toFile('icon-192.png');
-  console.log('icon-192.png generated (192x192)');
-
-  // Generate Apple Touch Icon (180x180)
-  await sharp(svgBuffer)
-    .resize(180, 180)
-    .png({ quality: 100, compressionLevel: 9 })
-    .toFile('apple-touch-icon.png');
-  console.log('apple-touch-icon.png generated (180x180)');
-
-  // Generate Favicon 32x32
-  await sharp(svgBuffer)
-    .resize(32, 32)
-    .png({ quality: 100, compressionLevel: 9 })
-    .toFile('favicon-32.png');
-  console.log('favicon-32.png generated (32x32)');
-
-  console.log('All icons rendered with master-grade German engineering finish!');
+const crcTable = new Uint32Array(256);
+for (let n = 0; n < 256; n++) {
+  let c = n;
+  for (let k = 0; k < 8; k++) {
+    c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+  }
+  crcTable[n] = c >>> 0;
 }
 
-generatePngs().catch(console.error);
+function crc32(buf) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = crcTable[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function makeChunk(type, data) {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const typeBuf = Buffer.from(type, 'ascii');
+  const crcBuf = Buffer.alloc(4);
+  const combined = Buffer.concat([typeBuf, data]);
+  crcBuf.writeUInt32BE(crc32(combined), 0);
+  return Buffer.concat([len, typeBuf, data, crcBuf]);
+}
+
+function encodePNG(width, height, rgba) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const stride = width * 4 + 1;
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * stride] = 0; // filter type None
+    rgba.copy(raw, y * stride + 1, y * width * 4, (y + 1) * width * 4);
+  }
+  const compressed = zlib.deflateSync(raw, { level: 9 });
+  return Buffer.concat([
+    signature,
+    makeChunk('IHDR', ihdr),
+    makeChunk('IDAT', compressed),
+    makeChunk('IEND', Buffer.alloc(0))
+  ]);
+}
+
+function clamp(v, min = 0, max = 1) {
+  return v < min ? min : (v > max ? max : v);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function smoothstep(edge0, edge1, x) {
+  const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function sdRoundedBox(px, py, cx, cy, bw, bh, r) {
+  const qx = Math.abs(px - cx) - bw + r;
+  const qy = Math.abs(py - cy) - bh + r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+}
+
+function sdSegment(px, py, ax, ay, bx, by) {
+  const pax = px - ax, pay = py - ay;
+  const bax = bx - ax, bay = by - ay;
+  const h = clamp((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1);
+  return Math.hypot(pax - bax * h, pay - bay * h);
+}
+
+function pointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    const intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi + 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function distToPolygonEdge(px, py, poly) {
+  let minD = 1e9;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const d = sdSegment(px, py, poly[j][0], poly[j][1], poly[i][0], poly[i][1]);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
+// Lightning bolt polygon in normalized [0..1024] coordinates
+const BOLT_POLY = [
+  [566, 156],
+  [348, 518],
+  [498, 518],
+  [446, 856],
+  [692, 468],
+  [534, 468]
+];
+
+// Perspective solar panel polygon in normalized [0..1024] coordinates
+const PANEL_POLY = [
+  [244, 256],
+  [780, 256],
+  [874, 776],
+  [150, 776]
+];
+
+function evalWaveY(nx) {
+  // Smooth glowing intraday solar curve across [150..874]
+  const t = clamp((nx - 150) / 724, 0, 1);
+  return 640 - 210 * Math.sin(t * Math.PI * 0.88) - 58 * Math.sin(t * Math.PI * 2.6);
+}
+
+function sampleIconPixel(nx, ny) {
+  // 1. Outer Squircle mask
+  const dSquircle = sdRoundedBox(nx, ny, 512, 512, 496, 496, 224);
+  if (dSquircle > 2) return [0, 0, 0, 0];
+  const alphaSquircle = 1 - smoothstep(-1.5, 1.5, dSquircle);
+
+  // Base Liquid-Glass Emerald/Teal radial background
+  const distCenter = Math.hypot(nx - 490, ny - 330) / 760;
+  let r = lerp(15, 2, clamp(distCenter, 0, 1));
+  let g = lerp(118, 24, clamp(distCenter, 0, 1));
+  let b = lerp(110, 28, clamp(distCenter, 0, 1));
+
+  // Ambient emerald aura around center
+  const dAura = Math.hypot(nx - 512, ny - 520) / 410;
+  if (dAura < 1) {
+    const k = Math.pow(1 - dAura, 2) * 0.42;
+    r = lerp(r, 45, k);
+    g = lerp(g, 212, k);
+    b = lerp(b, 191, k);
+  }
+
+  // Top glass specular crown reflection
+  if (ny < 430) {
+    const crownY = 390 - Math.pow((nx - 512) / 470, 2) * 110;
+    if (ny < crownY) {
+      const sheen = (1 - ny / 430) * 0.24;
+      r = lerp(r, 240, sheen);
+      g = lerp(g, 253, sheen);
+      b = lerp(b, 250, sheen);
+    }
+  }
+
+  // 2. Perspective Solar Panel
+  const inPanel = pointInPolygon(nx, ny, PANEL_POLY);
+  const dPanelEdge = distToPolygonEdge(nx, ny, PANEL_POLY);
+  if (inPanel) {
+    const pyNorm = clamp((ny - 256) / 520, 0, 1);
+    const pr = lerp(17, 4, pyNorm);
+    const pg = lerp(94, 47, pyNorm);
+    const pb = lerp(89, 46, pyNorm);
+    r = lerp(r, pr, 0.88);
+    g = lerp(g, pg, 0.88);
+    b = lerp(b, pb, 0.88);
+
+    // Solar cell grid lines (3x3 perspective grid)
+    const dH1 = Math.abs(ny - 422);
+    const dH2 = Math.abs(ny - 590);
+    const xLeft1 = lerp(430, 396, pyNorm);
+    const xRight1 = lerp(594, 628, pyNorm);
+    const dV1 = Math.abs(nx - xLeft1);
+    const dV2 = Math.abs(nx - xRight1);
+    const minGridD = Math.min(dH1, dH2, dV1, dV2);
+    if (minGridD < 4.5) {
+      const gk = (1 - minGridD / 4.5) * 0.42;
+      r = lerp(r, 153, gk);
+      g = lerp(g, 246, gk);
+      b = lerp(b, 228, gk);
+    }
+  }
+  if (dPanelEdge < 6) {
+    const rk = (1 - dPanelEdge / 6) * 0.78;
+    r = lerp(r, 94, rk);
+    g = lerp(g, 234, rk);
+    b = lerp(b, 212, rk);
+  }
+
+  // 3. Luminous Turquoise/Emerald Energy Wave
+  if (nx >= 146 && nx <= 878) {
+    const wy = evalWaveY(nx);
+    // Area glow below wave inside panel
+    if (inPanel && ny > wy && ny < 776) {
+      const fillT = clamp(1 - (ny - wy) / 300, 0, 1) * 0.45;
+      r = lerp(r, 45, fillT);
+      g = lerp(g, 212, fillT);
+      b = lerp(b, 191, fillT);
+    }
+    const dWave = Math.abs(ny - wy);
+    if (dWave < 28) {
+      const glow = Math.pow(1 - dWave / 28, 2) * 0.7;
+      r = lerp(r, 52, glow);
+      g = lerp(g, 211, glow);
+      b = lerp(b, 153, glow);
+    }
+    if (dWave < 9) {
+      const core = 1 - smoothstep(3, 9, dWave);
+      r = lerp(r, 236, core);
+      g = lerp(g, 253, core);
+      b = lerp(b, 245, core);
+    }
+  }
+
+  // 4. Sun/Energy Halo Node at Top Right (764, 218)
+  const dSun = Math.hypot(nx - 764, ny - 218);
+  if (dSun < 52) {
+    const sg = Math.pow(1 - dSun / 52, 2) * 0.55;
+    r = lerp(r, 253, sg);
+    g = lerp(g, 224, sg);
+    b = lerp(b, 71, sg);
+  }
+  if (dSun < 24) {
+    const sc = 1 - smoothstep(19, 24, dSun);
+    r = lerp(r, 254, sc);
+    g = lerp(g, 249, sc);
+    b = lerp(b, 195, sc);
+  }
+
+  // 5. Central Lightning Bolt
+  const inBolt = pointInPolygon(nx, ny, BOLT_POLY);
+  const dBoltEdge = distToPolygonEdge(nx, ny, BOLT_POLY);
+  if (!inBolt && dBoltEdge < 28) {
+    const bglow = Math.pow(1 - dBoltEdge / 28, 2) * 0.65;
+    r = lerp(r, 45, bglow);
+    g = lerp(g, 212, bglow);
+    b = lerp(b, 191, bglow);
+  }
+  if (inBolt) {
+    const byNorm = clamp((ny - 156) / 700, 0, 1);
+    const br = lerp(255, 110, byNorm);
+    const bg = lerp(255, 231, byNorm);
+    const bb = lerp(255, 183, byNorm);
+    r = br;
+    g = bg;
+    b = bb;
+    if (dBoltEdge < 7) {
+      const rimT = 1 - dBoltEdge / 7;
+      r = lerp(r, 254, rimT * 0.7);
+      g = lerp(g, 240, rimT * 0.7);
+      b = lerp(b, 138, rimT * 0.7);
+    }
+  }
+
+  // 6. Outer Squircle Glass Rim Highlight
+  const dRim = Math.abs(dSquircle + 24);
+  if (dRim < 7) {
+    const rk = (1 - dRim / 7) * 0.82;
+    r = lerp(r, 153, rk);
+    g = lerp(g, 246, rk);
+    b = lerp(b, 228, rk);
+  }
+
+  return [
+    Math.round(clamp(r, 0, 255)),
+    Math.round(clamp(g, 0, 255)),
+    Math.round(clamp(b, 0, 255)),
+    Math.round(clamp(alphaSquircle * 255, 0, 255))
+  ];
+}
+
+function renderIconPng(size, filename) {
+  const rgba = Buffer.alloc(size * size * 4);
+  const scale = 1024 / size;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // 2x2 supersampling for crisp anti-aliased edges
+      let rSum = 0, gSum = 0, bSum = 0, aSum = 0;
+      for (let sy = 0.25; sy <= 0.75; sy += 0.5) {
+        for (let sx = 0.25; sx <= 0.75; sx += 0.5) {
+          const [r, g, b, a] = sampleIconPixel((x + sx) * scale, (y + sy) * scale);
+          rSum += r;
+          gSum += g;
+          bSum += b;
+          aSum += a;
+        }
+      }
+      const idx = (y * size + x) * 4;
+      rgba[idx] = rSum >> 2;
+      rgba[idx + 1] = gSum >> 2;
+      rgba[idx + 2] = bSum >> 2;
+      rgba[idx + 3] = aSum >> 2;
+    }
+  }
+  fs.writeFileSync(filename, encodePNG(size, size, rgba));
+  console.log(`Generated ${filename} (${size}x${size})`);
+}
+
+renderIconPng(512, 'icon-512.png');
+renderIconPng(192, 'icon-192.png');
+renderIconPng(180, 'apple-touch-icon.png');
+renderIconPng(32, 'favicon-32.png');

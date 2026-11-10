@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 9.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 9.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=9.1">
-    <meta name="theme-color" content="#0b1519">
+    <link rel="manifest" href="manifest.json?v=9.2">
+    <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.1">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.1">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.1">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.1">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.2">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.2">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.2">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.2">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -386,10 +386,11 @@
                 <div class="flex items-center gap-2 min-w-0">
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
-                        <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-400/15 border border-teal-500/30 dark:border-teal-400/30 flex items-center justify-center text-teal-700 dark:text-teal-300 shrink-0 cursor-pointer" title="Zum Start-Dashboard">
-                            <span id="headerSectionIcon" class="material-symbols-rounded text-lg">bolt</span>
+                        <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
+                            <img src="icon.svg?v=9.2" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.1</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.2</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2727,9 +2728,9 @@
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV gesamt · DC (Aktuell)</label>
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV gesamt · DC (Optional – leer = Summe der Strings)</label>
                                 <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="sensor.pv_power_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="Leer = wird automatisch aus Strings summiert" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
                                     <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_power', unitFilter: 'power', title: 'PV gesamt · DC (Leistung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
@@ -2852,36 +2853,44 @@
 
                     <!-- 5. Gesamt-Energiezähler (kWh total / total_increasing) – OHNE eigene HA-Helfer! -->
                     <div id="haCountersSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
-                        <div>
-                            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                                <span class="material-symbols-rounded text-primary text-base">electric_meter</span>
-                                <span>5. Gesamt-Energiezähler (kWh Total – keine Tages-/Monats-Helfer nötig!)</span>
-                            </h4>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                                Wähle hier einfach deine normalen <strong>lebenslangen Gesamtzähler (`kWh total` / `total_increasing`)</strong> vom Wechselrichter, Smart Meter und Akku aus. Die App berechnet daraus automatisch die Differenz ($\Delta$kWh) für <strong>Heute</strong>, <strong>Monat</strong> und <strong>Gesamtjahr</strong> im Sankey-Diagramm. Ist ein Feld leer, wird der Tageswert automatisch aus den Watt-Sensoren integriert.
-                            </p>
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                                    <span class="material-symbols-rounded text-primary text-base">electric_meter</span>
+                                    <span>5. Gesamt-Energiezähler (kWh Total – Multi-Wechselrichter fähig!)</span>
+                                </h4>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                                    Wähle deine normalen <strong>lebenslangen Gesamtzähler (`kWh total` / `total_increasing`)</strong> vom Wechselrichter, Smart Meter und Akku aus. Hast du <strong>2 oder mehr Wechselrichter</strong> (z. B. Fronius + Hoymiles), füge über <strong>„+ Wechselrichter-Zähler“</strong> einfach alle WR-Zähler hinzu – die App berechnet je Zähler die Differenz ($\Delta$kWh) und addiert sie automatisch! Alternativ kannst du die kWh-Zähler auch direkt oben in Sektion 3 bei den Strings eintragen.
+                                </p>
+                            </div>
+                            <button type="button" onclick="addHaPvEnergyExtra()" class="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto" title="Weiteren Wechselrichter-Energiezähler (kWh) zur Gesamtsumme hinzufügen">
+                                <span class="material-symbols-rounded text-sm">add</span>
+                                <span>+ Wechselrichter-Zähler</span>
+                            </button>
                         </div>
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV-Erzeugung Gesamt (kWh Total / Zählerstand)</label>
+                                <label class="block text-[11px] font-semibold text-teal-700 dark:text-teal-300 mb-1">PV-Erzeugung · Wechselrichter 1 (kWh Total / Zählerstand)</label>
                                 <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="sensor.pv_energy_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Erzeugung Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="z.B. sensor.fronius_energy_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-teal-300 dark:border-teal-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 1 (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
                                     </button>
                                 </div>
                             </div>
                             <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Optional: PV-Tagesertrag (falls vorhanden, sonst leer)</label>
+                                <label class="block text-[11px] font-semibold text-teal-700 dark:text-teal-300 mb-1">PV-Erzeugung · Wechselrichter 2 (kWh Total / Heute)</label>
                                 <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="Leer = aus kWh-Total oder Watt" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Zähler (kWh Total oder Heute)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="z.B. sensor.hoymiles_energy_total (wird zu WR 1 addiert)" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-teal-300 dark:border-teal-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 2 (kWh Total oder Heute)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
                                     </button>
                                 </div>
                             </div>
+                            <!-- Dynamische Liste für Wechselrichter 3, 4, ... (per + Wechselrichter-Zähler) -->
+                            <div id="haPvEnergyExtraContainer" class="sm:col-span-2 space-y-2 empty:hidden"></div>
                             <div>
                                 <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzbezug Gesamt (kWh Total vom Smart Meter)</label>
                                 <div class="flex items-center gap-1.5">
@@ -3104,13 +3113,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V9.1 (Zweizeilige Wert-zuerst Kacheln, 2 Batterie-Sensoren, 1-Wort-Überschriften & Stabile Tages-kWh) -->
-    <script src="qrcode.client.js?v=9.1"></script>
-    <script src="database.js?v=9.1"></script>
-    <script src="content.js?v=9.1"></script>
-    <script src="app.js?v=9.1"></script>
-    <script src="wiring.js?v=9.1"></script>
-    <script src="dossier.js?v=9.1"></script>
-    <script src="telemetry.js?v=9.1"></script>
+    <!-- MODULARE ARCHITEKTUR V9.2 (Multi-Wechselrichter PV-Zähler mit + Button, String-Summierung & Liquid-Glass App Icon) -->
+    <script src="qrcode.client.js?v=9.2"></script>
+    <script src="database.js?v=9.2"></script>
+    <script src="content.js?v=9.2"></script>
+    <script src="app.js?v=9.2"></script>
+    <script src="wiring.js?v=9.2"></script>
+    <script src="dossier.js?v=9.2"></script>
+    <script src="telemetry.js?v=9.2"></script>
 </body>
 </html>

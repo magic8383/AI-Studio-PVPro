@@ -670,6 +670,7 @@ function loadHaConfig() {
           batteryDischargeMonth: 'sensor.battery_discharge_monthly',
           ...(parsed.entities || {})
         },
+        pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : [],
         customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : getDefaultCustomStrings(),
         customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : getDefaultCustomConsumers(),
         stringEntities: parsed.stringEntities || {},
@@ -704,6 +705,7 @@ function loadHaConfig() {
       batteryChargeMonth: 'sensor.battery_charge_monthly',
       batteryDischargeMonth: 'sensor.battery_discharge_monthly'
     },
+    pvEnergyExtraEntities: [],
     customStrings: getDefaultCustomStrings(),
     customConsumers: getDefaultCustomConsumers(),
     stringEntities: {},
@@ -1356,6 +1358,27 @@ app.all('/api/ha/history', async (req, res) => {
         integratedKwh[key] = +(whSum / 1000).toFixed(3);
       }
     });
+
+    if (!series.pv_total || series.pv_total.every(v => v === 0)) {
+      series.pv_total = bucketTimes.map((_, idx) => {
+        let sum = 0;
+        customStrings.forEach(cs => {
+          if (cs && cs.id && Array.isArray(series[cs.id])) {
+            sum += series[cs.id][idx] || 0;
+          }
+        });
+        return Math.round(sum * 10) / 10;
+      });
+      if (bucketTimes.length > 1) {
+        let whSum = 0;
+        for (let i = 1; i < bucketTimes.length; i++) {
+          const dtHours = (bucketTimes[i] - bucketTimes[i - 1]) / 3600000;
+          const avgW = Math.max(0, (series.pv_total[i] + series.pv_total[i - 1]) / 2);
+          whSum += avgW * dtHours;
+        }
+        integratedKwh.pv_total = +(whSum / 1000).toFixed(3);
+      }
+    }
 
     if (series.battery_charge_power || series.battery_discharge_power) {
       const chgArr = series.battery_charge_power || new Array(bucketTimes.length).fill(0);

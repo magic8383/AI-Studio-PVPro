@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementierungsplan für Version 9.1:\n1. Zweizeilige / Wert-zuerst Kachel-Darstellung im Dashboard & Tagesverlauf (keine abgeschnittenen kWh-Zweitwerte mehr).\n2. Zwei separate Batterie-Sensoren (Ladeleistung W & Entladeleistung W) inklusive Komfort-Sensor-Picker, Live-Bilanzierung und Tagesverlauf-Integration.\n3. Kurze 1-Wort-Überschriften (Live, Analyse, Planung), die auf dem Smartphone immer einzeilig bleiben.\n4. Stabile Tagesertrags-Berechnung (Heute kWh), die niemals auf den Gesamt-Zählerstand (Total) zurückspringt.",
-  "updatedAt":  "2026-11-10T11:05:24.727991900Z",
+  "summary":  "Implementation plan for Version 9.2: Multi-inverter PV energy counter list (+ button for additional inverter kWh sensors + automatic string kWh & Watt summation) and new Liquid-Glass Turquoise/Emerald App Icon across SVG, PNGs, Favicon, and App Header.",
+  "updatedAt":  "2026-11-10T12:12:28.616112164Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

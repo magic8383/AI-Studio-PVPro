@@ -159,7 +159,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 9.1';
+        if (verEl) verEl.innerText = 'Pro 9.2';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -1149,7 +1149,7 @@ function restoreCachedSimulationResult(simObj = null) {
 
 function exportFullConfiguration() {
     return {
-        version: '9.1',
+        version: '9.2',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],

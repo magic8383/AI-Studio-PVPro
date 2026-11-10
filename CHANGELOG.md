@@ -4,6 +4,25 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.2] – 2026-11-10
+
+### ✨ Multi-Wechselrichter PV-Erzeugung (`+ Wechselrichter-Zähler` & String-Summierung) & Neues Liquid-Glass Türkis/Smaragd App-Icon
+
+#### 1. Multi-Wechselrichter PV-Erzeugung (`kWh` mit `+` Button & automatischer String-Summierung)
+* **Mehrere Wechselrichter-Zähler per `+ Wechselrichter-Zähler` (`#haCountersSectionBox` / `telemetry.js`):**
+  - Für Anlagen mit zwei oder mehr Wechselrichtern (z. B. Fronius + Hoymiles) bietet Sektion 5 (*Gesamt-Energiezähler*) nun direkte Felder für **Wechselrichter 1** und **Wechselrichter 2** sowie den Button **`+ Wechselrichter-Zähler`** (`addHaPvEnergyExtra()`), über den beliebig viele weitere Wechselrichter-Energiezähler (`pvEnergyExtraEntities[]`) mit eigenem **`Wählen`**-Sensor-Picker hinzugefügt werden können.
+  - Jeder eingetragene Wechselrichter-Zähler erhält in `syncEnergyCounterBaselinesFromHaHistory` seine eigene `00:00`-Uhr- und Monatsstart-Baseline (inkl. individueller Einheiten-Skalierung `Wh` / `kWh` / `MWh` und `total_increasing`-Erkennung). Die daraus berechneten Tages- und Monats-Differenzen ($\Delta\text{kWh}$) werden automatisch zur gesamten PV-Erzeugung addiert.
+* **Automatische Summierung aus den PV-Strings (`W` & `kWh`):**
+  - Bleibt das Feld `PV gesamt · DC (Aktuell)` leer, summiert die App sowohl die Live-Leistung (`W`) als auch die 24h-Kurve (`series.pv_total`) automatisch aus allen konfigurierten PV-Strings.
+  - Werden die `kWh`-Zähler direkt bei den PV-Strings (Sektion 3) eingetragen und in Sektion 5 leer gelassen, bildet die App automatisch die Summe der Tages- und Monats-kWh aller Strings.
+
+#### 2. Neues modernes App-Icon im Stil „Liquid-Glass Türkis/Smaragd“
+* **Neues Vektor- & PWA-Icon-Set (`icon.svg`, `icon-512.png`, `icon-192.png`, `apple-touch-icon.png`, `favicon-32.png`):**
+  - Komplett neu gestaltetes App-Icon passend zum Liquid-Glass-Design: Tiefes Smaragd-/Türkis-Glas-Squircle mit glänzendem Lichtkanten-Reflex, perspektivischem 3×3-Solar-Panel, leuchtender Tagesverlauf-Energiewelle und markantem Energie-Blitz im Zentrum.
+  - Direkt eingebunden im App-Header neben dem Versions-Badge **`Pro 9.2`** sowie mit Cache-Buster `?v=9.2` für Android- und iOS-Homescreens.
+
+---
+
 ## [Version 9.1] – 2026-11-10
 
 ### ✨ Zweizeilige Wert-zuerst-Kacheln ohne abgeschnittene Zahlen, 2 Batterie-Leistungssensoren (Laden/Entladen), Kurze 1-Wort-Überschriften & Stabile Tages-kWh ohne Rücksprung auf Total

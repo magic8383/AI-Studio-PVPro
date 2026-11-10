@@ -1,216 +1,154 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <!-- Background Gradient: Deep Obsidian & Midnight Sapphire -->
-    <radialGradient id="spaceGlow" cx="50%" cy="38%" r="65%" fx="50%" fy="30%">
-      <stop offset="0%" stop-color="#1e293b" />
-      <stop offset="45%" stop-color="#0f172a" />
-      <stop offset="80%" stop-color="#070b16" />
-      <stop offset="100%" stop-color="#02040a" />
+    <!-- Deep Liquid-Glass Emerald & Midnight Teal Canvas -->
+    <radialGradient id="liquidBg" cx="48%" cy="32%" r="72%" fx="48%" fy="25%">
+      <stop offset="0%" stop-color="#0f766e" />
+      <stop offset="38%" stop-color="#064e3b" />
+      <stop offset="72%" stop-color="#042f2e" />
+      <stop offset="100%" stop-color="#02181c" />
     </radialGradient>
 
-    <!-- Squircle Metallic & Electric Cyan Bevel Border -->
-    <linearGradient id="bevelBorder" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.9" />
-      <stop offset="25%" stop-color="#818cf8" stop-opacity="0.5" />
-      <stop offset="50%" stop-color="#0ea5e9" stop-opacity="0.3" />
-      <stop offset="75%" stop-color="#f59e0b" stop-opacity="0.6" />
-      <stop offset="100%" stop-color="#fbbf24" stop-opacity="0.95" />
+    <!-- Specular Liquid Glass Rim Gradient -->
+    <linearGradient id="glassRim" x1="80" y1="60" x2="944" y2="964" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#99f6e4" stop-opacity="0.95" />
+      <stop offset="28%" stop-color="#2dd4bf" stop-opacity="0.75" />
+      <stop offset="60%" stop-color="#10b981" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#34d399" stop-opacity="0.9" />
     </linearGradient>
 
-    <linearGradient id="innerRim" x1="0" y1="0" x2="0" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25" />
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0.03" />
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.6" />
+    <!-- Top Specular Glass Refraction Highlight -->
+    <linearGradient id="topGlassSheen" x1="512" y1="36" x2="512" y2="540" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.34" />
+      <stop offset="45%" stop-color="#ccfbf1" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
     </linearGradient>
 
-    <!-- Solar Cell Silicon Wafer Gradients (Anti-Reflective Optical Coating) -->
-    <linearGradient id="waferMain" x1="160" y1="180" x2="860" y2="860" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0284c7" />
-      <stop offset="30%" stop-color="#0369a1" />
-      <stop offset="65%" stop-color="#075985" />
-      <stop offset="100%" stop-color="#0c4a6e" />
+    <!-- Ambient Emerald-Turquoise Core Glow -->
+    <radialGradient id="emeraldAura" cx="50%" cy="52%" r="46%">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.55" />
+      <stop offset="55%" stop-color="#10b981" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#0d9488" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Stylized Glass Solar Panel Surface -->
+    <linearGradient id="solarGlass" x1="200" y1="240" x2="824" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#115e59" stop-opacity="0.92" />
+      <stop offset="50%" stop-color="#065f46" stop-opacity="0.88" />
+      <stop offset="100%" stop-color="#022c22" stop-opacity="0.95" />
     </linearGradient>
 
-    <linearGradient id="waferHighlight" x1="200" y1="200" x2="800" y2="500" gradientUnits="userSpaceOnUse">
+    <linearGradient id="solarCellLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.42" />
+      <stop offset="100%" stop-color="#0d9488" stop-opacity="0.18" />
+    </linearGradient>
+
+    <!-- Luminous Energy Wave Gradient -->
+    <linearGradient id="energyWaveStroke" x1="140" y1="540" x2="884" y2="420" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#38bdf8" />
-      <stop offset="40%" stop-color="#0284c7" />
-      <stop offset="100%" stop-color="#0369a1" />
+      <stop offset="35%" stop-color="#2dd4bf" />
+      <stop offset="70%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#a7f3d0" />
     </linearGradient>
 
-    <linearGradient id="waferDeep" x1="200" y1="500" x2="800" y2="900" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0369a1" />
-      <stop offset="60%" stop-color="#075985" />
-      <stop offset="100%" stop-color="#082f49" />
+    <linearGradient id="energyWaveFill" x1="512" y1="360" x2="512" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.48" />
+      <stop offset="65%" stop-color="#10b981" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#059669" stop-opacity="0" />
     </linearGradient>
 
-    <!-- Precision Gold Busbars & High Voltage Traces -->
-    <linearGradient id="goldBusbar" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#fffbeb" />
-      <stop offset="25%" stop-color="#fef08a" />
-      <stop offset="55%" stop-color="#f59e0b" />
-      <stop offset="85%" stop-color="#d97706" />
-      <stop offset="100%" stop-color="#b45309" />
-    </linearGradient>
-
-    <!-- Electric Energy Pulse Vector -->
-    <linearGradient id="energyPulse" x1="0" y1="0" x2="1" y2="1">
+    <!-- Lightning Bolt Gradient (Crisp White-Mint to Sun-Gold/Emerald) -->
+    <linearGradient id="boltFill" x1="410" y1="200" x2="620" y2="810" gradientUnits="userSpaceOnUse">
       <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="30%" stop-color="#fef08a" />
-      <stop offset="70%" stop-color="#f59e0b" />
-      <stop offset="100%" stop-color="#ef4444" />
+      <stop offset="28%" stop-color="#ecfdf5" />
+      <stop offset="62%" stop-color="#6ee7b7" />
+      <stop offset="100%" stop-color="#10b981" />
     </linearGradient>
 
-    <!-- Glass Module Reflection Sheen -->
-    <linearGradient id="glassSheen" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32" />
-      <stop offset="35%" stop-color="#ffffff" stop-opacity="0.08" />
-      <stop offset="55%" stop-color="#ffffff" stop-opacity="0" />
+    <linearGradient id="boltRim" x1="400" y1="190" x2="640" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="50%" stop-color="#fef08a" />
+      <stop offset="100%" stop-color="#2dd4bf" />
     </linearGradient>
 
-    <!-- Ambient Blue Energy Core Glow -->
-    <radialGradient id="coreAura" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.5" />
-      <stop offset="50%" stop-color="#0284c7" stop-opacity="0.25" />
-      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
-    </radialGradient>
-
-    <!-- Deep Elevation Shadow Filter -->
-    <filter id="elevatedShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="28" stdDeviation="32" flood-color="#000000" flood-opacity="0.75" />
-      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0284c7" flood-opacity="0.35" />
+    <filter id="panelShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#011114" flood-opacity="0.72" />
+      <feDropShadow dx="0" dy="4" stdDeviation="10" flood-color="#14b8a6" flood-opacity="0.28" />
     </filter>
 
-    <filter id="goldGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="7" result="glow" />
-      <feComposite in="SourceGraphic" in2="glow" operator="over" />
-    </filter>
-
-    <filter id="intenseGlow" x="-50%" y="-50%" width="200%" height="200%">
+    <filter id="waveGlow" x="-30%" y="-30%" width="160%" height="160%">
       <feGaussianBlur stdDeviation="14" result="blur" />
       <feComposite in="SourceGraphic" in2="blur" operator="over" />
     </filter>
+
+    <filter id="boltGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#022c22" flood-opacity="0.8" />
+      <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#2dd4bf" flood-opacity="0.75" />
+    </filter>
   </defs>
 
-  <!-- Base Icon Squircle (macOS / iOS Super-ellipse curvature) -->
+  <!-- 1. Base Squircle (Full-bleed safe for maskable + rounded iOS/Android squircle) -->
+  <rect width="1024" height="1024" rx="232" fill="url(#liquidBg)" />
+  <rect x="28" y="28" width="968" height="968" rx="212" stroke="url(#glassRim)" stroke-width="10" />
+
+  <!-- Ambient Liquid Orbs -->
+  <circle cx="512" cy="512" r="410" fill="url(#emeraldAura)" />
+  <circle cx="260" cy="240" r="190" fill="#2dd4bf" fill-opacity="0.16" />
+  <circle cx="790" cy="780" r="220" fill="#10b981" fill-opacity="0.18" />
+
+  <!-- Top Liquid-Glass Specular Crown -->
+  <path d="M 36 260 C 36 130, 130 36, 260 36 L 764 36 C 894 36, 988 130, 988 260 C 988 330, 740 420, 512 420 C 284 420, 36 330, 36 260 Z" fill="url(#topGlassSheen)" />
+
+  <!-- 2. Stylized Perspective Glass Solar Panel (3x3 Monocrystalline Matrix) -->
+  <g filter="url(#panelShadow)">
+    <!-- Outer Glass Panel Frame -->
+    <path d="M 252 248 L 772 248 C 804 248, 828 270, 836 302 L 884 724 C 890 766, 858 804, 814 804 L 210 804 C 166 804, 134 766, 140 724 L 188 302 C 196 270, 220 248, 252 248 Z"
+          fill="url(#solarGlass)" stroke="url(#glassRim)" stroke-width="8" stroke-linejoin="round" />
+
+    <!-- Inner Glass Bevel -->
+    <path d="M 268 274 L 756 274 L 848 772 L 176 772 Z"
+          fill="url(#solarCellLight)" stroke="#5eead4" stroke-opacity="0.3" stroke-width="2.5" stroke-linejoin="round" />
+
+    <!-- Solar Cell Grid Lines (Horizontal Perspective) -->
+    <line x1="208" y1="422" x2="816" y2="422" stroke="#99f6e4" stroke-opacity="0.38" stroke-width="4.5" />
+    <line x1="192" y1="590" x2="832" y2="590" stroke="#99f6e4" stroke-opacity="0.38" stroke-width="4.5" />
+
+    <!-- Solar Cell Grid Lines (Vertical Perspective) -->
+    <line x1="430" y1="274" x2="396" y2="772" stroke="#99f6e4" stroke-opacity="0.38" stroke-width="4.5" />
+    <line x1="594" y1="274" x2="628" y2="772" stroke="#99f6e4" stroke-opacity="0.38" stroke-width="4.5" />
+
+    <!-- Cell Busbar Micro-Nodes -->
+    <circle cx="419" cy="422" r="7" fill="#99f6e4" fill-opacity="0.85" />
+    <circle cx="605" cy="422" r="7" fill="#99f6e4" fill-opacity="0.85" />
+    <circle cx="408" cy="590" r="7" fill="#99f6e4" fill-opacity="0.85" />
+    <circle cx="616" cy="590" r="7" fill="#99f6e4" fill-opacity="0.85" />
+  </g>
+
+  <!-- 3. Luminous Turquoise/Emerald Energy Wave (Intraday Solar Curve) -->
   <g>
-    <!-- Background Canvas -->
-    <rect x="36" y="36" width="952" height="952" rx="224" fill="url(#spaceGlow)" />
-    <rect x="36" y="36" width="952" height="952" rx="224" fill="url(#innerRim)" />
-    <!-- High-Precision Edge Bevel -->
-    <rect x="36" y="36" width="952" height="952" rx="224" stroke="url(#bevelBorder)" stroke-width="8" />
+    <!-- Soft Area Fill Under Energy Wave -->
+    <path d="M 152 648 C 250 648, 295 450, 412 468 C 520 484, 575 604, 676 508 C 756 432, 804 358, 872 370 L 854 776 L 170 776 Z"
+          fill="url(#energyWaveFill)" />
+
+    <!-- Glowing Energy Wave Curve -->
+    <path filter="url(#waveGlow)"
+          d="M 146 648 C 250 648, 295 442, 412 464 C 520 484, 575 606, 676 504 C 756 426, 804 354, 878 368"
+          stroke="url(#energyWaveStroke)" stroke-width="20" stroke-linecap="round" fill="none" />
+    <path d="M 146 648 C 250 648, 295 442, 412 464 C 520 484, 575 606, 676 504 C 756 426, 804 354, 878 368"
+          stroke="#ecfdf5" stroke-width="6" stroke-opacity="0.85" stroke-linecap="round" fill="none" />
   </g>
 
-  <!-- Ambient Energy Halo behind Central Isometric Module -->
-  <circle cx="512" cy="480" r="360" fill="url(#coreAura)" />
-
-  <!-- Diagonal Doppelglas Sheen (Optical Anti-Reflective Glare) -->
-  <path d="M 36 280 C 36 145, 145 36, 280 36 L 780 36 C 440 36, 120 400, 36 820 Z" fill="url(#glassSheen)" />
-
-  <!-- CENTRAL ISOMETRIC SOLAR ARRAY (High-Tech Monocrystalline PV Matrix) -->
-  <g filter="url(#elevatedShadow)" transform="translate(512, 492)">
-    
-    <!-- Heavy Anodized Aluminum Outer Frame (Chassis with Aerospace Bevel) -->
-    <!-- Isometric Diamond Frame -->
-    <polygon points="0,-330 380,-110 380,170 0,390 -380,170 -380,-110" fill="#0b1329" stroke="#1e293b" stroke-width="14" stroke-linejoin="round" />
-    <polygon points="0,-314 362,-100 362,160 0,374 -362,160 -362,-100" fill="#030712" stroke="#38bdf8" stroke-opacity="0.35" stroke-width="3.5" stroke-linejoin="round" />
-
-    <!-- 4-CELL MONOCRYSTALLINE SILICON MATRIX -->
-    
-    <!-- Cell 1: Top-Left (North-West) -->
-    <g>
-      <polygon points="-10,-12 -10,-300 -346,-96 -10,-12" fill="url(#waferHighlight)" stroke="#0c4a6e" stroke-width="2.5"/>
-      <!-- Anti-reflection edge -->
-      <polygon points="-10,-12 -180,-156 -180,-10 -10,-12" fill="url(#waferMain)" opacity="0.6"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="-280" y1="-80" x2="-20" y2="-230" stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-      <line x1="-210" y1="-60" x2="-20" y2="-170" stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-      <line x1="-140" y1="-40" x2="-20" y2="-110" stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-      <line x1="-70"  y1="-20" x2="-20" y2="-50"  stroke="#bae6fd" stroke-opacity="0.45" stroke-width="2.5" />
-    </g>
-
-    <!-- Cell 2: Top-Right (North-East - High Specular Light Angle) -->
-    <g>
-      <polygon points="10,-12 346,-96 10,-300 10,-12" fill="url(#waferHighlight)" stroke="#0284c7" stroke-width="2.5"/>
-      <!-- Subtle internal shadow -->
-      <polygon points="10,-12 180,-156 180,-10 10,-12" fill="#0369a1" opacity="0.4"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="280" y1="-80" x2="20" y2="-230" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-      <line x1="210" y1="-60" x2="20" y2="-170" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-      <line x1="140" y1="-40" x2="20" y2="-110" stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-      <line x1="70"  y1="-20" x2="20" y2="-50"  stroke="#ffffff" stroke-opacity="0.55" stroke-width="2.5" />
-    </g>
-
-    <!-- Cell 3: Bottom-Right (South-East) -->
-    <g>
-      <polygon points="10,12 346,12 346,146 10,354" fill="url(#waferDeep)" stroke="#0369a1" stroke-width="2.5"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="280" y1="80" x2="20" y2="230" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="210" y1="60" x2="20" y2="170" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="140" y1="40" x2="20" y2="110" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-    </g>
-
-    <!-- Cell 4: Bottom-Left (South-West) -->
-    <g>
-      <polygon points="-10,12 -346,12 -346,146 -10,354" fill="url(#waferMain)" stroke="#0c4a6e" stroke-width="2.5"/>
-      <!-- Multi-Busbar Silver Micro-Fingers -->
-      <line x1="-280" y1="80" x2="-20" y2="230" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="-210" y1="60" x2="-20" y2="170" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-      <line x1="-140" y1="40" x2="-20" y2="110" stroke="#38bdf8" stroke-opacity="0.4" stroke-width="2.5" />
-    </g>
-
-    <!-- Central Cross Dividers (Module Silicon Isolation Gap) -->
-    <line x1="0" y1="-308" x2="0" y2="366" stroke="#0f172a" stroke-width="12" stroke-linecap="round"/>
-    <line x1="-354" y1="0" x2="354" y2="0" stroke="#0f172a" stroke-width="12" stroke-linecap="round"/>
-
-    <!-- GOLDEN HIGH-EFFICIENCY DC CIRCUIT BUSBAR NETWORK -->
-    <g filter="url(#goldGlow)">
-      <!-- Main Vertical String Collector Busbar -->
-      <path d="M 0 -310 L 0 -50 L -30 0 L 0 50 L 0 360" stroke="url(#goldBusbar)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-      
-      <!-- Lateral Cell Interconnection Traces -->
-      <path d="M -340 0 L -50 0 M 50 0 L 340 0" stroke="url(#goldBusbar)" stroke-width="10" stroke-linecap="round" fill="none"/>
-
-      <!-- Peripheral Corner Terminals (Gold Plated PV Connectors) -->
-      <circle cx="0" cy="-310" r="16" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-      <circle cx="0" cy="360" r="16" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-      <circle cx="-340" cy="0" r="14" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-      <circle cx="340" cy="0" r="14" fill="#fef08a" stroke="#d97706" stroke-width="4" />
-    </g>
-
-    <!-- DYNAMIC DC ENERGY VECTOR / HIGH-VOLTAGE POWER PULSE (Der blitzschnelle Energieimpuls) -->
-    <g filter="url(#intenseGlow)">
-      <!-- Electric Energy Lightning Silhouette -->
-      <path d="M 50 -260 L -70 -30 L 70 30 L -30 290" 
-            stroke="#ffffff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-      <path d="M 50 -260 L -70 -30 L 70 30 L -30 290" 
-            stroke="url(#energyPulse)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-    </g>
-
-    <!-- Central Micro-Inverter MPPT Nexus Core (Hexagonal Microchip / Reactor) -->
-    <g filter="url(#goldGlow)">
-      <!-- Outer Nexus Ring -->
-      <polygon points="0,-48 42,-24 42,24 0,48 -42,24 -42,-24" fill="#0f172a" stroke="url(#goldBusbar)" stroke-width="6" stroke-linejoin="round"/>
-      <!-- Inner Core Reactor -->
-      <polygon points="0,-32 28,-16 28,16 0,32 -28,16 -28,-16" fill="#0284c7" stroke="#38bdf8" stroke-width="3" stroke-linejoin="round"/>
-      <circle cx="0" cy="0" r="12" fill="#ffffff" />
-      <circle cx="0" cy="0" r="6" fill="#f59e0b" />
-    </g>
-
-    <!-- High-Tech Engineering Precision Vernier Markings (Technical Ticks) -->
-    <g stroke="#38bdf8" stroke-opacity="0.6" stroke-width="2">
-      <!-- Top edge ticks -->
-      <line x1="-120" y1="-230" x2="-115" y2="-220" />
-      <line x1="-80"  y1="-260" x2="-75"  y2="-250" />
-      <line x1="80"   y1="-260" x2="75"   y2="-250" />
-      <line x1="120"  y1="-230" x2="115"  y2="-220" />
-    </g>
+  <!-- 4. Iconic Liquid-Glass Lightning Bolt (Center Focal Point) -->
+  <g filter="url(#boltGlow)">
+    <path d="M 566 156 L 348 518 L 498 518 L 446 856 L 692 468 L 534 468 L 566 156 Z"
+          fill="url(#boltFill)" stroke="url(#boltRim)" stroke-width="10" stroke-linejoin="round" />
+    <!-- Inner Specular Facet on Bolt -->
+    <path d="M 550 202 L 382 496 L 498 496 L 518 370 Z"
+          fill="#ffffff" fill-opacity="0.45" />
   </g>
 
-  <!-- SUBTLE TYPOGRAPHIC BADGE "PV PRO" (Aerospace Titanium Branding at bottom) -->
-  <g transform="translate(512, 915)">
-    <!-- Pill Capsule Container -->
-    <rect x="-105" y="-22" width="210" height="44" rx="22" fill="#0b1329" fill-opacity="0.9" stroke="url(#goldBusbar)" stroke-width="2.5" />
-    <!-- Text: PV PRO -->
-    <text x="-4" y="8" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-weight="900" font-size="22" fill="#ffffff" letter-spacing="4" text-anchor="middle">PV<tspan fill="#f59e0b" font-weight="900">PRO</tspan></text>
+  <!-- 5. Radiant Sun/Energy Halo Node at Top Right -->
+  <g>
+    <circle cx="764" cy="218" r="46" fill="#fde047" fill-opacity="0.22" />
+    <circle cx="764" cy="218" r="24" fill="#fef08a" stroke="#ffffff" stroke-width="5" />
   </g>
 </svg>
