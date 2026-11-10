@@ -1,6 +1,11 @@
 // ==========================================
-// GLOBALE STATE VARIABLEN & SICHERER HTML-ESCAPER
+// ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
+const APP_VERSION = '9.4';
+if (typeof window !== 'undefined') {
+    window.APP_VERSION = APP_VERSION;
+}
+
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
@@ -159,7 +164,7 @@ function initDatabase() {
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 9.3';
+        if (verEl) verEl.innerText = `Pro ${APP_VERSION}`;
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -215,23 +220,7 @@ function saveConfiguration() {
 }
 
 // ==========================================
-// HEADER SUBMENU (MOBILE OVERFLOW DROPDOWN)
-// ==========================================
-
-function toggleHeaderSubmenu() {
-    if (typeof openMoreSheet === 'function') {
-        openMoreSheet();
-    }
-}
-
-function closeHeaderSubmenu() {
-    if (typeof closeMoreSheet === 'function') {
-        closeMoreSheet();
-    }
-}
-
-// ==========================================
-// 1.0 MULTI-PLANUNGEN & VARIANTEN-MANAGER (V7.9.0)
+// 1.0 MULTI-PLANUNGEN, ZENTRALE SYSTEM-BERECHNUNG & VARIANTEN-MANAGER
 // ==========================================
 
 const PV_PROJECTS_KEY = 'pvpro_projects';
@@ -257,71 +246,118 @@ function getActiveProjectId() {
     return activeId;
 }
 
-function calculateProjectSummary(cfg) {
+function getSystemHardwareAndConsSummary(cfg = null) {
+    const strArray = Array.isArray(cfg?.strings) ? cfg.strings : (Array.isArray(strings) ? strings : []);
     let kwp = 0;
     let panelCount = 0;
-    let stringCount = 0;
+    const stringCount = strArray.length;
     let batteryKwh = 0;
+    let batteryPowerW = 0;
     let batteryName = 'Ohne Akku';
-    let locName = cfg?.LocationData?.name || (LocationData?.name || 'Villingen-Schwenningen');
+    const locName = cfg?.LocationData?.name || (LocationData?.name || 'Villingen-Schwenningen');
 
-    if (Array.isArray(cfg?.strings)) {
-        stringCount = cfg.strings.length;
-        cfg.strings.forEach(str => {
-            (str.fields || []).forEach(f => {
-                const count = Number(f.count) || 0;
-                panelCount += count;
-                const p = (typeof flatPanels !== 'undefined' && Array.isArray(flatPanels)) 
-                    ? flatPanels.find(x => String(x.id) === String(f.panelId) || x.id == f.panelId) 
-                    : null;
-                const pwp = (p && p.pmax) ? p.pmax : 440;
-                kwp += (count * pwp) / 1000;
-            });
+    strArray.forEach(str => {
+        (str.fields || []).forEach(f => {
+            const count = Number(f.count) || 0;
+            panelCount += count;
+            const p = (typeof flatPanels !== 'undefined' && Array.isArray(flatPanels))
+                ? flatPanels.find(x => String(x.id) === String(f.panelId) || x.id == f.panelId)
+                : null;
+            const pwp = (p && p.pmax) ? p.pmax : (Number(f.power) || 440);
+            kwp += (count * pwp) / 1000;
+        });
+    });
+
+    // Zentrale Batteriespeicher-Auflösung über aktive Wechselrichter, batMap & activeHardwareBatteryId
+    const usedBatIds = new Set();
+    if (cfg?.batMap && typeof cfg.batMap === 'object') {
+        strArray.forEach(s => {
+            if (s.inverterId && cfg.batMap[s.inverterId]) usedBatIds.add(cfg.batMap[s.inverterId]);
+        });
+        if (usedBatIds.size === 0) {
+            Object.values(cfg.batMap).forEach(v => { if (v) usedBatIds.add(v); });
+        }
+    } else {
+        const activeInvIds = [...new Set(strArray.map(s => parseInt(s.inverterId)).filter(Boolean))];
+        activeInvIds.forEach(invId => {
+            const inv = (typeof flatInverters !== 'undefined' && Array.isArray(flatInverters))
+                ? flatInverters.find(i => i.id === invId)
+                : null;
+            if (inv && inv.batteryId && Number(inv.batteryId) > 1) {
+                usedBatIds.add(inv.batteryId);
+            }
         });
     }
 
-    // Batteriespeicher auflösen
-    let batId = null;
-    if (cfg?.batMap && typeof cfg.batMap === 'object') {
-        const firstStr = cfg.strings && cfg.strings[0];
-        const invId = firstStr ? firstStr.inverterId : null;
-        if (invId && cfg.batMap[invId] !== undefined) {
-            batId = cfg.batMap[invId];
-        }
-        if (!batId) {
-            const vals = Object.values(cfg.batMap);
-            if (vals.length > 0 && vals[0]) batId = vals[0];
-        }
+    if (usedBatIds.size === 0 && typeof activeHardwareBatteryId !== 'undefined' && Number(activeHardwareBatteryId) > 1) {
+        usedBatIds.add(activeHardwareBatteryId);
     }
-    if (!batId && typeof activeHardwareBatteryId !== 'undefined' && activeHardwareBatteryId) {
-        batId = activeHardwareBatteryId;
-    }
-    if (!batId) {
+    if (usedBatIds.size === 0) {
         try {
             const localBatMap = JSON.parse(localStorage.getItem('pvpro_batmap') || '{}');
-            const vals = Object.values(localBatMap);
-            if (vals.length > 0 && vals[0]) batId = vals[0];
-        } catch(e) {}
+            Object.values(localBatMap).forEach(v => { if (v && Number(v) > 1) usedBatIds.add(v); });
+        } catch (e) {}
     }
 
-    if (batId && typeof flatBatteries !== 'undefined' && Array.isArray(flatBatteries)) {
-        const b = flatBatteries.find(x => String(x.id) === String(batId) || x.id == batId);
-        if (b && String(b.id) !== '1') {
-            const cap = (b.cap !== undefined && b.cap !== null) ? Number(b.cap) : ((b.capacity !== undefined && b.capacity !== null) ? Number(b.capacity) : 0);
-            if (cap > 0) {
-                batteryKwh = cap;
-                batteryName = b.name || `${cap} kWh`;
+    if (usedBatIds.size > 0 && typeof flatBatteries !== 'undefined' && Array.isArray(flatBatteries)) {
+        const batNames = [];
+        usedBatIds.forEach(bId => {
+            const b = flatBatteries.find(x => String(x.id) === String(bId) || x.id == bId);
+            if (b && String(b.id) !== '1') {
+                const cap = (b.cap !== undefined && b.cap !== null) ? Number(b.cap) : ((b.capacity !== undefined && b.capacity !== null) ? Number(b.capacity) : 0);
+                if (cap > 0) {
+                    batteryKwh += cap;
+                    batteryPowerW += Number(b.power) || 4000;
+                    batNames.push(b.name || `${cap} kWh`);
+                }
             }
+        });
+        if (batNames.length > 0) {
+            batteryName = batNames.join(' + ');
         }
     }
+
+    let plannedConsKwh = 4500;
+    if (!cfg && typeof FlowCache !== 'undefined' && FlowCache) {
+        plannedConsKwh = Math.round((FlowCache.direct || 0) + (FlowCache.fromBat || 0) + (FlowCache.fromGrid || 0));
+    } else if (typeof getConsumptionConfig === 'function') {
+        const c = getConsumptionConfig();
+        plannedConsKwh = Math.round((c.baseKwh || 3500) + ((c.it || 0) * 8.76) + (c.ac || 0) + (c.wp || 0) + (c.bw || 0) + (c.ev || 0));
+    }
+
+    const gridPriceEur = parseFloat(document.getElementById('fin_grid_price')?.value) || 0.32;
+    const sysCostEur = parseFloat(document.getElementById('fin_sys_cost')?.value) || 15000;
+    const eegRateCt = typeof updateEEGPreview === 'function' ? updateEEGPreview() : 7.8;
+    const eegRateEur = eegRateCt / 100;
 
     return {
         kwp: parseFloat(kwp.toFixed(2)),
         panelCount,
         stringCount,
         batteryKwh,
+        batteryPowerW,
         batteryName,
+        plannedConsKwh,
+        gridPriceEur,
+        sysCostEur,
+        eegRateCt,
+        eegRateEur,
         locationName: locName
+    };
+}
+if (typeof window !== 'undefined') {
+    window.getSystemHardwareAndConsSummary = getSystemHardwareAndConsSummary;
+}
+
+function calculateProjectSummary(cfg) {
+    const summary = getSystemHardwareAndConsSummary(cfg);
+    return {
+        kwp: summary.kwp,
+        panelCount: summary.panelCount,
+        stringCount: summary.stringCount,
+        batteryKwh: summary.batteryKwh,
+        batteryName: summary.batteryName,
+        locationName: summary.locationName
     };
 }
 
@@ -474,7 +510,7 @@ function createNewProject(name = null, cloneCurrent = false) {
             }]
         }];
         projectData = {
-            version: '7.9.0',
+            version: APP_VERSION,
             exportedAt: new Date().toISOString(),
             appName: 'PV-Planung Pro',
             strings: freshStrings,
@@ -1149,7 +1185,7 @@ function restoreCachedSimulationResult(simObj = null) {
 
 function exportFullConfiguration() {
     return {
-        version: '9.3',
+        version: APP_VERSION,
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],

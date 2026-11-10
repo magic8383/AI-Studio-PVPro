@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.3 (Getrennte Netzbezugs- & Einspeisungs-Leistungssensoren in W, oben fixiertes Kompakt-Diagramm mit scrollbarem Messwert-Raster, Zeitauswahl Tag/Woche/Monat, automatische Ist-Ertrags-Berechnung aus Live-Zählern, interaktiver Sankey-Detail-Inspektor & Dark-Mode-Menü)  
+**Aktuelle Version:** 9.4 (Umfassendes Code-Audit & Single Source of Truth Refactoring: Zentrale APP_VERSION & System-Baseline-Engine, vollständige Entfernung alter Demo-Generatoren & Fake-Startwerte, Zeitraum-Konsistenz für Tag/Woche/Monat & 1:1 Client/Server-Parität)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

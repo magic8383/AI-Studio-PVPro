@@ -4,6 +4,47 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.4] – 2026-11-10
+
+### ✨ Umfassendes Code-Audit, Zentrale Single Source of Truth (`APP_VERSION` & System-Baseline), Bereinigung aller Demo-Altlasten, Zeitraum-Konsistenz & 1:1 Client/Server-Parität
+
+#### 1. Zentrale Single Source of Truth (`APP_VERSION` & `getSystemHardwareAndConsSummary`)
+* **Zentrale Versionskonstante (`APP_VERSION = '9.4'`):**
+  - Beseitigung aller verstreuten und veralteten Versionsstrings in Projekt-Initialisierungen (`version: "7.9.0"` in `app.js`), JSON-Exporten, Server-User-Agents (`PV-Planung-Pro/8.3` in `server.js`) sowie in den Fußzeilen des VDE-Dossiers (`PV Pro Studio v8.1` und `v7.0.0` in `dossier.js`).
+  - Alle Module referenzieren ab sofort zentral `APP_VERSION`.
+* **Gemeinsame System-Baseline-Engine (`getSystemHardwareAndConsSummary` in `app.js`):**
+  - Bündelt die Berechnung von Gesamtleistung (`totalKwp`), Modul- und String-Anzahl, Batteriespeicher-Kapazität, maximaler Lade-/Entladeleistung, Batterienamen, geplantem Jahresverbrauch (inkl. EV & Wärmepumpe) und Finanzparametern an einer einzigen zentralen Stelle.
+  - Sowohl `calculateProjectSummary` in `app.js` als auch `getPlannedSystemBaseline` in `telemetry.js` greifen auf diese gemeinsame Funktion zu – keine redundanten Schleifen oder abweichenden Fallbacks mehr.
+
+#### 2. Vollständige Bereinigung alter Demo-Generatoren, Fake-Startwerte & toter Code-Pfade
+* **Entfernung künstlicher Demo-Generatoren & Fake-Zahlen:**
+  - Die historischen Sinus-Simulationsfunktionen (`computeDemoLiveTelemetry`, `buildDemoIntradaySeries`, `demoSimHour`, `onDemoHourSliderChange`) wurden vollständig entfernt und durch saubere Null-Initialisierer (`resetToZeroLiveTelemetry`, `resetToEmptyIntradaySeries`) ersetzt.
+  - Alle hartcodierten Fake-Startwerte (`682 W`, `2100 W`, `8,4 %`, `1.325 kWh`, `1,33 kWh`) in `telemetry.js` und in den HTML-Statuskacheln (`index.html`) wurden auf ehrliche `0 W` / `0,00 kWh` bereinigt.
+  - Auch die automatische Erzeugung künstlicher 10-Monats-Beispieldaten (`createSampleActualMonths` beim Jahreswechsel) ist abgeschaltet; das Monats-Logbuch startet immer sauber (`createEmptyYearMonths`) und übernimmt reale Home-Assistant-Zählerstände.
+* **Entfernung ungenutzter Altlasten (Dead Code Elimination):**
+  - Entfernt: `toggleHeaderSubmenu` und `closeHeaderSubmenu` in `app.js` (ersetzt durch `#m3MoreSheet`).
+  - Entfernt: veraltete String-Tabellen-Helfer `addHaCustomStringRow` und `addHaCustomConsumerRow` in `telemetry.js` (ersetzt durch den modernen kachel- und picker-basierten Editor).
+  - Entfernt: ungenutzte Legacy-Arrays `stringEntities` und `inverterEntities` in `telemetry.js` und `server.js`.
+  - Korrigiert: `escapeHtml(str)` in `dossier.js` prüft nun explizit auf `str === null || str === undefined`, sodass der numerische Wert `0` nicht mehr verschluckt wird.
+
+#### 3. Zeitraum-Konsistenz (`Tag` / `Woche` / `Monat`) in Diagramm & Messkanal-Kacheln
+* **Keine Überschreibung der Unterüberschrift bei Zeitwechsel:**
+  - `renderIntradayCurveSection` überschreibt `#dash_curve_timerange` nicht mehr bei jedem 10-Sekunden-Intervall mit `"00:00 Uhr bis jetzt"`, sondern erhält die zum gewählten Zeitraum (`Tag`, `Woche (7 Tage)`, `Monat (30 Tage)`) passende Unterüberschrift.
+* **Zeitraum-abhängige Kachel-Summen & Einheiten:**
+  - Die Messkanal-Kacheln unter dem Sticky-Diagramm zeigen in Zeile 1 (`subLine1`) nun passend zum gewählten Zeitraum die integrierte Energiemenge der gesamten Kurve mit dem korrekten Suffix (`kWh · heute`, `kWh · 7 Tage` bzw. `kWh · 30 Tage`).
+* **Präzise Hover-/Touch-Zeitanzeige für Woche & Monat:**
+  - Beim Darüberfahren über das 7-Tage- oder 30-Tage-Diagramm zeigt die Statusleiste neben der Uhrzeit auch das zugehörige Datum (`TT.MM. HH:MM Uhr`) an.
+
+#### 4. 1:1-Parität zwischen `telemetry.js` (Browser-First) und `server.js` (Backend-Fallback)
+* **Deduplizierung & Tippfehler-Bereinigung in `server.js`:**
+  - Die doppelt vorhandene Funktion `loadHaConfig()` in `server.js` wurde zu einer einzigen sauberen Implementierung mit `createDefaultHaConfig()` konsolidiert und der Tippfehler `sensor.gridExport_monthly` -> `sensor.grid_export_monthly` behoben.
+* **Identische Priorisierung getrennter Netz-Leistungssensoren:**
+  - `/api/ha/states` in `server.js` priorisiert nun exakt wie `telemetry.js` die getrennten Watt-Sensoren (`gridImportPower` & `gridExportPower`) vor dem kombinierten Fallback (`gridPower`).
+* **Einzelverbraucher & Spitzenwerte in `/api/ha/history`:**
+  - Der Server-History-Endpunkt berücksichtigt nun ebenfalls alle konfigurierten `customConsumers` (`consumer_<id>`) und liefert `peakValues` je Kanal zurück.
+
+---
+
 ## [Version 9.3] – 2026-11-10
 
 ### ✨ Getrennte Netzbezugs- & Einspeisungs-Leistungssensoren (W), Sticky Kompakt-Diagramm mit Scroll-Kacheln, Zeitauswahl Tag/Woche/Monat, automatische Ist-Ertrags-Berechnung aus Live-Zählern & Interaktiver Sankey-Detail-Inspektor

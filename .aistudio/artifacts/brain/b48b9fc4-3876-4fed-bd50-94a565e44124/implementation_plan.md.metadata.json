@@ -1,6 +1,6 @@
 {
-  "summary":  "Detaillierter Implementierungsplan für Version 9.3:\n1. Getrennte Watt-Sensoren für Netzbezug und Netzeinspeisung in HA-Sektion 2\n2. Oben fixiertes (sticky) Technik-Diagramm auf Ebene 2 mit frei scrollenden Messkanal-Kacheln\n3. Neuer Zeithorizont-Umschalter (Tag, Woche, Monat) direkt über dem Diagramm (Sensor-Button entfernt)\n4. Reale HA-Zähler-Berechnung für den Ist-Ertrag auf der Analyse-Seite & interaktive Sankey-Pfade\n5. Vollständige Design- & Dark-Mode-Harmonisierung des Menü-Bottom-Sheets",
-  "updatedAt":  "2026-11-10T19:31:08.767205060Z",
+  "summary":  "Ausführlicher Code-Audit & Zentralisierungs-Plan (Version 9.4): Zentrale APP_VERSION & Single Source of Truth, Bereinigung aller Demo-Generatoren und veralteten Code-Schnipsel, Konsolidierung der Zeitraum-Logik (Tag/Woche/Monat) sowie Angleichung von Browser- und Server-Engine.",
+  "updatedAt":  "2026-11-10T20:10:18.710116415Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 const HOST = '0.0.0.0';
+const APP_VERSION = '9.4';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -553,7 +554,7 @@ app.get('/api/pvgis/seriescalc', async (req, res) => {
         const response = await fetchWithTimeout(ep.url, {
           headers: {
             'Accept': 'application/json',
-            'User-Agent': 'PV-Planung-Pro/8.3 (Photovoltaic Engineering Engine)'
+            'User-Agent': `PV-Planung-Pro/${APP_VERSION} (Photovoltaic Engineering Engine)`
           }
         }, 8500);
 
@@ -639,49 +640,9 @@ function getDefaultCustomConsumers() {
   ];
 }
 
-function loadHaConfig() {
-  try {
-    if (fs.existsSync(HA_CONFIG_FILE)) {
-      const raw = fs.readFileSync(HA_CONFIG_FILE, 'utf-8');
-      const parsed = JSON.parse(raw);
-      return {
-        mode: parsed.mode || 'demo',
-        baseUrl: parsed.baseUrl || 'http://homeassistant.local:8123',
-        accessToken: parsed.accessToken || '',
-        pollIntervalSec: parsed.pollIntervalSec || 10,
-        autoSyncMonthly: parsed.autoSyncMonthly !== false,
-        batteryName: parsed.batteryName || 'BYD HVS+',
-        entities: {
-          pvPower: 'sensor.pv_power_total',
-          loadPower: 'sensor.house_consumption_power',
-          gridPower: 'sensor.grid_power',
-          gridImportPower: '',
-          gridExportPower: '',
-          batteryPower: 'sensor.battery_power',
-          batteryChargePower: '',
-          batteryDischargePower: '',
-          batterySoc: 'sensor.battery_soc',
-          pvEnergyToday: 'sensor.pv_energy_today',
-          pvEnergyMonth: 'sensor.pv_energy_monthly',
-          pvEnergyTotal: 'sensor.pv_energy_total',
-          gridImportMonth: 'sensor.grid_import_monthly',
-          gridExportMonth: 'sensor.grid_export_monthly',
-          batteryChargeMonth: 'sensor.battery_charge_monthly',
-          batteryDischargeMonth: 'sensor.battery_discharge_monthly',
-          ...(parsed.entities || {})
-        },
-        pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : [],
-        customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : getDefaultCustomStrings(),
-        customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : getDefaultCustomConsumers(),
-        stringEntities: parsed.stringEntities || {},
-        inverterEntities: parsed.inverterEntities || {}
-      };
-    }
-  } catch (err) {
-    console.warn('Could not load HA config:', err.message);
-  }
+function createDefaultHaConfig() {
   return {
-    mode: 'demo', // 'poll' | 'webhook' | 'demo'
+    mode: 'poll', // 'poll' | 'webhook'
     baseUrl: 'http://homeassistant.local:8123',
     accessToken: '',
     pollIntervalSec: 10,
@@ -701,16 +662,43 @@ function loadHaConfig() {
       pvEnergyMonth: 'sensor.pv_energy_monthly',
       pvEnergyTotal: 'sensor.pv_energy_total',
       gridImportMonth: 'sensor.grid_import_monthly',
-      gridExportMonth: 'sensor.gridExport_monthly',
+      gridExportMonth: 'sensor.grid_export_monthly',
       batteryChargeMonth: 'sensor.battery_charge_monthly',
       batteryDischargeMonth: 'sensor.battery_discharge_monthly'
     },
     pvEnergyExtraEntities: [],
     customStrings: getDefaultCustomStrings(),
-    customConsumers: getDefaultCustomConsumers(),
-    stringEntities: {},
-    inverterEntities: {}
+    customConsumers: getDefaultCustomConsumers()
   };
+}
+
+function loadHaConfig() {
+  const defaults = createDefaultHaConfig();
+  try {
+    if (fs.existsSync(HA_CONFIG_FILE)) {
+      const raw = fs.readFileSync(HA_CONFIG_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      return {
+        ...defaults,
+        mode: parsed.mode === 'webhook' ? 'webhook' : 'poll',
+        baseUrl: parsed.baseUrl || defaults.baseUrl,
+        accessToken: parsed.accessToken || '',
+        pollIntervalSec: parsed.pollIntervalSec || defaults.pollIntervalSec,
+        autoSyncMonthly: parsed.autoSyncMonthly !== false,
+        batteryName: parsed.batteryName || defaults.batteryName,
+        entities: {
+          ...defaults.entities,
+          ...(parsed.entities || {})
+        },
+        pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : [],
+        customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : defaults.customStrings,
+        customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : defaults.customConsumers
+      };
+    }
+  } catch (err) {
+    console.warn('Could not load HA config:', err.message);
+  }
+  return defaults;
 }
 
 function saveHaConfig(cfg) {
@@ -821,7 +809,7 @@ function requestHomeAssistant(baseUrl, token, apiPath, timeoutMs = 8500, maxRedi
           'Authorization': `Bearer ${cleanedToken}`,
           'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'User-Agent': 'PV-Planung-Pro/8.5 (HomeAssistant-Connector)',
+          'User-Agent': `PV-Planung-Pro/${APP_VERSION} (HomeAssistant-Connector)`,
           'X-Requested-With': 'XMLHttpRequest'
         }
       };
@@ -887,10 +875,9 @@ app.post('/api/ha/config', (req, res) => {
       ...current,
       ...incoming,
       entities: { ...(current.entities || {}), ...(incoming.entities || {}) },
+      pvEnergyExtraEntities: Array.isArray(incoming.pvEnergyExtraEntities) ? incoming.pvEnergyExtraEntities : (current.pvEnergyExtraEntities || []),
       customStrings: Array.isArray(incoming.customStrings) ? incoming.customStrings : (current.customStrings || getDefaultCustomStrings()),
       customConsumers: Array.isArray(incoming.customConsumers) ? incoming.customConsumers : (current.customConsumers || getDefaultCustomConsumers()),
-      stringEntities: { ...(current.stringEntities || {}), ...(incoming.stringEntities || {}) },
-      inverterEntities: { ...(current.inverterEntities || {}), ...(incoming.inverterEntities || {}) },
       updatedAt: new Date().toISOString()
     };
     saveHaConfig(merged);
@@ -1101,11 +1088,13 @@ app.all('/api/ha/states', async (req, res) => {
 
     let pvPower = getPower(ent.pvPower);
     let loadPower = getPower(ent.loadPower);
-    let gridPower = getPower(ent.gridPower);
     const gridImportP = getPower(ent.gridImportPower);
     const gridExportP = getPower(ent.gridExportPower);
-    if (gridPower === null && (gridImportP !== null || gridExportP !== null)) {
+    let gridPower = null;
+    if (gridImportP !== null || gridExportP !== null) {
       gridPower = (gridImportP || 0) - (gridExportP || 0);
+    } else {
+      gridPower = getPower(ent.gridPower);
     }
     const batChgP = getPower(ent.batteryChargePower);
     const batDisP = getPower(ent.batteryDischargePower);
@@ -1117,19 +1106,8 @@ app.all('/api/ha/states', async (req, res) => {
     }
     let batterySoc = getRaw(ent.batterySoc);
 
-    // Map per-string entities (legacy + customStrings)
+    // Map per-string entities (customStrings)
     const stringTelemetry = {};
-    const strEnts = cfg.stringEntities || {};
-    for (const [sId, sCfg] of Object.entries(strEnts)) {
-      if (!sCfg) continue;
-      stringTelemetry[sId] = {
-        powerW: getPower(sCfg.powerEntity),
-        energyKwh: getEnergy(sCfg.energyEntity),
-        voltageV: getRaw(sCfg.voltageEntity),
-        currentA: getRaw(sCfg.currentEntity)
-      };
-    }
-
     const customStringsList = Array.isArray(cfg.customStrings) ? cfg.customStrings : [];
     const customStringsTelemetry = customStringsList.map(cs => {
       const pVal = getPower(cs.powerEntity);
@@ -1266,6 +1244,7 @@ app.all('/api/ha/history', async (req, res) => {
 
     const ent = cfg.entities || {};
     const customStrings = Array.isArray(cfg.customStrings) ? cfg.customStrings : [];
+    const customConsumers = Array.isArray(cfg.customConsumers) ? cfg.customConsumers : [];
 
     // Collect all entity IDs we want history for
     const entityKeyMap = [];
@@ -1282,6 +1261,12 @@ app.all('/api/ha/history', async (req, res) => {
     customStrings.forEach(cs => {
       if (cs.id && cs.powerEntity) {
         entityKeyMap.push({ key: cs.id, entityId: cs.powerEntity, type: 'power' });
+      }
+    });
+
+    customConsumers.forEach(cc => {
+      if (cc.id && cc.powerEntity) {
+        entityKeyMap.push({ key: `consumer_${cc.id}`, entityId: cc.powerEntity, type: 'power' });
       }
     });
 
@@ -1427,6 +1412,12 @@ app.all('/api/ha/history', async (req, res) => {
       if (typeof integratedKwh.battery_discharge_power === 'number') integratedKwh.battery_discharge = integratedKwh.battery_discharge_power;
     }
 
+    const peakValues = {};
+    Object.keys(series).forEach(k => {
+      const arr = series[k] || [];
+      peakValues[k] = arr.reduce((m, v) => Math.max(m, Math.abs(v || 0)), 0);
+    });
+
     res.json({
       success: true,
       source: 'ha-history',
@@ -1434,7 +1425,8 @@ app.all('/api/ha/history', async (req, res) => {
       now: now.toISOString(),
       bucketTimes,
       series,
-      integratedKwh
+      integratedKwh,
+      peakValues
     });
   } catch (err) {
     res.json({
@@ -1523,7 +1515,7 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, HOST, () => {
-  console.log(`Server running at http://${HOST}:${PORT} (v8.5)`);
+  console.log(`Server running at http://${HOST}:${PORT} (v${APP_VERSION})`);
 });
 
 
