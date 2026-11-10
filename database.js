@@ -432,11 +432,15 @@ const HardwareDocManager = {
     }
 };
 
+const CodePersistedPlans = [];
+
 // Globale Verfügbarkeit
 window.MasterDB = MasterDB;
 window.escapeHtml = escapeHtml;
 window.MasterHardwareDocs = MasterHardwareDocs;
 window.HardwareDocManager = HardwareDocManager;
 window.CodePersistedHardware = typeof CodePersistedHardware !== 'undefined' ? CodePersistedHardware : { panels: [], inverters: [], batteries: [] };
+window.CodePersistedPlans = typeof CodePersistedPlans !== 'undefined' ? CodePersistedPlans : [];
 window.mergeCodePersistedHardware = mergeCodePersistedHardware;
+
 

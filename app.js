@@ -152,10 +152,14 @@ function initDatabase() {
             
             let locInp = document.getElementById('locSearchInput'); if(locInp) locInp.value = LocationData.name;
             let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText = LocationData.name;
+            let locInpS1 = document.getElementById('locSearchInputStep1'); if(locInpS1) locInpS1.value = LocationData.name;
+            let locTxtS1 = document.getElementById('locNameTextStep1'); if(locTxtS1) locTxtS1.innerText = LocationData.name;
+            let locCoordsS1 = document.getElementById('locCoordsTextStep1');
+            if(locCoordsS1) locCoordsS1.innerText = `${Number(LocationData.lat).toFixed(2)}° N, ${Number(LocationData.lon).toFixed(2)}° E`;
         } catch(e) {}
         
         const verEl = document.getElementById('app-header-version');
-        if (verEl) verEl.innerText = 'Pro 8.9';
+        if (verEl) verEl.innerText = 'Pro 9.0';
 
         // Synchronisiere fest im Code/Server persistierte Hardware asynchron
         syncPersistentHardwareFromServer();
@@ -173,6 +177,7 @@ function initDatabase() {
         try { loadFinanceSettings(); } catch(e) {}
         try { loadInvestSettings(); } catch(e) {}
         try { loadWiringSettings(); } catch(e) {}
+        try { restoreCachedSimulationResult(); } catch(e) {}
         try { updatePhysicsOnly(); } catch(e) {}
         try { checkUrlShareImport(); } catch(e) {}
         try { initProjectManager(); } catch(e) {}
@@ -768,31 +773,41 @@ function renderProjectManagerModal(tab = null) {
                 }).join('')}
             </div>
 
-            <!-- Fest im Server/Code gespeicherte Planungen (Geräteübergreifend) -->
+            <!-- Fest im Server / GitHub gespeicherte Planungen (Geräteübergreifend & Token-frei) -->
             <div class="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
-                <div class="flex items-center justify-between gap-2 mb-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
                     <div class="flex items-center gap-2">
                         <span class="material-symbols-rounded text-emerald-600 dark:text-emerald-400 text-xl">cloud_sync</span>
                         <div>
-                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Fest im Server / Code gespeicherte Planungen</h4>
-                            <p class="text-[11px] text-slate-400">Geräteübergreifend synchronisierbar und dauerhaft hinterlegt</p>
+                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Zentral im Server / GitHub gespeicherte Planungen</h4>
+                            <p class="text-[11px] text-slate-400">Inkl. aller HA-Sensoren & PVGIS-Daten — <strong class="text-emerald-600 dark:text-emerald-400">100% sicher ohne Token</strong></p>
                         </div>
                     </div>
-                    <button onclick="openSaveSystemPlanModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer">
-                        <span class="material-symbols-rounded text-sm">cloud_upload</span>
-                        <span>Aktuelle Planung fest speichern</span>
-                    </button>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button onclick="openSaveSystemPlanModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer">
+                            <span class="material-symbols-rounded text-sm">cloud_upload</span>
+                            <span>Zentral speichern</span>
+                        </button>
+                        <button onclick="exportSystemPlansJsonForGitHub()" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="system_plans.json für GitHub Pages herunterladen">
+                            <span class="material-symbols-rounded text-sm">download</span>
+                            <span>GitHub JSON</span>
+                        </button>
+                        <button onclick="openShareModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="QR-Code oder Datei-Backup für Direkt-Transfer">
+                            <span class="material-symbols-rounded text-sm">qr_code_2</span>
+                            <span>QR / Datei</span>
+                        </button>
+                    </div>
                 </div>
                 <div id="persistentServerPlansContainer" class="space-y-2">
                     <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
                         <span class="material-symbols-rounded text-lg text-emerald-500 animate-spin mb-1">sync</span>
-                        <p>Lade Server-Planungen...</p>
+                        <p>Lade zentrale Planungen (Server / GitHub / Code)...</p>
                     </div>
                 </div>
             </div>
         `;
 
-        // Asynchron Server-Planungen laden
+        // Asynchron Server- & GitHub-Planungen laden
         renderServerPlansList();
     } else {
         // Tab Variantenvergleich (Side-by-Side Matrix)
@@ -857,112 +872,162 @@ function renderProjectManagerModal(tab = null) {
     }
 }
 
+async function fetchCombinedPersistentPlans() {
+    const planMap = new Map();
+    const addPlans = (list, defaultSource) => {
+        if (!Array.isArray(list)) return;
+        list.forEach(p => {
+            if (!p || (!p.id && !p.name)) return;
+            const key = p.id || p.name;
+            if (!planMap.has(key)) {
+                planMap.set(key, { ...p, _source: p._source || defaultSource });
+            }
+        });
+    };
+
+    // 1. Live Server API (/api/plans/persistent)
+    try {
+        const res = await fetch('/api/plans/persistent', { cache: 'no-store' });
+        if (res.ok) {
+            const cType = (res.headers.get('content-type') || '').toLowerCase();
+            if (cType.includes('application/json')) {
+                const data = await res.json();
+                if (data && data.success && Array.isArray(data.plans)) {
+                    addPlans(data.plans, 'Server / Code');
+                }
+            }
+        }
+    } catch (e) {}
+
+    // 2. Statische Datei ./data/system_plans.json (GitHub Pages kompatibel!)
+    try {
+        const resStatic = await fetch('./data/system_plans.json?v=' + Date.now(), { cache: 'no-store' });
+        if (resStatic.ok) {
+            const text = await resStatic.text();
+            if (text && !text.trim().startsWith('<')) {
+                const parsed = JSON.parse(text);
+                if (Array.isArray(parsed)) {
+                    addPlans(parsed, 'GitHub Repository');
+                }
+            }
+        }
+    } catch (e) {}
+
+    // 3. Im Code hinterlegte Planungen (window.CodePersistedPlans in database.js)
+    try {
+        if (typeof window !== 'undefined' && Array.isArray(window.CodePersistedPlans)) {
+            addPlans(window.CodePersistedPlans, 'Code (database.js)');
+        }
+    } catch (e) {}
+
+    // 4. Lokaler Cache
+    try {
+        const cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+        addPlans(cached, 'Lokaler Sync-Cache');
+    } catch (e) {}
+
+    const combined = Array.from(planMap.values());
+    if (combined.length > 0) {
+        try {
+            localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(combined));
+        } catch (e) {}
+    }
+    return combined;
+}
+
 async function renderServerPlansList() {
     const container = document.getElementById('persistentServerPlansContainer');
     if (!container) return;
 
-    try {
-        const res = await fetch('/api/plans/persistent', { cache: 'no-store' });
-        if (res.ok) {
-            const data = await res.json();
-            if (data && data.success && Array.isArray(data.plans)) {
-                // In localStorage als Offline-Puffer spiegeln
-                try {
-                    localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(data.plans));
-                } catch(e) {}
+    const plans = await fetchCombinedPersistentPlans();
 
-                if (data.plans.length === 0) {
-                    container.innerHTML = `
-                        <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-900/30">
-                            <span class="material-symbols-rounded text-xl text-emerald-500 mb-1 block">cloud_done</span>
-                            <span class="font-bold text-slate-700 dark:text-slate-200 block">Server-Synchronisation bereit</span>
-                            <span class="text-[11px] text-slate-400 mt-0.5 block">Noch keine zusätzlichen Planungen fest gespeichert. Klicke oben auf <strong class="text-emerald-600 dark:text-emerald-400 font-bold">„Aktuelle Planung fest speichern“</strong>, um deine Konfiguration dauerhaft im Code & Server zu sichern.</span>
-                        </div>
-                    `;
-                    return;
-                }
-
-                container.innerHTML = data.plans.map(p => {
-                    const sm = p.summary || {};
-                    const dateStr = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-
-                    return `
-                        <div class="p-3.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xs font-black text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
-                                    <span class="text-[9px] font-black px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">Server / Code</span>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                                    <span class="font-bold text-slate-700 dark:text-slate-200">${sm.kwp || '–'} kWp</span>
-                                    <span>•</span>
-                                    <span>${sm.panelCount || '–'} Module (${sm.stringCount || '–'} Str.)</span>
-                                    <span>•</span>
-                                    <span>${(sm.batteryKwh > 0 || (sm.batteryName && sm.batteryName !== 'Ohne Akku')) ? `<span class="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold"><span class="material-symbols-rounded text-xs">battery_charging_full</span> ${sm.batteryName || sm.batteryKwh + ' kWh'}</span>` : 'Ohne Akku'}</span>
-                                    <span>•</span>
-                                    <span>${sm.locationName || 'Standort'}</span>
-                                    ${dateStr ? `<span>•</span><span>Gespeichert: ${dateStr}</span>` : ''}
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                                <button onclick="loadPersistentPlanFromServer('${p.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="In aktive Sitzung laden">
-                                    <span class="material-symbols-rounded text-sm">download</span>
-                                    <span>Laden & Aktivieren</span>
-                                </button>
-                                <button onclick="deletePersistentPlanFromServer('${p.id}')" class="p-1.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Vom Server löschen">
-                                    <span class="material-symbols-rounded text-sm">delete</span>
-                                </button>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-                return;
-            }
-        }
-    } catch(err) {
-        console.warn("Server-Planungen konnten im Netzwerk nicht abgefragt werden:", err);
-    }
-
-    // Offline / Cache-Fallback
-    let cached = [];
-    try {
-        cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
-    } catch(e) {}
-
-    if (Array.isArray(cached) && cached.length > 0) {
+    if (!plans || plans.length === 0) {
         container.innerHTML = `
-            <div class="mb-2 p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900 text-[11px] text-emerald-700 dark:text-emerald-300 flex items-center justify-between">
-                <span>Lokaler Zwischenspeicher (${cached.length} Planungen verfügbar)</span>
-                <button onclick="renderServerPlansList()" class="underline font-bold text-primary">Aktualisieren</button>
+            <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-900/30">
+                <span class="material-symbols-rounded text-xl text-emerald-500 mb-1 block">cloud_done</span>
+                <span class="font-bold text-slate-700 dark:text-slate-200 block">Zentraler GitHub- & Server-Speicher bereit</span>
+                <span class="text-[11px] text-slate-400 mt-0.5 block">Klicke oben auf <strong class="text-emerald-600 dark:text-emerald-400 font-bold">„Zentral speichern“</strong>, um deine komplette Anlage inkl. aller Home-Assistant-Sensoren (ohne Token!) für andere Geräte abrufbar zu sichern.</span>
             </div>
-        ` + cached.map(p => {
-            const sm = p.summary || {};
-            return `
-                <div class="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                        <span class="text-xs font-black text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
-                        <div class="text-[10px] text-slate-400 mt-1">${sm.kwp || '–'} kWp • ${sm.locationName || 'Standort'}</div>
-                    </div>
-                    <button onclick="loadPersistentPlanFromServer('${p.id}')" class="px-3 py-1.5 rounded-xl bg-primary text-white text-xs font-bold">Laden</button>
-                </div>
-            `;
-        }).join('');
+        `;
         return;
     }
 
-    container.innerHTML = `
-        <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div class="flex items-center gap-2">
-                <span class="material-symbols-rounded text-slate-400 text-base">sync</span>
-                <span>Server-Synchronisation bereit (Keine entfernten Daten).</span>
+    container.innerHTML = plans.map(p => {
+        const sm = p.summary || {};
+        const hasHaEntities = !!(p.data && p.data.haConfigSanitized && (p.data.haConfigSanitized.baseUrl || (p.data.haConfigSanitized.customConsumers || []).length > 0));
+        const hasCachedPvgis = !!(p.data && p.data.cachedSimulation && p.data.cachedSimulation.YieldDataCache);
+        const dateStr = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+        return `
+            <div class="p-3.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-xs font-black text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
+                        <span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">${escapeHtml(p._source || 'GitHub / Server')}</span>
+                        ${hasHaEntities ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25">HA-Sensoren inkl. (Token-frei)</span>` : ''}
+                        ${hasCachedPvgis ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">PVGIS 8.760h inkl.</span>` : ''}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                        <span class="font-bold text-slate-700 dark:text-slate-200">${sm.kwp || '–'} kWp</span>
+                        <span>•</span>
+                        <span>${sm.panelCount || '–'} Module (${sm.stringCount || '–'} Str.)</span>
+                        <span>•</span>
+                        <span>${(sm.batteryKwh > 0 || (sm.batteryName && sm.batteryName !== 'Ohne Akku')) ? `<span class="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold"><span class="material-symbols-rounded text-xs">battery_charging_full</span> ${sm.batteryName || sm.batteryKwh + ' kWh'}</span>` : 'Ohne Akku'}</span>
+                        <span>•</span>
+                        <span>${sm.locationName || 'Standort'}</span>
+                        ${dateStr ? `<span>•</span><span>${dateStr}</span>` : ''}
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
+                    <button onclick="loadPersistentPlanFromServer('${p.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Auf diesem Gerät laden & aktivieren">
+                        <span class="material-symbols-rounded text-sm">download</span>
+                        <span>Laden & Aktivieren</span>
+                    </button>
+                    <button onclick="deletePersistentPlanFromServer('${p.id}')" class="p-1.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Planung entfernen">
+                        <span class="material-symbols-rounded text-sm">delete</span>
+                    </button>
+                </div>
             </div>
-            <button onclick="renderServerPlansList()" class="px-3 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer flex items-center gap-1 self-start sm:self-auto">
-                <span class="material-symbols-rounded text-sm">refresh</span>
-                <span>Aktualisieren</span>
-            </button>
-        </div>
-    `;
+        `;
+    }).join('');
 }
+
+async function exportSystemPlansJsonForGitHub() {
+    // Aktuelle Planung ebenfalls als Eintrag aufnehmen (ohne Token)
+    const plans = await fetchCombinedPersistentPlans();
+    const currentCfg = exportFullConfiguration();
+    const currentSummary = calculateProjectSummary(currentCfg);
+    const activeName = document.getElementById('headerProjectName')?.innerText || `Planung ${LocationData?.name || 'PV'}`;
+
+    const entry = {
+        id: 'plan_' + Date.now(),
+        name: activeName,
+        data: currentCfg,
+        summary: currentSummary,
+        updatedAt: new Date().toISOString()
+    };
+
+    const filtered = plans.filter(p => p.name !== activeName);
+    filtered.unshift(entry);
+
+    // Garantiert alle accessToken entfernen
+    filtered.forEach(p => {
+        if (p?.data?.haConfigSanitized) p.data.haConfigSanitized.accessToken = '';
+        if (p?.data?.haConfig) p.data.haConfig.accessToken = '';
+    });
+
+    const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'system_plans.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToastNotification('📦 system_plans.json (mit allen Sensoren, garantiert OHNE Token) für GitHub exportiert!', 'success');
+}
+window.exportSystemPlansJsonForGitHub = exportSystemPlansJsonForGitHub;
 
 async function deletePersistentPlanFromServer(planId) {
     if (!confirm("Möchten Sie diese fest gespeicherte Planung wirklich vom Server löschen?")) return;
@@ -1022,9 +1087,69 @@ function showToastNotification(message, type = 'info') {
     }, 4000);
 }
 
+function getSerializableSimulationCache() {
+    if (!YieldDataCache || !FlowCache) return null;
+    try {
+        return {
+            savedAt: new Date().toISOString(),
+            YieldDataCache: JSON.parse(JSON.stringify(YieldDataCache)),
+            FlowCache: {
+                direct: FlowCache.direct || 0,
+                toBat: FlowCache.toBat || 0,
+                fromBat: FlowCache.fromBat || 0,
+                toGrid: FlowCache.toGrid || 0,
+                fromGrid: FlowCache.fromGrid || 0,
+                clip: FlowCache.clip || 0,
+                batLoss: FlowCache.batLoss || 0,
+                moCons: Array.from(FlowCache.moCons || []),
+                moGen: Array.from(FlowCache.moGen || []),
+                moBat: Array.from(FlowCache.moBat || [])
+            }
+        };
+    } catch (e) {
+        return null;
+    }
+}
+
+function restoreCachedSimulationResult(simObj = null) {
+    try {
+        const src = simObj || JSON.parse(localStorage.getItem('pvpro_cached_sim_result_v1') || 'null');
+        if (!src || !Array.isArray(src.YieldDataCache) || !src.FlowCache) return false;
+        YieldDataCache = src.YieldDataCache;
+        FlowCache = {
+            ...src.FlowCache,
+            hr: src.FlowCache.hr || {
+                pvTotal: new Float32Array(8760),
+                direct: new Float32Array(8760),
+                fromBat: new Float32Array(8760),
+                toGrid: new Float32Array(8760),
+                toBat: new Float32Array(8760),
+                fromGrid: new Float32Array(8760),
+                clip: new Float32Array(8760),
+                batLoss: new Float32Array(8760)
+            }
+        };
+        if (!ConsumptionCache) {
+            try { build8760ConsumptionArray(null); } catch (e) {}
+        }
+        const statusBadge = document.getElementById('pvgisStatusBadge');
+        if (statusBadge) {
+            statusBadge.innerText = 'PVGIS Gespeichert (Cache)';
+            statusBadge.className = 'text-[10px] font-semibold text-emerald-600 dark:text-emerald-400';
+        }
+        setTimeout(() => {
+            try { renderDashboard(); } catch (e) {}
+            try { if (typeof updatePlanungHubCards === 'function') updatePlanungHubCards(); } catch (e) {}
+        }, 60);
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
 function exportFullConfiguration() {
     return {
-        version: '7.9.0',
+        version: '9.0',
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
         strings: strings || [],
@@ -1034,12 +1159,18 @@ function exportFullConfiguration() {
         finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
         wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')),
         userDB: (typeof userDB !== 'undefined' ? userDB : JSON.parse(localStorage.getItem('pvpro_user_db') || '{}')),
-        batMap: (typeof batMap !== 'undefined' ? batMap : JSON.parse(localStorage.getItem('pvpro_batmap') || '{}'))
+        batMap: (typeof batMap !== 'undefined' ? batMap : JSON.parse(localStorage.getItem('pvpro_batmap') || '{}')),
+        haConfigSanitized: (typeof getSanitizedHaConfigForProject === 'function' ? getSanitizedHaConfigForProject() : null),
+        performanceRecords: (typeof getPerformanceRecordsForProject === 'function' ? getPerformanceRecordsForProject() : null),
+        cachedSimulation: getSerializableSimulationCache()
     };
 }
 
 function getShareableConfig(fullConfig) {
     const clean = JSON.parse(JSON.stringify(fullConfig));
+    // Always guarantee accessToken is stripped
+    if (clean.haConfigSanitized) clean.haConfigSanitized.accessToken = '';
+    if (clean.haConfig) clean.haConfig.accessToken = '';
     // If userDB contains document attachments (base64 PDFs/images), strip large binary payloads for URL/QR transfer
     if (clean.userDB && typeof clean.userDB === 'object') {
         ['panels', 'inverters', 'batteries'].forEach(cat => {
@@ -1077,6 +1208,8 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
             localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
             const locInp = document.getElementById('locSearchInput'); if (locInp) locInp.value = LocationData.name || '';
             const locTxt = document.getElementById('locNameText'); if (locTxt) locTxt.innerText = LocationData.name || '';
+            const locInpS1 = document.getElementById('locSearchInputStep1'); if (locInpS1) locInpS1.value = LocationData.name || '';
+            const locTxtS1 = document.getElementById('locNameTextStep1'); if (locTxtS1) locTxtS1.innerText = LocationData.name || '';
         }
         if (config.consumption && typeof config.consumption === 'object') {
             localStorage.setItem('pvpro_cons', JSON.stringify(config.consumption));
@@ -1104,12 +1237,25 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
             if (typeof batMap !== 'undefined') Object.assign(batMap, config.batMap);
             localStorage.setItem('pvpro_batmap', JSON.stringify(config.batMap));
         }
+        if (config.haConfigSanitized && typeof applySanitizedHaConfigFromProject === 'function') {
+            applySanitizedHaConfigFromProject(config.haConfigSanitized);
+        }
+        if (config.performanceRecords && typeof applyPerformanceRecordsFromProject === 'function') {
+            applyPerformanceRecordsFromProject(config.performanceRecords);
+        }
+        if (config.cachedSimulation) {
+            try {
+                localStorage.setItem('pvpro_cached_sim_result_v1', JSON.stringify(config.cachedSimulation));
+                restoreCachedSimulationResult(config.cachedSimulation);
+            } catch (e) {}
+        }
 
         // Re-run physics and render
         updatePhysicsOnly();
         if (typeof renderWiringTab === 'function') renderWiringTab();
+        if (typeof renderLiveCockpitUI === 'function') renderLiveCockpitUI();
         
-        showToastNotification(`✅ Konfiguration (${sourceLabel}) erfolgreich übernommen!`, 'success');
+        showToastNotification(`✅ Konfiguration (${sourceLabel}) inkl. Sensoren übernommen!`, 'success');
         return true;
     } catch (err) {
         console.error("Import Error:", err);
@@ -1735,6 +1881,186 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
     }
 }
 
+// ==========================================
+// 2.1 SMARTPHONE SWIPE-BACK (HISTORY API) & 6-STEP PLANNING WIZARD (V9.0)
+// ==========================================
+let _suppressHistoryPush = false;
+let currentPlanningWizardStep = 1;
+
+const PLANNING_WIZARD_STEPS = [
+    { step: 1, tabIds: ['database'], title: 'Schritt 1/6 · Standort & Hardware-Pool', subtitle: 'Ebene 2 · Standort, Wechselrichter, Module & Speicher wählen', nextLabel: 'Strings' },
+    { step: 2, tabIds: ['system'], title: 'Schritt 2/6 · Dach-Strings & MPPT', subtitle: 'Ebene 2 · Strings anlegen, Dachneigung, Azimut & Verschattung', nextLabel: 'DC-Kabel' },
+    { step: 3, tabIds: ['verkabelung'], title: 'Schritt 3/6 · DC-Verkabelung & VDE 0100-712', subtitle: 'Ebene 2 · Modulfelder, Leap-Frog & Leitungsverluste', nextLabel: 'Verbrauch' },
+    { step: 4, tabIds: ['verbrauch'], title: 'Schritt 4/6 · Verbrauch, WP & E-Auto', subtitle: 'Ebene 2 · Haushaltslast, Wärmepumpe, Klima & Smart-Charging', nextLabel: 'Kosten' },
+    { step: 5, tabIds: ['invest', 'finance'], title: 'Schritt 5/6 · Investition, Stromtarif & EEG', subtitle: 'Ebene 2 · Angebotskosten, Strompreis & Einspeisevergütung', nextLabel: '8.760h Start' },
+    { step: 6, tabIds: ['uebersicht', 'auswertung'], title: 'Schritt 6/6 · 8.760h Prognose & VDE-Dossier', subtitle: 'Ebene 2 · PVGIS-Simulation, Autarkie, Cashflow & Druck-Dossier', nextLabel: 'Fertig' }
+];
+
+function pushAppNavHistoryState(section, level, detailId = '') {
+    if (_suppressHistoryPush) return;
+    try {
+        const currentState = history.state;
+        if (currentState && currentState.pvproSection === section && currentState.pvproLevel === level && currentState.pvproDetail === detailId) {
+            return;
+        }
+        history.pushState({ pvproSection: section, pvproLevel: level, pvproDetail: detailId }, '');
+    } catch (e) {}
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('popstate', (event) => {
+        // 1. Falls Vollbild-Tagesdiagramm offen ist -> zuerst dieses schließen
+        const fsModal = document.getElementById('modal-intraday-fullscreen');
+        if (fsModal && !fsModal.classList.contains('hidden') && typeof closeIntradayFullscreen === 'function') {
+            _suppressHistoryPush = true;
+            closeIntradayFullscreen();
+            _suppressHistoryPush = false;
+            return;
+        }
+        // 2. Falls wir auf Ebene 2 sind -> sanft zurück auf Ebene 1 (Übersicht)
+        if (currentNavLevel === 2) {
+            _suppressHistoryPush = true;
+            navigateBackToHub(true);
+            _suppressHistoryPush = false;
+        }
+    });
+}
+
+function updatePlanningWizardUI(activeStep = null) {
+    const stepBar = document.getElementById('planningWizardStepBar');
+    const bottomNav = document.getElementById('floatingBottomNav');
+    const nextLbl = document.getElementById('bnavWizardNextLabel');
+    const nextStepHint = document.getElementById('bnavWizardStepHint');
+
+    if (!activeStep || activeStep < 1 || activeStep > 6) {
+        if (stepBar) stepBar.classList.add('hidden');
+        if (bottomNav) bottomNav.classList.remove('wizard-nav-active');
+        return;
+    }
+
+    currentPlanningWizardStep = activeStep;
+    if (stepBar) stepBar.classList.remove('hidden');
+    if (bottomNav) bottomNav.classList.add('wizard-nav-active');
+
+    for (let i = 1; i <= 6; i++) {
+        const btn = document.getElementById(`wiz-step-btn-${i}`);
+        if (!btn) continue;
+        if (i === activeStep) {
+            btn.className = 'wiz-step-chip flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all shrink-0 cursor-pointer bg-teal-600 text-white shadow-sm';
+        } else if (i < activeStep) {
+            btn.className = 'wiz-step-chip flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30';
+        } else {
+            btn.className = 'wiz-step-chip flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300';
+        }
+    }
+
+    const stepCfg = PLANNING_WIZARD_STEPS.find(s => s.step === activeStep);
+    if (stepCfg) {
+        if (nextLbl) nextLbl.innerText = activeStep === 6 ? 'Fertig' : 'Weiter';
+        if (nextStepHint) nextStepHint.innerText = `Schritt ${activeStep}/6`;
+    }
+}
+
+function goToPlanningWizardStep(stepNum) {
+    const step = Math.max(1, Math.min(6, parseInt(stepNum) || 1));
+    currentPlanningWizardStep = step;
+    const stepCfg = PLANNING_WIZARD_STEPS.find(s => s.step === step) || PLANNING_WIZARD_STEPS[0];
+
+    // Alle Tabs deaktivieren
+    document.querySelectorAll('.tab-content.active').forEach(el => el.classList.remove('active'));
+
+    // Ziel-Tabs für diesen Schritt aktivieren (bei Schritt 5 invest+finance, bei Schritt 6 uebersicht+auswertung)
+    stepCfg.tabIds.forEach(tId => {
+        const el = document.getElementById('tab-' + tId);
+        if (el) el.classList.add('active');
+    });
+
+    currentNavSection = 'planung';
+    currentNavLevel = 2;
+    pushAppNavHistoryState('planung', 2, `step-${step}`);
+
+    updateTwoRowHeader(
+        stepCfg.title,
+        stepCfg.subtitle,
+        'solar_power',
+        2,
+        'Zurück zur Übersicht'
+    );
+
+    const saveBtn = document.getElementById('btnHeaderSave');
+    if (saveBtn) {
+        saveBtn.classList.remove('hidden');
+        saveBtn.classList.add('flex');
+    }
+
+    // Untere 4-Icon Pill-Navigation + äußere Vor/Zurück-Flügel aktivieren
+    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-teal-500/15 dark:bg-teal-500/25 border-2 border-teal-600 dark:border-teal-400 text-teal-700 dark:text-teal-300 transition-all cursor-pointer";
+    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all cursor-pointer";
+    const bLive = document.getElementById('bnav-live');
+    const bAnalyse = document.getElementById('bnav-analyse');
+    const bSystem = document.getElementById('bnav-system');
+    if (bLive) bLive.className = inactivePillClass;
+    if (bAnalyse) bAnalyse.className = inactivePillClass;
+    if (bSystem) bSystem.className = activePillClass;
+
+    updatePlanningWizardUI(step);
+    closeMoreSheet();
+
+    // Schritt-spezifisches Rendering anstoßen
+    if (step === 1) {
+        renderDatabaseUI();
+        const locInpS1 = document.getElementById('locSearchInputStep1');
+        const locTxtS1 = document.getElementById('locNameTextStep1');
+        const locCoordsS1 = document.getElementById('locCoordsTextStep1');
+        if (locInpS1 && LocationData?.name) locInpS1.value = LocationData.name;
+        if (locTxtS1 && LocationData?.name) locTxtS1.innerText = LocationData.name;
+        if (locCoordsS1 && LocationData) locCoordsS1.innerText = `${Number(LocationData.lat).toFixed(2)}° N, ${Number(LocationData.lon).toFixed(2)}° E`;
+    } else if (step === 2) {
+        renderStringsUI();
+    } else if (step === 3) {
+        renderWiringTab();
+    } else if (step === 5) {
+        calcInvestTotal();
+        updateEEGPreview();
+    } else if (step === 6) {
+        if (!YieldDataCache || !FlowCache) {
+            // Falls noch keine Simulation im Speicher liegt, einmal automatisch starten
+            calculateYieldAPI();
+        } else {
+            renderDashboard();
+            if (currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
+        }
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function planningWizardPrev() {
+    if (currentPlanningWizardStep > 1) {
+        goToPlanningWizardStep(currentPlanningWizardStep - 1);
+    } else {
+        navigateBackToHub();
+    }
+}
+
+function planningWizardNext() {
+    if (currentPlanningWizardStep < 6) {
+        // Beim Übergang von Schritt 5 -> 6 direkt die 8.760h Simulation ausführen
+        if (currentPlanningWizardStep === 5) {
+            calculateYieldAPI();
+            return;
+        }
+        goToPlanningWizardStep(currentPlanningWizardStep + 1);
+    } else {
+        saveConfiguration();
+        switchTab('planung-hub');
+    }
+}
+
+window.goToPlanningWizardStep = goToPlanningWizardStep;
+window.planningWizardPrev = planningWizardPrev;
+window.planningWizardNext = planningWizardNext;
+
 function openLiveDrillDown(detailKey = 'intraday') {
     const current = document.querySelector('.tab-content.active');
     if (current && current.id !== 'tab-live') {
@@ -1749,6 +2075,8 @@ function openLiveDrillDown(detailKey = 'intraday') {
 
     currentNavSection = 'live';
     currentNavLevel = 2;
+    updatePlanningWizardUI(null);
+    pushAppNavHistoryState('live', 2, detailKey);
 
     updateTwoRowHeader(
         'Tagesverlauf & Kurven (00:00 – jetzt)',
@@ -1759,7 +2087,7 @@ function openLiveDrillDown(detailKey = 'intraday') {
     );
 
     if (typeof renderIntradayCurveSection === 'function') {
-        setTimeout(() => renderIntradayCurveSection(), 40);
+        setTimeout(() => renderIntradayCurveSection(), 20);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1778,6 +2106,8 @@ function openAnalyseDrillDown(subTab = 'soll-ist') {
 
     currentNavSection = 'analyse';
     currentNavLevel = 2;
+    updatePlanningWizardUI(null);
+    pushAppNavHistoryState('analyse', 2, subTab);
 
     const titles = {
         'soll-ist': 'Soll-Ist-Vergleich (PVGIS vs. Real)',
@@ -1795,17 +2125,31 @@ function openAnalyseDrillDown(subTab = 'soll-ist') {
     );
 
     if (typeof switchAnalysisSubTab === 'function') {
-        setTimeout(() => switchAnalysisSubTab(subTab), 40);
+        setTimeout(() => switchAnalysisSubTab(subTab), 20);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function openPlanungDrillDown(tabId = 'system') {
+    const tabToWizardStep = {
+        database: 1,
+        system: 2,
+        verkabelung: 3,
+        verbrauch: 4,
+        invest: 5,
+        finance: 5,
+        uebersicht: 6,
+        auswertung: 6
+    };
+    if (tabToWizardStep[tabId]) {
+        goToPlanningWizardStep(tabToWizardStep[tabId]);
+        return;
+    }
     switchTab(tabId);
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function navigateBackToHub() {
+function navigateBackToHub(fromPopState = false) {
     if (currentNavSection === 'live') {
         switchTab('live');
     } else if (currentNavSection === 'analyse') {
@@ -1844,8 +2188,23 @@ function updatePlanungHubCards() {
 }
 
 function switchTab(tabId) {
-    const current = document.querySelector('.tab-content.active');
-    if (current) current.classList.remove('active');
+    // Falls ein Planungs-Einzeltab direkt aufgerufen wird (außer faq), in den entsprechenden Wizard-Schritt leiten
+    const wizardStepMap = {
+        database: 1,
+        system: 2,
+        verkabelung: 3,
+        verbrauch: 4,
+        invest: 5,
+        finance: 5,
+        uebersicht: 6,
+        auswertung: 6
+    };
+    if (wizardStepMap[tabId]) {
+        goToPlanningWizardStep(wizardStepMap[tabId]);
+        return;
+    }
+
+    document.querySelectorAll('.tab-content.active').forEach(el => el.classList.remove('active'));
     
     const target = document.getElementById('tab-' + tabId);
     if (target) target.classList.add('active');
@@ -1854,6 +2213,8 @@ function switchTab(tabId) {
     const isPlanningDetail = planningTabs.includes(tabId);
     const isPlanningHub = (tabId === 'planung-hub');
 
+    updatePlanningWizardUI(null);
+
     if (tabId === 'live') {
         currentNavSection = 'live';
         currentNavLevel = 1;
@@ -1861,7 +2222,7 @@ function switchTab(tabId) {
         document.getElementById('live-detail-intraday')?.classList.add('hidden');
         updateTwoRowHeader(
             'Solar & Netz · live',
-            'Ebene 1 · Echtzeit-Status & aktive Einzelverbraucher',
+            'Ebene 1 · Echtzeit-Status & Top-5 Einzelverbraucher',
             'cell_tower',
             1
         );
@@ -1881,29 +2242,22 @@ function switchTab(tabId) {
         currentNavLevel = 1;
         updatePlanungHubCards();
         updateTwoRowHeader(
-            'PV-Planung & Auslegung',
-            'Ebene 1 · Wähle einen Engineering-Bereich (Strings, VDE, 8.760h)',
+            'PV-Planung & Auslegung (6-Schritte-Assistent)',
+            'Ebene 1 · Geführter Engineering-Workflow von Standort bis 8.760h Prognose',
             'solar_power',
             1
         );
     } else if (isPlanningDetail) {
         currentNavSection = 'planung';
         currentNavLevel = 2;
+        pushAppNavHistoryState('planung', 2, tabId);
         const tabTitles = {
-            system: 'Strings, Dach & Wechselrichter',
-            verkabelung: 'DC-Kabelplan & VDE 0100-712',
-            verbrauch: 'Lastprofil, WP, Klima & E-Auto',
-            invest: 'Investition, Kosten & Förderung',
-            finance: 'Stromtarif & EEG-Vergütung',
-            uebersicht: 'Planungs-Dashboard & KPIs',
-            auswertung: '8.760h PVGIS-Jahresprognose',
-            database: 'Hardware-Stammdatenbank',
             faq: 'Handbuch, Hilfe & Changelog'
         };
         updateTwoRowHeader(
             tabTitles[tabId] || 'PV-Planung · Detail',
-            'Ebene 2 · PV-Planung & Engineering',
-            'solar_power',
+            'Ebene 2 · PV-Planung & Dokumentation',
+            'menu_book',
             2,
             'Zurück zur Planung'
         );
@@ -1934,9 +2288,6 @@ function switchTab(tabId) {
     // Nach Auswahl Bottom Sheet schließen (falls offen)
     closeMoreSheet();
 
-    if (tabId === 'auswertung' && currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
-    if (tabId === 'verkabelung') renderWiringTab();
-    if (tabId === 'database') renderDatabaseUI();
     if (tabId === 'live') {
         if (typeof renderLiveTab === 'function') renderLiveTab();
         if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
@@ -2776,21 +3127,69 @@ function calculateFinances() {
 // ==========================================
 // 7. PVGIS API & ENGINE (5.2 RESTORE)
 // ==========================================
-async function searchLocation() { 
-    const q = document.getElementById('locSearchInput').value; if(!q) return;
-    try { const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`); const data = await res.json();
+async function searchLocation(customInputId = 'locSearchInput') { 
+    const inpEl = document.getElementById(customInputId) || document.getElementById('locSearchInput');
+    const q = inpEl ? inpEl.value : '';
+    if(!q) return;
+    try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+        const data = await res.json();
         if(data.length>0) { 
             LocationData = {lat:parseFloat(data[0].lat).toFixed(2), lon:parseFloat(data[0].lon).toFixed(2), name:data[0].display_name.split(',')[0]}; 
+            localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
             let locTxt = document.getElementById('locNameText'); if(locTxt) locTxt.innerText=LocationData.name; 
+            let locTxtS1 = document.getElementById('locNameTextStep1'); if(locTxtS1) locTxtS1.innerText=LocationData.name;
+            let locCoordsS1 = document.getElementById('locCoordsTextStep1');
+            if(locCoordsS1) locCoordsS1.innerText = `${Number(LocationData.lat).toFixed(2)}° N, ${Number(LocationData.lon).toFixed(2)}° E`;
             let editBox = document.getElementById('locEditBox'); if(editBox) editBox.classList.add('hidden');
+            showToastNotification(`📍 Standort gesetzt: ${LocationData.name} (${LocationData.lat}°N, ${LocationData.lon}°E)`, 'success');
         }
     } catch(e) {}
+}
+
+function searchLocationFromStep1() {
+    searchLocation('locSearchInputStep1');
+}
+window.searchLocationFromStep1 = searchLocationFromStep1;
+
+const PVGIS_FIELD_CACHE_KEY = 'pvpro_pvgis_field_cache_v1';
+
+function getCachedPvgisFieldHourly(cacheKey) {
+    try {
+        const map = JSON.parse(localStorage.getItem(PVGIS_FIELD_CACHE_KEY) || '{}');
+        const entry = map[cacheKey];
+        if (entry && Array.isArray(entry.pWatts) && entry.pWatts.length === 8760) {
+            return {
+                hourly: entry.pWatts.map(w => ({ P: Number(w) || 0 })),
+                source: entry.source || 'local-cache'
+            };
+        }
+    } catch (e) {}
+    return null;
+}
+
+function setCachedPvgisFieldHourly(cacheKey, hourlyArr, source = 'eu-jrc') {
+    if (!Array.isArray(hourlyArr) || hourlyArr.length !== 8760) return;
+    try {
+        const map = JSON.parse(localStorage.getItem(PVGIS_FIELD_CACHE_KEY) || '{}');
+        // Kompaktes Zahlen-Array (gerundet auf 1 W) spart >75% Speicherplatz im LocalStorage
+        const keys = Object.keys(map);
+        if (keys.length > 16) {
+            delete map[keys[0]];
+        }
+        map[cacheKey] = {
+            savedAt: Date.now(),
+            source,
+            pWatts: hourlyArr.map(item => Math.round(Number(item?.P) || 0))
+        };
+        localStorage.setItem(PVGIS_FIELD_CACHE_KEY, JSON.stringify(map));
+    } catch (e) {}
 }
 
 async function calculateYieldAPI() {
     const btn = document.getElementById('btnCalculateMain'); 
     const origTxt = btn ? btn.innerHTML : '';
-    if(btn) { btn.innerHTML = '<svg class="w-6 h-6 spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke-width="4" stroke-dasharray="30 30"></circle></svg><span>API Simulation läuft...</span>'; btn.disabled = true; }
+    if(btn) { btn.innerHTML = '<svg class="w-6 h-6 spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke-width="4" stroke-dasharray="30 30"></circle></svg><span>8.760h Simulation & PVGIS-Cache...</span>'; btn.disabled = true; }
     
     try {
         let proms = [];
@@ -2806,34 +3205,65 @@ async function calculateYieldAPI() {
                     let asp = str.azimuth - 180; if (asp>180) asp-=360; if (asp<-180) asp+=360;
                     let peakKw = ((p.pmax * f.count) / 1000).toFixed(3);
                     let peakPower = (p.pmax * f.count) / 1000;
+                    const fieldCacheKey = `${safeLat.toFixed(2)}_${safeLon.toFixed(2)}_${peakKw}_${f.tilt}_${asp}`;
                     const serverPvgisUrl = `/api/pvgis/seriescalc?lat=${safeLat}&lon=${safeLon}&peakpower=${peakKw}&loss=14&angle=${f.tilt}&aspect=${asp}&startyear=2019&endyear=2019`;
                     const directPvgisUrl = `https://pvgis.mb10.org/api/v5_2/seriescalc?lat=${safeLat}&lon=${safeLon}&pvcalculation=1&peakpower=${peakKw}&loss=14&angle=${f.tilt}&aspect=${asp}&startyear=2019&endyear=2019&outputformat=json`;
+                    const openMeteoUrl = `https://archive-api.open-meteo.com/v1/archive?latitude=${safeLat}&longitude=${safeLon}&start_date=2023-01-01&end_date=2023-12-31&hourly=global_tilted_irradiance&tilt=${f.tilt}&azimuth=${asp}&timezone=UTC`;
 
                     const fetchWithFallback = async () => {
-                        // 1. Primär: Eigener Server-Proxy zur offiziellen EU-JRC-PVGIS-API (inkl. Server-Disk-Cache & Multi-Tier-Kaskade)
+                        // 0. Zuerst: Dauerhaft im Browser gespeicherte PVGIS-Stundenwerte prüfen (Sofort-Treffer!)
+                        const localHit = getCachedPvgisFieldHourly(fieldCacheKey);
+                        if (localHit) {
+                            return { outputs: { hourly: localHit.hourly }, source: 'pvgis-local-cache', offline: false };
+                        }
+
+                        // 1. Primär: Eigener Server-Proxy zur offiziellen EU-JRC-PVGIS-API (inkl. Server-Disk-Cache)
                         try {
                             const rServer = await fetch(serverPvgisUrl);
                             if (rServer.ok) {
-                                const json = await rServer.json();
-                                if (json && json.success && json.outputs && Array.isArray(json.outputs.hourly) && json.outputs.hourly.length === 8760) {
-                                    return { outputs: json.outputs, source: json.source || 'eu-jrc', offline: false };
+                                const cType = (rServer.headers.get('content-type') || '').toLowerCase();
+                                if (cType.includes('application/json')) {
+                                    const json = await rServer.json();
+                                    if (json && json.success && json.outputs && Array.isArray(json.outputs.hourly) && json.outputs.hourly.length === 8760) {
+                                        setCachedPvgisFieldHourly(fieldCacheKey, json.outputs.hourly, json.source || 'eu-jrc');
+                                        return { outputs: json.outputs, source: json.source || 'eu-jrc', offline: false };
+                                    }
                                 }
                             }
                         } catch(e) {}
 
-                        // 2. Sekundär: Direkter Abruf über Mirror falls lokal ohne Express-Backend geöffnet
+                        // 2. Sekundär: Direkter Abruf über Mirror falls auf GitHub Pages geöffnet
                         try {
                             const r1 = await fetch(directPvgisUrl);
                             if (r1.ok) {
                                 const json = await r1.json();
                                 if (json && json.outputs && Array.isArray(json.outputs.hourly) && json.outputs.hourly.length === 8760) {
-                                    return { outputs: json.outputs, source: 'mirror', offline: false };
+                                    setCachedPvgisFieldHourly(fieldCacheKey, json.outputs.hourly, 'pvgis-mirror');
+                                    return { outputs: json.outputs, source: 'pvgis-mirror', offline: false };
                                 }
                             }
                         } catch(e) {}
 
-                        // 3. Fallback: Physikalisches 8.760h Synthetik-Modell falls komplett offline
+                        // 3. Tertiär (CORS-frei im Browser auf GitHub Pages!): Open-Meteo ERA5 Solar-Strahlungsdaten (GTI)
+                        try {
+                            const rMeteo = await fetch(openMeteoUrl);
+                            if (rMeteo.ok) {
+                                const mJson = await rMeteo.json();
+                                const gtiArr = mJson?.hourly?.global_tilted_irradiance;
+                                if (Array.isArray(gtiArr) && gtiArr.length >= 8760) {
+                                    const lossFactor = 1 - 0.14;
+                                    const hourlyFromGti = gtiArr.slice(0, 8760).map(gti => ({
+                                        P: Math.max(0, (Number(gti) || 0) * peakPower * lossFactor)
+                                    }));
+                                    setCachedPvgisFieldHourly(fieldCacheKey, hourlyFromGti, 'open-meteo-era5');
+                                    return { outputs: { hourly: hourlyFromGti }, source: 'open-meteo-era5', offline: false };
+                                }
+                            }
+                        } catch(e) {}
+
+                        // 4. Fallback: Physikalisches 8.760h Synthetik-Modell falls komplett offline
                         let synthetic = generateSyntheticPVGISData(safeLat, f.tilt, str.azimuth, peakPower);
+                        setCachedPvgisFieldHourly(fieldCacheKey, synthetic, 'synthetic-cached');
                         return { outputs: { hourly: synthetic }, source: 'synthetic', offline: true };
                     };
 
@@ -2854,20 +3284,17 @@ async function calculateYieldAPI() {
         const statusBadge = document.getElementById('pvgisStatusBadge');
         if (hasOfflineData) {
             if (statusBadge) {
-                statusBadge.innerText = 'Synthetik-Modell (8.760h)';
+                statusBadge.innerText = 'Synthetik-Modell (Gespeichert)';
                 statusBadge.className = 'text-[10px] font-semibold text-amber-600 dark:text-amber-400';
-            }
-            if (typeof showToastNotification === 'function') {
-                showToastNotification("Hinweis: Externe PVGIS-Server momentan nicht erreichbar – Simulation lief mit dem kalibrierten 8.760h-Modell.", 'info');
             }
         } else {
             const firstSrc = res[0]?.source || 'eu-jrc';
             if (statusBadge) {
-                statusBadge.innerText = firstSrc.includes('cache') ? 'EU-JRC PVGIS (Cache)' : 'EU-JRC PVGIS Live';
+                statusBadge.innerText = firstSrc.includes('cache') ? 'PVGIS Dauerhaft Gespeichert' : 'PVGIS Live & Gespeichert';
                 statusBadge.className = 'text-[10px] font-semibold text-emerald-600 dark:text-emerald-400';
             }
             if (typeof showToastNotification === 'function') {
-                showToastNotification("8.760h PVGIS-Simulation erfolgreich abgeschlossen!", 'success');
+                showToastNotification("☀️ 8.760h Strahlungsdaten berechnet & dauerhaft im Projekt gespeichert!", 'success');
             }
         }
 
@@ -3008,11 +3435,18 @@ async function calculateYieldAPI() {
         ['direct','fromBat','toGrid','fromGrid','toBat','clip','batLoss'].forEach(k => flow[k]/=1000);
         
         YieldDataCache = groupedResults; FlowCache = flow; activeGroupIndex = null; 
+        try {
+            const serializedSim = getSerializableSimulationCache();
+            if (serializedSim) {
+                localStorage.setItem('pvpro_cached_sim_result_v1', JSON.stringify(serializedSim));
+            }
+            saveCurrentProjectData(false);
+        } catch (e) {}
         renderStringsUI(); 
         renderDashboard();
         if (typeof updatePlanungHubCards === 'function') updatePlanungHubCards();
         if (typeof renderAnalysisSection === 'function') renderAnalysisSection();
-        switchTab('uebersicht'); 
+        goToPlanningWizardStep(6); 
     } catch(e) { console.error(e); if (typeof showToastNotification === 'function') showToastNotification("Berechnungsfehler: " + e.message, 'error'); }
     if(btn) { btn.innerHTML = origTxt; btn.disabled = false; }
 }
@@ -4478,6 +4912,9 @@ async function submitSaveSystemPlanToServer() {
     };
 
     const effectiveStrings = (strings && strings.length > 0) ? strings : JSON.parse(localStorage.getItem('pvpro_strings') || '[]');
+    const haSanitized = typeof getSanitizedHaConfigForProject === 'function' ? getSanitizedHaConfigForProject() : null;
+    if (haSanitized) haSanitized.accessToken = '';
+
     const planData = {
         strings: effectiveStrings,
         location: LocationData ? Object.assign({}, LocationData) : JSON.parse(localStorage.getItem('pvpro_loc') || '{}'),
@@ -4491,7 +4928,10 @@ async function submitSaveSystemPlanToServer() {
         invest: JSON.parse(localStorage.getItem('pvpro_invest') || '{}'),
         finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
         consumption: (typeof getConsumptionSettingsPayload === 'function' ? getConsumptionSettingsPayload() : JSON.parse(localStorage.getItem('pvpro_cons') || '{}')),
-        wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}'))
+        wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')),
+        haConfigSanitized: haSanitized,
+        performanceRecords: (typeof getPerformanceRecordsForProject === 'function' ? getPerformanceRecordsForProject() : null),
+        cachedSimulation: getSerializableSimulationCache()
     };
 
     const newPlanEntry = {
@@ -4510,12 +4950,15 @@ async function submitSaveSystemPlanToServer() {
         });
 
         if (res.ok) {
-            const data = await res.json();
-            if (data.success) {
-                closeSaveSystemPlanModal();
-                showToastNotification(`Planung "${name}" erfolgreich fest im Server & Code gespeichert!`, 'success');
-                if (typeof renderServerPlansList === 'function') renderServerPlansList();
-                return;
+            const cType = (res.headers.get('content-type') || '').toLowerCase();
+            if (cType.includes('application/json')) {
+                const data = await res.json();
+                if (data.success) {
+                    closeSaveSystemPlanModal();
+                    showToastNotification(`✅ Planung "${name}" inkl. aller Sensoren (ohne Token!) fest im Server & Code gespeichert!`, 'success');
+                    if (typeof renderServerPlansList === 'function') renderServerPlansList();
+                    return;
+                }
             }
         }
     } catch(err) {
@@ -4529,7 +4972,7 @@ async function submitSaveSystemPlanToServer() {
         cached.unshift(newPlanEntry);
         localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(cached));
         closeSaveSystemPlanModal();
-        showToastNotification(`Planung "${name}" erfolgreich dauerhaft gesichert!`, 'success');
+        showToastNotification(`✅ Planung "${name}" (inkl. Sensoren, ohne Token) gespeichert! Für GitHub Pages kannst du zudem 'GitHub JSON' herunterladen.`, 'success');
         if (typeof renderServerPlansList === 'function') renderServerPlansList();
         return;
     } catch(e) {
@@ -4539,25 +4982,8 @@ async function submitSaveSystemPlanToServer() {
 }
 
 async function loadPersistentPlanFromServer(planId) {
-    let targetPlan = null;
-    try {
-        const res = await fetch('/api/plans/persistent');
-        if (res.ok) {
-            const data = await res.json();
-            if (data && data.success && Array.isArray(data.plans)) {
-                targetPlan = data.plans.find(p => p.id === planId);
-            }
-        }
-    } catch(err) {
-        console.warn("Netzwerkfehler beim Laden der Planung:", err);
-    }
-
-    if (!targetPlan) {
-        try {
-            const cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
-            targetPlan = cached.find(p => p.id === planId);
-        } catch(e) {}
-    }
+    const allPlans = await fetchCombinedPersistentPlans();
+    const targetPlan = allPlans.find(p => p.id === planId);
 
     if (targetPlan && targetPlan.data) {
         const pData = targetPlan.data;
@@ -4571,6 +4997,8 @@ async function loadPersistentPlanFromServer(planId) {
             localStorage.setItem('pvpro_loc', JSON.stringify(LocationData));
             const locInp = document.getElementById('locSearchInput'); if (locInp) locInp.value = LocationData.name || '';
             const locTxt = document.getElementById('locNameText'); if (locTxt) locTxt.innerText = LocationData.name || '';
+            const locInpS1 = document.getElementById('locSearchInputStep1'); if (locInpS1) locInpS1.value = LocationData.name || '';
+            const locTxtS1 = document.getElementById('locNameTextStep1'); if (locTxtS1) locTxtS1.innerText = LocationData.name || '';
         }
         if (pData.projectInverterIds && Array.isArray(pData.projectInverterIds)) {
             projectInverterIds = pData.projectInverterIds;
@@ -4609,6 +5037,19 @@ async function loadPersistentPlanFromServer(planId) {
             if (typeof wiringSettings !== 'undefined') Object.assign(wiringSettings, pData.wiring);
             localStorage.setItem('pvpro_wiring', JSON.stringify(pData.wiring));
         }
+        if (pData.haConfigSanitized && typeof applySanitizedHaConfigFromProject === 'function') {
+            applySanitizedHaConfigFromProject(pData.haConfigSanitized);
+        }
+        if (pData.performanceRecords && typeof applyPerformanceRecordsFromProject === 'function') {
+            applyPerformanceRecordsFromProject(pData.performanceRecords);
+        }
+        if (pData.cachedSimulation) {
+            try {
+                localStorage.setItem('pvpro_cached_sim_result_v1', JSON.stringify(pData.cachedSimulation));
+                restoreCachedSimulationResult(pData.cachedSimulation);
+            } catch (e) {}
+        }
+
         if (typeof syncProjectHardwareState === 'function') {
             syncProjectHardwareState();
         }
@@ -4616,6 +5057,7 @@ async function loadPersistentPlanFromServer(planId) {
         if (typeof updatePhysicsOnly === 'function') updatePhysicsOnly();
         if (typeof renderActiveHardwareUI === 'function') renderActiveHardwareUI();
         if (typeof renderWiringTab === 'function') renderWiringTab();
+        if (typeof renderLiveCockpitUI === 'function') renderLiveCockpitUI();
         renderDatabaseUI();
 
         // Synchronisiere in den lokalen Projekt-Manager, damit Name und Header aktuell sind
@@ -4634,7 +5076,7 @@ async function loadPersistentPlanFromServer(planId) {
             updateHeaderProjectIndicator();
         } catch(e) {}
 
-        showToastNotification(`Planung "${targetPlan.name}" erfolgreich geladen!`, 'success');
+        showToastNotification(`✅ Planung "${targetPlan.name}" inkl. aller Sensor-Entitäten geladen!`, 'success');
         closeProjectManagerModal();
         return;
     }

@@ -114,9 +114,41 @@ function loadSystemPlans() {
   return [];
 }
 
+function sanitizePlanListTokens(plans) {
+  if (!Array.isArray(plans)) return [];
+  return plans.map(p => {
+    const copy = JSON.parse(JSON.stringify(p));
+    if (copy.data && copy.data.haConfigSanitized) {
+      copy.data.haConfigSanitized.accessToken = '';
+    }
+    if (copy.data && copy.data.haConfig) {
+      copy.data.haConfig.accessToken = '';
+    }
+    return copy;
+  });
+}
+
+function syncSystemPlansToCode(plans) {
+  try {
+    if (!fs.existsSync(DATABASE_JS_FILE)) return;
+    const cleanPlans = sanitizePlanListTokens(plans);
+    let content = fs.readFileSync(DATABASE_JS_FILE, 'utf-8');
+    const regex = /const CodePersistedPlans = \[[\s\S]*?\];/;
+    const replacement = `const CodePersistedPlans = ${JSON.stringify(cleanPlans, null, 4)};`;
+    if (regex.test(content)) {
+      content = content.replace(regex, replacement);
+      fs.writeFileSync(DATABASE_JS_FILE, content, 'utf-8');
+    }
+  } catch (err) {
+    console.error('Error syncing system plans to database.js:', err);
+  }
+}
+
 function saveSystemPlans(plans) {
   try {
-    fs.writeFileSync(SYSTEM_PLANS_FILE, JSON.stringify(plans, null, 2), 'utf-8');
+    const cleanPlans = sanitizePlanListTokens(plans);
+    fs.writeFileSync(SYSTEM_PLANS_FILE, JSON.stringify(cleanPlans, null, 2), 'utf-8');
+    syncSystemPlansToCode(cleanPlans);
   } catch (err) {
     console.warn('Could not save system plans:', err);
   }

@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementation plan for Version 8.9 of PV-Planung Pro:\n1. Interactive Level-1 Dashboard Tiles & Active Consumers: Tapping any KPI tile (PV, House Load, Battery, Grid) or any Active Consumer row jumps directly to the Level-2 Telemetry Chart with that curve focused/soloed (including intraday history sampling for individual consumers).\n2. Out-of-the-Box Technical Redesign of Level-2 Intraday View: Full-bleed minimalist oscilloscope/telemetry canvas at the top with live crosshair HUD readout and dynamic area gradient fill, paired below with a compact 3-column grid of technical channel cards showing live power (W/%), daily energy (kWh), and peak power (Wmax).\n3. Zero-Helper Sankey & Monthly Energy Engine via Lifetime Total-kWh Counters (total_increasing) + Watt-Integration Fallback: Computes Today, Month, and Year energy flows directly from standard lifetime meter readings (Delta = End - Start via HA History API & local snapshots) with automatic trapezoidal Watt-integration fallback when no kWh counter is configured.",
-  "updatedAt":  "2026-11-10T06:49:03.335751077Z",
+  "summary":  "Implementierungsplan für Version 9.0: Korrektur der Kachel-Hintergründe im Hell-/Dunkelmodus, flackerfreie Chart.js In-Place-Updates, Top-5 Verbraucher mit Aufklapp-Funktion, Smartphone Zurück-Wischgeste (History API) von Ebene 2 auf Ebene 1, token-sichere Projekt- & Sensor-Persistenz für GitHub Pages, persistenter PVGIS-Cache, aufgeräumtes 4-Punkte-Menü sowie geführter 6-Schritte-Planungs-Assistent mit animierten Vor-/Zurück-Buttons außen in der unteren Navigations-Pill und durchgängigem Liquid-Glass-Design.",
+  "updatedAt":  "2026-11-10T09:29:59.396494690Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V8.9)
-// Interaktive Kachel-Fokus-Sprünge, Randloses Technik-Chart (3-Spalten-Grid),
-// kWh-Total Differenz-Engine (Ohne HA-Helfer) + Watt-Integration & Vollbild
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.0)
+// Flackerfreie Chart.js In-Place-Updates, Light/Dark Kanal-Kacheln, Top-5
+// Verbraucher-Ausklappung & Token-sichere GitHub-Projekt-Synchronisation
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -90,6 +90,8 @@ let chartIntradayFullscreen = null;
 let isIntradayFsRotated = false;
 let currentFocusedCurveMode = false;
 let currentFocusedCurveTitle = 'Tagesverlauf · Telemetrie';
+let showAllDashboardConsumers = false;
+let isIntradayHovering = false;
 let intradaySeriesState = {
     startOfDayIso: null,
     nowIso: null,
@@ -1642,7 +1644,22 @@ function renderLiveCockpitUI(baseline) {
     const gridBar = document.getElementById('dash_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
 
-    // 3. Render Interactive "Aktive Verbraucher" List (Tap -> Jump to Telemetry Curve Focus)
+    // 2B. Token-Missing Banner when a shared/GitHub project was loaded with sensor entities but no local token
+    const tokenBannerEl = document.getElementById('liveMissingTokenBanner');
+    if (tokenBannerEl) {
+        const hasEntitiesConfigured = Boolean(
+            haConfigState.baseUrl &&
+            ((haConfigState.customStrings && haConfigState.customStrings.length > 0) ||
+             (haConfigState.entities && Object.values(haConfigState.entities).some(Boolean)))
+        );
+        if (!haConfigState.accessToken && hasEntitiesConfigured) {
+            tokenBannerEl.classList.remove('hidden');
+        } else {
+            tokenBannerEl.classList.add('hidden');
+        }
+    }
+
+    // 3. Render Interactive "Aktive Verbraucher" List (Top 5 with Expand/Collapse + Tap -> Jump to Telemetry Curve Focus)
     const consContainer = document.getElementById('dash_active_consumers_list');
     if (consContainer) {
         const consumers = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
@@ -1658,7 +1675,11 @@ function renderLiveCockpitUI(baseline) {
                     <button onclick="openHaConfigModal('consumers')" class="text-teal-600 dark:text-teal-400 font-bold hover:underline cursor-pointer">+ Anlegen</button>
                 </div>`;
         } else {
-            consContainer.innerHTML = consumers.map(c => {
+            const TOP_LIMIT = 5;
+            const visibleConsumers = showAllDashboardConsumers ? consumers : consumers.slice(0, TOP_LIMIT);
+            const hiddenCount = Math.max(0, consumers.length - TOP_LIMIT);
+
+            const rowsHtml = visibleConsumers.map(c => {
                 const safeName = typeof escapeHtml === 'function' ? escapeHtml(c.name) : c.name;
                 const valStr = `${Math.round(c.powerW || 0).toLocaleString('de-DE')} W`;
                 const consKwh = intKwh[`consumer_${c.id}`] ?? 0;
@@ -1671,24 +1692,33 @@ function renderLiveCockpitUI(baseline) {
                 return `
                 <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
                     role="button" tabindex="0" title="Tippen für Verlaufskurve (${safeName})"
-                    class="rounded-2xl bg-white dark:bg-[#162329] border border-slate-200/90 dark:border-slate-700/70 hover:border-teal-500/50 px-4 py-3 flex items-center justify-between shadow-2xs transition-all cursor-pointer group active:scale-[0.99]">
+                    class="rounded-2xl bg-white/90 dark:bg-[#162329] border border-slate-200/90 dark:border-slate-700/70 hover:border-teal-500/50 px-4 py-2.5 flex items-center justify-between shadow-2xs transition-all cursor-pointer group active:scale-[0.99]">
                     <div class="flex items-center gap-2.5 min-w-0 pr-3">
-                        <span class="material-symbols-rounded text-base text-slate-400 group-hover:text-teal-400 transition-colors shrink-0">show_chart</span>
+                        <span class="material-symbols-rounded text-base text-slate-400 group-hover:text-teal-500 dark:group-hover:text-teal-400 transition-colors shrink-0">show_chart</span>
                         <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate">${safeName}</span>
                     </div>
                     <div class="flex items-baseline gap-2.5 shrink-0 font-mono tabular-nums">
-                        <span class="text-[11px] text-slate-400 dark:text-slate-400 hidden sm:inline">${metaText}</span>
+                        <span class="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">${metaText}</span>
                         <span class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">${valStr}</span>
                     </div>
                 </div>`;
             }).join('');
+
+            const expandBtnHtml = consumers.length > TOP_LIMIT ? `
+                <button type="button" onclick="toggleShowAllDashboardConsumers()"
+                    class="w-full mt-1.5 py-2 px-3 rounded-xl bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-base text-teal-600 dark:text-teal-400">${showAllDashboardConsumers ? 'expand_less' : 'expand_more'}</span>
+                    <span>${showAllDashboardConsumers ? 'Auf Top 5 Verbraucher reduzieren' : `Alle ${consumers.length} Verbraucher anzeigen (+${hiddenCount} weitere)`}</span>
+                </button>` : '';
+
+            consContainer.innerHTML = rowsHtml + expandBtnHtml;
         }
 
         const fnEl = document.getElementById('dash_consumers_footnote');
         if (fnEl) {
             const unavail = t.unavailableConsumersCount || 0;
-            const unavailText = unavail > 0 ? ` ${unavail} Messwert(e) nicht verfügbar.` : '';
-            fnEl.innerText = `Tippe auf einen Verbraucher für dessen 24h-Verlaufskurve.${unavailText}`;
+            const unavailText = unavail > 0 ? ` · ${unavail} Messwert(e) inaktiv.` : '';
+            fnEl.innerText = `Top 5 nach aktueller Leistung · Tipp auf einen Verbraucher öffnet die 24h-Kurve${unavailText}`;
         }
     }
 
@@ -1699,6 +1729,11 @@ function renderLiveCockpitUI(baseline) {
         const todayPv = t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 1.325;
         intradaySumEl.innerText = `${customStrNames || 'Strings'}, Haus & Batterie · Heute ${formatKwhDe(todayPv, 2)} (${activeCurveKeys.size} Kanäle aktiv)`;
     }
+}
+
+function toggleShowAllDashboardConsumers() {
+    showAllDashboardConsumers = !showAllDashboardConsumers;
+    renderLiveCockpitUI();
 }
 
 // ============================================================================
@@ -2019,7 +2054,8 @@ function renderIntradayCurveSection(baseline) {
     const fsChipsEl = document.getElementById('fs_curve_legend_chips');
     if (fsChipsEl) fsChipsEl.innerHTML = buildChipsHtml();
 
-    // 4. Render Compact 3-Column Technical Channel Cards Below Chart
+    // 4. Render Compact 3-Column Technical Channel Cards Below Chart (Theme-Aware for Light & Dark Mode)
+    const isDark = document.documentElement.classList.contains('dark');
     const tilesGrid = document.getElementById('dash_curve_tiles_grid');
     if (tilesGrid) {
         tilesGrid.innerHTML = defs.map(d => {
@@ -2028,9 +2064,16 @@ function renderIntradayCurveSection(baseline) {
             const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
             const safeKeyJs = String(d.key).replace(/'/g, "\\'");
 
-            const cardStyle = isActive
-                ? `border-left: 3px solid ${d.color}; border-top: 1px solid ${d.color}55; border-right: 1px solid rgba(148,163,184,0.16); border-bottom: 1px solid rgba(148,163,184,0.16); background: linear-gradient(135deg, ${d.color}16 0%, rgba(13, 24, 30, 0.95) 100%);`
-                : `border-left: 3px solid rgba(100,116,139,0.3); border-top: 1px solid rgba(100,116,139,0.14); border-right: 1px solid rgba(100,116,139,0.14); border-bottom: 1px solid rgba(100,116,139,0.14); background: rgba(11, 20, 25, 0.45); opacity: 0.48;`;
+            let cardStyle = '';
+            if (isDark) {
+                cardStyle = isActive
+                    ? `border-left: 3.5px solid ${d.color}; border-top: 1px solid ${hexToRgba(d.color, 0.42)}; border-right: 1px solid rgba(148,163,184,0.18); border-bottom: 1px solid rgba(148,163,184,0.18); background: linear-gradient(135deg, ${hexToRgba(d.color, 0.20)} 0%, rgba(15, 28, 35, 0.94) 100%);`
+                    : `border-left: 3.5px solid rgba(100,116,139,0.45); border-top: 1px solid rgba(148,163,184,0.16); border-right: 1px solid rgba(148,163,184,0.16); border-bottom: 1px solid rgba(148,163,184,0.16); background: rgba(15, 25, 32, 0.65); opacity: 0.68;`;
+            } else {
+                cardStyle = isActive
+                    ? `border-left: 3.5px solid ${d.color}; border-top: 1px solid ${hexToRgba(d.color, 0.45)}; border-right: 1px solid ${hexToRgba(d.color, 0.30)}; border-bottom: 1px solid ${hexToRgba(d.color, 0.30)}; background: linear-gradient(135deg, ${hexToRgba(d.color, 0.14)} 0%, rgba(255, 255, 255, 0.96) 65%); box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);`
+                    : `border-left: 3.5px solid #cbd5e1; border-top: 1px solid rgba(203, 213, 225, 0.85); border-right: 1px solid rgba(203, 213, 225, 0.85); border-bottom: 1px solid rgba(203, 213, 225, 0.85); background: rgba(248, 250, 252, 0.88); opacity: 0.74;`;
+            }
 
             return `
             <div onclick="toggleIntradayCurve('${safeKeyJs}')"
@@ -2038,33 +2081,35 @@ function renderIntradayCurveSection(baseline) {
                 class="rounded-xl px-2.5 py-2 cursor-pointer select-none transition-all duration-150 hover:opacity-100 group">
                 <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
-                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${isActive ? d.color : '#64748b'}"></span>
-                        <p class="text-[11px] ${isActive ? 'font-bold text-slate-900 dark:text-slate-100' : 'font-medium text-slate-500 dark:text-slate-400'} truncate">${safeName}</p>
+                        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${isActive ? d.color : '#94a3b8'}"></span>
+                        <p class="text-[11px] ${isActive ? 'font-bold text-slate-900 dark:text-slate-100' : 'font-semibold text-slate-600 dark:text-slate-400'} truncate">${safeName}</p>
                     </div>
                     <button type="button"
                         onclick="focusSingleIntradayCurve('${safeKeyJs}', event)"
                         title="${isSoloFocused ? 'Alle Kurven einblenden' : 'Nur diese Kurve fokussieren (Solo)'}"
                         class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                             isSoloFocused
-                                ? 'bg-teal-500 text-slate-950 font-black'
-                                : 'text-slate-400 hover:text-white hover:bg-white/10'
+                                ? 'bg-teal-600 text-white dark:bg-teal-400 dark:text-slate-950 font-black'
+                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10'
                         }">
                         <span class="material-symbols-rounded text-[13px]">center_focus_strong</span>
                     </button>
                 </div>
                 <div class="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums">
-                    <p class="text-sm sm:text-base font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
-                    <span class="text-[9px] font-bold uppercase tracking-wider ${isActive ? 'text-teal-400' : 'text-slate-500'}">${isActive ? 'AN' : 'AUS'}</span>
+                    <p class="text-sm sm:text-base font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
+                    <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isActive ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}">${isActive ? 'AN' : 'AUS'}</span>
                 </div>
-                <p class="text-[10px] ${isActive ? 'text-slate-600 dark:text-slate-300/90' : 'text-slate-400 dark:text-slate-500'} font-mono tabular-nums truncate mt-0.5">${d.subDisplay}</p>
+                <p class="text-[10px] ${isActive ? 'text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'} font-mono tabular-nums truncate mt-0.5">${d.subDisplay}</p>
             </div>`;
         }).join('');
     }
 
-    // 5. Update Crosshair Readout Ribbon
-    updateIntradayHoverReadout((intradaySeriesState.labels.length || 1) - 1, defs);
+    // 5. Update Crosshair Readout Ribbon (only if user is not actively scrubbing)
+    if (!isIntradayHovering) {
+        updateIntradayHoverReadout((intradaySeriesState.labels.length || 1) - 1, defs);
+    }
 
-    // 6. Render Dual-Axis Chart.js Line Chart (Main + Fullscreen if open)
+    // 6. Render Dual-Axis Chart.js Line Chart (Zero-Flicker In-Place Update)
     renderIntradayCanvasInstance('intradayTelemetryChart', defs, false);
 
     const fsModal = document.getElementById('modal-intraday-fullscreen');
@@ -2087,6 +2132,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     if (!canvas || typeof Chart === 'undefined') return;
     if (!defs) defs = getAvailableCurveDefinitions();
 
+    const isDark = document.documentElement.classList.contains('dark');
     const ctx = canvas.getContext('2d');
     const chartHeight = canvas.parentElement?.clientHeight || (isFullscreen ? 420 : 280);
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
@@ -2096,7 +2142,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         const dataArr = intradaySeriesState.series[d.key] || [];
         const isPrimaryFocus = powerCurvesCount <= 2 && d.axis === 'yPower';
         const grad = ctx.createLinearGradient(0, 0, 0, chartHeight);
-        grad.addColorStop(0, hexToRgba(d.color, isPrimaryFocus ? 0.34 : 0.14));
+        grad.addColorStop(0, hexToRgba(d.color, isPrimaryFocus ? (isDark ? 0.34 : 0.26) : (isDark ? 0.14 : 0.10)));
         grad.addColorStop(1, hexToRgba(d.color, 0.0));
 
         return {
@@ -2105,12 +2151,12 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             borderColor: d.color,
             backgroundColor: grad,
             yAxisID: d.axis,
-            borderWidth: isFullscreen ? 2.5 : (isPrimaryFocus ? 2.4 : 1.9),
+            borderWidth: isFullscreen ? 2.5 : (isPrimaryFocus ? 2.4 : 2.0),
             borderDash: d.axis === 'ySoc' ? [4, 3] : [],
             pointRadius: 0,
             pointHoverRadius: isFullscreen ? 5 : 4,
             pointHoverBackgroundColor: d.color,
-            pointHoverBorderColor: '#081116',
+            pointHoverBorderColor: isDark ? '#081116' : '#ffffff',
             pointHoverBorderWidth: 2,
             tension: 0.28,
             fill: d.axis === 'yPower' && (powerCurvesCount <= 3 || d.key === 'pv_total')
@@ -2128,11 +2174,44 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     });
 
     const hasSocCurve = activeDefs.some(d => d.axis === 'ySoc');
+    const gridColorX = isDark ? 'rgba(148, 163, 184, 0.06)' : 'rgba(100, 116, 139, 0.10)';
+    const gridColorY = isDark ? 'rgba(148, 163, 184, 0.09)' : 'rgba(100, 116, 139, 0.13)';
+    const tickColorPower = isDark ? '#94a3b8' : '#475569';
+    const tickColorX = isDark ? '#64748b' : '#475569';
+    const tickColorSoc = isDark ? '#d8b4fe' : '#9333ea';
 
-    if (isFullscreen) {
-        if (chartIntradayFullscreen) chartIntradayFullscreen.destroy();
-    } else {
-        if (chartIntraday) chartIntraday.destroy();
+    const existingChart = isFullscreen ? chartIntradayFullscreen : chartIntraday;
+
+    // ZERO-FLICKER IN-PLACE UPDATE: If chart already exists on this exact canvas, mutate data and update('none')
+    if (existingChart && existingChart.canvas === canvas) {
+        existingChart.data.labels = intradaySeriesState.labels;
+        existingChart.data.datasets = datasets;
+        if (existingChart.options && existingChart.options.scales) {
+            const sx = existingChart.options.scales.x;
+            const sy = existingChart.options.scales.yPower;
+            const ss = existingChart.options.scales.ySoc;
+            if (sx) {
+                sx.grid.color = gridColorX;
+                sx.ticks.color = tickColorX;
+            }
+            if (sy) {
+                sy.beginAtZero = minPowerW >= 0;
+                sy.suggestedMin = minPowerW < 0 ? Math.floor(minPowerW * 1.05) : 0;
+                sy.suggestedMax = Math.ceil(maxPowerW * 1.06);
+                sy.grid.color = gridColorY;
+                sy.ticks.color = tickColorPower;
+            }
+            if (ss) {
+                ss.display = hasSocCurve;
+                ss.ticks.color = tickColorSoc;
+            }
+        }
+        existingChart.update('none');
+        return;
+    }
+
+    if (existingChart) {
+        try { existingChart.destroy(); } catch (e) {}
     }
 
     const chartInstance = new Chart(ctx, {
@@ -2144,21 +2223,24 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            animation: { duration: 160 },
+            animation: false,
             interaction: {
                 mode: 'index',
                 intersect: false
             },
             onHover: (event, elements) => {
                 if (elements && elements.length > 0) {
+                    isIntradayHovering = true;
                     const idx = elements[0].index;
                     updateIntradayHoverReadout(idx, defs);
+                } else {
+                    isIntradayHovering = false;
                 }
             },
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: 'rgba(8, 17, 22, 0.94)',
+                    backgroundColor: isDark ? 'rgba(8, 17, 22, 0.94)' : 'rgba(15, 23, 42, 0.94)',
                     titleColor: '#94a3b8',
                     bodyColor: '#f8fafc',
                     titleFont: { family: 'JetBrains Mono, monospace', size: 11, weight: 'bold' },
@@ -2177,9 +2259,9 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             },
             scales: {
                 x: {
-                    grid: { color: 'rgba(148, 163, 184, 0.06)', drawBorder: false },
+                    grid: { color: gridColorX, drawBorder: false },
                     ticks: {
-                        color: '#64748b',
+                        color: tickColorX,
                         maxTicksLimit: isFullscreen ? 12 : 7,
                         font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 }
                     }
@@ -2190,9 +2272,9 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                     beginAtZero: minPowerW >= 0,
                     suggestedMin: minPowerW < 0 ? Math.floor(minPowerW * 1.05) : 0,
                     suggestedMax: Math.ceil(maxPowerW * 1.06),
-                    grid: { color: 'rgba(148, 163, 184, 0.09)', drawBorder: false },
+                    grid: { color: gridColorY, drawBorder: false },
                     ticks: {
-                        color: '#94a3b8',
+                        color: tickColorPower,
                         count: isFullscreen ? 6 : 5,
                         font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 },
                         callback: (val) => `${val.toLocaleString('de-DE', { maximumFractionDigits: 0 })} W`
@@ -2206,7 +2288,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                     max: 100,
                     grid: { drawOnChartArea: false },
                     ticks: {
-                        color: '#d8b4fe',
+                        color: tickColorSoc,
                         stepSize: 25,
                         font: { family: 'JetBrains Mono, monospace', size: isFullscreen ? 11 : 10 },
                         callback: (val) => `${val}%`
@@ -2225,6 +2307,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
 
 function updateIntradayHoverReadout(index, defs) {
     if (!defs) defs = getAvailableCurveDefinitions();
+    const isDark = document.documentElement.classList.contains('dark');
 
     const idx = Math.max(0, Math.min(index, (intradaySeriesState.labels.length || 1) - 1));
     const ts = intradaySeriesState.bucketTimes?.[idx] || Date.now();
@@ -2238,10 +2321,10 @@ function updateIntradayHoverReadout(index, defs) {
         const unit = d.axis === 'ySoc' ? '%' : 'W';
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
         const fmtVal = Number(val).toLocaleString('de-DE', { maximumFractionDigits: d.axis === 'ySoc' ? 1 : 0 });
-        return `<span class="inline-flex items-center gap-1 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span><span class="text-slate-400">${safeName}:</span><strong class="text-white">${fmtVal} ${unit}</strong></span>`;
+        return `<span class="inline-flex items-center gap-1 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span><span class="${isDark ? 'text-slate-400' : 'text-slate-500'}">${safeName}:</span><strong class="${isDark ? 'text-white' : 'text-slate-900'}">${fmtVal} ${unit}</strong></span>`;
     });
 
-    const fullHtml = `<span class="text-teal-400 font-bold whitespace-nowrap">${timePart} Uhr</span><span class="text-slate-600">·</span>${htmlItems.join('<span class="text-slate-700 mx-0.5">·</span>')}`;
+    const fullHtml = `<span class="text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap">${timePart} Uhr</span><span class="text-slate-400 dark:text-slate-600">·</span>${htmlItems.join('<span class="text-slate-300 dark:text-slate-700 mx-0.5">·</span>')}`;
 
     const readoutEl = document.getElementById('dash_curve_hover_readout');
     if (readoutEl) readoutEl.innerHTML = fullHtml;
@@ -4266,6 +4349,64 @@ function setElVal(id, val) {
     const el = document.getElementById(id);
     if (el) el.value = val;
 }
+
+// ============================================================================
+// 8. TOKEN-SAFE PROJECT SYNC (GITHUB / CROSS-DEVICE WITHOUT EXPOSING TOKEN)
+// ============================================================================
+
+function getSanitizedHaConfigForProject() {
+    const copy = JSON.parse(JSON.stringify(haConfigState || {}));
+    // Security guarantee: Never export or persist the Long-Lived Access Token in shared/GitHub project files!
+    copy.accessToken = '';
+    return copy;
+}
+
+function applySanitizedHaConfigFromProject(sanitizedCfg) {
+    if (!sanitizedCfg || typeof sanitizedCfg !== 'object') return;
+    const existingLocalToken = haConfigState.accessToken || '';
+    haConfigState = {
+        ...haConfigState,
+        mode: sanitizedCfg.mode || haConfigState.mode || 'poll',
+        baseUrl: sanitizedCfg.baseUrl || haConfigState.baseUrl,
+        accessToken: existingLocalToken, // Keep only the local device's own token!
+        pollIntervalSec: sanitizedCfg.pollIntervalSec || haConfigState.pollIntervalSec || 10,
+        autoSyncMonthly: sanitizedCfg.autoSyncMonthly !== undefined ? sanitizedCfg.autoSyncMonthly : true,
+        batteryName: sanitizedCfg.batteryName || haConfigState.batteryName || 'BYD HVS+',
+        entities: { ...haConfigState.entities, ...(sanitizedCfg.entities || {}) },
+        customStrings: Array.isArray(sanitizedCfg.customStrings) && sanitizedCfg.customStrings.length > 0
+            ? JSON.parse(JSON.stringify(sanitizedCfg.customStrings))
+            : haConfigState.customStrings,
+        customConsumers: Array.isArray(sanitizedCfg.customConsumers)
+            ? JSON.parse(JSON.stringify(sanitizedCfg.customConsumers))
+            : haConfigState.customConsumers,
+        stringEntities: { ...haConfigState.stringEntities, ...(sanitizedCfg.stringEntities || {}) },
+        inverterEntities: { ...haConfigState.inverterEntities, ...(sanitizedCfg.inverterEntities || {}) },
+        loadedFromSharedProject: true
+    };
+    try {
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+    } catch (e) {}
+    energyCounterBaselines.lastHistorySyncMs = 0;
+    refreshIntradayHistoryAndLive();
+}
+
+function getPerformanceRecordsForProject() {
+    return JSON.parse(JSON.stringify(performanceRecordsByProject || {}));
+}
+
+function applyPerformanceRecordsFromProject(records) {
+    if (!records || typeof records !== 'object') return;
+    performanceRecordsByProject = { ...performanceRecordsByProject, ...records };
+    try {
+        localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
+    } catch (e) {}
+}
+
+window.toggleShowAllDashboardConsumers = toggleShowAllDashboardConsumers;
+window.getSanitizedHaConfigForProject = getSanitizedHaConfigForProject;
+window.applySanitizedHaConfigFromProject = applySanitizedHaConfigFromProject;
+window.getPerformanceRecordsForProject = getPerformanceRecordsForProject;
+window.applyPerformanceRecordsFromProject = applyPerformanceRecordsFromProject;
 
 // Auto-initialize once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {

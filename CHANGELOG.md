@@ -4,6 +4,49 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.0] – 2026-11-10
+
+### ✨ Theme-gerechte Kurven-Kacheln, Flackerfreie Charts, Top-5 Verbraucher, Smartphone Zurück-Wischen, Token-freier GitHub-Sync, Persistenter PVGIS-Cache & 6-Schritte-Planungsassistent mit Morphing-Pill
+
+#### 1. Theme-gerechte Messkanal-Kacheln (Light/Dark Mode) & Flackerfreie Echtzeit-Diagramme
+* **Korrekte Hell-/Dunkel-Oberflächen unter dem Tagesdiagramm (`renderIntradayCurveSection`):**
+  - Behebung des Fehlers, bei dem die 3-Spalten-Messkanalkacheln unter dem Tagesdiagramm im Light-Mode einen fest codierten dunklen Hintergrund (`rgba(13, 24, 30, 0.95)`) hatten und inaktive Kacheln kaum lesbar waren.
+  - **Light-Mode:** Helle, kristallklare Liquid-Glass-Kacheln (`rgba(255, 255, 255, 0.96)`) mit sanftem Farbschimmer der jeweiligen Kurvenfarbe und tiefdunkler Typografie (`#0f172a`).
+  - **Dark-Mode:** Edles dunkles Slate-Glas mit farbigem Akzent-Rand; abgewählte Kacheln bleiben mit `opacity: 0.74` klar ablesbar.
+* **Kein Diagramm-Flackern mehr bei Live-Aktualisierungen (`renderIntradayCanvasInstance`):**
+  - Das Tagesverlauf-Diagramm und die Vollbild-Ansicht zerstören die Chart.js-Instanz bei 10-Sekunden-Polls oder beim Umschalten einzelner Kurven nicht mehr (`destroy()`), sondern mutieren `labels` und `datasets` direkt in-place via `chart.update('none')` (`animation: false`). Dadurch bleibt das Diagramm vollkommen ruhig und flackerfrei.
+
+#### 2. Top-5 Aktive Verbraucher mit Aufklapp-Funktion & Smartphone Zurück-Wischen (History API)
+* **Top 5 Verbraucher auf dem Start-Dashboard (`renderLiveCockpitUI`):**
+  - Die Liste „Aktive Verbraucher“ sortiert alle konfigurierten Einzelverbraucher absteigend nach ihrer aktuellen Live-Leistung (`W`) und zeigt standardmäßig maximal die **Top 5** an.
+  - Sind mehr als 5 Verbraucher vorhanden, blendet ein kompakter Button **„Alle X Verbraucher anzeigen“ / „Auf Top 5 reduzieren“** die übrigen Zeilen bei Bedarf auf oder zu.
+* **Smartphone Zurück-Wischen von Ebene 2 auf Ebene 1 (`pushAppNavHistoryState` / `popstate`):**
+  - Jeder Wechsel auf Ebene 2 (Tagesverlauf-Chart, Analyse-Unterseiten, Planungs-Schritte) sowie das Öffnen des Vollbild-Diagramms legt einen Browser-History-Zustand an (`history.pushState`).
+  - Eine **Zurück-Wischgeste** am Smartphone (Android / iOS) bringt den Nutzer zuverlässig zurück auf **Ebene 1** (bzw. schließt zuerst das Vollbild-Chart), statt die Web-App zu verlassen.
+
+#### 3. Zentrales, Token-freies Speichern über GitHub / Server & Dauerhafter PVGIS-Cache
+* **100 % sichere Geräte-Synchronisation ohne Token-Übertragung (`haConfigSanitized`):**
+  - Beim zentralen Speichern einer Planung werden neben allen Strings, Modulen, Wechselrichtern, Speichern und Kosten auch **sämtliche Home-Assistant-Einstellungen und Sensor-Entitäten** (`baseUrl`, System-Sensoren, `kWh Total`-Zähler, PV-Strings und Einzelverbraucher) mitgespeichert – **der persönliche Long-Lived Access Token (`accessToken: ""`) wird jedoch vor dem Speichern und Exportieren strikt entfernt**.
+  - Auf dem Server wird die Planung synchron in `data/system_plans.json` sowie in `CodePersistedPlans` (`database.js`) abgelegt; zusätzlich liest die App im Browser direkt `./data/system_plans.json` aus, sodass auf **GitHub Pages** gespeicherte Projekte von jedem Zweitgerät sofort geladen werden können.
+  - Lädt ein anderes Gerät die Planung, sind alle Sensoren sofort fertig eingerichtet; ein dezentes Hinweis-Banner (`#liveMissingTokenBanner`) lädt dazu ein, lokal den eigenen Long-Lived Token einzutragen, woraufhin sofort alle Live-Daten fließen.
+* **Dauerhafter PVGIS-Cache & CORS-freier Open-Meteo Fallback (`calculateYieldAPI`):**
+  - Einmal abgerufene 8.760h Strahlungs- und Ertragsdaten werden pro Modulfeld dauerhaft im Browser (`pvpro_pvgis_field_cache_v1`) sowie im Projekt (`cachedSimulation`) gespeichert und beim Start sofort wiederhergestellt. Zusätzlich steht für statische GitHub-Pages-Umgebungen ein direkter, CORS-freier **Open-Meteo ERA5 Solar-Strahlungs-Fallback (GTI)** bereit.
+
+#### 4. Geführter 6-Schritte-Planungsassistent mit animierter Bottom-Pill-Navigation & 4-Punkte-Menü
+* **Logischer 6-Schritte-Workflow mit Klick-Steuerung von Anfang bis Ende:**
+  1. **Standort & Hardware-Pool** (GPS-Standortsuche + Wechselrichter, Module & Speicher an einem Ort)
+  2. **Dach-Strings & MPPT** (Strings, Neigung, Azimut & Verschattung)
+  3. **DC-Verkabelung & VDE 0100-712** (Teilfelder, Leap-Frog & Kabelverluste)
+  4. **Verbrauch, Wärmepumpe & E-Auto** (Haushaltslast & Smart-Charging)
+  5. **Investition, Stromtarif & EEG** (Angebotskosten & Tarife gebündelt auf einer Seite)
+  6. **8.760h Prognose, Rendite & VDE-Dossier** (Ertrags-Dashboard, Monats-/Tagescharts & PDF-Dossier gebündelt)
+* **Animierte untere Navigations-Pill (`#floatingBottomNav.wizard-nav-active`):**
+  - Sobald man in den Planungsassistenten (Ebene 2) einsteigt, rücken die 4 Haupt-Icons (`Live`, `Analyse`, `Planung`, `Menü`) in der Mitte sanft zusammen und links sowie rechts fahren animiert die äußeren Steuer-Buttons **„← Zurück“** und **„Weiter → (Schritt X/6)“** aus.
+* **Entschlacktes 4-Punkte-Menü & konsistentes Liquid-Glass-Design:**
+  - Das untere Menü (`#m3MoreSheet`) ist auf 4 zentrale Punkte fokussiert: **1. Design & Darstellung**, **2. Home Assistant & Sensoren**, **3. Projekte & GitHub-Sync**, **4. VDE-Dossier & Handbuch**. Alle älteren Planungs-Karten nutzen nun durchgängig das neue Liquid-Glass-Design in Light- und Dark-Mode.
+
+---
+
 ## [Version 8.9] – 2026-11-09
 
 ### 📈 Interaktive Dashboard-Kacheln (Kurven-Fokus), Out-of-the-Box Vollbreiten-Technik-Chart & Helferfreie Sankey-Berechnung aus `kWh Total`-Zählern

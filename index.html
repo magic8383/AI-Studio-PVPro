@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 8.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 8.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=8.9">
+    <link rel="manifest" href="manifest.json?v=9.0">
     <meta name="theme-color" content="#0b1519">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=8.9">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=8.9">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=8.9">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=8.9">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.0">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.0">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.0">
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -222,13 +222,56 @@
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 8px 24px -6px rgba(59, 130, 246, 0.16);
         }
 
-        /* Upgrade inner Planning Cards in Dark Mode to Liquid Glass */
+        /* Upgrade inner Planning Cards in both Light & Dark Mode to unified Liquid Glass */
+        main .bg-white.dark\:bg-slate-900 {
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.85) 0%, rgba(245, 252, 250, 0.75) 100%) !important;
+            backdrop-filter: blur(22px) saturate(165%);
+            -webkit-backdrop-filter: blur(22px) saturate(165%);
+            border-color: rgba(255, 255, 255, 0.92) !important;
+            box-shadow: 0 12px 30px -10px rgba(13, 148, 136, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+            border-radius: 24px;
+        }
         html.dark main .bg-white.dark\:bg-slate-900 {
-            background: linear-gradient(145deg, rgba(22, 39, 48, 0.62) 0%, rgba(14, 26, 33, 0.52) 100%) !important;
+            background: linear-gradient(145deg, rgba(22, 39, 48, 0.66) 0%, rgba(14, 26, 33, 0.56) 100%) !important;
             backdrop-filter: blur(24px) saturate(185%);
             -webkit-backdrop-filter: blur(24px) saturate(185%);
             border-color: rgba(255, 255, 255, 0.13) !important;
             box-shadow: 0 16px 36px -10px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+        }
+
+        /* Animated Morphing Bottom Navigation Pill (Wizard Mode Outer Wings) */
+        #floatingBottomNav {
+            max-width: 360px;
+            transition: max-width 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        #floatingBottomNav.wizard-nav-active {
+            max-width: 492px;
+        }
+        .wizard-pill-wing {
+            max-width: 0px;
+            opacity: 0;
+            transform: scale(0.72);
+            pointer-events: none;
+            overflow: hidden;
+            margin: 0;
+            transition: max-width 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), margin 0.32s ease;
+        }
+        #floatingBottomNav.wizard-nav-active .wizard-pill-wing-left {
+            max-width: 48px;
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+            margin-right: 4px;
+        }
+        #floatingBottomNav.wizard-nav-active .wizard-pill-wing-right {
+            max-width: 96px;
+            opacity: 1;
+            transform: scale(1);
+            pointer-events: auto;
+            margin-left: 4px;
+        }
+        #floatingBottomNav.wizard-nav-active #bnavCoreGrid {
+            gap: 2px;
         }
         
         input[type="color"] { -webkit-appearance: none; border: none; width: 28px; height: 28px; border-radius: 50%; padding: 0; cursor: pointer; overflow: hidden; }
@@ -346,7 +389,7 @@
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl bg-teal-500/15 dark:bg-teal-400/15 border border-teal-500/30 dark:border-teal-400/30 flex items-center justify-center text-teal-700 dark:text-teal-300 shrink-0 cursor-pointer" title="Zum Start-Dashboard">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-lg">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 8.9</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.0</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -438,40 +481,86 @@
     <main class="flex-1 overflow-y-auto px-3 sm:px-5 pt-2.5 pb-32 w-full relative z-10">
 
         <!-- ===================================================================== -->
-        <!-- TAB PLANUNG HUB (EBENE 1 FÜR PV-PLANUNG: AUFGERÄUMTE ÜBERSICHTSKACHELN) -->
+        <!-- STICKY 6-STEP WIZARD STEPPER BAR (SHOWN ON LEVEL 2 OF PV-PLANUNG)     -->
         <!-- ===================================================================== -->
-        <div id="tab-planung-hub" class="tab-content max-w-3xl mx-auto space-y-5 mt-1 pb-8">
-            <!-- Kompakte Anlagen-Zusammenfassung (Ebene 1) -->
+        <div id="planningWizardStepBar" class="hidden max-w-4xl mx-auto mb-3">
+            <div class="dash-main-card rounded-2xl p-2 sm:p-2.5 flex items-center justify-between gap-1.5 overflow-x-auto hide-scroll">
+                <button type="button" id="wiz-step-btn-1" onclick="goToPlanningWizardStep(1)" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0">
+                    <span class="w-5 h-5 rounded-full bg-teal-600 text-white text-[10px] font-black flex items-center justify-center">1</span>
+                    <span>Ort &amp; Geräte</span>
+                </button>
+                <span class="text-slate-300 dark:text-slate-700 text-xs">›</span>
+                <button type="button" id="wiz-step-btn-2" onclick="goToPlanningWizardStep(2)" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0">
+                    <span class="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black flex items-center justify-center">2</span>
+                    <span>Dach-Strings</span>
+                </button>
+                <span class="text-slate-300 dark:text-slate-700 text-xs">›</span>
+                <button type="button" id="wiz-step-btn-3" onclick="goToPlanningWizardStep(3)" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0">
+                    <span class="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black flex items-center justify-center">3</span>
+                    <span>Verkabelung</span>
+                </button>
+                <span class="text-slate-300 dark:text-slate-700 text-xs">›</span>
+                <button type="button" id="wiz-step-btn-4" onclick="goToPlanningWizardStep(4)" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0">
+                    <span class="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black flex items-center justify-center">4</span>
+                    <span>Verbrauch</span>
+                </button>
+                <span class="text-slate-300 dark:text-slate-700 text-xs">›</span>
+                <button type="button" id="wiz-step-btn-5" onclick="goToPlanningWizardStep(5)" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0">
+                    <span class="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black flex items-center justify-center">5</span>
+                    <span>Invest &amp; Tarif</span>
+                </button>
+                <span class="text-slate-300 dark:text-slate-700 text-xs">›</span>
+                <button type="button" id="wiz-step-btn-6" onclick="goToPlanningWizardStep(6)" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer shrink-0">
+                    <span class="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] font-black flex items-center justify-center">6</span>
+                    <span>Ergebnis &amp; PDF</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ===================================================================== -->
+        <!-- TAB PLANUNG HUB (EBENE 1 FÜR PV-PLANUNG: GEFÜHRTER 6-SCHRITTE-ASSISTENT) -->
+        <!-- ===================================================================== -->
+        <div id="tab-planung-hub" class="tab-content max-w-3xl mx-auto space-y-4 mt-1 pb-8">
+            <!-- Kompakte Anlagen-Zusammenfassung + Start Assistent CTA (Ebene 1) -->
             <div class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
-                <div class="flex items-center justify-between gap-2">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">PV-Anlage &amp; Engineering</h2>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Wähle einen Planungsbereich aus, um in die Detail-Ebene einzutauchen</p>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">PV-Planung · 6-Schritte-Assistent</h2>
+                            <span id="plan_hub_pvgis_badge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">PVGIS bereit</span>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Klicke dich Schritt für Schritt durch deine Auslegung – unten erscheinen automatisch die Vor-/Zurück-Tasten</p>
                     </div>
-                    <button onclick="openDossierModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0">
-                        <span class="material-symbols-rounded text-base">picture_as_pdf</span>
-                        <span>VDE-Dossier</span>
-                    </button>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="goToPlanningWizardStep(1)" class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer">
+                            <span class="material-symbols-rounded text-base fill-1">play_arrow</span>
+                            <span>Assistent starten (Schritt 1)</span>
+                        </button>
+                        <button onclick="openDossierModal()" class="px-3 py-2 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer" title="Offizielles DIN VDE 0100-712 PDF-Dossier drucken">
+                            <span class="material-symbols-rounded text-base">picture_as_pdf</span>
+                            <span class="hidden sm:inline">PDF</span>
+                        </button>
+                    </div>
                 </div>
 
                 <!-- 2x2 Eckdaten-Kacheln der geplanten Anlage -->
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div class="dash-tile-pv rounded-2xl p-3.5">
+                    <div onclick="goToPlanningWizardStep(2)" class="dash-tile-pv rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
                         <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Generatorleistung</p>
                         <p id="plan_hub_kwp" class="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">0,00 kWp</p>
                         <p id="plan_hub_modules" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Module &amp; Strings</p>
                     </div>
-                    <div class="dash-tile-load rounded-2xl p-3.5">
+                    <div onclick="goToPlanningWizardStep(6)" class="dash-tile-load rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-amber-400/40 transition-all">
                         <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">PVGIS Jahresertrag</p>
                         <p id="plan_hub_yield" class="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">0 kWh/a</p>
-                        <p id="plan_hub_spec" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">8.760h Simulation</p>
+                        <p id="plan_hub_spec" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Gespeicherte Prognose</p>
                     </div>
-                    <div class="dash-tile-bat rounded-2xl p-3.5">
+                    <div onclick="goToPlanningWizardStep(6)" class="dash-tile-bat rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-purple-400/40 transition-all">
                         <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Geplante Autarkie</p>
                         <p id="plan_hub_autarky" class="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">0 %</p>
                         <p id="plan_hub_bat" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">inkl. Speicher</p>
                     </div>
-                    <div class="dash-tile-grid rounded-2xl p-3.5">
+                    <div onclick="goToPlanningWizardStep(5)" class="dash-tile-grid rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-blue-400/40 transition-all">
                         <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Geplante Amortisation</p>
                         <p id="plan_hub_amort" class="text-lg sm:text-xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">— J.</p>
                         <p id="plan_hub_invest" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">Invest &amp; Rendite</p>
@@ -479,132 +568,90 @@
                 </div>
             </div>
 
-            <!-- Drill-Down Übersichtskacheln (Ebene 1 -> Klick öffnet Ebene 2 mit Zurück-Button) -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                <!-- 1. Strings & Dachauslegung -->
-                <button onclick="openPlanungDrillDown('system')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-teal-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
+            <!-- 6 Logisch geordnete Assistenten-Schritte (Ebene 1 -> Klick öffnet Schritt mit animierten Vor-/Zurück-Buttons in der Nav-Pill) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <!-- Schritt 1: Standort & Hardware-Pool (Zuerst Ort & Komponenten wählen!) -->
+                <button onclick="goToPlanningWizardStep(1)" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-teal-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-300 border border-teal-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl fill-1">solar_power</span>
+                        <div class="w-11 h-11 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-300 border border-teal-500/30 flex items-center justify-center shrink-0 font-black text-base">
+                            1
                         </div>
                         <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">1. Strings, Standort &amp; Dach</p>
-                            <p id="plan_card_sub_system" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">PVGIS-Standort, MPPT-Spannungen &amp; Verschattung</p>
+                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Standort &amp; Hardware-Pool</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Ort festlegen, Wechselrichter, Module &amp; Akku wählen</p>
                         </div>
                     </div>
                     <span class="material-symbols-rounded text-slate-400 group-hover:text-teal-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
                 </button>
 
-                <!-- 2. Verkabelung & VDE 0100-712 -->
-                <button onclick="openPlanungDrillDown('verkabelung')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-emerald-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
+                <!-- Schritt 2: Dach-Strings & MPPT -->
+                <button onclick="goToPlanningWizardStep(2)" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-teal-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">cable</span>
+                        <div class="w-11 h-11 rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/30 flex items-center justify-center shrink-0 font-black text-base">
+                            2
                         </div>
                         <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">2. DC-Verkabelung &amp; VDE</p>
-                            <p id="plan_card_sub_wiring" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Leap-Frog Verlegung, Querschnitt &amp; Spannungsfall</p>
-                        </div>
-                    </div>
-                    <span class="material-symbols-rounded text-slate-400 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
-                </button>
-
-                <!-- 3. Verbrauch & Sektorenkopplung -->
-                <button onclick="openPlanungDrillDown('verbrauch')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-amber-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
-                    <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">home_bolt</span>
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">3. Verbrauch, Wärmepumpe &amp; E-Auto</p>
-                            <p id="plan_card_sub_load" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Lastprofil, Wallbox, Heizstab &amp; Klimageräte</p>
-                        </div>
-                    </div>
-                    <span class="material-symbols-rounded text-slate-400 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
-                </button>
-
-                <!-- 4. 8760h Prognose & Simulation -->
-                <button onclick="openPlanungDrillDown('auswertung')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-sky-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
-                    <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-300 border border-sky-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">bar_chart</span>
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">4. 8.760h Ertrags- &amp; Autarkie-Prognose</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Stündliche Jahres-Simulation &amp; Monats-Charts</p>
+                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Dach-Strings &amp; MPPT</p>
+                            <p id="plan_card_sub_system" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Dachflächen, Ausrichtung, Neigung &amp; Spannungen</p>
                         </div>
                     </div>
                     <span class="material-symbols-rounded text-slate-400 group-hover:text-sky-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
                 </button>
 
-                <!-- 5. Investition & Kostenpositionen -->
-                <button onclick="openPlanungDrillDown('invest')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-purple-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
+                <!-- Schritt 3: DC-Verkabelung & VDE 0100-712 -->
+                <button onclick="goToPlanningWizardStep(3)" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-emerald-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">receipt_long</span>
+                        <div class="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 flex items-center justify-center shrink-0 font-black text-base">
+                            3
                         </div>
                         <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">5. Investition &amp; Stückkosten</p>
-                            <p id="plan_card_sub_invest" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Komponentenpreise, Montage &amp; Eigenleistung</p>
-                        </div>
-                    </div>
-                    <span class="material-symbols-rounded text-slate-400 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
-                </button>
-
-                <!-- 6. Tarife, EEG & Finanzierung -->
-                <button onclick="openPlanungDrillDown('finance')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-emerald-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
-                    <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">payments</span>
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">6. Stromtarife, EEG &amp; Rendite</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Bezugspreis, Einspeisevergütung &amp; 20J-Cashflow</p>
+                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">DC-Verkabelung &amp; VDE</p>
+                            <p id="plan_card_sub_wiring" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Modulfeld-Layout, Leap-Frog &amp; Spannungsfall</p>
                         </div>
                     </div>
                     <span class="material-symbols-rounded text-slate-400 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
                 </button>
 
-                <!-- 7. Gesamt-Übersicht & Recht/Steuer -->
-                <button onclick="openPlanungDrillDown('uebersicht')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-amber-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
+                <!-- Schritt 4: Verbrauch, Wärmepumpe & E-Auto -->
+                <button onclick="goToPlanningWizardStep(4)" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-amber-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">dashboard</span>
+                        <div class="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-300 border border-amber-500/30 flex items-center justify-center shrink-0 font-black text-base">
+                            4
                         </div>
                         <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">7. Projekt-Übersicht &amp; EEG-Recht</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Alle Kennzahlen, § 14a EnWG &amp; Steuer-Check</p>
+                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Verbrauch, WP &amp; E-Auto</p>
+                            <p id="plan_card_sub_load" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Haushalts-Grundlast, Wärmepumpe &amp; Wallbox</p>
                         </div>
                     </div>
                     <span class="material-symbols-rounded text-slate-400 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
                 </button>
 
-                <!-- 8. Hardware-Datenbank & Gerätepool -->
-                <button onclick="openPlanungDrillDown('database')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-teal-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
+                <!-- Schritt 5: Investition, Stromtarife & EEG -->
+                <button onclick="goToPlanningWizardStep(5)" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-purple-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-300 border border-teal-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">database</span>
+                        <div class="w-11 h-11 rounded-2xl bg-purple-500/15 text-purple-600 dark:text-purple-300 border border-purple-500/30 flex items-center justify-center shrink-0 font-black text-base">
+                            5
                         </div>
                         <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">8. Hardware-Datenbank &amp; Pool</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Module, Wechselrichter, Speicher &amp; Datenblätter</p>
+                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Investition, Tarife &amp; EEG</p>
+                            <p id="plan_card_sub_invest" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Stückkosten, Strombezugspreis &amp; Einspeisevergütung</p>
                         </div>
                     </div>
-                    <span class="material-symbols-rounded text-slate-400 group-hover:text-teal-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
+                    <span class="material-symbols-rounded text-slate-400 group-hover:text-purple-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
                 </button>
 
-                <!-- 9. Handbuch & Dokumentation -->
-                <button onclick="openPlanungDrillDown('faq')" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-indigo-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer sm:col-span-2">
+                <!-- Schritt 6: 8.760h Prognose, Rendite & VDE-Dossier -->
+                <button onclick="goToPlanningWizardStep(6)" class="dash-main-card rounded-[24px] p-4 sm:p-5 text-left hover:border-emerald-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                     <div class="flex items-center gap-3.5 min-w-0">
-                        <div class="w-12 h-12 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-2xl">menu_book</span>
+                        <div class="w-11 h-11 rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30 flex items-center justify-center shrink-0 font-black text-base">
+                            6
                         </div>
                         <div class="min-w-0">
-                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">9. Handbuch, Formeln &amp; Versions-Historie</p>
-                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Physikalische Grundlagen, VDE-Normen &amp; Changelog v8.9</p>
+                            <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">8.760h Prognose &amp; Dossier</p>
+                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 truncate">Gespeicherte PVGIS-Simulation, Cashflow &amp; PDF</p>
                         </div>
                     </div>
-                    <span class="material-symbols-rounded text-slate-400 group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
+                    <span class="material-symbols-rounded text-slate-400 group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all shrink-0">chevron_right</span>
                 </button>
             </div>
         </div>
@@ -1200,6 +1247,25 @@
             <!-- LIVE EBENE 1 (HUB): ENERGIE · JETZT + DRILL-DOWN KACHELN -->
             <!-- ========================================================= -->
             <div id="live-hub-view" class="space-y-4">
+                <!-- TOKEN-MISSING BANNER (SHOWN WHEN SHARED/GITHUB CONFIG IS LOADED ON A NEW DEVICE WITHOUT TOKEN) -->
+                <div id="liveMissingTokenBanner" class="hidden dash-main-card rounded-[22px] p-4 border-2 border-amber-500/40 bg-amber-500/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-start gap-3">
+                        <div class="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-300 flex items-center justify-center shrink-0 mt-0.5">
+                            <span class="material-symbols-rounded text-xl">key</span>
+                        </div>
+                        <div>
+                            <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">Sensoren &amp; Konfiguration geladen · Eigener Token fehlt</p>
+                            <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed mt-0.5">
+                                Alle Sensor-Entitäten (Strings, Verbraucher &amp; Zähler) sind eingerichtet. Aus Sicherheitsgründen wird kein Token über GitHub übertragen – bitte trage für dieses Gerät deinen eigenen Long-Lived Access Token ein.
+                            </p>
+                        </div>
+                    </div>
+                    <button onclick="openHaConfigModal('connection')" class="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-extrabold flex items-center justify-center gap-1.5 shrink-0 cursor-pointer shadow-xs">
+                        <span class="material-symbols-rounded text-base">vpn_key</span>
+                        <span>Token eintragen</span>
+                    </button>
+                </div>
+
                 <!-- CARD 1: ENERGIE · JETZT (2x2 LIQUID GLASS GRID + AKTIVE VERBRAUCHER) -->
                 <div class="dash-main-card rounded-[28px] p-5 sm:p-6 transition-all">
                     <div class="flex items-center justify-between gap-2 mb-4">
@@ -1787,50 +1853,65 @@
             </div>
         </div>
 
-        <!-- TAB 6: GERÄTEZUWEISUNG & HARDWARE-DATENBANK -->
-        <div id="tab-database" class="tab-content max-w-7xl mx-auto space-y-8 mt-2">
+        <!-- TAB 6: SCHRITT 1 · STANDORT, GERÄTEZUWEISUNG & HARDWARE-DATENBANK -->
+        <div id="tab-database" class="tab-content max-w-7xl mx-auto space-y-6 mt-2">
+            <!-- Standort-Wahl direkt in Schritt 1 integriert -->
+            <div class="dash-main-card rounded-[24px] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-300 border border-teal-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl fill-1">location_on</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Standort der Anlage (für 8.760h PVGIS-Daten)</p>
+                        <p id="locNameTextStep1" class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Villingen-Schwenningen</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="locSearchInputStep1" class="text-xs sm:text-sm border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-950 rounded-xl px-3 py-2 outline-none focus:border-primary w-44 sm:w-56" placeholder="Ort eingeben (z. B. Freiburg)">
+                    <button onclick="searchLocationFromStep1()" class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shrink-0">
+                        <span class="material-symbols-rounded text-sm">search</span>
+                        <span>Ort setzen</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Header mit Hauptaktionen -->
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-4">
+            <div class="dash-main-card rounded-[24px] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h3 class="text-xl font-black text-slate-800 dark:text-slate-100 flex items-center gap-2.5">
+                    <h3 class="text-lg sm:text-xl font-black text-slate-900 dark:text-white flex items-center gap-2">
                         <span class="material-symbols-rounded text-primary text-2xl">device_hub</span>
-                        Gerätezuweisung & Hardware-Datenbank
+                        Schritt 1 · Gerätepool &amp; Hardware-Auswahl
                     </h3>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        Definiere deine im Projekt verbauten Komponenten und verwalte Datenblätter, Kennwerte und Zertifikate im Systemkatalog.
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                        Wähle Wechselrichter, Solarmodule und Batteriespeicher für dein Projekt – danach geht es unten rechts mit <strong>„Weiter →“</strong> zu den Dach-Strings.
                     </p>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
-                    <button onclick="openSaveSystemPlanModal()" class="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all border border-slate-300 dark:border-slate-700 flex items-center gap-1.5 shadow-xs cursor-pointer" title="Aktuelle Konfiguration als eigenständige Planung fest im Server/Code hinterlegen">
-                        <span class="material-symbols-rounded text-primary text-base">cloud_sync</span>
-                        <span>Planung fest speichern</span>
+                    <button onclick="openProjectManagerModal('list')" class="px-3.5 py-2 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer" title="Aktuelle Planung & Sensoren (ohne Token) für GitHub & andere Geräte speichern">
+                        <span class="material-symbols-rounded text-base">cloud_sync</span>
+                        <span>Projekte &amp; GitHub-Sync</span>
                     </button>
                     <button onclick="openHardwareEditModal()" class="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
                         <span class="material-symbols-rounded text-base">add_circle</span>
-                        <span>Hardware hinzufügen</span>
+                        <span>Eigenes Gerät anlegen</span>
                     </button>
                 </div>
             </div>
 
             <!-- SEKTION 1: MEINE PROJEKT-HARDWARE (AUSSTATTUNGS-POOL FÜR STRÄNGE) -->
             <div id="activeProjectHardwareSection" class="space-y-4">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
                     <div class="flex items-center gap-2">
-                        <span class="flex items-center justify-center w-7 h-7 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-black text-xs">1</span>
-                        <div>
-                            <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
-                                <span>Projekt-Hardware (Ausstattungs-Pool)</span>
-                                <span id="projectHwSummaryBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary lowercase"></span>
-                            </h4>
-                        </div>
+                        <span class="flex items-center justify-center w-6 h-6 rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-xs">✓</span>
+                        <h4 class="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                            <span>Aktiver Projekt-Pool</span>
+                            <span id="projectHwSummaryBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary lowercase"></span>
+                        </h4>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <span class="text-[11px] text-slate-400 hidden sm:inline">Mehrere WR & Modultypen im Pool möglich</span>
-                        <button onclick="switchTab('system')" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer">
-                            <span>Zu Stränge & Auslegung</span>
-                            <span class="material-symbols-rounded text-sm">arrow_forward</span>
-                        </button>
-                    </div>
+                    <button onclick="goToPlanningWizardStep(2)" class="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition-all flex items-center gap-1 cursor-pointer self-start sm:self-auto">
+                        <span>Weiter zu Schritt 2: Dach-Strings</span>
+                        <span class="material-symbols-rounded text-sm">arrow_forward</span>
+                    </button>
                 </div>
 
                 <!-- 3 Interactive Columns: Wechselrichter-Pool, Modultypen-Pool, Batteriespeicher -->
@@ -1924,155 +2005,132 @@
         </div>
     </main>
 
-    <!-- SCHWEBENDE UNTERE LIQUID-GLASS PILL-NAVIGATION (V8.5: 4 HAUPTBEREICHE OHNE DARK-MODE-ICON) -->
-    <nav id="floatingBottomNav" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-3 w-full max-w-[360px] pointer-events-none">
-        <div class="liquid-glass-pill pointer-events-auto grid grid-cols-4 gap-1.5 px-2.5 py-2 rounded-[30px]">
-            <!-- 1. Dashboard (Solar & Netz · live) -->
-            <button onclick="switchTab('live')" id="bnav-live" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-teal-500/18 dark:bg-teal-400/20 border-2 border-teal-600 dark:border-teal-400 text-teal-800 dark:text-teal-200 transition-all cursor-pointer" title="Live-Dashboard (Energie · jetzt & Tagesverlauf)">
-                <span class="material-symbols-rounded text-[22px] fill-1">bolt</span>
-                <span class="text-[10px] font-extrabold leading-none mt-0.5">Live</span>
-            </button>
+    <!-- SCHWEBENDE UNTERE LIQUID-GLASS PILL-NAVIGATION (V9.0: MIT ANIMIERTEN VOR-/ZURÜCK-FLÜGELN IM PLANUNGS-ASSISTENTEN) -->
+    <nav id="floatingBottomNav" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 px-2.5 w-full pointer-events-none">
+        <div id="floatingBottomNavPill" class="liquid-glass-pill pointer-events-auto flex items-center justify-between px-2 py-2 rounded-[30px] transition-all duration-300">
+            <!-- Linker Assistenten-Flügel: Schritt zurück (fährt im Planungs-Assistenten außen links aus) -->
+            <div id="bnavWizardPrevWrap" class="wizard-pill-wing wizard-pill-wing-left flex items-center shrink-0">
+                <button type="button" id="bnavWizardPrevBtn" onclick="planningWizardPrev()" class="w-11 h-12 rounded-2xl bg-slate-200/80 dark:bg-white/10 hover:bg-slate-300/80 dark:hover:bg-white/20 border border-slate-300/80 dark:border-white/15 text-slate-800 dark:text-white flex flex-col items-center justify-center transition-all cursor-pointer shrink-0" title="Vorheriger Planungsschritt">
+                    <span class="material-symbols-rounded text-[20px]">arrow_back</span>
+                    <span id="bnavWizardPrevLabel" class="text-[9px] font-bold leading-none mt-0.5">Zurück</span>
+                </button>
+            </div>
 
-            <!-- 2. Tiefen-Analyse (Sankey, Soll-Ist, Batterie, Amortisation) -->
-            <button onclick="switchTab('analyse')" id="bnav-analyse" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer" title="Sankey-Energiefluss & Performance-Analyse">
-                <span class="material-symbols-rounded text-[22px]">monitoring</span>
-                <span class="text-[10px] font-bold leading-none mt-0.5">Analyse</span>
-            </button>
+            <!-- Zentrale 4 Haupt-Icons (rücken im Assistenten-Modus sanft zusammen) -->
+            <div id="bnavCoreGrid" class="flex-1 grid grid-cols-4 gap-1.5 transition-all duration-300">
+                <!-- 1. Dashboard (Solar & Netz · live) -->
+                <button onclick="switchTab('live')" id="bnav-live" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-teal-500/18 dark:bg-teal-400/20 border-2 border-teal-600 dark:border-teal-400 text-teal-800 dark:text-teal-200 transition-all cursor-pointer" title="Live-Dashboard (Energie · jetzt & Tagesverlauf)">
+                    <span class="material-symbols-rounded text-[21px] fill-1">bolt</span>
+                    <span class="text-[10px] font-extrabold leading-none mt-0.5">Live</span>
+                </button>
 
-            <!-- 3. PV-Planung & Auslegung (Hub -> Strings, Kabel, 8760h, Finanzen) -->
-            <button onclick="switchTab('planung-hub')" id="bnav-system" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer" title="PV-Planung & Engineering-Übersicht">
-                <span class="material-symbols-rounded text-[22px]">solar_power</span>
-                <span class="text-[10px] font-bold leading-none mt-0.5">Planung</span>
-            </button>
+                <!-- 2. Tiefen-Analyse (Sankey, Soll-Ist, Batterie, Amortisation) -->
+                <button onclick="switchTab('analyse')" id="bnav-analyse" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer" title="Sankey-Energiefluss & Performance-Analyse">
+                    <span class="material-symbols-rounded text-[21px]">monitoring</span>
+                    <span class="text-[10px] font-bold leading-none mt-0.5">Analyse</span>
+                </button>
 
-            <!-- 4. Menü / Einstellungen / Erscheinungsbild / Sensoren / PDF -->
-            <button onclick="openMoreSheet()" id="bnav-more" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer" title="Menü, Erscheinungsbild, Home Assistant & Werkzeuge">
-                <span class="material-symbols-rounded text-[22px]">menu</span>
-                <span class="text-[10px] font-bold leading-none mt-0.5">Menü</span>
-            </button>
+                <!-- 3. PV-Planung & Auslegung (6-Schritte-Assistent) -->
+                <button onclick="switchTab('planung-hub')" id="bnav-system" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer" title="PV-Planung & 6-Schritte-Assistent">
+                    <span class="material-symbols-rounded text-[21px]">solar_power</span>
+                    <span class="text-[10px] font-bold leading-none mt-0.5">Planung</span>
+                </button>
+
+                <!-- 4. Menü (4 zentrale Punkte: Design, HA-Setup, Projekte/Sync, Handbuch/PDF) -->
+                <button onclick="openMoreSheet()" id="bnav-more" class="bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer" title="Menü: Design, Home Assistant, Projekte/Sync & PDF/Handbuch">
+                    <span class="material-symbols-rounded text-[21px]">menu</span>
+                    <span class="text-[10px] font-bold leading-none mt-0.5">Menü</span>
+                </button>
+            </div>
+
+            <!-- Rechter Assistenten-Flügel: Weiter zum nächsten Schritt (fährt im Planungs-Assistenten außen rechts aus) -->
+            <div id="bnavWizardNextWrap" class="wizard-pill-wing wizard-pill-wing-right flex items-center shrink-0">
+                <button type="button" id="bnavWizardNextBtn" onclick="planningWizardNext()" class="w-[88px] sm:w-[92px] h-12 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white shadow-md shadow-teal-900/30 flex flex-col items-center justify-center transition-all cursor-pointer shrink-0" title="Nächster Planungsschritt">
+                    <div class="flex items-center gap-0.5">
+                        <span id="bnavWizardNextTitle" class="text-[11px] font-black leading-none">Weiter</span>
+                        <span class="material-symbols-rounded text-[16px]">arrow_forward</span>
+                    </div>
+                    <span id="bnavWizardStepBadge" class="text-[9px] font-mono text-teal-100 leading-none mt-1">Schritt 1/6</span>
+                </button>
+            </div>
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (Menü, Erscheinungsbild & Tiefen-Navigation) -->
+    <!-- M3 More Bottom Sheet (V9.0: AUFGERÄUMT AUF EXAKT 4 ZENTRALE PUNKTE) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
-    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 m3-surface rounded-t-3xl border-t border-white/20 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-2xl mx-auto max-h-[88vh] overflow-y-auto">
-        <div class="w-12 h-1.5 bg-slate-500/60 rounded-full mx-auto mb-4"></div>
-        <div class="flex justify-between items-center mb-3">
-            <h3 class="text-base font-bold text-white flex items-center gap-2">
-                <span class="material-symbols-rounded text-teal-400">apps</span> Menü, Design &amp; Werkzeuge
+    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 m3-surface rounded-t-3xl border-t border-white/20 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
+        <div class="w-12 h-1.5 bg-slate-500/60 rounded-full mx-auto mb-3.5"></div>
+        <div class="flex justify-between items-center mb-3.5">
+            <h3 class="text-base font-black text-white flex items-center gap-2">
+                <span class="material-symbols-rounded text-teal-400">tune</span> Zentrale Steuerung &amp; Menü
             </h3>
             <button onclick="closeMoreSheet()" class="text-slate-400 hover:text-white p-1 cursor-pointer">
                 <span class="material-symbols-rounded text-xl">close</span>
             </button>
         </div>
 
-        <!-- Erscheinungsbild (Liquid Glass Hell / Dunkel Umschalter im Menü statt in der unteren Pill-Bar) -->
-        <div class="flex items-center justify-between p-3.5 rounded-2xl bg-white/10 border border-white/15 mb-3">
-            <div class="flex items-center gap-3">
-                <span id="bnavThemeIcon" class="material-symbols-rounded text-2xl text-amber-400 fill-1">dark_mode</span>
-                <div>
-                    <p class="text-xs font-bold text-white">Liquid Glass Erscheinungsbild</p>
-                    <p class="text-[10px] text-slate-300">Zwischen Hell- und Dunkel-Modus wechseln</p>
+        <div class="space-y-2.5">
+            <!-- 1. Design & Erscheinungsbild -->
+            <div class="flex items-center justify-between p-3.5 rounded-2xl bg-white/10 border border-white/15">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center shrink-0">
+                        <span id="bnavThemeIcon" class="material-symbols-rounded text-xl text-amber-400 fill-1">dark_mode</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-sm font-black text-white">1. Design &amp; Darstellung</p>
+                        <p class="text-[11px] text-slate-300 truncate">Liquid Glass Hell- / Dunkel-Modus umschalten</p>
+                    </div>
                 </div>
+                <button onclick="toggleDarkMode()" id="bnav-theme" class="px-3.5 py-2 rounded-xl bg-teal-500/25 hover:bg-teal-500/35 border border-teal-400/40 text-teal-200 text-xs font-bold transition-all cursor-pointer shrink-0">
+                    Wechseln
+                </button>
             </div>
-            <button onclick="toggleDarkMode()" id="bnav-theme" class="px-3.5 py-2 rounded-xl bg-teal-500/25 hover:bg-teal-500/35 border border-teal-400/40 text-teal-200 text-xs font-bold transition-all cursor-pointer">
-                Modus wechseln
-            </button>
-        </div>
 
-        <div class="grid grid-cols-2 gap-2.5 mb-2">
-            <button onclick="closeMoreSheet(); openHaConfigModal('connection');" class="col-span-2 flex items-center gap-3 p-3.5 rounded-2xl bg-teal-950/60 hover:bg-teal-900/60 border border-teal-500/40 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-2xl text-teal-400 shrink-0">settings_input_antenna</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
-                        Home Assistant &amp; Sensoren konfigurieren
-                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 font-mono">Domain &amp; Proxy</span>
-                    </p>
-                    <p class="text-[10px] text-slate-300 truncate">Verbindung, Reverse-Proxy Anleitung, Strings &amp; Einzelverbraucher</p>
+            <!-- 2. Home Assistant & Sensoren -->
+            <button onclick="closeMoreSheet(); openHaConfigModal('connection');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-teal-950/60 hover:bg-teal-900/60 border border-teal-500/40 text-left transition-all cursor-pointer">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-400/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl text-teal-300">settings_input_antenna</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-sm font-black text-white">2. Home Assistant &amp; Sensoren</p>
+                        <p class="text-[11px] text-slate-300 truncate">Domain, eigener Token, Sensor-Picker &amp; Reverse-Proxy Hilfe</p>
+                    </div>
                 </div>
+                <span class="material-symbols-rounded text-teal-300 shrink-0">chevron_right</span>
             </button>
-            <button onclick="closeMoreSheet(); openHaConfigModal('guide');" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-amber-950/50 hover:bg-amber-900/50 border border-amber-500/40 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-2xl text-amber-400 shrink-0">menu_book</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
-                        Anleitung: Home Assistant über Domain &amp; Reverse Proxy
-                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">Hilfe bei Fehlern</span>
-                    </p>
-                    <p class="text-[10px] text-slate-300 truncate">Schritt-für-Schritt Lösung für Token, trusted_proxies, CORS &amp; Nginx/Cloudflare</p>
+
+            <!-- 3. Projekte & GitHub-Sync (Zentrales Speichern ohne Token-Weitergabe) -->
+            <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-950/60 hover:bg-indigo-900/60 border border-indigo-400/40 text-left transition-all cursor-pointer">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl text-indigo-300">cloud_sync</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-sm font-black text-white">3. Projekte &amp; GitHub-Sync</p>
+                        <p class="text-[11px] text-slate-300 truncate">Zentral speichern (inkl. Sensoren, ohne Token), Varianten &amp; QR/Datei</p>
+                    </div>
                 </div>
+                <span class="material-symbols-rounded text-indigo-300 shrink-0">chevron_right</span>
             </button>
-            <button onclick="closeMoreSheet(); openProjectManagerModal();" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-2xl text-primary shrink-0">folder_open</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
-                        Planungen &amp; Varianten verwalten
-                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-primary/30 text-primary-light font-mono">Multi-Projekt</span>
-                    </p>
-                    <p class="text-[10px] text-slate-300 truncate">Nahtlos zwischen mehreren Planungen wechseln oder Varianten vergleichen</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openDossierModal();" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-emerald-900/40 hover:bg-emerald-800/50 border border-emerald-500/40 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-2xl text-emerald-400 shrink-0">picture_as_pdf</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
-                        Projektdossier &amp; PDF
-                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono">DIN VDE 0100-712</span>
-                    </p>
-                    <p class="text-[10px] text-slate-300 truncate">Anlagenpass, Schaltplan, Stückliste &amp; Protokoll</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openShareModal();" class="col-span-2 flex items-center gap-3 p-3 rounded-2xl bg-indigo-900/40 hover:bg-indigo-800/50 border border-indigo-500/40 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-2xl text-indigo-400 shrink-0">devices</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white flex items-center gap-1.5">
-                        Auf Smartphone übertragen / Teilen
-                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-mono">QR &amp; Datei</span>
-                    </p>
-                    <p class="text-[10px] text-slate-300 truncate">Planung sofort per QR-Code teilen oder als JSON-Backup sichern</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openPlanungDrillDown('system');" class="flex items-center gap-2.5 p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-xl text-amber-400 shrink-0">solar_power</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white truncate">1. PV-Strings</p>
-                    <p class="text-[10px] text-slate-300 truncate">Dach &amp; Auslegung</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openPlanungDrillDown('verkabelung');" class="flex items-center gap-2.5 p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-xl text-emerald-400 shrink-0">cable</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white truncate">2. Kabelplan</p>
-                    <p class="text-[10px] text-slate-300 truncate">VDE &amp; Topologie</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openPlanungDrillDown('verbrauch');" class="flex items-center gap-2.5 p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-xl text-sky-400 shrink-0">bolt</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white truncate">3. Verbrauch</p>
-                    <p class="text-[10px] text-slate-300 truncate">Lastprofil &amp; WP/EV</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openPlanungDrillDown('auswertung');" class="flex items-center gap-2.5 p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-xl text-teal-400 shrink-0">bar_chart</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white truncate">8760h Prognose</p>
-                    <p class="text-[10px] text-slate-300 truncate">Simulations-Charts</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openPlanungDrillDown('database');" class="flex items-center gap-2.5 p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-xl text-accent shrink-0">database</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white truncate">Hardware-DB</p>
-                    <p class="text-[10px] text-slate-300 truncate">WR, Module &amp; Akku</p>
-                </div>
-            </button>
-            <button onclick="closeMoreSheet(); openPlanungDrillDown('faq');" class="flex items-center gap-2.5 p-3 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
-                <span class="material-symbols-rounded text-xl text-blue-400 shrink-0">menu_book</span>
-                <div class="min-w-0">
-                    <p class="text-xs font-bold text-white truncate">Handbuch</p>
-                    <p class="text-[10px] text-slate-300 truncate">Formeln &amp; Hilfe</p>
-                </div>
-            </button>
+
+            <!-- 4. VDE-Projektdossier (PDF) & Handbuch -->
+            <div class="grid grid-cols-2 gap-2.5">
+                <button onclick="closeMoreSheet(); openDossierModal();" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-emerald-950/60 hover:bg-emerald-900/60 border border-emerald-500/40 text-left transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-xl text-emerald-400 shrink-0">picture_as_pdf</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-black text-white truncate">4a. VDE-Dossier</p>
+                        <p class="text-[10px] text-slate-300 truncate">PDF &amp; Schaltplan</p>
+                    </div>
+                </button>
+                <button onclick="closeMoreSheet(); openPlanungDrillDown('faq');" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-all cursor-pointer">
+                    <span class="material-symbols-rounded text-xl text-sky-400 shrink-0">menu_book</span>
+                    <div class="min-w-0">
+                        <p class="text-xs font-black text-white truncate">4b. Handbuch</p>
+                        <p class="text-[10px] text-slate-300 truncate">Formeln &amp; v9.0</p>
+                    </div>
+                </button>
+            </div>
         </div>
     </div>
 
@@ -2382,7 +2440,7 @@
         </div>
     </div>
 
-    <!-- MODAL: PLANUNG FEST IM SERVER / CODE SPEICHERN -->
+    <!-- MODAL: PLANUNG + SENSOREN FÜR GITHUB / SERVER SPEICHERN (OHNE TOKEN) -->
     <div id="modal-save-system-plan" class="fixed inset-0 z-[120] flex items-center justify-center p-3 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden">
         <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <!-- Header -->
@@ -2392,8 +2450,8 @@
                         <span class="material-symbols-rounded text-2xl">cloud_sync</span>
                     </div>
                     <div>
-                        <h3 class="text-base font-black text-slate-900 dark:text-white">Planung fest im Server speichern</h3>
-                        <p class="text-xs text-slate-500 dark:text-slate-400">Geräteübergreifend abrufbar & synchronisiert</p>
+                        <h3 class="text-base font-black text-slate-900 dark:text-white">In GitHub / Code fest speichern</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">Inkl. aller Sensor-Entitäten &amp; PVGIS-Daten · Ohne Token</p>
                     </div>
                 </div>
                 <button onclick="closeSaveSystemPlanModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer">
@@ -2403,13 +2461,19 @@
 
             <!-- Body -->
             <div class="p-6 space-y-4">
-                <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Deine aktuelle Konfiguration (alle Stränge, Dachflächen, Wechselrichter, Module, Batterien und Leitungsdimensionierungen) wird dauerhaft im Quellcode & Server abgelegt. Du kannst sie auf jedem Gerät jederzeit über das Projektmenü laden.
-                </p>
+                <div class="p-3 rounded-2xl bg-teal-500/10 border border-teal-500/25 text-xs text-slate-700 dark:text-slate-200 space-y-1">
+                    <p class="font-bold text-teal-800 dark:text-teal-300 flex items-center gap-1.5">
+                        <span class="material-symbols-rounded text-base">verified_user</span>
+                        <span>Sicherer Geräte-Sync über GitHub:</span>
+                    </p>
+                    <p class="leading-relaxed text-[11px] text-slate-600 dark:text-slate-300">
+                        Es werden deine komplette PV-Auslegung, die berechneten 8.760h-PVGIS-Erträge sowie <strong>alle Home-Assistant-Sensor-Entitäten</strong> (Strings, Verbraucher, Zähler) gespeichert. Dein persönlicher <strong>Long-Lived Access Token wird niemals mitgespeichert</strong> – auf einem anderen Gerät gibst du einfach einmalig dessen eigenen Token ein.
+                    </p>
+                </div>
 
                 <div>
                     <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Name der Planung *</label>
-                    <input type="text" id="savePlanNameInput" placeholder="z. B. EFH Hoymiles HMS-2000 6.5kWp Ost-West" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary font-bold">
+                    <input type="text" id="savePlanNameInput" placeholder="z. B. Anlage Villingen-Schwenningen" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary font-bold">
                 </div>
 
                 <div id="savePlanSummaryBox" class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-1">
@@ -2418,14 +2482,20 @@
             </div>
 
             <!-- Footer -->
-            <div class="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between">
+            <div class="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-2">
                 <button onclick="closeSaveSystemPlanModal()" class="px-4 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer">
                     Abbrechen
                 </button>
-                <button onclick="submitSaveSystemPlanToServer()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
-                    <span class="material-symbols-rounded text-base">cloud_upload</span>
-                    <span>Fest im Server speichern</span>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button onclick="exportSystemPlansJsonForGitHub()" class="px-3.5 py-2 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="system_plans.json für dein GitHub-Repository herunterladen">
+                        <span class="material-symbols-rounded text-sm">download</span>
+                        <span>GitHub-Datei</span>
+                    </button>
+                    <button onclick="submitSaveSystemPlanToServer()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
+                        <span class="material-symbols-rounded text-base">cloud_upload</span>
+                        <span>Jetzt fest speichern</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -3002,13 +3072,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V8.9 (Interaktive Kacheln, Randloses Technik-Chart mit 3-Spalten-Kacheln & Total-kWh Sankey-Engine) -->
-    <script src="qrcode.client.js?v=8.9"></script>
-    <script src="database.js?v=8.9"></script>
-    <script src="content.js?v=8.9"></script>
-    <script src="app.js?v=8.9"></script>
-    <script src="wiring.js?v=8.9"></script>
-    <script src="dossier.js?v=8.9"></script>
-    <script src="telemetry.js?v=8.9"></script>
+    <!-- MODULARE ARCHITEKTUR V9.0 (6-Schritte-Assistent mit animierter Nav-Pill, Token-sicherer GitHub-Sync, Flackerfreie Charts & PVGIS-Cache) -->
+    <script src="qrcode.client.js?v=9.0"></script>
+    <script src="database.js?v=9.0"></script>
+    <script src="content.js?v=9.0"></script>
+    <script src="app.js?v=9.0"></script>
+    <script src="wiring.js?v=9.0"></script>
+    <script src="dossier.js?v=9.0"></script>
+    <script src="telemetry.js?v=9.0"></script>
 </body>
 </html>
