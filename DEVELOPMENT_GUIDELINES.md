@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.9 (Home Assistant Langzeit-Statistiken via WebSocket `recorder/statistics_during_period`, GitHub-Persistenz der Monats-Bilanzen & Zähler-Baselines, zusammengelegte Single-Source-Sektion 2 für Live-W + kWh-Zähler sowie kompakte Verbraucher-/String-Zeilen mit Nur-Icon-Sensor-Picker)  
+**Aktuelle Version:** 10.0 (Interaktive Verbraucher-Zeilen mit Hintergrund-Fortschrittsbalken für Tages-kWh, Prio-Sortierumschalter Live-W vs. Heute-kWh, optionale Verbraucher-kWh-Sensoren, globales Mess-Startdatum & präzise Zähler-Kalibrierung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

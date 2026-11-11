@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementierungsplan für Version 9.9:\n1. Home Assistant Langzeit-Statistik (Long-Term Statistics via /api/websocket recorder/statistics_during_period) direkt im Browser & Server anzapfen, damit Monats- und Jahreswerte auch nach wochenlanger App-Pause exakt aus Home Assistants unbegrenzter Statistik-Datenbank geladen werden.\n2. GitHub- & Projekt-Persistenz erweitern: Monats-Logbuch (performanceRecords) und Zähler-Startwerte (energyBaselines) automatisch beim Speichern in database.js (CodePersistedPlans) und im JSON-Export sichern.\n3. Zusammenlegung von Sektion 2 und Sektion 5 im Home-Assistant-Modal zu einer einzigen, überschneidungsfreien Sektion „2. Haupt-Sensoren · Single Source of Truth (Live-Watt & kWh-Gesamtzähler)“, in der pro Kanal (PV, Hausverbrauch, Netzbezug, Netzeinspeisung, Batterie) der W-Sensor und der kWh-Zähler direkt nebeneinander stehen.\n4. Kompakte Einzelverbraucher- & String-Zeilen + platzsparender Nur-Icon-Wählen-Button (list_alt ohne Text) für maximale Sichtbarkeit langer Home-Assistant-Entitätsnamen sowie Lösch-Icon (delete) direkt oben hinter dem Gerätenamen.",
-  "updatedAt":  "2026-11-11T10:28:29.160698798Z",
+  "summary":  "Implementierungsplan für Version 10.0: Interaktive Verbraucher-Zeilen mit Hintergrund-Fortschrittsbalken (Pastell bei Aktiv / Grau bei Inaktiv), Prio-1/Prio-2 Sortierung (Live W -> Heute kWh), optionale kWh-Zähler je Verbraucher sowie globales Mess-Startdatum (z. B. 01.11.2026) und Behebung der überhöhten November-Werte.",
+  "updatedAt":  "2026-11-11T11:56:45.484307646Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

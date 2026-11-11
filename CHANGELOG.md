@@ -4,6 +4,34 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.0] – 2026-11-11
+
+### 🚀 Interaktive Verbraucher-Zeilen mit Hintergrund-Fortschrittsbalken (`kWh heute`), Live/kWh-Sortierumschalter, Optionale Verbraucher-kWh-Sensoren, Globales Mess-Startdatum & Präzise Zähler-Kalibrierung
+
+#### 1. Interaktive Sektion „Aktive Verbraucher“ mit Hintergrund-Balken & Prio-Sortierung (`index.html` & `telemetry.js`)
+* **Vollflächiger Hintergrund-Fortschrittsbalken pro Zeile:**
+  - Jede Verbraucher-Zeile auf dem Live-Dashboard fungiert als `relative overflow-hidden` Kachel, in deren Hintergrund ein horizontaler Fortschrittsbalken von links nach rechts den heutigen Tagesverbrauch (`kWh heute`, skaliert am stärksten Tagesverbraucher) visualisiert.
+  - **Aktiv (`> 5 W`):** Erhält die helle Pastell-Tönung und den Rahmen der oberen Status-Kacheln (`border-teal-500/50`, Pastell-Verlaufsbalken `from-teal-400/30 via-emerald-400/22` und pulsierenden Smaragd-Punkt).
+  - **Inaktiv (`0 W`, aber heute bereits Verbrauch):** Bleibt dezent umrahmt und zeigt seinen heute bereits angefallenen Energieverbrauch als grauen Hintergrundbalken (`bg-slate-200/85 dark:bg-slate-700/45`).
+  - **Immer sichtbare Tages-kWh auf dem Smartphone:** Neben dem Gerätenamen steht klein und auf allen Displaygrößen sichtbar der Tagesverbrauch (`z. B. 1,45 kWh heute · 28%`), rechts die aktuelle Live-Leistung (`W`).
+* **Interaktiver Sortier-Umschalter statt „Verbraucher verwalten“-Button:**
+  - Der nicht mehr benötigte „Verbraucher verwalten“-Link auf dem Live-Dashboard wurde durch den interaktiven Button **`Prio: Live → kWh`** / **`Prio: Heute kWh`** (`toggleConsumerSortMode()`) ersetzt:
+    - **Modus 1 (`Prio: Live → kWh`, Standard):** Prio 1 sind aktuell laufende Verbraucher (`> 5 W`, absteigend nach Watt); direkt darunter rutschen ausgeschaltete Verbraucher (`0 W`) automatisch nach ihrem heutigen Tagesverbrauch (`kWh heute`) nach oben.
+    - **Modus 2 (`Prio: Heute kWh`):** Sortiert alle Verbraucher strikt nach dem heutigen Tagesverbrauch (`kWh`).
+* **Optionale `kWh`-Zähler-Entität pro Einzelverbraucher (Sektion 4):**
+  - In den Home-Assistant-Einstellungen (Sektion 4) kann neben der Leistungs-Entität (`W / kW`) optional auch ein eigener Energiezähler (`kWh`, z. B. Shelly `energy` / `total_increasing`) über den kompakten Nur-Icon-Picker (`list_alt`) hinterlegt werden. Ist kein `kWh`-Sensor angegeben, integriert die App weiterhin automatisch die `W`-Kurve des Verbrauchers.
+
+#### 2. Globales Mess-Startdatum (`trackingStartDate`, z. B. `01.11.2026`), Zähler-Fix (`yieldtotal`) & Manuelle Logbuch-Kalibrierung
+* **Globales Mess-Startdatum in Sektion 2 & im Monats-Logbuch:**
+  - Über das neue Datumsfeld **„Mess-Startdatum (Zähle erst ab Stichtag)“** (Standard: `2026-11-01`) und den Button **„Ab Datum neu zählen“** (`applyTrackingStartDateAndResync()`) werden historische Altwerte vor dem Stichtag ausgeblendet und die Zähler-Baselines ab dem Stichtag neu kalibriert.
+* **Behebung des überhöhten November-Ertrags (z. B. `213,5 kWh` statt `~125 kWh`):**
+  - **Ursache 1 (`_yieldtotal` Regex-Wortgrenze):** In JavaScript erkennt `\b(total|...)\b` keine zusammengesetzten Namen ohne Unterstrich wie `sensor.opendtu_4d5150_yieldtotal`. Dadurch wurde der OpenDTU-Gesamtzähler beim Monatswert nicht als kumulativer Zähler (`total_increasing`) erkannt, sodass sein gesamter historischer Lebensdauer-Zählerstand (~88,5 kWh vor November) ungekürzt zum Fronius-Novemberertrag (~125 kWh) addiert wurde. `isEntityCumulativeTotal()` erkennt zusammengesetzte Gesamtzähler (`yieldtotal`, `energytotal`) nun zuverlässig und verhindert in `resolveEnergyCounterDelta()`, dass ein kumulativer Zähler mit `baseVal = 0` seinen Lebensdauer-Gesamtwert als Monatsdifferenz ausgibt.
+  - **Ursache 2 (`state: null` bei `total_increasing` in HA Langzeit-Statistiken):** `syncLongTermStatisticsFromHa()` fragt die Langzeit-Statistik ab dem Mess-Startdatum nun taggenau (`period: 'day'`) ab, summiert die täglichen `change`-Werte ab `trackingStartDate` (`ltsMonthChangeByEntity`) und berechnet daraus selbst dann die exakte Monatsdifferenz und den Monatsstartwert (`aktueller Zählerstand - change`), wenn Home Assistant in der `statistics`-Tabelle `state: null` liefert.
+* **Vorrang manueller Logbuch-Korrekturen (`source === 'manual'`):**
+  - Wird im Monats-Logbuch ein Monatswert manuell eingetragen oder korrigiert (z. B. `125 kWh` für November), erhält dieser manuelle Wert in `getUnifiedEnergyLedger()`, im Sankey-Diagramm (`Monat`) und in der Performance-Auswertung sofort Vorrang, statt durch `Math.max(...)` von einem unkalibrierten Rohzähler überschrieben zu werden.
+
+---
+
 ## [Version 9.9] – 2026-11-11
 
 ### 🚀 Home Assistant Langzeit-Statistiken (`recorder/statistics_during_period`), GitHub-Persistenz der Monats-Bilanzen, Vereinigte Single-Source-Sektion 2 (Watt + kWh) & Kompakte Verbraucher-Karten

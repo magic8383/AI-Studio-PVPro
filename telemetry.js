@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.9)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V10.0)
 // Zentrale Single Source of Truth (Live-Watt + kWh-Zähler), HA Long-Term
-// Statistics WebSocket-Sync & 100% vollbreites Sankey ohne Scrollen
+// Statistics WebSocket-Sync, Globales Mess-Startdatum & Interaktive Verbraucher-Balken
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -11,10 +11,10 @@ const DEFAULT_CUSTOM_STRINGS = [
 ];
 
 const DEFAULT_CUSTOM_CONSUMERS = [
-    { id: 'cons_1', name: 'Trockner', powerEntity: 'sensor.trockner_power' },
-    { id: 'cons_2', name: 'TV-Verstärker', powerEntity: 'sensor.tv_verstaerker_power' },
-    { id: 'cons_3', name: 'Esszimmer Licht', powerEntity: 'sensor.esszimmer_licht_power' },
-    { id: 'cons_4', name: 'Küche Licht', powerEntity: 'sensor.kueche_licht_power' }
+    { id: 'cons_1', name: 'Trockner', powerEntity: 'sensor.trockner_power', energyEntity: '' },
+    { id: 'cons_2', name: 'TV-Verstärker', powerEntity: 'sensor.tv_verstaerker_power', energyEntity: '' },
+    { id: 'cons_3', name: 'Esszimmer Licht', powerEntity: 'sensor.esszimmer_licht_power', energyEntity: '' },
+    { id: 'cons_4', name: 'Küche Licht', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
 ];
 
 let haConfigState = {
@@ -23,6 +23,7 @@ let haConfigState = {
     accessToken: '',
     pollIntervalSec: 10,
     autoSyncMonthly: true,
+    trackingStartDate: '2026-11-01',
     batteryName: 'BYD HVS+',
     entities: {
         pvPower: 'sensor.pv_power_total',
@@ -56,11 +57,12 @@ let intradayHistoryTimer = null;
 
 // Baseline cache for computing Today & Month deltas from total_increasing kWh counters without HA helpers
 let energyCounterBaselines = {
-    schemaVersion: '9.9',
+    schemaVersion: '10.0',
     dayKey: '',
     monthKey: '',
     dayStartByEntity: {},
     monthStartByEntity: {},
+    ltsMonthChangeByEntity: {},
     lastHistorySyncMs: 0,
     lastLongTermSyncMs: 0
 };
@@ -105,6 +107,7 @@ let hasPrewarmedHistoryTimeframes = false;
 let currentFocusedCurveMode = false;
 let currentFocusedCurveTitle = 'Tagesverlauf · Telemetrie';
 let showAllDashboardConsumers = false;
+let consumerSortMode = 'live_first'; // 'live_first' (Prio 1 Live W, Prio 2 Heute kWh) | 'kwh_first' (Prio 1 Heute kWh)
 let isIntradayHovering = false;
 let intradaySeriesState = {
     startOfDayIso: null,
@@ -169,6 +172,10 @@ async function initTelemetryAndAnalysis() {
         const savedExpand = localStorage.getItem('pvpro_intraday_expanded');
         if (savedExpand === '1') {
             isIntradayChartExpanded = true;
+        }
+        const savedSort = localStorage.getItem('pvpro_consumer_sort_mode');
+        if (savedSort === 'kwh_first' || savedSort === 'live_first') {
+            consumerSortMode = savedSort;
         }
     } catch (e) {}
 
@@ -580,13 +587,14 @@ function loadEnergyCounterBaselines() {
         const raw = localStorage.getItem('pvpro_energy_counter_baselines');
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && (parsed.schemaVersion === '9.9' || parsed.schemaVersion === '9.7' || parsed.schemaVersion === '9.1')) {
+            if (parsed && typeof parsed === 'object' && parsed.schemaVersion === '10.0') {
                 energyCounterBaselines = {
-                    schemaVersion: '9.9',
+                    schemaVersion: '10.0',
                     dayKey: keys.dayKey,
                     monthKey: keys.monthKey,
                     dayStartByEntity: parsed.dayKey === keys.dayKey ? (parsed.dayStartByEntity || {}) : {},
                     monthStartByEntity: parsed.monthKey === keys.monthKey ? (parsed.monthStartByEntity || {}) : {},
+                    ltsMonthChangeByEntity: parsed.monthKey === keys.monthKey ? (parsed.ltsMonthChangeByEntity || {}) : {},
                     lastHistorySyncMs: parsed.dayKey === keys.dayKey ? (parsed.lastHistorySyncMs || 0) : 0,
                     lastLongTermSyncMs: parsed.monthKey === keys.monthKey ? (parsed.lastLongTermSyncMs || 0) : 0
                 };
@@ -597,11 +605,12 @@ function loadEnergyCounterBaselines() {
         }
     } catch (e) {}
     energyCounterBaselines = {
-        schemaVersion: '9.9',
+        schemaVersion: '10.0',
         dayKey: keys.dayKey,
         monthKey: keys.monthKey,
         dayStartByEntity: {},
         monthStartByEntity: {},
+        ltsMonthChangeByEntity: {},
         lastHistorySyncMs: 0,
         lastLongTermSyncMs: 0
     };
@@ -610,30 +619,46 @@ function loadEnergyCounterBaselines() {
 
 function saveEnergyCounterBaselines() {
     try {
-        energyCounterBaselines.schemaVersion = '9.9';
+        energyCounterBaselines.schemaVersion = '10.0';
         localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines));
     } catch (e) {}
 }
 
+function getEffectiveTrackingStartDate(cfg = haConfigState) {
+    const rawStr = String(cfg?.trackingStartDate || haConfigState?.trackingStartDate || '2026-11-01').trim();
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawStr);
+    if (!m) return new Date(2026, 10, 1, 0, 0, 0);
+    const y = parseInt(m[1], 10);
+    const mo = parseInt(m[2], 10) - 1;
+    const d = parseInt(m[3], 10);
+    const dt = new Date(y, mo, d, 0, 0, 0);
+    return isNaN(dt.getTime()) ? new Date(2026, 10, 1, 0, 0, 0) : dt;
+}
+
 function isEntityCumulativeTotal(entityId, statesMap = null, forceCumulative = false) {
-    if (forceCumulative) return true;
     const cleanId = String(entityId || '').trim();
     if (!cleanId) return false;
     const st = statesMap ? statesMap.get(cleanId) : null;
     const friendly = String(st?.attributes?.friendly_name || '').toLowerCase();
     const idLower = cleanId.toLowerCase();
+    const combined = `${idLower} ${friendly}`;
     const stateClass = String(st?.attributes?.state_class || lastKnownHaStateClassMap.get(cleanId) || '').toLowerCase();
 
-    // If sensor explicitly says "today", "heute", "daily", "tag", "tagesertrag", it resets daily
-    const isExplicitDaily = /\b(today|heute|daily|tag|tages|tagesertrag|day)\b/i.test(`${idLower} ${friendly}`);
-    if (isExplicitDaily && !/\b(total|gesamt|lifetime)\b/i.test(`${idLower} ${friendly}`)) {
+    // 1. Check if sensor explicitly resets daily (including compound names like yieldday, energy_day, today, heute)
+    const isExplicitDaily = /(?:^|[\s_.\-])(today|heute|daily|tag|tages|tagesertrag|day)(?:$|[\s_.\-])/i.test(combined)
+        || /(yieldday|energyday|tagesertrag|heute_kwh)/i.test(combined);
+    const hasExplicitTotalWord = /(total|gesamt|lifetime|yieldtotal|energytotal|gesamtertrag|zählerstand|zaehlerstand)/i.test(combined);
+    if (isExplicitDaily && !hasExplicitTotalWord) {
         return false;
     }
+
+    if (forceCumulative) return true;
 
     if (stateClass === 'total_increasing' || stateClass === 'total') {
         return true;
     }
-    if (/\b(total|gesamt|sum|lifetime|month|monat|year|jahr|import|export|charged|discharged)\b/i.test(`${idLower} ${friendly}`)) {
+    // Match both word-bounded and compound names like sensor.opendtu_4d5150_yieldtotal
+    if (/(total|gesamt|sum|lifetime|yieldtotal|energytotal|month|monat|year|jahr|import|export|charged|discharged|zaehler|zähler)/i.test(combined)) {
         return true;
     }
     return false;
@@ -644,13 +669,25 @@ function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options
     const cleanId = String(entityId || '').trim();
     if (!cleanId) return currentValKwh;
 
-    const { isCumulative = false, maxPlausibleKwh = null, upperBoundMap = null } = options;
+    const { isCumulative = false, maxPlausibleKwh = null, upperBoundMap = null, ltsOverrideMap = null } = options;
+
+    // If Home Assistant Long-Term Statistics provided an exact monthly change for this entity, use it to anchor/verify the baseline!
+    const ltsChangeVal = ltsOverrideMap?.[cleanId];
+    if (ltsChangeVal !== undefined && ltsChangeVal !== null && !isNaN(ltsChangeVal) && ltsChangeVal >= 0 && currentValKwh >= ltsChangeVal) {
+        const ltsDerivedBase = +Math.max(0, currentValKwh - ltsChangeVal).toFixed(3);
+        if (baselineMap && ltsDerivedBase > 0) {
+            baselineMap[cleanId] = ltsDerivedBase;
+        }
+        return +ltsChangeVal.toFixed(3);
+    }
+
     let baseVal = baselineMap?.[cleanId];
 
-    // If an upperBoundMap (e.g. dayStartByEntity for monthStartByEntity) exists, month baseline can never exceed day baseline
+    // If an upperBoundMap (e.g. dayStartByEntity for monthStartByEntity) exists:
+    // Month baseline can never exceed day baseline, AND if month baseline was uninitialized/0 while day baseline is a large lifetime counter (>20 kWh), heal it!
     const upperBoundVal = upperBoundMap?.[cleanId];
     if (upperBoundVal !== undefined && upperBoundVal !== null && !isNaN(upperBoundVal)) {
-        if (baseVal === undefined || baseVal === null || isNaN(baseVal) || baseVal > upperBoundVal) {
+        if (baseVal === undefined || baseVal === null || isNaN(baseVal) || baseVal > upperBoundVal || (isCumulative && baseVal <= 0.05 && upperBoundVal > 20)) {
             baseVal = upperBoundVal;
             baselineMap[cleanId] = baseVal;
             saveEnergyCounterBaselines();
@@ -664,10 +701,9 @@ function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options
         saveEnergyCounterBaselines();
     }
 
-    if (baseVal === undefined || baseVal === null || isNaN(baseVal)) {
-        // If no 00:00 history baseline is available yet:
-        // Never return the raw total of a cumulative counter! Anchor it now and return null so power-integration is shown until history arrives.
-        if (isCumulative || (maxPlausibleKwh !== null && currentValKwh > maxPlausibleKwh) || currentValKwh > 60) {
+    // Never allow baseVal === 0 on a cumulative lifetime counter (>25 kWh) to return the raw lifetime total!
+    if (baseVal === undefined || baseVal === null || isNaN(baseVal) || (isCumulative && baseVal <= 0.05 && currentValKwh > 25)) {
+        if (isCumulative || (maxPlausibleKwh !== null && currentValKwh > maxPlausibleKwh) || currentValKwh > 40) {
             baselineMap[cleanId] = +currentValKwh.toFixed(3);
             saveEnergyCounterBaselines();
             return null;
@@ -680,7 +716,6 @@ function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options
         if (currentValKwh >= baseVal) {
             const delta = +Math.max(0, currentValKwh - baseVal).toFixed(3);
             if (maxPlausibleKwh !== null && delta > maxPlausibleKwh) {
-                // Guard against uninitialized baseline (e.g. baseline was 0 on a lifetime counter)
                 baselineMap[cleanId] = +currentValKwh.toFixed(3);
                 saveEnergyCounterBaselines();
                 return null;
@@ -783,7 +818,8 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
         e.gridExportMonth,
         e.batteryChargeMonth,
         e.batteryDischargeMonth,
-        ...(cfg.customStrings || []).map(cs => cs?.energyEntity)
+        ...(cfg.customStrings || []).map(cs => cs?.energyEntity),
+        ...(cfg.customConsumers || []).map(cc => cc?.energyEntity)
     ].map(x => String(x || '').trim()).filter(Boolean);
 
     const uniqueEntities = [...new Set(counterEntities)];
@@ -806,30 +842,39 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
         let minEarlyVal = null;
         let minPositiveVal = null;
         let firstValidVal = null;
+        let earliestTs = Infinity;
 
         for (let i = 0; i < entityHistoryArr.length; i++) {
             const pt = entityHistoryArr[i];
             const rawNum = parseFloat(String(pt.state).replace(',', '.'));
             if (isNaN(rawNum) || rawNum < 0) continue;
             const val = rawNum * scale;
+            const ts = new Date(pt.last_changed || pt.last_updated || periodStartMs).getTime();
+            if (!isNaN(ts) && ts < earliestTs) earliestTs = ts;
             if (firstValidVal === null) firstValidVal = val;
             if (val > 0 && (minPositiveVal === null || val < minPositiveVal)) minPositiveVal = val;
-            const ts = new Date(pt.last_changed || pt.last_updated || periodStartMs).getTime();
             if (ts <= windowEndMs) {
-                if (minEarlyVal === null || val < minEarlyVal) minEarlyVal = val;
+                if (minEarlyVal === null || (val > 0 && val < minEarlyVal)) minEarlyVal = val;
             }
         }
-        if (minEarlyVal !== null && minEarlyVal > 0) return minEarlyVal;
-        if (minPositiveVal !== null) return minPositiveVal;
-        return firstValidVal;
+        const chosenVal = (minEarlyVal !== null && minEarlyVal > 0)
+            ? minEarlyVal
+            : (minPositiveVal !== null ? minPositiveVal : firstValidVal);
+        return chosenVal !== null ? { val: chosenVal, coversStart: earliestTs <= (periodStartMs + 6 * 3600 * 1000) } : null;
     };
 
     try {
         const filterParam = encodeURIComponent(uniqueEntities.join(','));
         const nowIso = new Date().toISOString();
 
-        // Query up to nowIso for monthHistRes as well so if HA recorder purged data older than 10 days,
-        // we still receive the earliest available counter state in the current month instead of an empty array []!
+        // Respect global trackingStartDate (e.g. 2026-11-01): never query month baselines from before trackingStartDate
+        const trackDate = getEffectiveTrackingStartDate(cfg);
+        const rawMonthStartMs = new Date(keys.startOfMonthIso).getTime();
+        const effectiveMonthStartMs = (trackDate && trackDate.getTime() <= Date.now() && trackDate.getTime() > rawMonthStartMs)
+            ? trackDate.getTime()
+            : rawMonthStartMs;
+        const effectiveMonthStartIso = new Date(effectiveMonthStartMs).toISOString();
+
         const [dayHistRes, monthHistRes] = await Promise.all([
             fetchHaDirectFromBrowser(
                 cfg.baseUrl,
@@ -839,7 +884,7 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
             fetchHaDirectFromBrowser(
                 cfg.baseUrl,
                 cfg.accessToken,
-                `/api/history/period/${encodeURIComponent(keys.startOfMonthIso)}?end_time=${encodeURIComponent(nowIso)}&filter_entity_id=${filterParam}&minimal_response&no_attributes`
+                `/api/history/period/${encodeURIComponent(effectiveMonthStartIso)}?end_time=${encodeURIComponent(nowIso)}&filter_entity_id=${filterParam}&minimal_response&no_attributes`
             )
         ]);
 
@@ -847,25 +892,28 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
         if (dayHistRes.ok && Array.isArray(dayHistRes.data)) {
             dayHistRes.data.forEach(arr => {
                 const entId = arr?.[0]?.entity_id;
-                const val = extractPeriodStartReading(arr, dayStartMs);
-                if (entId && val !== null) {
+                const res = extractPeriodStartReading(arr, dayStartMs);
+                if (entId && res && res.val !== null) {
+                    const isCum = isEntityCumulativeTotal(entId, statesMap, false);
+                    if (isCum && res.val <= 0) return;
                     const existing = energyCounterBaselines.dayStartByEntity[entId];
-                    if (existing === undefined || existing === null || val <= existing) {
-                        energyCounterBaselines.dayStartByEntity[entId] = +val.toFixed(3);
+                    if (existing === undefined || existing === null || existing <= 0.05 || res.coversStart || res.val <= existing) {
+                        energyCounterBaselines.dayStartByEntity[entId] = +res.val.toFixed(3);
                     }
                 }
             });
         }
 
-        const monthStartMs = new Date(keys.startOfMonthIso).getTime();
         if (monthHistRes.ok && Array.isArray(monthHistRes.data)) {
             monthHistRes.data.forEach(arr => {
                 const entId = arr?.[0]?.entity_id;
-                const val = extractPeriodStartReading(arr, monthStartMs);
-                if (entId && val !== null) {
+                const res = extractPeriodStartReading(arr, effectiveMonthStartMs);
+                if (entId && res && res.val !== null) {
+                    const isCum = isEntityCumulativeTotal(entId, statesMap, false);
+                    if (isCum && res.val <= 0) return;
                     const existing = energyCounterBaselines.monthStartByEntity[entId];
-                    if (existing === undefined || existing === null || val <= existing) {
-                        energyCounterBaselines.monthStartByEntity[entId] = +val.toFixed(3);
+                    if (existing === undefined || existing === null || existing <= 0.05 || res.coversStart || res.val <= existing) {
+                        energyCounterBaselines.monthStartByEntity[entId] = +res.val.toFixed(3);
                     }
                 }
             });
@@ -878,7 +926,7 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
 
         // Also sync Home Assistant Long-Term Statistics (recorder/statistics_during_period) via WebSocket
         // so 1st-of-month baselines and all past months of the year are exact even after >10 days offline!
-        if (Date.now() - (energyCounterBaselines.lastLongTermSyncMs || 0) > 15 * 60 * 1000) {
+        if (Date.now() - (energyCounterBaselines.lastLongTermSyncMs || 0) > 10 * 60 * 1000) {
             syncLongTermStatisticsFromHa(cfg, statesMap, false);
         }
     } catch (err) {}
@@ -991,13 +1039,22 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
     }
 
     const now = new Date();
-    const targetYear = selectedAnalysisYear || now.getFullYear();
-    const startOfYearIso = new Date(targetYear, 0, 1, 0, 0, 0).toISOString();
-    const endOfPeriodIso = targetYear === now.getFullYear()
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+    const targetYear = selectedAnalysisYear || curYear;
+
+    const trackDate = getEffectiveTrackingStartDate(cfg);
+    const trackMs = trackDate.getTime();
+    const startOfYearMs = new Date(targetYear, 0, 1, 0, 0, 0).getTime();
+    const queryStartMs = Math.max(startOfYearMs, trackMs <= now.getTime() ? trackMs : startOfYearMs);
+    const queryStartIso = new Date(queryStartMs).toISOString();
+    const endOfPeriodIso = targetYear === curYear
         ? now.toISOString()
         : new Date(targetYear, 11, 31, 23, 59, 59).toISOString();
 
-    const wsRes = await fetchHaLongTermStatisticsWs(cfg.baseUrl, cfg.accessToken, allStatIds, startOfYearIso, endOfPeriodIso, 'month');
+    // Query daily statistics from max(startOfYear, trackingStartDate) so we can aggregate exact post-trackingStartDate monthly totals
+    // and also get exact current-month change even when total_increasing sensors have state === null in HA!
+    const wsRes = await fetchHaLongTermStatisticsWs(cfg.baseUrl, cfg.accessToken, allStatIds, queryStartIso, endOfPeriodIso, 'day');
     if (!wsRes.ok || !wsRes.data) {
         if (showToast && typeof showToastNotification === 'function') {
             showToastNotification(wsRes.error || 'HA Langzeit-Statistik konnte nicht abgerufen werden.', 'warning');
@@ -1006,33 +1063,54 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
     }
 
     const statsByEntity = wsRes.data;
-    const curYear = now.getFullYear();
-    const curMonth = now.getMonth();
 
-    // 1. Reconstruct exact 1st-of-month 00:00 counter baseline (monthStartByEntity) for current month
-    // Even if the user hasn't opened the app for >10 days and HA's short-term history purged the 1st of the month!
-    if (targetYear === curYear) {
-        allStatIds.forEach(entId => {
-            const buckets = statsByEntity[entId];
-            if (!Array.isArray(buckets) || buckets.length === 0) return;
-            const scale = getEnergyScaleForEntity(entId, statesMap);
+    // Aggregate daily buckets per month (only including buckets >= trackingStartDate!)
+    const monthlyAggByEntity = {};
+    allStatIds.forEach(entId => {
+        const buckets = statsByEntity[entId];
+        if (!Array.isArray(buckets) || buckets.length === 0) return;
+        const scale = getEnergyScaleForEntity(entId, statesMap);
+        const byMonth = {};
 
-            let reconstructedMonthStart = null;
-            for (let i = 0; i < buckets.length; i++) {
-                const b = buckets[i];
-                const bDate = new Date(typeof b.start === 'number' ? b.start : b.start);
-                if (bDate.getFullYear() === curYear && bDate.getMonth() === curMonth) {
-                    if (typeof b.state === 'number' && typeof b.change === 'number' && b.state >= b.change) {
-                        reconstructedMonthStart = +((b.state - b.change) * scale).toFixed(3);
-                    } else if (i > 0 && typeof buckets[i - 1].state === 'number') {
-                        reconstructedMonthStart = +(buckets[i - 1].state * scale).toFixed(3);
-                    }
-                    break;
-                }
+        buckets.forEach(b => {
+            const bStartMs = new Date(typeof b.start === 'number' ? b.start : b.start).getTime();
+            if (isNaN(bStartMs) || bStartMs < (trackMs - 12 * 3600 * 1000)) return;
+            const bDate = new Date(bStartMs);
+            if (bDate.getFullYear() !== targetYear) return;
+            const mIdx = bDate.getMonth();
+            if (!byMonth[mIdx]) {
+                byMonth[mIdx] = { changeSum: 0, hasChange: false, firstState: null, lastState: null };
             }
+            if (typeof b.change === 'number' && !isNaN(b.change)) {
+                byMonth[mIdx].changeSum += (b.change * scale);
+                byMonth[mIdx].hasChange = true;
+            }
+            const stVal = typeof b.state === 'number' ? (b.state * scale) : (typeof b.sum === 'number' ? (b.sum * scale) : null);
+            if (stVal !== null && !isNaN(stVal)) {
+                if (byMonth[mIdx].firstState === null) byMonth[mIdx].firstState = stVal;
+                byMonth[mIdx].lastState = stVal;
+            }
+        });
+        monthlyAggByEntity[entId] = byMonth;
+    });
 
-            if (reconstructedMonthStart !== null && reconstructedMonthStart > 0) {
-                energyCounterBaselines.monthStartByEntity[entId] = reconstructedMonthStart;
+    // 1. Update current month's exact LTS change & reconstruct 1st-of-month baseline
+    if (targetYear === curYear) {
+        if (!energyCounterBaselines.ltsMonthChangeByEntity) {
+            energyCounterBaselines.ltsMonthChangeByEntity = {};
+        }
+        allStatIds.forEach(entId => {
+            const mInfo = monthlyAggByEntity[entId]?.[curMonth];
+            if (!mInfo || !mInfo.hasChange) return;
+            const monthChangeKwh = +Math.max(0, mInfo.changeSum).toFixed(3);
+            energyCounterBaselines.ltsMonthChangeByEntity[entId] = monthChangeKwh;
+
+            // If we also have the live counter reading in statesMap, derive the exact monthStartByEntity baseline
+            const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : null;
+            if (curLiveReading !== null && curLiveReading >= monthChangeKwh) {
+                energyCounterBaselines.monthStartByEntity[entId] = +Math.max(0, curLiveReading - monthChangeKwh).toFixed(3);
+            } else if (mInfo.lastState !== null && mInfo.lastState >= monthChangeKwh && mInfo.firstState !== null && mInfo.firstState > 0) {
+                energyCounterBaselines.monthStartByEntity[entId] = +Math.max(0, mInfo.lastState - monthChangeKwh).toFixed(3);
             }
         });
 
@@ -1041,18 +1119,13 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         saveEnergyCounterBaselines();
     }
 
-    // 2. Populate monthly logbook (performanceRecordsByProject) for all months in targetYear
+    // 2. Populate monthly logbook (performanceRecordsByProject) for months >= trackingStartDate
     const extractEntityMonthlyChange = (entId, monthIdx) => {
         const cleanId = String(entId || '').trim();
-        if (!cleanId || !Array.isArray(statsByEntity[cleanId])) return null;
-        const scale = getEnergyScaleForEntity(cleanId, statesMap);
-        for (const b of statsByEntity[cleanId]) {
-            const bDate = new Date(typeof b.start === 'number' ? b.start : b.start);
-            if (bDate.getFullYear() === targetYear && bDate.getMonth() === monthIdx) {
-                if (typeof b.change === 'number' && !isNaN(b.change)) {
-                    return Math.max(0, +(b.change * scale).toFixed(1));
-                }
-            }
+        if (!cleanId) return null;
+        const mInfo = monthlyAggByEntity[cleanId]?.[monthIdx];
+        if (mInfo && mInfo.hasChange) {
+            return +Math.max(0, mInfo.changeSum).toFixed(1);
         }
         return null;
     };
@@ -1061,8 +1134,25 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
     let updatedMonthsCount = 0;
     const maxMonthIdx = targetYear === curYear ? curMonth : 11;
 
-    for (let m = 0; m <= maxMonthIdx; m++) {
-        if (!months[m] || months[m].source === 'manual') continue;
+    for (let m = 0; m <= 11; m++) {
+        if (!months[m]) continue;
+        const monthEndMs = new Date(targetYear, m + 1, 0, 23, 59, 59).getTime();
+
+        // Clear any old auto-synced HA data from months prior to trackingStartDate (unless manually entered by user)
+        if (monthEndMs < trackMs) {
+            if (months[m].source === 'ha') {
+                months[m].pvYieldKwh = null;
+                months[m].gridExportKwh = null;
+                months[m].gridImportKwh = null;
+                months[m].batteryChargedKwh = null;
+                months[m].batteryDischargedKwh = null;
+                months[m].source = 'empty';
+                updatedMonthsCount++;
+            }
+            continue;
+        }
+
+        if (m > maxMonthIdx || months[m].source === 'manual') continue;
 
         let pvMonthSum = 0;
         let pvMonthFound = false;
@@ -1097,10 +1187,11 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
     }
 
     if (showToast && typeof showToastNotification === 'function') {
+        const startStr = trackDate.toLocaleDateString('de-DE');
         if (updatedMonthsCount > 0) {
-            showToastNotification(`HA Langzeit-Statistik: ${updatedMonthsCount} Monate für ${targetYear} & Monats-Startwerte synchronisiert!`, 'success');
+            showToastNotification(`HA Langzeit-Statistik ab ${startStr} synchronisiert (${updatedMonthsCount} Monats-Bilanzen aktualisiert)!`, 'success');
         } else {
-            showToastNotification('HA Langzeit-Statistik geprüft (Zähler-Baselines aktualisiert).', 'info');
+            showToastNotification(`HA Langzeit-Statistik ab ${startStr} geprüft (Zähler-Baselines kalibriert).`, 'info');
         }
     }
     return updatedMonthsCount > 0;
@@ -1111,8 +1202,55 @@ async function triggerManualLongTermStatsSync() {
     await syncLongTermStatisticsFromHa(haConfigState, null, true);
 }
 
+function onChangeTrackingStartDate(newDateVal) {
+    const cleanVal = String(newDateVal || '2026-11-01').trim() || '2026-11-01';
+    haConfigState.trackingStartDate = cleanVal;
+    setElVal('ha_cfg_tracking_start_date', cleanVal);
+    setElVal('logbuchTrackingStartDate', cleanVal);
+    try {
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+    } catch (e) {}
+}
+
+async function applyTrackingStartDateAndResync() {
+    const inpModal = document.getElementById('ha_cfg_tracking_start_date');
+    const inpLog = document.getElementById('logbuchTrackingStartDate');
+    const chosenDate = (inpLog && inpLog.offsetParent !== null ? inpLog.value : (inpModal?.value || haConfigState.trackingStartDate || '2026-11-01')).trim();
+    onChangeTrackingStartDate(chosenDate);
+
+    // Reset cached month baselines so they are freshly computed from chosenDate onwards
+    energyCounterBaselines.monthStartByEntity = {};
+    energyCounterBaselines.ltsMonthChangeByEntity = {};
+    energyCounterBaselines.lastHistorySyncMs = 0;
+    energyCounterBaselines.lastLongTermSyncMs = 0;
+    saveEnergyCounterBaselines();
+
+    // Also clear any pre-trackingStartDate 'ha' entries in the current year's logbook
+    const trackDate = getEffectiveTrackingStartDate(haConfigState);
+    const trackMs = trackDate.getTime();
+    const months = getCurrentYearMonthsData(selectedAnalysisYear);
+    months.forEach((mObj, idx) => {
+        const mEndMs = new Date(selectedAnalysisYear, idx + 1, 0, 23, 59, 59).getTime();
+        if (mEndMs < trackMs && mObj.source === 'ha') {
+            mObj.pvYieldKwh = null;
+            mObj.gridExportKwh = null;
+            mObj.gridImportKwh = null;
+            mObj.batteryChargedKwh = null;
+            mObj.batteryDischargedKwh = null;
+            mObj.source = 'empty';
+        }
+    });
+    await savePerformanceRecordsLocalAndServer();
+
+    await refreshIntradayHistoryAndLive();
+    await syncLongTermStatisticsFromHa(haConfigState, null, true);
+    renderAnalysisSection();
+}
+
 window.syncLongTermStatisticsFromHa = syncLongTermStatisticsFromHa;
 window.triggerManualLongTermStatsSync = triggerManualLongTermStatsSync;
+window.onChangeTrackingStartDate = onChangeTrackingStartDate;
+window.applyTrackingStartDateAndResync = applyTrackingStartDateAndResync;
 
 function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
     if (!entityId || typeof entityId !== 'string') return null;
@@ -1230,31 +1368,31 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
         e.loadEnergyMonth,
         rawLoadEnergyReading,
         energyCounterBaselines.monthStartByEntity,
-        { isCumulative: isEntityCumulativeTotal(e.loadEnergyMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity }
+        { isCumulative: isEntityCumulativeTotal(e.loadEnergyMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
     );
     const rawGridImportMonthKwh = resolveEnergyCounterDelta(
         e.gridImportMonth,
         rawGridImpReading,
         energyCounterBaselines.monthStartByEntity,
-        { isCumulative: isEntityCumulativeTotal(e.gridImportMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity }
+        { isCumulative: isEntityCumulativeTotal(e.gridImportMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
     );
     const rawGridExportMonthKwh = resolveEnergyCounterDelta(
         e.gridExportMonth,
         rawGridExpReading,
         energyCounterBaselines.monthStartByEntity,
-        { isCumulative: isEntityCumulativeTotal(e.gridExportMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity }
+        { isCumulative: isEntityCumulativeTotal(e.gridExportMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
     );
     const rawBatteryChargeMonthKwh = resolveEnergyCounterDelta(
         e.batteryChargeMonth,
         rawBatChgReading,
         energyCounterBaselines.monthStartByEntity,
-        { isCumulative: isEntityCumulativeTotal(e.batteryChargeMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity }
+        { isCumulative: isEntityCumulativeTotal(e.batteryChargeMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
     );
     const rawBatteryDischargeMonthKwh = resolveEnergyCounterDelta(
         e.batteryDischargeMonth,
         rawBatDisReading,
         energyCounterBaselines.monthStartByEntity,
-        { isCumulative: isEntityCumulativeTotal(e.batteryDischargeMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity }
+        { isCumulative: isEntityCumulativeTotal(e.batteryDischargeMonth, statesMap, true), upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
     );
 
     // Enforce physical monotonicity: Month delta >= Today delta
@@ -1295,7 +1433,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
                 cs.energyEntity,
                 rawStrKwh,
                 energyCounterBaselines.monthStartByEntity,
-                { isCumulative: isCumStr, upperBoundMap: energyCounterBaselines.dayStartByEntity }
+                { isCumulative: isCumStr, upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
             );
             const eMonthKwh = ensureMonthAtLeastToday(eMonthRaw, eKwh);
             if (eKwh !== null && !isNaN(eKwh)) {
@@ -1326,7 +1464,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
 
     // Multi-Inverter PV Energy Calculation:
     // Sum all configured inverter PV energy counters (WR 1 + WR 2 + WR 3...).
-    // If no inverter counters are configured in Section 5, automatically fall back to the sum of String kWh counters from Section 3!
+    // If no inverter counters are configured in Section 2, automatically fall back to the sum of String kWh counters from Section 3!
     const pvCounterIds = getConfiguredPvEnergyEntities(cfg);
     let pvTodaySum = 0;
     let pvTodayValidCount = 0;
@@ -1336,7 +1474,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
     pvCounterIds.forEach(entId => {
         const rawVal = extractHaNumericClient(statesMap, entId, 'kWh');
         if (rawVal === null) return;
-        const isCum = isEntityCumulativeTotal(entId, statesMap, false);
+        const isCum = isEntityCumulativeTotal(entId, statesMap, true);
         const dToday = resolveEnergyCounterDelta(
             entId,
             rawVal,
@@ -1351,7 +1489,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
             entId,
             rawVal,
             energyCounterBaselines.monthStartByEntity,
-            { isCumulative: isCum, upperBoundMap: energyCounterBaselines.dayStartByEntity }
+            { isCumulative: isCum, upperBoundMap: energyCounterBaselines.dayStartByEntity, ltsOverrideMap: energyCounterBaselines.ltsMonthChangeByEntity }
         );
         const dMonth = ensureMonthAtLeastToday(dMonthRaw, dToday);
         if (dMonth !== null && !isNaN(dMonth)) {
@@ -1375,13 +1513,25 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
         cfg.customConsumers.forEach(cc => {
             if (!cc || !cc.name) return;
             const pW = extractHaNumericClient(statesMap, cc.powerEntity, 'W');
-            if (pW === null) {
+            const rawConsKwh = extractHaNumericClient(statesMap, cc.energyEntity, 'kWh');
+            const consEnergyKwh = rawConsKwh !== null
+                ? resolveEnergyCounterDelta(
+                    cc.energyEntity,
+                    rawConsKwh,
+                    energyCounterBaselines.dayStartByEntity,
+                    { isCumulative: isEntityCumulativeTotal(cc.energyEntity, statesMap, false), maxPlausibleKwh: 120 }
+                )
+                : null;
+
+            if (pW === null && rawConsKwh === null) {
                 unavailableConsumersCount++;
                 consumersTelemetry.push({
                     id: cc.id,
                     name: cc.name,
                     powerEntity: cc.powerEntity,
+                    energyEntity: cc.energyEntity || '',
                     powerW: 0,
+                    energyKwh: null,
                     available: false
                 });
             } else {
@@ -1389,7 +1539,9 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
                     id: cc.id,
                     name: cc.name,
                     powerEntity: cc.powerEntity,
-                    powerW: Math.max(0, pW),
+                    energyEntity: cc.energyEntity || '',
+                    powerW: pW !== null ? Math.max(0, pW) : 0,
+                    energyKwh: consEnergyKwh,
                     available: true
                 });
             }
@@ -2185,11 +2337,37 @@ function getUnifiedEnergyLedger(baseline = null) {
     const houseTotalToday = +Math.max(0, coveredToday + gridImpToday, rawLoadToday).toFixed(2);
 
     // --- 2. CURRENT RUNNING MONTH (MONAT): Fuse Month Counter + 30d Month Watt Integral + Today (Monat >= Heute!) ---
-    const pvMonthCandidates = [pvToday, Number(t.pvEnergyMonthKwh) || 0, Number(monthInt.pv_total) || 0];
-    const gridImpMonthCandidates = [gridImpToday, Number(t.gridImportMonthKwh) || 0, Number(monthInt.grid_power) || 0];
-    const gridExpMonthCandidates = [gridExpToday, Number(t.gridExportMonthKwh) || 0, Number(monthInt.grid_feedin) || 0];
-    const batChgMonthCandidates = hasBattery ? [batChgToday, Number(t.batteryChargeMonthKwh) || 0, Number(monthInt.battery_charge) || 0] : [0];
-    const batDisMonthCandidates = hasBattery ? [batDisToday, Number(t.batteryDischargeMonthKwh) || 0, Number(monthInt.battery_discharge) || 0] : [0];
+    // If the user manually calibrated/corrected the current month in the Monats-Logbuch (source === 'manual'),
+    // respect that manual calibration directly so old pre-tracking counter offsets never override the user's manual correction!
+    const now = new Date();
+    const curYearMonths = getCurrentYearMonthsData(now.getFullYear());
+    const curMonthLogObj = curYearMonths?.[now.getMonth()];
+    const hasManualMonthOverride = Boolean(curMonthLogObj && curMonthLogObj.source === 'manual');
+
+    const pvMonthCandidates = (hasManualMonthOverride && curMonthLogObj.pvYieldKwh !== null && curMonthLogObj.pvYieldKwh !== '')
+        ? [Math.max(pvToday, Number(curMonthLogObj.pvYieldKwh) || 0)]
+        : [pvToday, Number(t.pvEnergyMonthKwh) || 0, Number(monthInt.pv_total) || 0];
+
+    const gridImpMonthCandidates = (hasManualMonthOverride && curMonthLogObj.gridImportKwh !== null && curMonthLogObj.gridImportKwh !== '')
+        ? [Math.max(gridImpToday, Number(curMonthLogObj.gridImportKwh) || 0)]
+        : [gridImpToday, Number(t.gridImportMonthKwh) || 0, Number(monthInt.grid_power) || 0];
+
+    const gridExpMonthCandidates = (hasManualMonthOverride && curMonthLogObj.gridExportKwh !== null && curMonthLogObj.gridExportKwh !== '')
+        ? [Math.max(gridExpToday, Number(curMonthLogObj.gridExportKwh) || 0)]
+        : [gridExpToday, Number(t.gridExportMonthKwh) || 0, Number(monthInt.grid_feedin) || 0];
+
+    const batChgMonthCandidates = hasBattery
+        ? ((hasManualMonthOverride && curMonthLogObj.batteryChargedKwh !== null && curMonthLogObj.batteryChargedKwh !== '')
+            ? [Math.max(batChgToday, Number(curMonthLogObj.batteryChargedKwh) || 0)]
+            : [batChgToday, Number(t.batteryChargeMonthKwh) || 0, Number(monthInt.battery_charge) || 0])
+        : [0];
+
+    const batDisMonthCandidates = hasBattery
+        ? ((hasManualMonthOverride && curMonthLogObj.batteryDischargedKwh !== null && curMonthLogObj.batteryDischargedKwh !== '')
+            ? [Math.max(batDisToday, Number(curMonthLogObj.batteryDischargedKwh) || 0)]
+            : [batDisToday, Number(t.batteryDischargeMonthKwh) || 0, Number(monthInt.battery_discharge) || 0])
+        : [0];
+
     const loadMonthCandidates = [houseTotalToday, Number(t.loadEnergyMonthKwh) || 0, Number(monthInt.house_load) || 0];
 
     let pvMonth = +Math.max(...pvMonthCandidates).toFixed(2);
@@ -2234,6 +2412,8 @@ function getUnifiedEnergyLedger(baseline = null) {
             }
         },
         month: {
+            hasLiveData: hasAnyRealData,
+            isManualOverride: hasManualMonthOverride,
             pvTotal: pvMonth,
             gridImp: gridImpMonth,
             gridExp: gridExpMonth,
@@ -2479,14 +2659,47 @@ function renderLiveCockpitUI(baseline) {
         }
     }
 
-    // 3. Render Interactive "Aktive Verbraucher" List (Top 5 with Expand/Collapse + Tap -> Jump to Telemetry Curve Focus)
+    // 3. Render Interactive "Aktive Verbraucher" List (Full-Row Background Progress Bars + Live/kWh Priority Sort Toggle)
+    const sortLblEl = document.getElementById('lblConsumerSortMode');
+    if (sortLblEl) {
+        sortLblEl.innerText = consumerSortMode === 'kwh_first' ? 'Prio: Heute kWh' : 'Prio: Live → kWh';
+    }
+
     const consContainer = document.getElementById('dash_active_consumers_list');
     if (consContainer) {
-        const consumers = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
+        const rawConsumers = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
             ? [...t.consumersTelemetry]
-            : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, powerW: 0, available: false }));
+            : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, powerW: 0, energyKwh: null, available: false }));
 
-        consumers.sort((a, b) => (b.powerW || 0) - (a.powerW || 0));
+        const consumers = rawConsumers.map(c => {
+            const pW = Math.max(0, Number(c.powerW) || 0);
+            const fromCounterKwh = (c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null;
+            const fromIntegralKwh = Number(dayInt[`consumer_${c.id}`] || 0);
+            const consKwh = fromCounterKwh !== null ? Math.max(fromCounterKwh, fromIntegralKwh) : fromIntegralKwh;
+            return {
+                ...c,
+                powerW: pW,
+                consKwh: +Math.max(0, consKwh).toFixed(3),
+                isActive: pW > 5
+            };
+        });
+
+        // Sort according to consumerSortMode:
+        // 'live_first': Prio 1 = Active (powerW > 5) sorted by W desc; Prio 2 = Inactive sorted by today's kWh desc (so consumers with daily kWh float up!)
+        // 'kwh_first': Prio 1 = Today's kWh desc; Prio 2 = Live W desc
+        consumers.sort((a, b) => {
+            if (consumerSortMode === 'kwh_first') {
+                if (Math.abs(b.consKwh - a.consKwh) > 0.005) return b.consKwh - a.consKwh;
+                return b.powerW - a.powerW;
+            }
+            if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+            if (a.isActive) {
+                if (Math.abs(b.powerW - a.powerW) > 1) return b.powerW - a.powerW;
+                return b.consKwh - a.consKwh;
+            }
+            if (Math.abs(b.consKwh - a.consKwh) > 0.003) return b.consKwh - a.consKwh;
+            return b.powerW - a.powerW;
+        });
 
         if (consumers.length === 0) {
             consContainer.innerHTML = `
@@ -2498,28 +2711,75 @@ function renderLiveCockpitUI(baseline) {
             const TOP_LIMIT = 5;
             const visibleConsumers = showAllDashboardConsumers ? consumers : consumers.slice(0, TOP_LIMIT);
             const hiddenCount = Math.max(0, consumers.length - TOP_LIMIT);
+            const maxConsKwhToday = Math.max(0.05, ...consumers.map(x => x.consKwh || 0));
+            const totalConsKwhToday = consumers.reduce((acc, x) => acc + (x.consKwh || 0), 0);
 
             const rowsHtml = visibleConsumers.map(c => {
                 const safeName = typeof escapeHtml === 'function' ? escapeHtml(c.name) : c.name;
-                const valStr = `${Math.round(c.powerW || 0).toLocaleString('de-DE')} W`;
-                const consKwh = dayInt[`consumer_${c.id}`] ?? 0;
-                const sharePct = t.loadPowerW > 20 ? Math.min(100, Math.round(((c.powerW || 0) / t.loadPowerW) * 100)) : 0;
-                const metaText = consKwh > 0.005
-                    ? `${formatKwhDe(consKwh, 2)}${sharePct > 0 ? ` · ${sharePct}%` : ''}`
-                    : (sharePct > 0 ? `${sharePct}% Hauslast` : 'Kurve');
+                const valStr = formatPowerDe(c.powerW, c.powerW < 1000);
+                const consKwh = c.consKwh || 0;
+                const isActive = c.isActive;
+                const liveSharePct = (isActive && t.loadPowerW > 20) ? Math.min(100, Math.round((c.powerW / t.loadPowerW) * 100)) : 0;
+                const kwhSharePct = (consKwh > 0.01 && totalConsKwhToday > 0.02) ? Math.min(100, Math.round((consKwh / totalConsKwhToday) * 100)) : 0;
+
+                // Full-row horizontal progress bar width (representing today's kWh consumption)
+                let barWidthPct = 0;
+                if (consKwh > 0.002) {
+                    barWidthPct = Math.min(100, Math.max(6, Math.round((consKwh / maxConsKwhToday) * 100)));
+                } else if (isActive) {
+                    barWidthPct = Math.min(30, Math.max(8, Math.round((c.powerW / Math.max(600, t.loadPowerW || 1000)) * 35)));
+                }
+
+                // Small daily consumption label (always visible on mobile & desktop)
+                const kwhText = `${formatKwhDe(consKwh, 2)} heute`;
+                const extraBadge = isActive && liveSharePct > 0
+                    ? ` · ${liveSharePct}% Hauslast`
+                    : (kwhSharePct > 0 ? ` · ${kwhSharePct}%` : '');
+
                 const safeIdJs = String(c.id || '').replace(/'/g, "\\'");
+
+                // Pastel active styling vs. muted grey inactive styling
+                const cardClasses = isActive
+                    ? 'border-teal-500/50 dark:border-teal-400/45 bg-teal-50/45 dark:bg-[#11262c]/90 hover:border-teal-500/80 shadow-xs'
+                    : 'border-slate-200/85 dark:border-slate-800/90 bg-white/80 dark:bg-[#131f24]/80 hover:border-slate-300 dark:hover:border-slate-700';
+
+                const fillBarClasses = isActive
+                    ? 'bg-gradient-to-r from-teal-400/30 via-emerald-400/22 to-teal-400/10 dark:from-teal-400/28 dark:via-emerald-500/20 dark:to-teal-500/5'
+                    : 'bg-slate-200/85 dark:bg-slate-700/45';
+
+                const iconHtml = isActive
+                    ? `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0 shadow-2xs"></span>`
+                    : `<span class="material-symbols-rounded text-sm text-slate-400 dark:text-slate-500 group-hover:text-teal-500 transition-colors shrink-0">show_chart</span>`;
+
+                const nameClasses = isActive
+                    ? 'text-slate-900 dark:text-white font-bold'
+                    : 'text-slate-700 dark:text-slate-200 font-semibold';
+
+                const subTextClasses = isActive
+                    ? 'text-teal-800/85 dark:text-teal-200/85 font-semibold'
+                    : 'text-slate-500 dark:text-slate-400 font-medium';
+
+                const powerClasses = isActive
+                    ? 'text-teal-800 dark:text-teal-200 font-black'
+                    : 'text-slate-500 dark:text-slate-400 font-bold';
 
                 return `
                 <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
                     role="button" tabindex="0" title="Tippen für Verlaufskurve (${safeName})"
-                    class="rounded-2xl bg-white/90 dark:bg-[#162329] border border-slate-200/90 dark:border-slate-700/70 hover:border-teal-500/50 px-4 py-2.5 flex items-center justify-between shadow-2xs transition-all cursor-pointer group active:scale-[0.99]">
-                    <div class="flex items-center gap-2.5 min-w-0 pr-3">
-                        <span class="material-symbols-rounded text-base text-slate-400 group-hover:text-teal-500 dark:group-hover:text-teal-400 transition-colors shrink-0">show_chart</span>
-                        <span class="text-sm font-semibold text-slate-800 dark:text-slate-100 group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate">${safeName}</span>
+                    class="relative overflow-hidden rounded-2xl border ${cardClasses} px-3.5 py-2.5 flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
+                    <!-- Full-Row Horizontal Background Progress Bar (indicates daily kWh consumption) -->
+                    <div aria-hidden="true" class="absolute inset-y-0 left-0 pointer-events-none transition-all duration-700 ease-out rounded-r-xl ${fillBarClasses}" style="width: ${barWidthPct}%"></div>
+
+                    <!-- Foreground Content -->
+                    <div class="relative z-10 flex items-center gap-2.5 min-w-0 pr-2">
+                        ${iconHtml}
+                        <div class="min-w-0">
+                            <div class="text-xs sm:text-sm ${nameClasses} group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate leading-tight">${safeName}</div>
+                            <div class="text-[10px] sm:text-[11px] font-mono tabular-nums ${subTextClasses} truncate leading-tight mt-0.5">${kwhText}${extraBadge}</div>
+                        </div>
                     </div>
-                    <div class="flex items-baseline gap-2.5 shrink-0 font-mono tabular-nums">
-                        <span class="text-[11px] text-slate-500 dark:text-slate-400 hidden sm:inline">${metaText}</span>
-                        <span class="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">${valStr}</span>
+                    <div class="relative z-10 flex items-baseline gap-1.5 shrink-0 font-mono tabular-nums pl-2">
+                        <span class="text-sm sm:text-base ${powerClasses}">${valStr}</span>
                     </div>
                 </div>`;
             }).join('');
@@ -2537,8 +2797,11 @@ function renderLiveCockpitUI(baseline) {
         const fnEl = document.getElementById('dash_consumers_footnote');
         if (fnEl) {
             const unavail = t.unavailableConsumersCount || 0;
-            const unavailText = unavail > 0 ? ` · ${unavail} Messwert(e) inaktiv.` : '';
-            fnEl.innerText = `Top 5 nach aktueller Leistung · Tipp auf einen Verbraucher öffnet die 24h-Kurve${unavailText}`;
+            const unavailText = unavail > 0 ? ` · ${unavail} Sensor(en) inaktiv.` : '';
+            const modeDesc = consumerSortMode === 'kwh_first'
+                ? 'Sortiert nach Tagesverbrauch (kWh heute)'
+                : 'Prio 1: Aktive Verbraucher (W) · Prio 2: Tagesverbrauch (kWh)';
+            fnEl.innerText = `${modeDesc} · Hintergrundbalken zeigt kWh heute · Tipp öffnet 24h-Kurve${unavailText}`;
         }
     }
 
@@ -2546,7 +2809,7 @@ function renderLiveCockpitUI(baseline) {
     const intradaySumEl = document.getElementById('live_hub_intraday_summary');
     if (intradaySumEl) {
         const customStrNames = (haConfigState.customStrings || []).slice(0, 2).map(s => s.name).join(', ');
-        const todayPv = t.pvEnergyTodayKwh ?? intKwh.pv_total ?? 0;
+        const todayPv = td.pvTotal ?? 0;
         intradaySumEl.innerText = `${customStrNames || 'Strings'}, Haus & Batterie · Heute ${formatKwhDe(todayPv, 2)} (${activeCurveKeys.size} Kanäle aktiv)`;
     }
 }
@@ -2555,6 +2818,15 @@ function toggleShowAllDashboardConsumers() {
     showAllDashboardConsumers = !showAllDashboardConsumers;
     renderLiveCockpitUI();
 }
+
+function toggleConsumerSortMode() {
+    consumerSortMode = consumerSortMode === 'live_first' ? 'kwh_first' : 'live_first';
+    try {
+        localStorage.setItem('pvpro_consumer_sort_mode', consumerSortMode);
+    } catch (e) {}
+    renderLiveCockpitUI();
+}
+window.toggleConsumerSortMode = toggleConsumerSortMode;
 
 // ============================================================================
 // 5. INTERACTIVE CURVE FOCUS & LEVEL-2 TECHNICAL TELEMETRY STAGE
@@ -3487,6 +3759,9 @@ function computeAggregatedPerformanceMetrics(baseline) {
     let batChargedSum = 0;
     let batDischargedSum = 0;
 
+    const trackDate = getEffectiveTrackingStartDate(haConfigState);
+    const trackMs = trackDate.getTime();
+
     const monthlyComparison = months.map((mObj, idx) => {
         const sollKwh = baseline.monthlySollTotal[idx] || 0;
         const isCurrentRunningMonth = (selectedAnalysisYear === curYear && idx === curMonthIdx);
@@ -3495,7 +3770,10 @@ function computeAggregatedPerformanceMetrics(baseline) {
         const proRataRatio = isCurrentRunningMonth ? (daysElapsed / daysInMonth) : 1;
         const proRataSollKwh = sollKwh * proRataRatio;
 
-        let hasReal = mObj.pvYieldKwh !== null && mObj.pvYieldKwh !== undefined && mObj.pvYieldKwh !== '';
+        const monthEndMs = new Date(selectedAnalysisYear, idx + 1, 0, 23, 59, 59).getTime();
+        const isBeforeTrackingStart = monthEndMs < trackMs && mObj.source !== 'manual';
+
+        let hasReal = !isBeforeTrackingStart && mObj.pvYieldKwh !== null && mObj.pvYieldKwh !== undefined && mObj.pvYieldKwh !== '';
         let isLiveCurrentMonth = false;
 
         let realPv = hasReal ? Math.max(0, parseFloat(mObj.pvYieldKwh) || 0) : null;
@@ -3505,17 +3783,17 @@ function computeAggregatedPerformanceMetrics(baseline) {
         let bDis = hasReal ? Math.max(0, parseFloat(mObj.batteryDischargedKwh) || 0) : 0;
 
         // Auto-feed or heal the running calendar month from the Unified Energy Ledger (Single Source of Truth)
-        if (isCurrentRunningMonth && ledger.month.hasLiveData) {
+        if (isCurrentRunningMonth && !isBeforeTrackingStart && ledger.month.hasLiveData) {
             if (!hasReal || mObj.source === 'ha') {
                 hasReal = true;
                 isLiveCurrentMonth = true;
-                realPv = Math.max(realPv || 0, ledger.month.pvTotal);
-                expKwh = Math.max(expKwh || 0, ledger.month.gridExp);
-                impKwh = Math.max(impKwh || 0, ledger.month.gridImp);
-                bChg = Math.max(bChg || 0, ledger.month.batChg);
-                bDis = Math.max(bDis || 0, ledger.month.batDis);
+                realPv = ledger.month.pvTotal;
+                expKwh = ledger.month.gridExp;
+                impKwh = ledger.month.gridImp;
+                bChg = ledger.month.batChg;
+                bDis = ledger.month.batDis;
             } else {
-                // Even if manually edited, never allow running month channels to drop below today's live telemetry
+                // Manual override in Logbuch is respected (with today's live telemetry as physical floor)
                 realPv = Math.max(realPv || 0, ledger.today.pvTotal);
                 expKwh = Math.max(expKwh || 0, ledger.today.gridExp);
                 impKwh = Math.max(impKwh || 0, ledger.today.gridImp);
@@ -3990,17 +4268,18 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
         }
 
         if (isCurrentYear && ledger.month.hasLiveData) {
-            // Single Source of Truth: fuse Live Month Ledger + Logbook + Today floor
-            pvTotal = +Math.max(ledger.month.pvTotal, mRec?.hasReal ? (mRec.realPv || 0) : 0, ledger.today.pvTotal).toFixed(1);
-            gridExp = +Math.max(ledger.month.gridExp, mRec?.hasReal ? (mRec.expKwh || 0) : 0, ledger.today.gridExp).toFixed(1);
-            gridImp = +Math.max(ledger.month.gridImp, mRec?.hasReal ? (mRec.impKwh || 0) : 0, ledger.today.gridImp).toFixed(1);
-            batChg = hasBattery ? +Math.min(pvTotal, Math.max(ledger.month.batChg, mRec?.hasReal ? (mRec.bChg || 0) : 0, ledger.today.batChg)).toFixed(1) : 0;
-            batDis = hasBattery ? +Math.max(ledger.month.batDis, mRec?.hasReal ? (mRec.bDis || 0) : 0, ledger.today.batDis).toFixed(1) : 0;
+            // Single Source of Truth: ledger.month already respects manual Logbuch calibration or Live HA counters
+            pvTotal = +Math.max(ledger.month.pvTotal, ledger.today.pvTotal).toFixed(1);
+            gridExp = +Math.max(ledger.month.gridExp, ledger.today.gridExp).toFixed(1);
+            gridImp = +Math.max(ledger.month.gridImp, ledger.today.gridImp).toFixed(1);
+            batChg = hasBattery ? +Math.min(pvTotal, Math.max(ledger.month.batChg, ledger.today.batChg)).toFixed(1) : 0;
+            batDis = hasBattery ? +Math.max(ledger.month.batDis, ledger.today.batDis).toFixed(1) : 0;
             gridExp = +Math.min(Math.max(0, pvTotal - batChg), gridExp).toFixed(1);
             pvDirect = +Math.max(0, pvTotal - gridExp - batChg).toFixed(1);
             batLoss = +Math.max(0, batChg - batDis).toFixed(1);
             houseTotal = +Math.max(0.1, pvDirect + batDis + gridImp, ledger.today.houseTotal).toFixed(1);
-            periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} ${selectedAnalysisYear} (Live HA & Logbuch)`;
+            const srcNote = ledger.month.isManualOverride ? 'Manuell kalibriert im Logbuch' : 'Live HA & Logbuch';
+            periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} ${selectedAnalysisYear} (${srcNote})`;
         } else if (mRec && mRec.hasReal && mRec.realPv > 0) {
             pvTotal = +Math.max(0.5, mRec.realPv).toFixed(1);
             gridExp = +Math.max(0, mRec.expKwh).toFixed(1);
@@ -4659,6 +4938,11 @@ function renderRealAmortizationPanel(baseline, metrics) {
 }
 
 function renderMonthlyLogbookTable(baseline, metrics) {
+    const startInp = document.getElementById('logbuchTrackingStartDate');
+    if (startInp && haConfigState.trackingStartDate) {
+        startInp.value = haConfigState.trackingStartDate;
+    }
+
     const tbody = document.getElementById('monthlyLogbookTableBody');
     if (!tbody) return;
 
@@ -4667,6 +4951,7 @@ function renderMonthlyLogbookTable(baseline, metrics) {
     tbody.innerHTML = metrics.monthlyComparison.map((m, idx) => {
         const raw = monthsRaw[idx] || {};
         const isLive = m.isLiveCurrentMonth;
+        const isManual = raw.source === 'manual';
         const pvVal = raw.pvYieldKwh !== null && raw.pvYieldKwh !== undefined ? raw.pvYieldKwh : (isLive ? Math.round(m.realPv || 0) : '');
         const expVal = raw.gridExportKwh !== null && raw.gridExportKwh !== undefined ? raw.gridExportKwh : (isLive ? Math.round(m.expKwh || 0) : '');
         const impVal = raw.gridImportKwh !== null && raw.gridImportKwh !== undefined ? raw.gridImportKwh : (isLive ? Math.round(m.impKwh || 0) : '');
@@ -4676,35 +4961,39 @@ function renderMonthlyLogbookTable(baseline, metrics) {
         const perfStr = m.hasReal && m.perfIndexPct !== null ? `${m.perfIndexPct.toFixed(0)} %` : '—';
         const perfCls = !m.hasReal ? 'text-slate-400' : (m.perfIndexPct >= 100 ? 'text-emerald-600 dark:text-emerald-400 font-bold' : 'text-amber-600 dark:text-amber-400 font-bold');
 
+        const badgeHtml = isManual
+            ? '<span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-700 dark:text-amber-300 font-bold">Manuell</span>'
+            : (isLive ? '<span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-teal-500/15 text-teal-600 dark:text-teal-400 font-bold">Live HA</span>' : '');
+
         return `
         <tr class="border-b border-slate-100 dark:border-slate-800/80 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
             <td class="py-2.5 px-3 font-bold text-xs text-slate-800 dark:text-slate-200 whitespace-nowrap">
                 ${m.labelLong}
-                ${isLive ? '<span class="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-mono bg-teal-500/15 text-teal-600 dark:text-teal-400 font-bold">Live HA</span>' : ''}
+                ${badgeHtml}
             </td>
             <td class="py-2.5 px-3 font-mono tabular-nums text-xs text-slate-500 dark:text-slate-400 text-right">${Math.round(m.sollKwh)} kWh</td>
             <td class="py-2 px-2">
-                <input type="number" step="1" min="0" value="${pvVal}" placeholder="${isLive ? 'Live HA' : 'kWh'}"
+                <input type="number" step="0.1" min="0" value="${pvVal}" placeholder="${isLive ? 'Live HA' : 'kWh'}"
                     onchange="onMonthlyRecordFieldChange(${idx}, 'pvYieldKwh', this.value)"
-                    class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border ${isLive ? 'border-teal-500/50 bg-teal-500/5' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950'} text-slate-900 dark:text-white focus:border-teal-500 outline-none">
+                    class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border ${isManual ? 'border-amber-500/60 bg-amber-500/5' : (isLive ? 'border-teal-500/50 bg-teal-500/5' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950')} text-slate-900 dark:text-white focus:border-teal-500 outline-none">
             </td>
             <td class="py-2 px-2">
-                <input type="number" step="1" min="0" value="${expVal}" placeholder="kWh"
+                <input type="number" step="0.1" min="0" value="${expVal}" placeholder="kWh"
                     onchange="onMonthlyRecordFieldChange(${idx}, 'gridExportKwh', this.value)"
                     class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:border-teal-500 outline-none">
             </td>
             <td class="py-2 px-2">
-                <input type="number" step="1" min="0" value="${impVal}" placeholder="kWh"
+                <input type="number" step="0.1" min="0" value="${impVal}" placeholder="kWh"
                     onchange="onMonthlyRecordFieldChange(${idx}, 'gridImportKwh', this.value)"
                     class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:border-teal-500 outline-none">
             </td>
             <td class="py-2 px-2">
-                <input type="number" step="1" min="0" value="${bChgVal}" placeholder="kWh"
+                <input type="number" step="0.1" min="0" value="${bChgVal}" placeholder="kWh"
                     onchange="onMonthlyRecordFieldChange(${idx}, 'batteryChargedKwh', this.value)"
                     class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:border-teal-500 outline-none">
             </td>
             <td class="py-2 px-2">
-                <input type="number" step="1" min="0" value="${bDisVal}" placeholder="kWh"
+                <input type="number" step="0.1" min="0" value="${bDisVal}" placeholder="kWh"
                     onchange="onMonthlyRecordFieldChange(${idx}, 'batteryDischargedKwh', this.value)"
                     class="w-24 text-right font-mono tabular-nums text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-900 dark:text-white focus:border-teal-500 outline-none">
             </td>
@@ -4720,8 +5009,11 @@ function onMonthlyRecordFieldChange(monthIdx, field, rawValue) {
 
     if (rawValue === '' || rawValue === null) {
         months[monthIdx][field] = null;
+        if (months[monthIdx].pvYieldKwh === null) {
+            months[monthIdx].source = 'empty';
+        }
     } else {
-        const val = parseFloat(rawValue);
+        const val = parseFloat(String(rawValue).replace(',', '.'));
         months[monthIdx][field] = isNaN(val) ? null : Math.max(0, val);
         months[monthIdx].source = 'manual';
     }
@@ -4734,6 +5026,11 @@ async function syncCurrentMonthFromLiveTelemetry(showToast = true) {
     const curMonth = new Date().getMonth();
     const months = getCurrentYearMonthsData(selectedAnalysisYear);
     if (!months[curMonth]) return;
+
+    // Reset manual flag on current month when user explicitly requests a fresh HA sync
+    if (months[curMonth].source === 'manual') {
+        months[curMonth].source = 'ha';
+    }
 
     // First pull Long-Term Statistics from HA via WebSocket so past months & 1st-of-month baselines are complete
     await syncLongTermStatisticsFromHa(haConfigState, null, false);
@@ -4753,7 +5050,7 @@ async function syncCurrentMonthFromLiveTelemetry(showToast = true) {
     savePerformanceRecordsLocalAndServer();
     renderAnalysisSection();
     if (showToast && typeof showToastNotification === 'function') {
-        showToastNotification(`Monats- & Jahreswerte aus HA Langzeit-Statistik & Single-Source-Zählern synchronisiert!`, 'success');
+        showToastNotification(`Monats- & Jahreswerte ab ${haConfigState.trackingStartDate || '01.11.2026'} aus HA synchronisiert!`, 'success');
     }
 }
 
@@ -4983,6 +5280,8 @@ function openHaConfigModal(focusSection = null) {
     setElVal('ha_cfg_token', haConfigState.accessToken || '');
     setElVal('ha_cfg_interval', haConfigState.pollIntervalSec || 10);
     setElVal('ha_cfg_bat_name', haConfigState.batteryName || 'BYD HVS+');
+    setElVal('ha_cfg_tracking_start_date', haConfigState.trackingStartDate || '2026-11-01');
+    setElVal('logbuchTrackingStartDate', haConfigState.trackingStartDate || '2026-11-01');
 
     const ent = haConfigState.entities || {};
     setElVal('ha_ent_pv_power', ent.pvPower || '');
@@ -5176,6 +5475,7 @@ function renderHaCustomConsumersEditor() {
     container.innerHTML = list.map((cc, idx) => {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(cc.name || '') : (cc.name || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.powerEntity || '') : (cc.powerEntity || '');
+        const safeNrgEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.energyEntity || '') : (cc.energyEntity || '');
         return `
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5">
             <div class="flex items-center gap-1.5">
@@ -5186,13 +5486,29 @@ function renderHaCustomConsumersEditor() {
                     <span class="material-symbols-rounded text-base">delete</span>
                 </button>
             </div>
-            <div class="flex items-center gap-1">
-                <input type="text" id="ha_cons_pwr_${idx}" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomConsumerField(${idx}, 'powerEntity', this.value)"
-                    placeholder="sensor.shelly_pm_mini_..."
-                    class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                <button type="button" onclick="openHaEntityPicker({ customType: 'consumerPower', index: ${idx}, unitFilter: 'power', title: 'Einzelverbraucher ${idx + 1} · Leistung (W/kW)' })" class="w-8 h-8 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor aus Liste wählen" aria-label="Sensor wählen">
-                    <span class="material-symbols-rounded text-base">list_alt</span>
-                </button>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <div>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Leistung (W / kW)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="text" id="ha_cons_pwr_${idx}" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomConsumerField(${idx}, 'powerEntity', this.value)"
+                            placeholder="sensor.shelly_pm_mini_power"
+                            class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'consumerPower', index: ${idx}, unitFilter: 'power', title: 'Einzelverbraucher ${idx + 1} · Leistung (W/kW)' })" class="w-8 h-8 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 flex items-center justify-center shrink-0 cursor-pointer" title="Leistungs-Sensor (W) wählen" aria-label="Leistungs-Sensor wählen">
+                            <span class="material-symbols-rounded text-base">list_alt</span>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Energiezähler (kWh, optional für Tagesbalken)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="text" id="ha_cons_nrg_${idx}" list="haEntitiesDatalist" value="${safeNrgEnt}" oninput="updateHaCustomConsumerField(${idx}, 'energyEntity', this.value)"
+                            placeholder="Leer = aus W berechnet"
+                            class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'consumerEnergy', index: ${idx}, unitFilter: 'energy', title: 'Einzelverbraucher ${idx + 1} · Energie (kWh)' })" class="w-8 h-8 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 flex items-center justify-center shrink-0 cursor-pointer" title="Energiezähler (kWh) wählen" aria-label="Energiezähler wählen">
+                            <span class="material-symbols-rounded text-base">list_alt</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -5209,7 +5525,8 @@ function addHaCustomConsumer() {
     haConfigState.customConsumers.push({
         id: 'cons_' + Date.now(),
         name: `Verbraucher ${nextNum}`,
-        powerEntity: ''
+        powerEntity: '',
+        energyEntity: ''
     });
     renderHaCustomConsumersEditor();
 }
@@ -5286,6 +5603,11 @@ function readHaModalIntoState() {
     haConfigState.accessToken = (document.getElementById('ha_cfg_token')?.value || '').trim();
     haConfigState.pollIntervalSec = Math.max(3, parseInt(document.getElementById('ha_cfg_interval')?.value) || 10);
     haConfigState.batteryName = (document.getElementById('ha_cfg_bat_name')?.value || 'BYD HVS+').trim();
+    const trackInp = document.getElementById('ha_cfg_tracking_start_date')?.value;
+    if (trackInp) {
+        haConfigState.trackingStartDate = trackInp.trim();
+        setElVal('logbuchTrackingStartDate', haConfigState.trackingStartDate);
+    }
 
     haConfigState.entities = {
         ...haConfigState.entities,
@@ -5900,6 +6222,9 @@ function pickHaEntityFromModal(entityId) {
             updateHaCustomConsumerField(haPickerState.index, 'name', cleanFriendly);
         }
         renderHaCustomConsumersEditor();
+    } else if (haPickerState.customType === 'consumerEnergy' && haPickerState.index !== null) {
+        updateHaCustomConsumerField(haPickerState.index, 'energyEntity', entityId);
+        renderHaCustomConsumersEditor();
     } else if (haPickerState.customType === 'pvEnergyExtra' && haPickerState.index !== null) {
         updateHaPvEnergyExtraField(haPickerState.index, entityId);
         renderHaPvEnergyExtraList();
@@ -5995,6 +6320,7 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
         accessToken: existingLocalToken, // Keep only the local device's own token!
         pollIntervalSec: sanitizedCfg.pollIntervalSec || haConfigState.pollIntervalSec || 10,
         autoSyncMonthly: sanitizedCfg.autoSyncMonthly !== undefined ? sanitizedCfg.autoSyncMonthly : true,
+        trackingStartDate: sanitizedCfg.trackingStartDate || haConfigState.trackingStartDate || '2026-11-01',
         batteryName: sanitizedCfg.batteryName || haConfigState.batteryName || 'BYD HVS+',
         entities: { ...haConfigState.entities, ...(sanitizedCfg.entities || {}) },
         pvEnergyExtraEntities: Array.isArray(sanitizedCfg.pvEnergyExtraEntities)
