@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '10.2';
+const APP_VERSION = '10.3';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');

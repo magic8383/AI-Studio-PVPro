@@ -4,6 +4,25 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.3] – 2026-11-11
+
+### 🚀 1:1 Echte Home-Assistant-Sensorwerte ohne Filter-Eingriffe & Reine Ursachen-Diagnose
+
+#### 1. Vollständiger Rückbau aller automatischen Filter- & Löschregeln (`telemetry.js`)
+* **Keine eigenmächtige Kürzung oder Nullung von Sensoren mehr:**
+  - Die in v10.2 eingeführten Filterregeln (`isCounterResetSpikeJump` mit 62-%-Grenze, 35-%-Untergrenze in der Kurzzeithistorie sowie Stunden-/Tages-Kappungsgrenzen) wurden vollständig entfernt, da sie valide Sensoren (wie Batterie-Ladung/-Entladung, Fronius-Strings und den Shelly-Zähler mit `+85 kWh` gespeichertem Lebenslauf) fälschlicherweise als „Reset-Sprung“ eingestuft und ausgenullt hatten.
+  - Zusätzlich überschreibt `resolveEnergyCounterDelta()` bei kumulativen Sensoren während des ersten Ladevorgangs nicht mehr vorzeitig `dayStartByEntity` / `monthStartByEntity` mit dem aktuellen Live-Zählerstand.
+  - Jeder hinterlegte `kWh`-Zähler gibt in Live-Dashboard, Verlaufsdiagramm (`Tag` / `Woche` / `Monat`), Sankey-Energiefluss und Monats-Logbuch **1:1 und ungefiltert** genau das aus, was er in Home Assistant gezählt hat.
+
+#### 2. Reine Zahlen- & Ursachen-Transparenz pro Sensor (`renderEntityDiagnosticSubline`)
+* **Echte Zählerstände & Differenzen direkt sichtbar:**
+  - Unter jedem konfigurierten `kWh`-Sensor im Home-Assistant-Dialog werden die realen Zahlen aus Home Assistant ausgewiesen:
+    `✓ 1:1 kWh-Zähler aktiv · Aktuell: XX,XX kWh · Heute: +Y,YY kWh (Start 00:00: ...) · Monat: +Z,Z kWh (Start: ...)`
+* **Reiner Info-Hinweis bei Zähler-Überträgen / Start-Sprüngen (ohne Wertänderung):**
+  - Enthält die Historie oder Langzeit-Statistik eines Zählers einen größeren Einzelsprung von `0` (z. B. `+85 kWh` durch den festen Speicher eines eingebundenen Shellys oder ein `0 → Wert`-Startverhalten), bleibt der Wert **vollständig in der Berechnung enthalten** und wird lediglich als transparenter Hinweis (`Hinweis: Anstieg +85,0 kWh ... im Zähler enthalten (wird 1:1 ungefiltert mitgezählt)`) angezeigt.
+
+---
+
 ## [Version 10.2] – 2026-11-11
 
 ### 🚀 Zähler-Reset-Filter (`+163 kWh` Sprung-Schutz), Transparente `kWh`-Sensor-Diagnose & Einheitliche Gesamtpakete mit Direktem GitHub-Sync

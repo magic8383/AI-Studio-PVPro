@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.2 (Zähler-Reset-Filter für `+163 kWh`-Sprünge in HA-Langzeitstatistik, transparente `kWh`-Sensor-Diagnose in HA-Dialog/Diagramm/Analyse & einheitliche Gesamtpaket-Verwaltung inkl. direktem GitHub-Sync per Token)  
+**Aktuelle Version:** 10.3 (1:1 Echte Home-Assistant-Sensorwerte ohne automatische Filter-/Löschregeln, transparente Zählerstand- & Sprung-Diagnose sowie einheitliche Gesamtpaket-Verwaltung inkl. GitHub-Sync)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
