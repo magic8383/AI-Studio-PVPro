@@ -4,6 +4,38 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.4] – 2026-11-11
+
+### 🚀 Zwei-Spalten-Cockpit für Tablet-Querformat & Desktop, Einzelverbraucher-`kWh`-Fix (`Trockner` & `TV-Verstärker`), Bereinigung alter Repo-Testplanungen & Hardware-Katalog Overflow-Fix
+
+#### 1. Zwei-Spalten-Cockpit für Tablet (Querformat) & Desktop (`index.html`, `telemetry.js`, `app.js`)
+* **Live-Dashboard (`#tab-live`) als 2-Spalten-Cockpit:**
+  - Auf Tablets und großen Smartphones im Querformat (`min-width: 700px` und `orientation: landscape`) sowie auf Desktop-Bildschirmen (`min-width: 1024px`) öffnet sich der Bereich **Live** automatisch im breiten Zwei-Spalten-Cockpit (`max-w-[1480px]`):
+    - **Linke Spalte (`5fr`):** Echtzeit-Status *„Energie · jetzt“* (2x2 Liquid-Glass-Kacheln) und *„Aktive Verbraucher“*.
+    - **Rechte Spalte (`7fr`):** Permanent eingeblendetes, vergrößertes Verlaufsdiagramm (`Tag` / `Woche` / `Monat`) samt Fadenkreuz-Messleiste und 3-Spalten-Messkanal-Kacheln.
+  - Ein Tipp auf eine Kachel oder einen Verbraucher in der linken Spalte fokussiert sofort die zugehörige Kurve im rechten Diagramm, ohne die linke Spalte auszublenden.
+* **Analyse-Ansicht (`#tab-analyse`) mit Side-by-Side Sankey & Monats-Ertragsleistung:**
+  - Im Querformat und auf dem Desktop stehen das interaktive **Sankey-Energieflussdiagramm** (links, `7fr`) und die Karte **Monatliche Ertragsleistung (Ist vs. PVGIS-Soll)** (rechts, `5fr`) direkt nebeneinander, sodass beide Diagramme ihre volle Breite ausspielen können.
+
+#### 2. Zuverlässige `kWh`-Anzeige für alle Einzelverbraucher im Verlaufsdiagramm (`Trockner` & `TV-Verstärker` Fix in `telemetry.js`)
+* **Ursachenbehebung für fehlende `kWh` bei ruhenden Verbrauchern:**
+  1. **Kein leeres History-Array bei 0 Zustandsänderungen seit Mitternacht:** Wenn ein Gerät (wie `Trockner` oder `TV-Verstärker`) seit `00:00` Uhr ausgeschaltet war, liefert Home Assistant bei Standard-Abfragen ohne `significant_changes_only=0` oft keinen Datenpunkt zurück, wodurch `dayStartByEntity` leer blieb. `syncEnergyCounterBaselinesFromHaHistory()` fragt `/api/history/period` ab sofort mit `&significant_changes_only=0` ab und initialisiert `dayStartByEntity` / `monthStartByEntity` mit dem aktuellen Live-Zählerstand (`Delta = 0,00 kWh`), falls seit `00:00` Uhr keine Änderung stattfand.
+  2. **Einbindung aller `customConsumers` & `customStrings` in die WebSocket-Langzeitstatistik & REST-Historie:** `syncLongTermStatisticsFromHa()` und `fetchHaHistoryInBrowser()` fragen nun auch alle `cc.energyEntity` und `cs.energyEntity` ab und unterstützen neben `total_increasing` (`change`/`state`) auch `measurement`-Tageszähler (`max`/`mean`).
+  3. **Konsistente Übergabe von `energyTodayKwh` & `energyMonthKwh`:** `parseHaStatesInBrowser()` berechnet für jeden Einzelverbraucher und String sowohl `energyTodayKwh` als auch `energyMonthKwh`, sodass das Diagramm in allen Zeiträumen (`Tag`, `Woche`, `Monat`) die echten `kWh`-Werte anzeigt.
+
+#### 3. Entfernung der beiden alten Test-Planungen (`"Test"` & `"Test Plan"`) & Token-freies Speichern (`data/system_plans.json`, `app.js`)
+* **Dauerhafte Entfernung aus dem Repository & Browser-Cache:**
+  - Die zwei aus einer früheren September-Sitzung stammenden Einträge `"Test"` (`plan_sys_1789219794019_lre7q`) und `"Test Plan"` (`plan_sys_1789284789177_4338n`) wurden fest aus `data/system_plans.json` entfernt und in `LEGACY_PURGED_PLAN_IDS` dauerhaft gesperrt.
+  - Zusätzlich respektiert `pullUnifiedPackagesFromGitHub()` ab sofort die lokale Tombstone-Liste (`isPlanTombstoned`), sodass gelöschte Pakete beim Pull nicht wiederhergestellt werden.
+* **Speichern ohne Token direkt über den Server (`/api/plans/persist`):**
+  - Ein Klick auf **„Im Server & Code sichern (ohne Token)“** schreibt das aktive Gesamtpaket (Planung + HA-Sensoren ohne geheimen HA-Token + Logbuch) direkt über den AI-Studio-Server in `data/system_plans.json`. Ein GitHub Personal Access Token wird nur benötigt, wenn man direkt von einer statischen `github.io`-Seite aus ohne AI Studio in GitHub zurückschreiben möchte.
+
+#### 4. Reparatur des rechten Text-Overflows im Hardware-Katalog (`app.js`, `index.html`)
+* **Kein Überragen des rechten Kartenrands mehr:**
+  - Die Auswahlmenüs `#quickAddInverterSelect` (*„+ Weiteren Wechselrichter in Pool aufnehmen“*) und `#quickAddPanelSelect` (*„+ Weiteren Modultyp in Pool aufnehmen“*) sowie die Karten `#activeInverterCard`, `#activePanelCard`, `#activeBatteryCard` und die Katalog-Karten in `renderHardwareCatalogUI()` wurden mit `min-w-0 w-full truncate overflow-hidden` und sauberem Flex-Wrapping ausgestattet.
+
+---
+
 ## [Version 10.3] – 2026-11-11
 
 ### 🚀 1:1 Echte Home-Assistant-Sensorwerte ohne Filter-Eingriffe & Reine Ursachen-Diagnose

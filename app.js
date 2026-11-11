@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.3';
+const APP_VERSION = '10.4';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -264,9 +264,15 @@ function removeDeletedPlanTombstone(planId, planName) {
     } catch (e) {}
 }
 
+const LEGACY_PURGED_PLAN_IDS = [
+    'plan_sys_1789219794019_lre7q',
+    'plan_sys_1789284789177_4338n'
+];
+
 function isPlanTombstoned(planId, planName) {
-    const t = getDeletedPlanTombstones();
     const cleanId = String(planId || '').trim();
+    if (cleanId && LEGACY_PURGED_PLAN_IDS.includes(cleanId)) return true;
+    const t = getDeletedPlanTombstones();
     const cleanName = String(planName || '').trim().toLowerCase();
     if (cleanId && t.ids.includes(cleanId)) return true;
     if (cleanName && t.names.includes(cleanName)) return true;
@@ -441,8 +447,35 @@ function calculateProjectSummary(cfg) {
 }
 
 function initProjectManager() {
+    // Purge legacy September test plans ('Test' & 'Test Plan') from browser caches if present
+    try {
+        LEGACY_PURGED_PLAN_IDS.forEach(id => addDeletedPlanTombstone(id, ''));
+        const cachedPlans = readJsonStorage('pvpro_server_plans_cache', []);
+        if (Array.isArray(cachedPlans) && cachedPlans.some(p => p && LEGACY_PURGED_PLAN_IDS.includes(p.id))) {
+            localStorage.setItem(
+                'pvpro_server_plans_cache',
+                JSON.stringify(cachedPlans.filter(p => p && !LEGACY_PURGED_PLAN_IDS.includes(p.id)))
+            );
+        }
+    } catch (e) {}
+
     let projects = getStoredProjects();
+    if (Array.isArray(projects)) {
+        const filtered = projects.filter(p => p && !LEGACY_PURGED_PLAN_IDS.includes(p.id));
+        if (filtered.length !== projects.length) {
+            projects = filtered.length > 0 ? filtered : null;
+            if (projects) {
+                localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+            } else {
+                localStorage.removeItem(PV_PROJECTS_KEY);
+            }
+        }
+    }
     let activeId = getActiveProjectId();
+    if (activeId && LEGACY_PURGED_PLAN_IDS.includes(activeId)) {
+        activeId = projects && projects[0] ? projects[0].id : null;
+        if (activeId) localStorage.setItem(PV_ACTIVE_PROJECT_KEY, activeId);
+    }
 
     if (!projects) {
         // Erste Initialisierung aus bestehenden Daten im LocalStorage
@@ -1062,17 +1095,17 @@ async function pullUnifiedPackagesFromGitHub() {
 
         const jsonStr = decodeBase64ToUtf8(meta.content);
         const remotePlans = JSON.parse(jsonStr);
-        if (!Array.isArray(remotePlans) || remotePlans.length === 0) {
-            throw new Error('Die Datei system_plans.json auf GitHub ist leer.');
+        if (!Array.isArray(remotePlans)) {
+            throw new Error('Ungültiges Format in system_plans.json auf GitHub.');
         }
 
-        let localProjects = getStoredProjects() || [];
+        let localProjects = (getStoredProjects() || []).filter(p => !isPlanTombstoned(p.id, p.name));
         let importedCount = 0;
 
         remotePlans.forEach(rp => {
             if (!rp || (!rp.id && !rp.name) || !rp.data) return;
-            // Calling pull explicitly clears tombstones for plans present in GitHub
-            removeDeletedPlanTombstone(rp.id, rp.name);
+            // Respect deleted tombstones so deleted plans never reappear on Pull!
+            if (isPlanTombstoned(rp.id, rp.name)) return;
             const existingIdx = localProjects.findIndex(lp => lp.id === rp.id || lp.name === rp.name);
             const normalizedEntry = {
                 id: rp.id || ('proj_' + Date.now() + '_' + importedCount),
@@ -1092,7 +1125,7 @@ async function pullUnifiedPackagesFromGitHub() {
         });
 
         localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(localProjects));
-        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(remotePlans));
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(remotePlans.filter(rp => rp && !isPlanTombstoned(rp.id, rp.name))));
         saveGitHubSyncConfig({ lastSyncAt: new Date().toISOString() });
 
         // Activate first pulled package if active one matches
@@ -1106,7 +1139,11 @@ async function pullUnifiedPackagesFromGitHub() {
 
         isGitHubSyncBusy = false;
         renderProjectManagerModal();
-        showToastNotification(`⬇️ ${importedCount} Gesamtpaket(e) frisch von GitHub (${owner}/${repo}) geladen!`, 'success');
+        if (importedCount === 0) {
+            showToastNotification(`ℹ️ Keine neuen Gesamtpakete in ${owner}/${repo} vorhanden (gelöschte Alt-Einträge bleiben entfernt).`, 'info');
+        } else {
+            showToastNotification(`⬇️ ${importedCount} Gesamtpaket(e) frisch von GitHub (${owner}/${repo}) geladen!`, 'success');
+        }
         return true;
     } catch (err) {
         isGitHubSyncBusy = false;
@@ -1215,18 +1252,18 @@ function renderProjectManagerModal(tab = null) {
                         <div>
                             <h4 class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Einheitliche Gesamtpakete (Planung + Live &amp; HA + Logbuch)</h4>
                             <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
-                                Jedes Paket speichert <strong>PV-Planung, Dach-Strings, HA-Sensoren, Einzelverbraucher, Mess-Startdatum &amp; Monats-Logbuch</strong> zusammen als eine Einheit (garantiert <strong>ohne</strong> deinen geheimen HA-Token).
+                                <strong>Speichern ohne Token:</strong> Klicke auf <strong>„Im Server &amp; Code sichern“</strong> – in AI Studio wird dein Gesamtpaket direkt ohne Token in <code>data/system_plans.json</code> geschrieben (beim nächsten GitHub-Export automatisch im Repo). Nur wenn du die App direkt auf <code>github.io</code> nutzt, wird für Direkt-Pushes ein GitHub-Token benötigt.
                             </p>
                         </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-1.5 shrink-0">
-                        <button type="button" onclick="saveAndSyncActivePackageNow()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Aktuellen Stand im aktiven Gesamtpaket sichern (und falls Token hinterlegt direkt zu GitHub pushen)">
+                        <button type="button" onclick="saveAndSyncActivePackageNow()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Speichert das aktive Gesamtpaket direkt ohne Token im Server/Code (data/system_plans.json) und im Browser">
                             <span class="material-symbols-rounded text-sm">${isGitHubSyncBusy ? 'progress_activity' : 'save'}</span>
-                            <span>Stand sichern${ghCfg.token ? ' & GitHub Push' : ''}</span>
+                            <span>Im Server &amp; Code sichern${ghCfg.token ? ' + GitHub' : ' (ohne Token)'}</span>
                         </button>
                         <button type="button" onclick="toggleGitHubSyncPanel()" class="px-2.5 py-1.5 rounded-xl ${ghCfg.token ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/35' : 'bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-all flex items-center gap-1 cursor-pointer">
                             <span class="material-symbols-rounded text-sm">cloud_sync</span>
-                            <span>GitHub-Sync ${ghCfg.token ? '✓' : 'einrichten'}</span>
+                            <span>GitHub Direkt-Push ${ghCfg.token ? '✓' : '(optional)'}</span>
                         </button>
                         <button type="button" onclick="openShareModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="QR-Code oder JSON-Datei">
                             <span class="material-symbols-rounded text-sm">qr_code_2</span>
@@ -1495,19 +1532,20 @@ function renderProjectManagerModal(tab = null) {
 }
 
 async function saveAndSyncActivePackageNow() {
-    saveCurrentProjectData(true);
-    // Also mirror active package into pvpro_server_plans_cache & local server API
-    const projects = getStoredProjects() || [];
+    saveCurrentProjectData(false);
+    const projects = (getStoredProjects() || []).filter(p => !isPlanTombstoned(p.id, p.name));
     const activeId = getActiveProjectId();
     const activeProj = projects.find(p => p.id === activeId) || projects[0];
+    let serverPersisted = false;
     if (activeProj) {
         removeDeletedPlanTombstone(activeProj.id, activeProj.name);
         try {
-            fetch('/api/plans/persist', {
+            const res = await fetch('/api/plans/persist', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ id: activeProj.id, name: activeProj.name, data: activeProj.data, summary: activeProj.summary })
-            }).catch(() => {});
+            });
+            if (res.ok) serverPersisted = true;
         } catch (e) {}
     }
     const ghCfg = getGitHubSyncConfig();
@@ -1515,6 +1553,11 @@ async function saveAndSyncActivePackageNow() {
         await pushUnifiedPackagesToGitHub(false);
     } else {
         renderProjectManagerModal();
+        if (serverPersisted && activeProj) {
+            showToastNotification(`✅ Gesamtpaket "${activeProj.name}" ohne Token fest in data/system_plans.json & Browser gesichert!`, 'success');
+        } else if (activeProj) {
+            showToastNotification(`✅ Gesamtpaket "${activeProj.name}" lokal im Browser gesichert!`, 'success');
+        }
     }
 }
 
@@ -2662,28 +2705,42 @@ function openLiveDrillDown(detailKey = 'intraday') {
         document.getElementById('tab-live')?.classList.add('active');
     }
 
+    const wideCockpit = typeof window.isWideCockpitViewport === 'function' && window.isWideCockpitViewport();
     const hub = document.getElementById('live-hub-view');
     const detail = document.getElementById('live-detail-intraday');
-    if (hub) hub.classList.add('hidden');
-    if (detail) detail.classList.remove('hidden');
 
-    currentNavSection = 'live';
-    currentNavLevel = 2;
-    updatePlanningWizardUI(null);
-    pushAppNavHistoryState('live', 2, detailKey);
-
-    updateTwoRowHeader(
-        'Tagesverlauf',
-        'Ebene 2 · Solar & Netz · 00:00 – jetzt · Interaktive Kurven',
-        'show_chart',
-        2,
-        'Zurück zu Live'
-    );
+    if (wideCockpit) {
+        if (hub) hub.classList.remove('hidden');
+        if (detail) detail.classList.remove('hidden');
+        currentNavSection = 'live';
+        currentNavLevel = 1;
+        updatePlanningWizardUI(null);
+        updateTwoRowHeader(
+            'Live',
+            'Zwei-Spalten-Cockpit · Echtzeit-Status links & Interaktives Verlaufsdiagramm rechts',
+            'cell_tower',
+            1
+        );
+    } else {
+        if (hub) hub.classList.add('hidden');
+        if (detail) detail.classList.remove('hidden');
+        currentNavSection = 'live';
+        currentNavLevel = 2;
+        updatePlanningWizardUI(null);
+        pushAppNavHistoryState('live', 2, detailKey);
+        updateTwoRowHeader(
+            'Tagesverlauf',
+            'Ebene 2 · Solar & Netz · 00:00 – jetzt · Interaktive Kurven',
+            'show_chart',
+            2,
+            'Zurück zu Live'
+        );
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
 
     if (typeof renderIntradayCurveSection === 'function') {
         setTimeout(() => renderIntradayCurveSection(), 20);
     }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function openAnalyseDrillDown(subTab = 'soll-ist') {
@@ -2812,11 +2869,21 @@ function switchTab(tabId) {
     if (tabId === 'live') {
         currentNavSection = 'live';
         currentNavLevel = 1;
+        const wideCockpit = typeof window.isWideCockpitViewport === 'function' && window.isWideCockpitViewport();
         document.getElementById('live-hub-view')?.classList.remove('hidden');
-        document.getElementById('live-detail-intraday')?.classList.add('hidden');
+        if (wideCockpit) {
+            document.getElementById('live-detail-intraday')?.classList.remove('hidden');
+            if (typeof renderIntradayCurveSection === 'function') {
+                setTimeout(() => renderIntradayCurveSection(), 25);
+            }
+        } else {
+            document.getElementById('live-detail-intraday')?.classList.add('hidden');
+        }
         updateTwoRowHeader(
             'Live',
-            'Ebene 1 · Echtzeit-Status & Top-5 Einzelverbraucher',
+            wideCockpit
+                ? 'Zwei-Spalten-Cockpit · Echtzeit-Status links & Verlaufsdiagramm rechts'
+                : 'Ebene 1 · Echtzeit-Status & Top-5 Einzelverbraucher',
             'cell_tower',
             1
         );
@@ -4553,13 +4620,13 @@ function renderActiveHardwareUI() {
         }).join('');
 
         const quickAddHtml = otherInvs.length > 0 ? `
-            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
-                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">+ Weiteren Wechselrichter in Pool aufnehmen</label>
-                <div class="flex gap-1.5">
-                    <select id="quickAddInverterSelect" class="flex-1 text-xs border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-2.5 py-1.5 outline-none font-medium text-slate-800 dark:text-slate-200">
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800 min-w-0">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 truncate">+ Weiteren Wechselrichter in Pool aufnehmen</label>
+                <div class="flex items-center gap-1.5 min-w-0 w-full">
+                    <select id="quickAddInverterSelect" class="flex-1 min-w-0 w-full truncate text-xs border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-2.5 py-1.5 outline-none font-medium text-slate-800 dark:text-slate-200">
                         ${otherInvs.map(i => `<option value="${i.id}">${escapeHtml(i.name)} (${i.acMax} W)</option>`).join('')}
                     </select>
-                    <button onclick="addSelectedInverterToProject()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1">
+                    <button onclick="addSelectedInverterToProject()" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1">
                         <span class="material-symbols-rounded text-sm">add</span>
                         <span>Pool</span>
                     </button>
@@ -4648,13 +4715,13 @@ function renderActiveHardwareUI() {
         }).join('');
 
         const quickAddHtml = otherPanels.length > 0 ? `
-            <div class="pt-3 border-t border-slate-100 dark:border-slate-800">
-                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">+ Weiteren Modultyp in Pool aufnehmen</label>
-                <div class="flex gap-1.5">
-                    <select id="quickAddPanelSelect" class="flex-1 text-xs border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-2.5 py-1.5 outline-none font-medium text-slate-800 dark:text-slate-200">
+            <div class="pt-3 border-t border-slate-100 dark:border-slate-800 min-w-0">
+                <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 truncate">+ Weiteren Modultyp in Pool aufnehmen</label>
+                <div class="flex items-center gap-1.5 min-w-0 w-full">
+                    <select id="quickAddPanelSelect" class="flex-1 min-w-0 w-full truncate text-xs border border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-2.5 py-1.5 outline-none font-medium text-slate-800 dark:text-slate-200">
                         ${otherPanels.map(p => `<option value="${p.id}">${escapeHtml(p.name)} (${p.pmax} Wp)</option>`).join('')}
                     </select>
-                    <button onclick="addSelectedPanelToProject()" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1">
+                    <button onclick="addSelectedPanelToProject()" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-primary hover:text-white text-slate-700 dark:text-slate-200 text-xs font-bold transition-all shrink-0 cursor-pointer flex items-center gap-1">
                         <span class="material-symbols-rounded text-sm">add</span>
                         <span>Pool</span>
                     </button>
@@ -4701,7 +4768,7 @@ function renderActiveHardwareUI() {
 
                 <div class="p-3.5 bg-slate-50 dark:bg-slate-950/80 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
                     <label class="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Modellauswahl</label>
-                    <select onchange="onSelectActiveBattery(this.value)" class="w-full text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary">
+                    <select onchange="onSelectActiveBattery(this.value)" class="w-full min-w-0 truncate text-xs font-bold border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2 cursor-pointer outline-none focus:border-primary">
                         ${batOptions}
                     </select>
 
@@ -5021,14 +5088,14 @@ function renderHardwareCatalogUI() {
         }
 
         return `
-            <div class="bg-white dark:bg-slate-900 rounded-2xl border ${isInProjectPool ? 'border-primary/40 dark:border-primary/40 ring-1 ring-primary/20' : 'border-slate-200 dark:border-slate-800'} p-4 shadow-2xs flex flex-col justify-between hover:border-slate-300 dark:hover:border-slate-700 transition-all">
-                <div>
-                    <div class="flex items-start justify-between gap-2 mb-2">
-                        <div class="flex items-center gap-2 min-w-0">
+            <div class="bg-white dark:bg-slate-900 rounded-2xl border ${isInProjectPool ? 'border-primary/40 dark:border-primary/40 ring-1 ring-primary/20' : 'border-slate-200 dark:border-slate-800'} p-4 shadow-2xs flex flex-col justify-between min-w-0 overflow-hidden hover:border-slate-300 dark:hover:border-slate-700 transition-all">
+                <div class="min-w-0">
+                    <div class="flex items-start justify-between gap-2 mb-2 min-w-0">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
                             <div class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0">
                                 <span class="material-symbols-rounded ${typeColor} text-lg">${typeIcon}</span>
                             </div>
-                            <div class="min-w-0">
+                            <div class="min-w-0 flex-1">
                                 <h5 class="text-xs font-black text-slate-900 dark:text-white truncate" title="${escapeHtml(name)}">${escapeHtml(name)}</h5>
                                 <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                     ${originBadge}
@@ -5038,7 +5105,7 @@ function renderHardwareCatalogUI() {
                             </div>
                         </div>
                         <div class="text-right shrink-0">
-                            <span class="text-xs font-black ${typeColor}">${highlightValue}</span>
+                            <span class="text-xs font-black ${typeColor} whitespace-nowrap">${highlightValue}</span>
                         </div>
                     </div>
 
@@ -5052,20 +5119,22 @@ function renderHardwareCatalogUI() {
                     </div>
                 </div>
 
-                <div class="flex items-center gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800">
-                    ${actionBtnHtml}
-                    <button onclick="showDeviceDatasheet('${type}', '${id}')" class="py-1.5 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Technisches Datenblatt anzeigen">
+                <div class="flex items-center gap-1 sm:gap-1.5 pt-2.5 border-t border-slate-100 dark:border-slate-800 min-w-0 flex-wrap">
+                    <div class="flex-1 min-w-[105px] flex">
+                        ${actionBtnHtml}
+                    </div>
+                    <button onclick="showDeviceDatasheet('${type}', '${id}')" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0" title="Technisches Datenblatt anzeigen">
                         <span class="material-symbols-rounded text-sm text-primary">visibility</span>
-                        <span class="hidden sm:inline">Datenblatt</span>
+                        <span class="hidden xl:inline">Datenblatt</span>
                     </button>
-                    <button onclick="openHardwareDocModal('${type}', '${id}')" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Dokumenten-Manager & Zertifikate">
+                    <button onclick="openHardwareDocModal('${type}', '${id}')" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0" title="Dokumenten-Manager & Zertifikate">
                         <span class="material-symbols-rounded text-sm">folder_special</span>
                     </button>
-                    <button onclick="openHardwareEditModal('${type}', ${id})" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer" title="Hardware bearbeiten">
+                    <button onclick="openHardwareEditModal('${type}', ${id})" class="py-1.5 px-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer shrink-0" title="Hardware bearbeiten">
                         <span class="material-symbols-rounded text-sm">edit</span>
                     </button>
                     ${(isPersistedInCode || isCustomLocal) ? `
-                        <button onclick="deleteHardware('${type}', ${id}, ${isPersistedInCode})" class="py-1.5 px-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Hardware löschen">
+                        <button onclick="deleteHardware('${type}', ${id}, ${isPersistedInCode})" class="py-1.5 px-2 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer shrink-0" title="Hardware löschen">
                             <span class="material-symbols-rounded text-sm">delete</span>
                         </button>
                     ` : ''}

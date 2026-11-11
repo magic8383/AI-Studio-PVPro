@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 10.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 10.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 10.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 10.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=10.3">
+    <link rel="manifest" href="manifest.json?v=10.4">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.3">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.3">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.3">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.3">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.4">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.4">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.4">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.4">
     <script>
         // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
         (function () {
@@ -28,7 +28,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v10.3') {
+                            if (key !== 'pvpro-cache-v10.4') {
                                 caches.delete(key);
                             }
                         });
@@ -326,6 +326,54 @@
         .safe-bottom-pad { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
 
         /* ==========================================
+           TABLET-QUERFORMAT & DESKTOP ZWEI-SPALTEN-COCKPIT (V10.4)
+           Aktiv ab 1024px (Desktop) oder ab 700px im Querformat (Tablet/Phone Landscape)
+           ========================================== */
+        @media screen and (min-width: 1024px), screen and (min-width: 700px) and (orientation: landscape) {
+            #app-header > div {
+                max-width: 1480px !important;
+            }
+            #tab-live.active {
+                max-width: 1480px !important;
+                display: grid !important;
+                grid-template-columns: minmax(330px, 5fr) minmax(420px, 7fr);
+                gap: 1.25rem;
+                align-items: start;
+            }
+            #tab-live.active > #live-hub-view,
+            #tab-live.active > #live-detail-intraday {
+                display: block !important;
+                min-width: 0;
+                margin-top: 0 !important;
+            }
+            #tab-live.active #liveHubIntradayDrilldownBtn {
+                display: none !important;
+            }
+            #tab-live.active #intradayCanvasContainer:not(.fullbleed-active) {
+                height: 19rem !important;
+            }
+            #tab-analyse.active {
+                max-width: 1480px !important;
+            }
+            #analyse-landscape-split-grid {
+                display: grid !important;
+                grid-template-columns: minmax(420px, 7fr) minmax(340px, 5fr);
+                gap: 1.25rem;
+                align-items: start;
+            }
+            #analyse-landscape-split-grid > * {
+                margin-top: 0 !important;
+                min-width: 0;
+            }
+            #analyse-sankey-card {
+                order: 1;
+            }
+            #analyse-monthly-yield-summary-card {
+                order: 2;
+            }
+        }
+
+        /* ==========================================
            PRINT STYLES FOR V7.0 DOSSIER
            ========================================== */
         @media print {
@@ -411,10 +459,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=10.3" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=10.4" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.3</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.4</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1420,10 +1468,10 @@
                     </div>
                 </div>
 
-                <!-- DRILL-DOWN ÜBERSICHTSKACHELN AUF LIVE-EBENE 1 (Klick öffnet Ebene 2 mit Zurück-Button) -->
+                <!-- DRILL-DOWN ÜBERSICHTSKACHELN AUF LIVE-EBENE 1 (Klick öffnet Ebene 2 mit Zurück-Button; im Zwei-Spalten-Cockpit ausgeblendet) -->
                 <div class="space-y-3">
                     <!-- Drill-Down 1: Tagesverlauf & Kurven auswählen (Alle Kurven) -->
-                    <button onclick="openLiveCurveFocus('all')" class="w-full dash-main-card rounded-[26px] p-4 sm:p-5 text-left hover:border-teal-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
+                    <button id="liveHubIntradayDrilldownBtn" onclick="openLiveCurveFocus('all')" class="w-full dash-main-card rounded-[26px] p-4 sm:p-5 text-left hover:border-teal-500/60 transition-all flex items-center justify-between gap-3 group cursor-pointer">
                         <div class="flex items-center gap-3.5 min-w-0">
                             <div class="w-12 h-12 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-300 border border-teal-500/30 flex items-center justify-center shrink-0">
                                 <span class="material-symbols-rounded text-2xl">stacked_line_chart</span>
@@ -1621,88 +1669,91 @@
                     </div>
                 </div>
 
-                <!-- 1B. MONATLICHE ERTRAGSLEISTUNG · IST VS. PVGIS-SOLL (NEU V9.5: PRO-RATA & %-ABWEICHUNG) -->
-                <div id="analyse-monthly-yield-summary-card" class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div>
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">calendar_month</span>
-                                <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Monatliche Ertragsleistung</h3>
-                                <button type="button" onclick="openAnalyseDrillDown('soll-ist')" class="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer whitespace-nowrap">
-                                    <span class="material-symbols-rounded text-xs">bar_chart</span>
-                                    <span>Jahresdiagramm</span>
+                <!-- ZWEI-SPALTEN-SPLIT IM QUERFORMAT & DESKTOP: SANKEY LINKS + MONATLICHE ERTRAGSLEISTUNG RECHTS -->
+                <div id="analyse-landscape-split-grid" class="space-y-5">
+                    <!-- 1B. MONATLICHE ERTRAGSLEISTUNG · IST VS. PVGIS-SOLL (NEU V9.5: PRO-RATA & %-ABWEICHUNG) -->
+                    <div id="analyse-monthly-yield-summary-card" class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">calendar_month</span>
+                                    <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Monatliche Ertragsleistung</h3>
+                                    <button type="button" onclick="openAnalyseDrillDown('soll-ist')" class="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer whitespace-nowrap">
+                                        <span class="material-symbols-rounded text-xs">bar_chart</span>
+                                        <span>Jahresdiagramm</span>
+                                    </button>
+                                    <button type="button" onclick="openAnalyseDrillDown('logbuch')" class="text-[11px] font-semibold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5 cursor-pointer whitespace-nowrap">
+                                        <span class="material-symbols-rounded text-xs">edit_note</span>
+                                        <span>Logbuch</span>
+                                    </button>
+                                </div>
+                                <p id="monthly_yield_summary_subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Automatischer Abgleich von Live-HA-Zählern &amp; Logbuch gegen das standortgenaue PVGIS-Soll
+                                </p>
+                            </div>
+
+                            <!-- Filter-Umschalter: Erfasste & Aktuell | Alle 12 Monate -->
+                            <div class="inline-flex rounded-2xl p-1 bg-slate-200/75 dark:bg-white/10 border border-white/60 dark:border-white/10 text-xs font-bold self-start sm:self-auto shrink-0">
+                                <button type="button" id="btn-monthly-filter-recorded" onclick="setMonthlyYieldSummaryFilter('recorded')" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer whitespace-nowrap">
+                                    Aktuell &amp; Erfasst
                                 </button>
-                                <button type="button" onclick="openAnalyseDrillDown('logbuch')" class="text-[11px] font-semibold text-sky-600 dark:text-sky-400 hover:underline flex items-center gap-0.5 cursor-pointer whitespace-nowrap">
-                                    <span class="material-symbols-rounded text-xs">edit_note</span>
-                                    <span>Logbuch</span>
+                                <button type="button" id="btn-monthly-filter-all" onclick="setMonthlyYieldSummaryFilter('all')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer whitespace-nowrap">
+                                    Alle 12 Monate
                                 </button>
                             </div>
-                            <p id="monthly_yield_summary_subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                Automatischer Abgleich von Live-HA-Zählern &amp; Logbuch gegen das standortgenaue PVGIS-Soll
-                            </p>
                         </div>
 
-                        <!-- Filter-Umschalter: Erfasste & Aktuell | Alle 12 Monate -->
-                        <div class="inline-flex rounded-2xl p-1 bg-slate-200/75 dark:bg-white/10 border border-white/60 dark:border-white/10 text-xs font-bold self-start sm:self-auto shrink-0">
-                            <button type="button" id="btn-monthly-filter-recorded" onclick="setMonthlyYieldSummaryFilter('recorded')" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer whitespace-nowrap">
-                                Aktuell &amp; Erfasst
-                            </button>
-                            <button type="button" id="btn-monthly-filter-all" onclick="setMonthlyYieldSummaryFilter('all')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer whitespace-nowrap">
-                                Alle 12 Monate
-                            </button>
+                        <!-- Fokus-Banner für den aktuellen / zuletzt aktiven Monat (inkl. Pro-Rata-Soll bis heute) -->
+                        <div id="monthlyYieldCurrentFocusBanner">
+                            <!-- Dynamisch gerendert durch renderMonthlyYieldSummaryCard() in telemetry.js -->
+                        </div>
+
+                        <!-- Monats-Vergleichsliste mit Fortschrittsbalken & prozentualer Abweichung -->
+                        <div id="monthlyYieldSummaryList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-2.5">
+                            <!-- Dynamisch gerendert durch renderMonthlyYieldSummaryCard() in telemetry.js -->
                         </div>
                     </div>
 
-                    <!-- Fokus-Banner für den aktuellen / zuletzt aktiven Monat (inkl. Pro-Rata-Soll bis heute) -->
-                    <div id="monthlyYieldCurrentFocusBanner">
-                        <!-- Dynamisch gerendert durch renderMonthlyYieldSummaryCard() in telemetry.js -->
-                    </div>
+                    <!-- 2. INTERAKTIVES SANKEY-ENERGIEFLUSS-DIAGRAMM (HEUTE | MONAT | GESAMTJAHR) -->
+                    <div id="analyse-sankey-card" class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">account_tree</span>
+                                    <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Energiefluss</h3>
+                                    <button type="button" onclick="openHaConfigModal('counters')" class="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer">
+                                        <span class="material-symbols-rounded text-xs">electric_meter</span>
+                                        <span>Zähler (kWh total)</span>
+                                    </button>
+                                </div>
+                                <p id="sankeySubtitleText" class="text-xs text-slate-500 dark:text-slate-300 mt-0.5">
+                                    Automatische Differenz (ΔkWh) aus Gesamtzählern &amp; Trapez-Integration aus Watt-Sensoren (Single Source of Truth)
+                                </p>
+                            </div>
 
-                    <!-- Monats-Vergleichsliste mit Fortschrittsbalken & prozentualer Abweichung -->
-                    <div id="monthlyYieldSummaryList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                        <!-- Dynamisch gerendert durch renderMonthlyYieldSummaryCard() in telemetry.js -->
-                    </div>
-                </div>
-
-                <!-- 2. INTERAKTIVES SANKEY-ENERGIEFLUSS-DIAGRAMM (HEUTE | MONAT | GESAMTJAHR) -->
-                <div class="dash-main-card rounded-[28px] p-5 sm:p-6 space-y-4">
-                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div>
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">account_tree</span>
-                                <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight whitespace-nowrap">Energiefluss</h3>
-                                <button type="button" onclick="openHaConfigModal('counters')" class="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer">
-                                    <span class="material-symbols-rounded text-xs">electric_meter</span>
-                                    <span>Zähler (kWh total)</span>
+                            <!-- Umschalter: Heute | Monat | Gesamtjahr -->
+                            <div class="inline-flex rounded-2xl p-1 bg-slate-200/75 dark:bg-white/10 border border-white/60 dark:border-white/10 text-xs font-bold self-start sm:self-auto">
+                                <button type="button" id="btn-sankey-today" onclick="setSankeyHorizon('today')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                    Heute
+                                </button>
+                                <button type="button" id="btn-sankey-month" onclick="setSankeyHorizon('month')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                    Monat
+                                </button>
+                                <button type="button" id="btn-sankey-year" onclick="setSankeyHorizon('year')" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer">
+                                    Gesamtjahr
                                 </button>
                             </div>
-                            <p id="sankeySubtitleText" class="text-xs text-slate-500 dark:text-slate-300 mt-0.5">
-                                Automatische Differenz (ΔkWh) aus Gesamtzählern &amp; Trapez-Integration aus Watt-Sensoren (Single Source of Truth)
-                            </p>
                         </div>
 
-                        <!-- Umschalter: Heute | Monat | Gesamtjahr -->
-                        <div class="inline-flex rounded-2xl p-1 bg-slate-200/75 dark:bg-white/10 border border-white/60 dark:border-white/10 text-xs font-bold self-start sm:self-auto">
-                            <button type="button" id="btn-sankey-today" onclick="setSankeyHorizon('today')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
-                                Heute
-                            </button>
-                            <button type="button" id="btn-sankey-month" onclick="setSankeyHorizon('month')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
-                                Monat
-                            </button>
-                            <button type="button" id="btn-sankey-year" onclick="setSankeyHorizon('year')" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer">
-                                Gesamtjahr
-                            </button>
+                        <!-- Responsive SVG Sankey Diagram Container (100% Bildschirmbreite ohne horizontales Scrollen) -->
+                        <div id="sankeyDiagramContainer" class="w-full overflow-hidden rounded-2xl bg-white/65 dark:bg-slate-950/55 border border-slate-200/80 dark:border-white/10 p-2 sm:p-4">
+                            <!-- Rendered dynamically by renderSankeyDiagram() in telemetry.js -->
                         </div>
-                    </div>
 
-                    <!-- Responsive SVG Sankey Diagram Container (100% Bildschirmbreite ohne horizontales Scrollen) -->
-                    <div id="sankeyDiagramContainer" class="w-full overflow-hidden rounded-2xl bg-white/65 dark:bg-slate-950/55 border border-slate-200/80 dark:border-white/10 p-2 sm:p-4">
-                        <!-- Rendered dynamically by renderSankeyDiagram() in telemetry.js -->
-                    </div>
-
-                    <!-- Sankey Summary Pills (Zeitraum, Autarkie, Eigenverbrauch, Selbst gedeckt) -->
-                    <div id="sankeySummaryRibbon" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center pt-1">
-                        <!-- Rendered dynamically by renderSankeyDiagram() -->
+                        <!-- Sankey Summary Pills (Zeitraum, Autarkie, Eigenverbrauch, Selbst gedeckt) -->
+                        <div id="sankeySummaryRibbon" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center pt-1">
+                            <!-- Rendered dynamically by renderSankeyDiagram() -->
+                        </div>
                     </div>
                 </div>
 
@@ -2037,17 +2088,17 @@
                 <!-- 3 Interactive Columns: Wechselrichter-Pool, Modultypen-Pool, Batteriespeicher -->
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
                     <!-- 1.1 Wechselrichter-Pool -->
-                    <div id="activeInverterCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
+                    <div id="activeInverterCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs flex flex-col justify-between space-y-4 min-w-0 overflow-hidden">
                         <!-- Dynamic content filled by renderActiveHardwareUI() -->
                     </div>
 
                     <!-- 1.2 Modultypen-Pool -->
-                    <div id="activePanelCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
+                    <div id="activePanelCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs flex flex-col justify-between space-y-4 min-w-0 overflow-hidden">
                         <!-- Dynamic content filled by renderActiveHardwareUI() -->
                     </div>
 
                     <!-- 1.3 Batteriespeicher -->
-                    <div id="activeBatteryCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-5 shadow-xs flex flex-col justify-between space-y-4">
+                    <div id="activeBatteryCard" class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-4 sm:p-5 shadow-xs flex flex-col justify-between space-y-4 min-w-0 overflow-hidden">
                         <!-- Dynamic content filled by renderActiveHardwareUI() -->
                     </div>
                 </div>
@@ -3302,13 +3353,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V10.3 (1:1 Echte HA-Sensorwerte ohne Filterung, Transparente Ursachen-Diagnose & Gesamtpakete mit GitHub-Sync) -->
-    <script src="qrcode.client.js?v=10.3"></script>
-    <script src="database.js?v=10.3"></script>
-    <script src="content.js?v=10.3"></script>
-    <script src="app.js?v=10.3"></script>
-    <script src="wiring.js?v=10.3"></script>
-    <script src="dossier.js?v=10.3"></script>
-    <script src="telemetry.js?v=10.3"></script>
+    <!-- MODULARE ARCHITEKTUR V10.4 (Zwei-Spalten-Cockpit für Tablet/Desktop, Verbraucher-kWh Fix, Bereinigte Repo-Planungen & Hardware-Katalog Overflow-Fix) -->
+    <script src="qrcode.client.js?v=10.4"></script>
+    <script src="database.js?v=10.4"></script>
+    <script src="content.js?v=10.4"></script>
+    <script src="app.js?v=10.4"></script>
+    <script src="wiring.js?v=10.4"></script>
+    <script src="dossier.js?v=10.4"></script>
+    <script src="telemetry.js?v=10.4"></script>
 </body>
 </html>
