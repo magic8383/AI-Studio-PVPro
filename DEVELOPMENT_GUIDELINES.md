@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.6 (In-Place Full-Bleed Diagramm-Vergrößerung bis zum Bildschirmrand ohne seitliche Achsenskalen, verdeckungsfreie Fadenkreuz-Messwertanzeige, Light/Dark-Mode-Konsistenz im Vollbild & verzögerungsfreier Tag/Woche/Monat-Cache)  
+**Aktuelle Version:** 9.8 (Dev-Server & Service-Worker Warmup-Härtung, X-PVPro-Server Signatur-Prüfung gegen Nginx warmup.html Cache-Poisoning & Proxy Error-Interception-Schutz)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

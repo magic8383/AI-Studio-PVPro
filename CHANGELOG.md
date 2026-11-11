@@ -4,6 +4,50 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.8] – 2026-11-10
+
+### 🛡️ Dev-Server & Service-Worker Warmup-Härtung (`X-PVPro-Server`), Network-First Strategie & Schutz vor Nginx `warmup.html` Cache-Poisoning
+
+#### 1. Ursache des Warmup-Lockouts behoben (`sw.js` + Nginx `error_page 502 = /warmup.html`)
+* **Kein Caching von Nginx-Warmup-Seiten mehr (`isValidCacheableResponse`):**
+  - Während eines Container-Kaltstarts liefert der vorgeschaltete Nginx-Proxy `warmup.html` („Starting Server...“) mit dem Statuscode `HTTP 200 OK` aus (`error_page 502 503 504 = /warmup.html;`). Der bisherige Service Worker (`sw.js`) prüfte lediglich auf `status === 200` und speicherte dadurch `warmup.html` im Browser-Cache (`Cache Storage`) unter `/` bzw. `index.html` und den JS-Pfaden ab.
+  - Ab Version 9.8 versieht `server.js` jede echte Antwort mit dem Signatur-Header `X-PVPro-Server: 9.8`. `sw.js` akzeptiert für lokale Dateien ausschließlich Antworten mit gültigem `X-PVPro-Server`-Header, ohne `Cache-Control: no-store` und mit passendem `Content-Type` (`javascript` für `.js`, `json` für `.json`).
+* **Network-First für App-Shell & Module + Sofortige Cache-Selbstheilung:**
+  - Lokale App-Dateien (`index.html`, `app.js`, `telemetry.js`, `wiring.js`, `dossier.js`, `database.js`, `content.js`) werden über `sw.js` ab sofort **Network-First** geladen (mit verifiziertem Offline-Fallback), sodass Reloads niemals in einem veralteten Cache hängen bleiben.
+  - Ein Inline-Initialisierungsskript im `<head>` von `index.html` bereinigt beim Laden automatisch ältere Caches (`!== 'pvpro-cache-v9.8'`), setzt eventuelle `warmup_start_time`-Flags in `sessionStorage` zurück und erzwingt via `updateViaCache: 'none'` ein sofortiges Service-Worker-Update.
+
+#### 2. Schutz der Proxy-APIs vor Nginx `proxy_intercept_errors` (`server.js`)
+* **Kein Ersetzen von JSON-Diagnosen durch HTML-Fehlerseiten:**
+  - Da Nginx in der Cloud-Run-Umgebung mit `proxy_intercept_errors on` alle Upstream-Antworten mit Status `403`, `502`, `503` und `504` durch statische HTML-Seiten (`forbidden.html` / `warmup.html`) ersetzt, geben `/api/ha/test`, `/api/ha/states` und `/api/pvgis/seriescalc` bei Nichterreichbarkeit externer Gegenstellen nun strukturierte JSON-Antworten mit Nginx-sicheren HTTP-Statuscodes (`200` mit `success: false` bzw. `500`) zurück.
+
+---
+
+## [Version 9.7] – 2026-11-10
+
+### ✨ Single Source of Truth Energie-Ledger (Watt + kWh), Monotonie-Garantie (`Jahr ≥ Monat ≥ Heute`), 100 % Full-Width Sankey-Diagramm ohne Scrollen & Batterie-Grafik-Fix
+
+#### 1. Zentrale Single Source of Truth (`getUnifiedEnergyLedger`) & Behebung von `Netzbezug Heute > Monat`
+* **Ursache behoben (Home Assistant 10-Tage-Recorder-Purge):**
+  - Da die Standard-Datenbank (`recorder`) in Home Assistant Verlaufsdaten älter als 10 Tage löscht, lieferte die bisherige Abfrage für den 1. des Monats (`end_time = Monatsanfang + 24h`) ab dem 11. Tag des Monats ein leeres Array `[]`. Dadurch fiel der Monats-Startzähler auf den aktuellen Zeitpunkt zurück (`Netzbezug Monat = 1,8 kWh`), während der Tages-Startzähler um `00:00` Uhr korrekt vorlag (`Netzbezug Heute = 5,38 kWh`).
+* **Selbstheilende Baseline-Klammer (`monthStart ≤ dayStart`) & Monotonie-Garantie (`Gesamtjahr ≥ Monat ≥ Heute`):**
+  - `syncEnergyCounterBaselinesFromHaHistory()` fragt den Monatsverlauf nun ohne künstliches 24h-Abbruchfenster ab, findet den ältesten verfügbaren Zählerstand im laufenden Monat und erzwingt über `healMonthBaselinesAgainstDayBaselines()` sowie `upperBoundMap` in `resolveEnergyCounterDelta()`, dass der Monats-Startzähler niemals höher als der Tages-Startzähler um 00:00 Uhr sein kann.
+* **Kombination aus Live-Watt-Sensoren & kWh-Gesamtzählern für alle 6 Kanäle:**
+  - `getUnifiedEnergyLedger(baseline)` vereint die konfigurierten `kWh`-Zählerstände und die Trapez-Integration der Live-`Watt`-Sensoren (`getDayIntegratedKwh()` / `getMonthIntegratedKwh()`) für **PV-Erzeugung**, **Hausverbrauch**, **Netzbezug**, **Netzeinspeisung**, **Batterie-Ladung** und **Batterie-Entladung**.
+  - Dadurch verschwindet die Batterie-Entladung (`BYD HVS+`) in der Monats- und Jahresansicht nicht mehr auf `0,0 kWh`, und ein Wechsel des Diagramm-Zeitraums (`Tag` / `Woche` / `Monat`) überschreibt niemals mehr die Tageswerte (`Heute`).
+* **Erweiterte Sensor-Einstellungen (`#modal-ha-config`):**
+  - Sektion 5 zeigt ab sofort eine Live-Statusmatrix (`#haUnifiedSensorMatrixContainer`) aller 6 Kanäle (inkl. `Heute`- und `Monat`-kWh) sowie ein zusätzliches Feld für `Hausverbrauch Gesamt (kWh Total, optional)`.
+
+#### 2. Komplettes Redesign des Sankey-Energieflussdiagramms & Grafikfehler-Behebungen
+* **100 % Bildschirmbreite ohne horizontales Scrollen (`viewBox="0 0 540 314"`):**
+  - Das bisherige `min-w-[600px]` und `overflow-x-auto` im Sankey-Container, durch das auf dem Smartphone die rechte Hälfte (`Hausverbrauch` und `Netzeinspeisung`) abgeschnitten war, wurde entfernt. Alle 3 Spalten (Quellen links, Direkt/Speicher mittig, Hausverbrauch/Einspeisung rechts) passen nun vollständig auf die Smartphone-Bildschirmbreite.
+* **Behebung des Batterie-Grafikfehlers (`...TTERY_ANDROID`):**
+  - Der fehlerhafte Material-Symbols-Iconname `battery_android` (der in der Detailkarte als riesiger überlappender Text `...TTERY_` plus Android-Roboter-Symbol gerendert wurde) wurde durch das valide Icon `battery_charging_full` mit sauberem `overflow-hidden` ersetzt.
+* **Keine überlappenden Beschriftungen mehr & sauberes 2×2 / 4-Spalten-Raster:**
+  - Der Einspeisepfad (`pv_exp`) und sein Info-Badge verlaufen nun kreuzungsfrei unterhalb der Batterie-Kachel (`y = 286`), statt mitten im Text von `BYD HVS+` zu liegen.
+  - Die 4 KPI-Karten unter dem Sankey (`Zeitraum`, `Autarkiequote`, `Eigenverbrauch`, `Selbst gedeckt`) nutzen nun `grid-cols-2 sm:grid-cols-4` statt `grid-cols-3`, und der Roh-LaTeX-String `($\Delta$kWh)` wurde in `(ΔkWh)` korrigiert.
+
+---
+
 ## [Version 9.6] – 2026-11-10
 
 ### ✨ In-Place Full-Bleed Diagramm-Vergrößerung ohne seitliche Achsenskalen (+20 % Platz), Verdeckungsfreie Fadenkreuz-Anzeige, Light/Dark-Mode-Konsistenz & Sofort-Umschalter für Tag/Woche/Monat

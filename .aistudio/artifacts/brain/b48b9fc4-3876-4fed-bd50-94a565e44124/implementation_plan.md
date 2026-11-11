@@ -1,80 +1,91 @@
-# Full-Bleed Diagramm-Vergrößerung, Fadenkreuz-Readout, Light/Dark-Konsistenz & Schneller Zeitraum-Wechsel (Version 9.6)
+# Zentrale Energie-Bilanz (Single Source of Truth) & Vollbreites Sankey-Diagramm (Version 9.7)
 
-Das Verlaufsdiagramm („Tagesverlauf · Telemetrie“) wird so optimiert, dass ein Tap in die Grafik das Diagramm **in-place bis an den Bildschirmrand (Full-Bleed)** vergrößert und die **linke sowie rechte Achsenskala ausblendet (+20 % mehr Kurvenbreite)**, das verdeckende Tooltip-Popup durch eine **vertikale Fadenkreuz-Linie mit Kopfleisten-Anzeige** ersetzt wird, alle Vergrößerungs- und Vollbildansichten **strikt im gewählten Light- oder Dark-Mode bleiben** und der **Tag / Woche / Monat-Umschalter verzögerungsfrei** reagiert.
+Dieses Update behebt die rechnerischen Widersprüche zwischen Tages-, Monats- und Jahreswerten (`Heute > Monat`), beseitigt die Grafikfehler (`battery_android`-Icon-Bug, überlappende Texte im Speicher-Knoten, Rohtext `$\Delta$kWh`) und gestaltet das Sankey-Energiefluss-Diagramm so um, dass es auf dem Smartphone komplett ohne horizontales Scrollen und ohne abgeschnittene Kanten dargestellt wird.
 
----
-
-## User Review & Bestätigte Entscheidungen
+## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Die folgenden Punkte wurden auf Basis deiner Antworten festgelegt:
+> Alle Entscheidungen basieren direkt auf deinen Rückmeldungen und den analysierten Screenshots:
 
-- **In-Place Vergrößerung bis zum Bildschirmrand (Full-Bleed) ohne Achsenskalen**: Ein Tap auf das Diagramm öffnet nicht mehr das Hochkant-Fullscreen-Modal, sondern vergrößert den Diagrammkasten direkt an Ort und Stelle über die gesamte Bildschirmbreite (`Edge-to-Edge`) und blendet die linke (`W`) und rechte (`%`) Y-Achsen-Skala komplett aus. Das echte Vollbild / 90°-Querformat wird ausschließlich gezielt über die oberen Buttons (`Vollbild` / `90°`) geöffnet.
-- **Kein verdeckendes Tooltip-Popup mehr**: Das schwebende Chart.js-Popup auf der Grafik wird deaktiviert. Beim Berühren oder Ziehen über die Kurve erscheint eine präzise vertikale Fadenkreuz-Linie, während die Messwerte unverdeckt in der Leiste direkt über dem Diagramm angezeigt werden.
-- **Strikte Beibehaltung des gewählten Light- / Dark-Modes**: Sowohl die In-Place-Vergrößerung als auch das Vollbild-Overlay (`#modal-intraday-fullscreen`) übernehmen zu 100 % das aktive Farbschema (Light-Mode bleibt hell, Dark-Mode bleibt dunkel – kein erzwungener Dark-Mode mehr beim Vergrößern).
-- **Verzögerungsfreier Tag / Woche / Monat-Umschalter**: Sofortige optische Umschaltung beim Antippen (0 ms) kombiniert mit einem In-Memory-Cache pro Zeitraum (`day`, `week`, `month`), `AbortController` für laufende Abfragen und Hintergrund-Preloading.
-
----
-
-## 1. Überblick & Kernkonzept
-
-- **Was sich verbessert**:
-  1. **Maximale Kurvenbreite auf dem Smartphone (+20 % Platzgewinn)**: Im vergrößerten In-Place-Modus entfällt der äußere Kartenrand (`-mx-3 sm:-mx-5`) sowie der Platzbedarf der linken Watt-Skala und rechten SoC-Skala. Die Kurve nutzt 100 % der Displaybreite von Kante zu Kante.
-  2. **Freie Sicht auf die Kurven beim Scannen mit dem Finger**: Kein schwarzer Kasten überdeckt mehr die Spitzenwerte; eine feine vertikale Linie markiert den Zeitpunkt, und die Werte stehen sauber lesbar darüber.
-  3. **Konsistentes Theme ohne Modus-Bruch**: Wer im hellen Design arbeitet, bleibt auch in der Vergrößerung und im Vollbild im hellen Design.
-  4. **Sofortiges Umschalten zwischen Tag, Woche und Monat**: Kein Warten mehr auf den mehrfachen Megabyte-Download aus Home Assistant bei jedem Wechsel.
+- **Bestätigte Entscheidung 1 (Sankey komplett auf Bildschirmbreite ohne horizontales Scrollen):** Das Sankey-Diagramm verliert den erzwungenen Mindestbreiten-Überlauf (`min-w-[600px]`), durch den auf dem Smartphone die rechte Hälfte abgeschnitten war. Alle Knoten und Energieflüsse passen zu 100 % in die verfügbare Bildschirmbreite.
+- **Bestätigte Entscheidung 2 (Zentrale Single Source of Truth aus Live-Watt- & kWh-Sensoren):** Alle Energieflüsse (`PV-Erzeugung`, `Hausverbrauch`, `Netzbezug`, `Netzeinspeisung`, `Batterie-Ladung`, `Batterie-Entladung`) werden über eine einzige zentrale Engine aus den in den Sensor-Einstellungen hinterlegten Live-Watt-Sensoren (`W`/`kW`) und Energiezählern (`kWh`) berechnet und für `Heute`, `Monat` und `Gesamtjahr` konsistent zusammengeführt.
+- **Mathematische Konsistenz (`Gesamtjahr ≥ Monat ≥ Heute`):** Ein Monatswert kann physikalisch niemals kleiner sein als der heutige Tageswert (z. B. Netzbezug Heute `5,38 kWh` vs. Monat `1,8 kWh` oder Batterie Heute `3,13 kWh` vs. Monat `0,0 kWh`). Die zentrale Bilanz-Engine korrigiert veraltete Monats-Startwerte automatisch anhand der Tages-Startwerte (`Monatsstart-Zähler ≤ Tagesstart-Zähler`) und kombiniert Zähler-Differenzen nahtlos mit dem Trapez-Integral der Live-Watt-Sensoren.
 
 ---
 
-## 2. User Experience & Visuelles Design
+## 1. Overview & Core Concept
 
-- **Zwei klare Vergrößerungsstufen**:
-  - **Stufe 1: In-Place Full-Bleed Zoom (Tap direkt auf das Diagramm)**:
-    - Dehnt den Sticky-Diagrammcontainer bis an den linken und rechten Bildschirmrand aus (`-mx-3 sm:-mx-5 rounded-none border-x-0`), erhöht die Diagrammhöhe (`h-60 sm:h-80 md:h-96`) und schaltet `yPower.display = false` sowie `ySoc.display = false` (keine seitlichen Achsenbeschriftungen, 0 px Seitenrand).
-    - Ein erneuter Tap (oder Klick auf das kleine „Kompakt“-Badge) schaltet sanft zurück in die Standardgröße.
-  - **Stufe 2: Vollbild / 90°-Querformat (nur über die Buttons „Vollbild“ & „90°“ oben)**:
-    - Öffnet das Vollbild-Overlay im aktuellen Light- oder Dark-Mode; auch dort sind die seitlichen Achsenbeschriftungen auf Wunsch ausblendbar bzw. randlos optimiert.
-- **Fadenkreuz-Plugin statt Popup**:
-  - Ein leichtgewichtiges Canvas-Plugin zeichnet bei aktivem Touch/Hover eine vertikale Führungslinie (`1px dashed`) über die volle Diagrammhöhe.
-- **Theme-Treue (Light & Dark Mode)**:
-  - `#modal-intraday-fullscreen` und die Kurven-Chips im Vollbild erhalten vollständige Light/Dark-Klassenpaare (`bg-white/95 dark:bg-slate-950/95`, `text-slate-900 dark:text-white`, `bg-slate-100/90 dark:bg-[#0b151a]/90`).
-
----
-
-## 3. Produktentscheidungen & Performance-Architektur
-
-- **Entscheidung 1: Warum war der Tag/Woche/Monat-Umschalter bisher träge – und wie lösen wir es?**
-  - *Ursache*: Bisher wurden die Buttons erst nach Abschluss des kompletten Home-Assistant-History-Downloads umgefärbt, und jeder Klick auf `Woche` oder `Monat` lud alle Rohdaten ungecacht neu herunter.
-  - *Gewählter Ansatz*:
-    1. **Sofort-UI-Update (0 ms)**: Button-Status, Titel und Lade-Indikator aktualisieren sich synchron im selben Frame wie der Klick.
-    2. **In-Memory Cache (`intradayHistoryCache`)**: Speichert die fertig berechneten Zeitreihen für `day`, `week` und `month` im Arbeitsspeicher. Ist ein Zeitraum bereits im Cache, wird das Diagramm sofort (< 10 ms) gerendert und im Hintergrund still aktualisiert (Stale-While-Revalidate).
-    3. **Hintergrund-Preloading**: Sobald die Tageskurve geladen ist, werden `week` und `month` einmalig im Hintergrund vorgeladen, damit schon der allererste Klick auf „Woche“ oder „Monat“ sofort da ist.
+- **Was behoben und verbessert wird:**
+  1. **Behebung „Netzbezug Heute höher als im ganzen Monat“ & „Batterie im Monat 0,0 kWh“:**
+     - **Ursache:** Home Assistant speichert die `history/period`-Rohdaten standardmäßig nur 10 Tage lang. Dadurch lieferte die Abfrage für den 1. des Monats (`startOfMonth + 24h`) oft ein leeres Ergebnis, sodass der Monats-Startzähler erst mitten am heutigen Tag verankert wurde (`1,8 kWh` Differenz seit App-Start), während der Tageszähler ab `00:00 Uhr` (`5,38 kWh`) bzw. das Watt-Integral (`3,13 kWh` Batterie) lief. Zudem überschrieb der Zeitraum-Wechsel im Live-Diagramm das Tages-Integral.
+     - **Lösung:** Eine zentrale **Single Source of Truth Engine** verwaltet für alle 6 Energiekanäle sowohl die `kWh`-Zählerstände als auch die integrierten `Watt`-Verläufe getrennt nach Zeitraum (`Tag` / `Monat` / `Jahr`), stellt sicher, dass der Monats-Startzähler niemals über dem Tages-Startzähler liegt, und garantiert mathematisch `Jahr ≥ Monat ≥ Heute`.
+  2. **Behebung aller Grafik- & Textfehler:**
+     - **Batterie-Grafikfehler (`...TTERY_ANDROID`):** Das ungültige Material-Symbol `battery_android` (das von der Schriftart als riesiger Text `BATTERY_` plus Android-Roboter-Icon gerendert wurde) wird durch das korrekte Material-Symbol `battery_charging_full` ersetzt.
+     - **Überlappender Text im `BYD HVS+`-Knoten:** Das schwebende Einspeise-Label (`0,04 kWh (1%)`), das bei Koordinate `(385, 224)` mitten im lila Batterie-Kasten lag und durchschimmerte, wird sauber an den Einspeisefluss gebunden, sodass keinerlei Text-Kollisionen mehr auftreten.
+     - **LaTeX-Rohtext im Untertitel:** Der fehlerhafte String `($\Delta$kWh)` wird durch sauberes `(ΔkWh)` ersetzt.
+     - **Abgeschnittene 4. Karte in 3er-Reihe:** Die Bilanz-Leiste unter dem Sankey (`Zeitraum`, `Autarkiequote`, `Eigenverbrauch`, `Selbst gedeckt`) hatte 4 Elemente in einem `grid-cols-3`-Raster, wodurch die 4. Karte einsam umbrach. Sie erhält ein symmetrisches `grid-cols-2 sm:grid-cols-4`-Raster.
+  3. **Komplett neues, randlos passendes Sankey-Diagramm:**
+     - Übersichtliche 3-Spalten-Flussarchitektur (`Quellen: PV & Netz` → `Zwischenspeicher & Direktpfad` → `Senken: Haus & Einspeisung`), die ohne horizontales Scrollen vollständig auf jedes Smartphone-Display passt und sowohl im Light-Mode als auch im Dark-Mode gestochen scharf lesbar ist.
 
 ---
 
-## 4. Technische Architektur & Interaktionsfluss
+## 2. User Experience & Visual Design
+
+- **Vollbreites Sankey ohne Scrollbalken (Mobile-First):**
+  - Keine abgeschnittenen Boxen am rechten Rand und kein horizontaler Scrollbalken mehr.
+  - Klare vertikale Farb-Stromschienen (Sankey-Bars) mit proportionalen Bézier-Flussbändern, deren Dicke exakt dem jeweiligen Energieanteil entspricht.
+  - Direkt lesbare Prozent- und `kWh`-Werte mit `tabular-nums` ohne Überlagerung von Knoten und Linien.
+- **Interaktive Fluss-Auswahl (Tap / Klick):**
+  - Ein Tippen auf einen beliebigen Knoten (`PV-Erzeugung`, `Netzbezug`, `PV-Direkt`, `BYD HVS+`, `Hausverbrauch`, `Netzeinspeisung`) oder ein Flussband hebt diesen Pfad optisch hervor und zeigt darunter eine kompakte, fehlerfreie Detail-Karte mit Euro-Ersparnis bzw. Kosten und Wirkungsgrad.
+- **Transparente Sensor-Zuordnung (Single Source of Truth in den Einstellungen):**
+  - In den Home Assistant Einstellungen werden die 6 Energie-Kanäle (`PV`, `Hauslast`, `Netzbezug`, `Netzeinspeisung`, `Batterie-Ladung`, `Batterie-Entladung`) klar mit ihren beiden Quellen (**Live-Watt-Sensor** + **kWh-Zähler**) verknüpft und zeigen direkt an, ob der jeweilige Wert aktuell aus dem kWh-Zähler oder aus der Live-Watt-Integration stammt.
+
+---
+
+## 3. Key Product Decisions & Trade-Offs
+
+- **Entscheidung 1: Einheitliche Energie-Bilanz aus Live-Watt + kWh-Zählern**
+  - *Gewählter Ansatz:* Jede Kennzahl (`PV`, `Haus`, `Netzbezug`, `Einspeisung`, `Batterie-Ladung`, `Batterie-Entladung`) wird über eine zentrale Bilanz-Funktion aufgelöst, die automatisch den konfigurierten `kWh`-Zähler und das Trapez-Integral des zugehörigen `Watt`-Sensors kombiniert und `Gesamtjahr ≥ Monat ≥ Heute` erzwingt.
+  - *Warum:* Selbst wenn in Home Assistant für einzelne Pfade (z. B. Batterie oder Hausverbrauch) nur ein Watt-Sensor oder nur ein Tages-/Gesamtzähler existiert oder die HA-Historie älter als 10 Tage bereinigt wurde, bleiben alle Zahlen über `Heute`, `Monat` und `Gesamtjahr` hinweg physikalisch schlüssig.
+- **Entscheidung 2: Kompakte 100-%-Viewport-Sankey-Geometrie statt 600px-Mindestbreite**
+  - *Gewählter Ansatz:* Kompaktes SVG-Koordinatensystem (`viewBox="0 0 540 310"`) mit klaren Sankey-Balken, großen Schriften und kollisionsfreien Pfaden, kombiniert mit einem symmetrischen `2x2` / `1x4` KPI-Raster darunter.
+  - *Warum:* Auf Smartphones (360–412 px Breite) bleibt das gesamte Energiefluss-Schaubild auf einen Blick ohne seitliches Wischen erfassbar.
+
+---
+
+## 4. Technical Architecture & Data Strategy *(Technical Reference)*
+
+### Architecture & Data Flow Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                   Telemetrie-Diagramm (Ebene 2 Sticky Top)                  │
-│  ┌───────────────────────────────────────────────────────────────────────┐  │
-│  │ Kopfleiste: [Tag | Woche | Monat]  [Alle]  [Vollbild]  [90°]          │  │
-│  │ Fadenkreuz-Readout: 14:25 Uhr · PV: 3.420 W · Haus: 610 W · SoC: 78 % │  │
-│  └───────────────────────────────────┬───────────────────────────────────┘  │
-│                                      │                                      │
-│        ┌─────────────────────────────┴─────────────────────────────┐        │
-│        ▼ (Tap auf Diagrammfläche)                                  ▼        │
-│  ┌───────────────────────────────────────┐   ┌───────────────────────────┐  │
-│  │ In-Place Full-Bleed Modus             │   │ Button "Vollbild" / "90°" │  │
-│  │ • Bis zum Bildschirmrand (-mx-3/-mx-5)│   │ • Öffnet Vollbild-Overlay │  │
-│  │ • Linke & rechte Y-Skala ausgeblendet │   │ • Bleibt im aktiven       │  │
-│  │ • Höhere Grafik + 20% mehr Breite     │   │   Light- oder Dark-Mode!  │  │
-│  │ • Kein Tooltip-Popup, nur Fadenkreuz  │   └───────────────────────────┘  │
-│  └───────────────────────────────────────┘                                  │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│            HOME ASSISTANT SENSOR SETTINGS (W / kW  +  kWh)               │
+│  • Leistung (W):  PV, Hauslast, Netzbezug, Einspeisung, Akku Lade/Entl.  │
+│  • Zähler (kWh):  PV (WR 1..n & Strings), Netzbezug, Einspeisung, Akku   │
+└────────────────────────────────────┬─────────────────────────────────────┘
+                                     │
+                                     ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│          SINGLE SOURCE OF TRUTH: UNIFIED ENERGY LEDGER ENGINE            │
+│  1. Zähler-Baseline-Sync: Monatsstart ≤ Tagesstart (Heilung bei >10d HA) │
+│  2. Getrennter Cache für Tages-Integral (24h) & Monats-Integral (30d)    │
+│  3. Kanal-Fusion je Zeitraum: kWh-Delta ∪ Watt-Trapez-Integral           │
+│  4. Physikalische Invariante: Jahr ≥ Monat ≥ Heute für alle 6 Kanäle     │
+└───────────┬────────────────────────┬─────────────────────────┬───────────┘
+            │                        │                         │
+            ▼                        ▼                         ▼
+┌───────────────────────┐ ┌──────────────────────┐ ┌───────────────────────┐
+│   Vollbreites Sankey  │ │ Monats-Soll/Ist Card │ │  Autarkie, Batterie & │
+│ (Heute / Monat / Jahr)│ │  & Jahres-Logbuch    │ │   ROI-Amortisation    │
+└───────────────────────┘ └──────────────────────┘ └───────────────────────┘
 ```
 
-### Interaktive State-Funktionen
-- **`isIntradayChartExpanded` (`boolean`)**: Steuert den In-Place Full-Bleed-Modus (`toggleIntradayInlineExpand()`). Blendet im aktivierten Zustand die seitlichen Y-Achsen (`yPower` & `ySoc`) und das äußere Karten-Padding aus.
-- **`intradayHistoryCache` (`{ day, week, month }`)**: Hält die berechneten Zeitreihen pro Zeitraum vor und sorgt in `setIntradayTimeframe(tf)` für sofortiges Umschalten ohne Wartezeit.
-- **`intradayCrosshairPlugin`**: Zeichnet die vertikale Fadenkreuz-Linie bei `touchmove` / `mousemove` auf dem Canvas ohne verdeckendes Tooltip-Rechteck.
+### Interactive Component & State Mapping
+
+1. **Zentrale Kanal-Auflösung (`computeUnifiedEnergyLedger`)**:
+   - Liest für jeden der 6 Kanäle (`pv`, `load`, `gridImp`, `gridExp`, `batChg`, `batDis`) sowohl die `kWh`-Zählerdifferenz (`dayStartByEntity` / `monthStartByEntity`) als auch das aus den `Watt`-Sensoren berechnete Trapez-Integral (`intradayHistoryCache.day` / `intradayHistoryCache.month`).
+   - Korrigiert `monthStartByEntity[id]` automatisch nach unten, falls `dayStartByEntity[id] < monthStartByEntity[id]` ist.
+   - Stellt sicher, dass der Wechsel zwischen `Tag`, `Woche` und `Monat` im Live-Diagramm niemals die Tages-Energiewerte (`day`) überschreibt.
+2. **Vollbreites, kollisionsfreies Sankey-Rendering (`renderSankeyDiagram`)**:
+   - Entfernt `min-w-[600px]` und horizontales Abschneiden; zeichnet links die Quellen (`PV-Erzeugung`, `Netzbezug`), mittig `PV-Direkt` und `Batteriespeicher` und rechts die Senken (`Hausverbrauch`, `Netzeinspeisung`) mit proportionalen Bézier-Bändern ohne überlappende Text-Pills.
+   - Ersetzt das fehlerhafte Icon `battery_android` durch `battery_charging_full` und richtet das 4er-KPI-Band darunter als `grid-cols-2 sm:grid-cols-4` aus.

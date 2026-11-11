@@ -10,9 +10,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '9.6';
+const APP_VERSION = '9.8';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -161,15 +161,23 @@ loadSharesFromFile();
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// CORS Headers for flexible access
+// CORS & Server Signature Headers for flexible access and Service Worker validation
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('X-PVPro-Server', APP_VERSION);
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
   next();
+});
+
+// Always serve Service Worker without browser HTTP caching so SW updates apply immediately
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.sendFile(path.join(__dirname, 'sw.js'));
 });
 
 // Serve static assets from project root
@@ -586,7 +594,8 @@ app.get('/api/pvgis/seriescalc', async (req, res) => {
       }
     }
 
-    return res.status(503).json({
+    // Return 500 instead of 503 so Nginx proxy_intercept_errors does not replace JSON with warmup.html
+    return res.status(500).json({
       success: false,
       error: 'Alle externen PVGIS-Endpunkte antworteten nicht rechtzeitig.'
     });
@@ -940,7 +949,8 @@ app.post('/api/ha/test', async (req, res) => {
         detailedHint = `HTTP ${result.status} (Bad Gateway / Gateway Timeout): Dein Reverse Proxy ist erreichbar, kann aber intern Home Assistant (Port 8123) nicht erreichen.`;
       }
 
-      return res.status(result.status || 502).json({
+      // Avoid 403/502/503/504 on outer response so Nginx proxy_intercept_errors does not replace JSON with warmup.html/forbidden.html
+      return res.status(200).json({
         success: false,
         normalizedBaseUrl: result.normalizedBase,
         status: result.status,
@@ -960,7 +970,7 @@ app.post('/api/ha/test', async (req, res) => {
       const htmlHint = looksLikeHtml
         ? 'Dein Reverse Proxy hat eine HTML-Login-Seite (z. B. vorgeschaltete Authentifizierung wie Authelia/Cloudflare Access oder falsche Weiterleitung) statt der Home-Assistant-JSON-API zurückgegeben. Bitte schalte den Pfad "/api/*" im Reverse Proxy von externen Login-Portalen frei.'
         : 'Unerwartetes Antwortformat von /api/states (kein JSON-Array).';
-      return res.status(502).json({
+      return res.status(200).json({
         success: false,
         normalizedBaseUrl: result.normalizedBase,
         error: htmlHint,
@@ -1001,7 +1011,7 @@ app.post('/api/ha/test', async (req, res) => {
     } else if (errMsg.includes('Timeout') || errMsg.includes('ETIMEDOUT')) {
       netHint = 'Zeitüberschreitung (Timeout): Dein Reverse Proxy antwortet nicht auf externe Anfragen (Portweiterleitung 443 am Router oder Geo-IP-Firewall prüfen). Alternativ kannst du den Webhook-Push-Modus nutzen!';
     }
-    res.status(502).json({
+    res.status(200).json({
       success: false,
       normalizedBaseUrl: baseUrl,
       error: `Home Assistant über "${baseUrl}" nicht erreichbar (${errMsg}). ${netHint}`,
@@ -1067,8 +1077,9 @@ app.all('/api/ha/states', async (req, res) => {
     const response = await requestHomeAssistant(baseUrlRaw, token, '/api/states', 7500);
 
     if (!response.ok || !Array.isArray(response.json)) {
-      return res.status(response.status || 502).json({
+      return res.status(200).json({
         success: false,
+        upstreamStatus: response.status || 502,
         error: `Home Assistant HTTP ${response.status || 502}`
       });
     }
@@ -1197,7 +1208,7 @@ app.all('/api/ha/states', async (req, res) => {
       consumersTelemetry
     });
   } catch (err) {
-    res.status(502).json({
+    res.status(200).json({
       success: false,
       error: `Fehler beim Abruf von Home Assistant: ${err.message}`
     });

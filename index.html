@@ -3,21 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 9.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 9.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=9.6">
+    <link rel="manifest" href="manifest.json?v=9.8">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.6">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.6">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.6">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.6">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.8">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.8">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.8">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.8">
+    <script>
+        // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
+        (function () {
+            try {
+                sessionStorage.removeItem('warmup_start_time');
+                sessionStorage.removeItem('warmup_last_reload_time');
+                sessionStorage.removeItem('warmup_failed_sent');
+                if ('caches' in window) {
+                    caches.keys().then(function (keys) {
+                        keys.forEach(function (key) {
+                            if (key !== 'pvpro-cache-v9.8') {
+                                caches.delete(key);
+                            }
+                        });
+                    });
+                }
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
+                        reg.update();
+                    }).catch(function () {});
+                }
+            } catch (e) {}
+        })();
+    </script>
 
     <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -387,10 +411,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=9.6" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=9.8" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.6</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.8</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1653,7 +1677,7 @@
                                 </button>
                             </div>
                             <p id="sankeySubtitleText" class="text-xs text-slate-500 dark:text-slate-300 mt-0.5">
-                                Automatische Differenz ($\Delta$kWh) aus Gesamtzählern oder Trapez-Integration aus Watt-Sensoren
+                                Automatische Differenz (ΔkWh) aus Gesamtzählern &amp; Trapez-Integration aus Watt-Sensoren (Single Source of Truth)
                             </p>
                         </div>
 
@@ -1671,13 +1695,13 @@
                         </div>
                     </div>
 
-                    <!-- Responsive SVG Sankey Diagram Container -->
-                    <div id="sankeyDiagramContainer" class="w-full overflow-x-auto rounded-2xl bg-white/50 dark:bg-slate-950/45 border border-white/70 dark:border-white/10 p-3 sm:p-4">
+                    <!-- Responsive SVG Sankey Diagram Container (100% Bildschirmbreite ohne horizontales Scrollen) -->
+                    <div id="sankeyDiagramContainer" class="w-full overflow-hidden rounded-2xl bg-white/65 dark:bg-slate-950/55 border border-slate-200/80 dark:border-white/10 p-2 sm:p-4">
                         <!-- Rendered dynamically by renderSankeyDiagram() in telemetry.js -->
                     </div>
 
-                    <!-- Sankey Summary Pills (Autarkie, Eigenverbrauch, Speicher-Wirkungsgrad) -->
-                    <div id="sankeySummaryRibbon" class="grid grid-cols-3 gap-2.5 text-center pt-1">
+                    <!-- Sankey Summary Pills (Zeitraum, Autarkie, Eigenverbrauch, Selbst gedeckt) -->
+                    <div id="sankeySummaryRibbon" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center pt-1">
                         <!-- Rendered dynamically by renderSankeyDiagram() -->
                     </div>
                 </div>
@@ -2131,7 +2155,7 @@
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (V9.6: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
+    <!-- M3 More Bottom Sheet (V9.8: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
     <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1820]/95 backdrop-blur-2xl rounded-t-3xl border-t border-slate-200/90 dark:border-white/15 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
         <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
@@ -2202,7 +2226,7 @@
                     <span class="material-symbols-rounded text-xl text-sky-600 dark:text-sky-400 shrink-0">menu_book</span>
                     <div class="min-w-0">
                         <p class="text-xs font-black text-slate-900 dark:text-white truncate">4b. Handbuch</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.6</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.8</p>
                     </div>
                 </button>
             </div>
@@ -2933,16 +2957,16 @@
                         </div>
                     </div>
 
-                    <!-- 5. Gesamt-Energiezähler (kWh total / total_increasing) – OHNE eigene HA-Helfer! -->
+                    <!-- 5. Gesamt-Energiezähler (kWh total / total_increasing) – Single Source of Truth (Watt + kWh) -->
                     <div id="haCountersSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                                 <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                                     <span class="material-symbols-rounded text-primary text-base">electric_meter</span>
-                                    <span>5. Gesamt-Energiezähler (kWh Total – Multi-Wechselrichter fähig!)</span>
+                                    <span>5. Single Source of Truth · Energiezähler (kWh Total + Live-Watt)</span>
                                 </h4>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                                    Wähle deine normalen <strong>lebenslangen Gesamtzähler (`kWh total` / `total_increasing`)</strong> vom Wechselrichter, Smart Meter und Akku aus. Hast du <strong>2 oder mehr Wechselrichter</strong> (z. B. Fronius + Hoymiles), füge über <strong>„+ Wechselrichter-Zähler“</strong> einfach alle WR-Zähler hinzu – die App berechnet je Zähler die Differenz ($\Delta$kWh) und addiert sie automatisch! Alternativ kannst du die kWh-Zähler auch direkt oben in Sektion 3 bei den Strings eintragen.
+                                    Die App kombiniert automatisch deine <strong>Live-Watt-Sensoren</strong> (aus Sektion 2/3) und deine <strong>lebenslangen Gesamtzähler (`kWh total` / `total_increasing`)</strong> zu einer zentralen Quelle für Heute, Monat und Gesamtjahr (inkl. automatischer Monotonie-Prüfung `Monat ≥ Heute`). Bei <strong>2 oder mehr Wechselrichtern</strong> füge über <strong>„+ Wechselrichter-Zähler“</strong> alle WR-Zähler hinzu – die Differenz (ΔkWh) wird automatisch addiert!
                                 </p>
                             </div>
                             <button type="button" onclick="addHaPvEnergyExtra()" class="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto" title="Weiteren Wechselrichter-Energiezähler (kWh) zur Gesamtsumme hinzufügen">
@@ -2950,6 +2974,10 @@
                                 <span>+ Wechselrichter-Zähler</span>
                             </button>
                         </div>
+
+                        <!-- Live Status Matrix: Single Source of Truth (alle 6 Energiekanäle mit Heute & Monat) -->
+                        <div id="haUnifiedSensorMatrixContainer" class="grid grid-cols-1 sm:grid-cols-3 gap-2"></div>
+
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
                                 <label class="block text-[11px] font-semibold text-teal-700 dark:text-teal-300 mb-1">PV-Erzeugung · Wechselrichter 1 (kWh Total / Zählerstand)</label>
@@ -3008,6 +3036,16 @@
                                 <div class="flex items-center gap-1.5">
                                     <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_month" placeholder="sensor.battery_energy_discharged_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
                                     <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_month', unitFilter: 'energy', title: 'Batterie-Entladung Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
+                                        <span class="material-symbols-rounded text-sm">list_alt</span>
+                                        <span>Wählen</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Hausverbrauch Gesamt (kWh Total, optional – sonst automatisch aus Bilanz / Watt-Sensor berechnet)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_load_month" placeholder="Optional: sensor.hausverbrauch_energy_total (leer lassen = automatisch berechnet)" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_load_month', unitFilter: 'energy', title: 'Hausverbrauch Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
                                         <span class="material-symbols-rounded text-sm">list_alt</span>
                                         <span>Wählen</span>
                                     </button>
@@ -3191,13 +3229,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V9.6 (In-Place Full-Bleed Diagramm ohne seitliche Skalen, Fadenkreuz-Readout, Light/Dark-Treue & Zeitraum-Cache) -->
-    <script src="qrcode.client.js?v=9.6"></script>
-    <script src="database.js?v=9.6"></script>
-    <script src="content.js?v=9.6"></script>
-    <script src="app.js?v=9.6"></script>
-    <script src="wiring.js?v=9.6"></script>
-    <script src="dossier.js?v=9.6"></script>
-    <script src="telemetry.js?v=9.6"></script>
+    <!-- MODULARE ARCHITEKTUR V9.8 (Dev-Server & Service-Worker Warmup-Härtung, X-PVPro-Server Signatur & Nginx Error-Interception-Schutz) -->
+    <script src="qrcode.client.js?v=9.8"></script>
+    <script src="database.js?v=9.8"></script>
+    <script src="content.js?v=9.8"></script>
+    <script src="app.js?v=9.8"></script>
+    <script src="wiring.js?v=9.8"></script>
+    <script src="dossier.js?v=9.8"></script>
+    <script src="telemetry.js?v=9.8"></script>
 </body>
 </html>

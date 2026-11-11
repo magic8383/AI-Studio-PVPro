@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementierungsplan (Version 9.6) für In-Place Full-Bleed Diagramm-Vergrößerung ohne seitliche Achsenbeschriftung, verdeckungsfreie Fadenkreuz-Messwertanzeige, durchgängige Light/Dark-Mode-Treue im Vollbild und verzögerungsfreien Tag/Woche/Monat-Umschalter mit In-Memory-Cache.",
-  "updatedAt":  "2026-11-10T21:09:35.503329390Z",
+  "summary":  "Implementierungsplan für Version 9.7: Zentrale Single Source of Truth für alle Live-Watt- und kWh-Sensoren (Behebung der Diskrepanz Heute vs. Monat/Jahr), Behebung des Batterie-Icon- und Text-Überlappungsfehlers sowie komplettes Redesign des Sankey-Energiefluss-Diagramms auf 100 % Bildschirmbreite ohne horizontales Scrollen.",
+  "updatedAt":  "2026-11-10T22:23:00.476721193Z",
   "requestFeedback":  true,
   "userFacing":  true
 }
