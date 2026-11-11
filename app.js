@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '9.8';
+const APP_VERSION = '9.9';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -1198,6 +1198,7 @@ function exportFullConfiguration() {
         batMap: (typeof batMap !== 'undefined' ? batMap : JSON.parse(localStorage.getItem('pvpro_batmap') || '{}')),
         haConfigSanitized: (typeof getSanitizedHaConfigForProject === 'function' ? getSanitizedHaConfigForProject() : null),
         performanceRecords: (typeof getPerformanceRecordsForProject === 'function' ? getPerformanceRecordsForProject() : null),
+        energyBaselines: (typeof getEnergyBaselinesForProject === 'function' ? getEnergyBaselinesForProject() : null),
         cachedSimulation: getSerializableSimulationCache()
     };
 }
@@ -1278,6 +1279,9 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
         }
         if (config.performanceRecords && typeof applyPerformanceRecordsFromProject === 'function') {
             applyPerformanceRecordsFromProject(config.performanceRecords);
+        }
+        if (config.energyBaselines && typeof applyEnergyBaselinesFromProject === 'function') {
+            applyEnergyBaselinesFromProject(config.energyBaselines);
         }
         if (config.cachedSimulation) {
             try {
@@ -4967,6 +4971,7 @@ async function submitSaveSystemPlanToServer() {
         wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')),
         haConfigSanitized: haSanitized,
         performanceRecords: (typeof getPerformanceRecordsForProject === 'function' ? getPerformanceRecordsForProject() : null),
+        energyBaselines: (typeof getEnergyBaselinesForProject === 'function' ? getEnergyBaselinesForProject() : null),
         cachedSimulation: getSerializableSimulationCache()
     };
 
@@ -5078,6 +5083,9 @@ async function loadPersistentPlanFromServer(planId) {
         }
         if (pData.performanceRecords && typeof applyPerformanceRecordsFromProject === 'function') {
             applyPerformanceRecordsFromProject(pData.performanceRecords);
+        }
+        if (pData.energyBaselines && typeof applyEnergyBaselinesFromProject === 'function') {
+            applyEnergyBaselinesFromProject(pData.energyBaselines);
         }
         if (pData.cachedSimulation) {
             try {

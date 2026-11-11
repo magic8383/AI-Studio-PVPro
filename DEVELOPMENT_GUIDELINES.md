@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 9.8 (Dev-Server & Service-Worker Warmup-Härtung, X-PVPro-Server Signatur-Prüfung gegen Nginx warmup.html Cache-Poisoning & Proxy Error-Interception-Schutz)  
+**Aktuelle Version:** 9.9 (Home Assistant Langzeit-Statistiken via WebSocket `recorder/statistics_during_period`, GitHub-Persistenz der Monats-Bilanzen & Zähler-Baselines, zusammengelegte Single-Source-Sektion 2 für Live-W + kWh-Zähler sowie kompakte Verbraucher-/String-Zeilen mit Nur-Icon-Sensor-Picker)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

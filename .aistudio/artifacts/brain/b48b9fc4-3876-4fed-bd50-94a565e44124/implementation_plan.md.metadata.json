@@ -1,6 +1,6 @@
 {
-  "summary":  "Implementierungsplan für Version 9.7: Zentrale Single Source of Truth für alle Live-Watt- und kWh-Sensoren (Behebung der Diskrepanz Heute vs. Monat/Jahr), Behebung des Batterie-Icon- und Text-Überlappungsfehlers sowie komplettes Redesign des Sankey-Energiefluss-Diagramms auf 100 % Bildschirmbreite ohne horizontales Scrollen.",
-  "updatedAt":  "2026-11-10T22:23:00.476721193Z",
+  "summary":  "Implementierungsplan für Version 9.9:\n1. Home Assistant Langzeit-Statistik (Long-Term Statistics via /api/websocket recorder/statistics_during_period) direkt im Browser & Server anzapfen, damit Monats- und Jahreswerte auch nach wochenlanger App-Pause exakt aus Home Assistants unbegrenzter Statistik-Datenbank geladen werden.\n2. GitHub- & Projekt-Persistenz erweitern: Monats-Logbuch (performanceRecords) und Zähler-Startwerte (energyBaselines) automatisch beim Speichern in database.js (CodePersistedPlans) und im JSON-Export sichern.\n3. Zusammenlegung von Sektion 2 und Sektion 5 im Home-Assistant-Modal zu einer einzigen, überschneidungsfreien Sektion „2. Haupt-Sensoren · Single Source of Truth (Live-Watt & kWh-Gesamtzähler)“, in der pro Kanal (PV, Hausverbrauch, Netzbezug, Netzeinspeisung, Batterie) der W-Sensor und der kWh-Zähler direkt nebeneinander stehen.\n4. Kompakte Einzelverbraucher- & String-Zeilen + platzsparender Nur-Icon-Wählen-Button (list_alt ohne Text) für maximale Sichtbarkeit langer Home-Assistant-Entitätsnamen sowie Lösch-Icon (delete) direkt oben hinter dem Gerätenamen.",
+  "updatedAt":  "2026-11-11T10:28:29.160698798Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

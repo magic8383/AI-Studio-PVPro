@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '9.8';
+const APP_VERSION = '9.9';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1514,6 +1514,16 @@ app.post('/api/performance/records', (req, res) => {
       Object.assign(allRecords, req.body.records);
     }
     savePerformanceRecords(allRecords);
+
+    // Also mirror performanceRecords into the active persisted system plan in database.js (for GitHub backup)
+    try {
+      const plans = loadSystemPlans();
+      if (Array.isArray(plans) && plans.length > 0 && plans[0].data) {
+        plans[0].data.performanceRecords = allRecords;
+        saveSystemPlans(plans);
+      }
+    } catch (syncErr) {}
+
     res.json({ success: true, records: allRecords });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

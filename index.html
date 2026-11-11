@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 9.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 9.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 9.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 9.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=9.8">
+    <link rel="manifest" href="manifest.json?v=9.9">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.8">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.8">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.8">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.8">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=9.9">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=9.9">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=9.9">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=9.9">
     <script>
         // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
         (function () {
@@ -28,7 +28,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v9.8') {
+                            if (key !== 'pvpro-cache-v9.9') {
                                 caches.delete(key);
                             }
                         });
@@ -411,10 +411,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=9.8" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=9.9" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.8</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 9.9</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2155,7 +2155,7 @@
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (V9.8: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
+    <!-- M3 More Bottom Sheet (V9.9: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
     <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1820]/95 backdrop-blur-2xl rounded-t-3xl border-t border-slate-200/90 dark:border-white/15 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
         <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
@@ -2226,7 +2226,7 @@
                     <span class="material-symbols-rounded text-xl text-sky-600 dark:text-sky-400 shrink-0">menu_book</span>
                     <div class="min-w-0">
                         <p class="text-xs font-black text-slate-900 dark:text-white truncate">4b. Handbuch</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.8</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v9.9</p>
                     </div>
                 </button>
             </div>
@@ -2800,109 +2800,237 @@
                         </div>
                     </div>
 
-                    <!-- 2. Live-Leistungs-Entitäten (Watt / kW) mit Komfort-Sensor-Picker -->
-                    <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
-                        <div class="flex flex-wrap items-center justify-between gap-2">
-                            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                                <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
-                                <span>2. Haupt-Leistungssensoren (W, kW &amp; %)</span>
-                            </h4>
-                            <span class="text-[11px] text-teal-600 dark:text-teal-400 font-semibold flex items-center gap-1">
-                                <span class="material-symbols-rounded text-sm">touch_app</span>
-                                <span>Klicke auf „Wählen“ für die Geräte- &amp; Helfer-Liste</span>
-                            </span>
+                    <!-- 2. Vereinte Haupt-Sensoren: Single Source of Truth (Live-Watt & kWh-Gesamtzähler pro Kanal) -->
+                    <div id="haCountersSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3.5">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                                    <span class="material-symbols-rounded text-amber-500 text-base">bolt</span>
+                                    <span>2. Haupt-Sensoren · Single Source of Truth (Live-W &amp; kWh-Zähler)</span>
+                                </h4>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                    Pro Kanal direkt zusammen: <strong>Live-Leistung (W/kW)</strong> und <strong>Gesamtzähler (kWh Total)</strong>. Inkl. automatischer Abfrage der Home-Assistant-Langzeitstatistik (auch nach &gt;10 Tagen Pause). Tippe rechts neben einem Feld auf <span class="material-symbols-rounded text-xs align-middle text-teal-500">list_alt</span> zum Auswählen.
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                                <button type="button" onclick="triggerManualLongTermStatsSync()" class="px-2.5 py-1.5 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer" title="Monats- und Jahreswerte rückwirkend aus Home Assistant Langzeit-Statistik laden">
+                                    <span class="material-symbols-rounded text-sm text-teal-500">history</span>
+                                    <span>HA Langzeit-Sync</span>
+                                </button>
+                                <button type="button" onclick="addHaPvEnergyExtra()" class="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer" title="Weiteren Wechselrichter-Energiezähler (kWh) zur Gesamtsumme hinzufügen">
+                                    <span class="material-symbols-rounded text-sm">add</span>
+                                    <span>+ WR-Zähler</span>
+                                </button>
+                            </div>
                         </div>
+
+                        <!-- Live Status Matrix: Single Source of Truth (alle 6 Energiekanäle mit Heute & Monat) -->
+                        <div id="haUnifiedSensorMatrixContainer" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">PV gesamt · DC (Optional – leer = Summe der Strings)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="Leer = wird automatisch aus Strings summiert" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_power', unitFilter: 'power', title: 'PV gesamt · DC (Leistung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
+                            <!-- KANAL A: PV-ERZEUGUNG (W + kWh) -->
+                            <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-teal-500/25 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-teal-700 dark:text-teal-300 flex items-center gap-1">
+                                        <span class="material-symbols-rounded text-sm">wb_sunny</span>
+                                        <span>PV-Erzeugung (W &amp; kWh)</span>
+                                    </span>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">PV gesamt · Live-Leistung (W/kW, leer = Summe Strings)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="Leer = Summe aus Strings (Sektion 3)" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_power', unitFilter: 'power', title: 'PV gesamt · DC (Leistung)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="PV-Leistungssensor (W) auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-teal-700 dark:text-teal-300 mb-0.5">Wechselrichter 1 · Gesamtzähler (kWh Total)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="z.B. sensor.fronius_energy_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 1 (kWh Total)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Wechselrichter 1 kWh-Zähler auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-teal-700 dark:text-teal-300 mb-0.5">Wechselrichter 2 · Gesamtzähler (kWh Total, optional)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="z.B. sensor.hoymiles_energy_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 2 (kWh Total)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Wechselrichter 2 kWh-Zähler auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="haPvEnergyExtraContainer" class="space-y-1.5 empty:hidden"></div>
+                            </div>
+
+                            <!-- KANAL B: HAUSVERBRAUCH (W + kWh) -->
+                            <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-amber-500/25 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                                        <span class="material-symbols-rounded text-sm">home</span>
+                                        <span>Hausverbrauch (W &amp; kWh)</span>
+                                    </span>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Hausverbrauch · Live-Leistung AC (W / kW)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_load_power" placeholder="sensor.house_consumption_power" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_load_power', unitFilter: 'power', title: 'Hausverbrauch · AC (Leistung)' })" class="w-8 h-8 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Hausverbrauch Leistungssensor (W) auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">Hausverbrauch · Gesamtzähler (kWh Total, optional)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_load_month" placeholder="Leer = automatisch aus Bilanz / W berechnet" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-amber-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_load_month', unitFilter: 'energy', title: 'Hausverbrauch Gesamt (kWh Total)' })" class="w-8 h-8 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Hausverbrauch kWh-Zähler auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Hausverbrauch · AC (Aktuelle Last)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_load_power" placeholder="sensor.house_consumption_power" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_load_power', unitFilter: 'power', title: 'Hausverbrauch · AC (Leistung)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
+
+                            <!-- KANAL C: NETZBEZUG (W + kWh) -->
+                            <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-500/25 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                        <span class="material-symbols-rounded text-sm">download</span>
+                                        <span>Netzbezug / Import (W &amp; kWh)</span>
+                                    </span>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-blue-600 dark:text-blue-300 mb-0.5">Netzbezug · Live-Leistung (W / kW)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_power" placeholder="sensor.solarnet_leistung_netzbezug" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-blue-300 dark:border-blue-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-blue-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_imp_power', unitFilter: 'power', title: 'Netzbezug · Leistung (W)' })" class="w-8 h-8 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Netzbezug Leistungssensor (W) auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-blue-600 dark:text-blue-300 mb-0.5">Netzbezug · Gesamtzähler (kWh Total)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_month" placeholder="sensor.smartmeter_energy_import_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-blue-300 dark:border-blue-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-blue-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_imp_month', unitFilter: 'energy', title: 'Netzbezug Gesamt (kWh Total)' })" class="w-8 h-8 rounded-lg bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Netzbezug kWh-Zähler auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-blue-600 dark:text-blue-300 mb-1">Netzbezug · Leistung (W / kW)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_power" placeholder="z.B. sensor.solarnet_leistung_netzbezug" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-blue-300 dark:border-blue-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-blue-500">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_imp_power', unitFilter: 'power', title: 'Netzbezug · Leistung (W)' })" class="px-2.5 py-2 rounded-xl bg-blue-600/15 hover:bg-blue-600/25 border border-blue-500/35 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Netzbezug-Leistungssensor auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
+
+                            <!-- KANAL D: NETZEINSPEISUNG (W + kWh) -->
+                            <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-sky-500/25 space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-sky-600 dark:text-sky-400 flex items-center gap-1">
+                                        <span class="material-symbols-rounded text-sm">upload</span>
+                                        <span>Netzeinspeisung / Export (W &amp; kWh)</span>
+                                    </span>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-sky-600 dark:text-sky-300 mb-0.5">Netzeinspeisung · Live-Leistung (W / kW)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_power" placeholder="sensor.solarnet_leistung_netzeinspeisung" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-sky-300 dark:border-sky-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_exp_power', unitFilter: 'power', title: 'Netzeinspeisung · Leistung (W)' })" class="w-8 h-8 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Netzeinspeisung Leistungssensor (W) auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] font-semibold text-sky-600 dark:text-sky-300 mb-0.5">Netzeinspeisung · Gesamtzähler (kWh Total)</label>
+                                    <div class="flex items-center gap-1">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_month" placeholder="sensor.smartmeter_energy_export_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-sky-300 dark:border-sky-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-sky-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_exp_month', unitFilter: 'energy', title: 'Netzeinspeisung Gesamt (kWh Total)' })" class="w-8 h-8 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Netzeinspeisung kWh-Zähler auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-sky-600 dark:text-sky-300 mb-1">Netzeinspeisung · Leistung (W / kW)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_power" placeholder="z.B. sensor.solarnet_leistung_netzeinspeisung" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-sky-300 dark:border-sky-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-sky-500">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_exp_power', unitFilter: 'power', title: 'Netzeinspeisung · Leistung (W)' })" class="px-2.5 py-2 rounded-xl bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Netzeinspeisung-Leistungssensor auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
+
+                            <!-- KANAL E & F: BATTERIESPEICHER (SoC %, LADE-W/kWh, ENTLADE-W/kWh) -->
+                            <div class="sm:col-span-2 p-3 rounded-xl bg-white dark:bg-slate-900 border border-purple-500/25 space-y-2.5">
+                                <div class="flex flex-wrap items-center justify-between gap-2">
+                                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-purple-600 dark:text-purple-300 flex items-center gap-1">
+                                        <span class="material-symbols-rounded text-sm">battery_charging_full</span>
+                                        <span>Batteriespeicher · SoC (%), Ladung &amp; Entladung (W &amp; kWh)</span>
+                                    </span>
+                                    <div class="flex items-center gap-1.5 w-full sm:w-72">
+                                        <label class="text-[10px] font-bold text-slate-500 shrink-0">SoC (%):</label>
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_soc', unitFilter: 'soc', title: 'Batterie · Ladezustand SoC (%)' })" class="w-8 h-8 rounded-lg bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Batterie SoC (%) auswählen">
+                                            <span class="material-symbols-rounded text-base">list_alt</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-purple-600 dark:text-purple-300 mb-0.5">Batterie · Ladeleistung (W / kW)</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_power" placeholder="sensor.battery_power_charging" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                            <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_chg_power', unitFilter: 'power', title: 'Batterie · Ladeleistung (W / kW)' })" class="w-8 h-8 rounded-lg bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Batterie Ladeleistung (W) auswählen">
+                                                <span class="material-symbols-rounded text-base">list_alt</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-purple-600 dark:text-purple-300 mb-0.5">Batterie · Ladung Zähler (kWh Total)</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_month" placeholder="sensor.battery_energy_charged_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                            <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_chg_month', unitFilter: 'energy', title: 'Batterie-Ladung Gesamt (kWh Total)' })" class="w-8 h-8 rounded-lg bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Batterie Ladung kWh-Zähler auswählen">
+                                                <span class="material-symbols-rounded text-base">list_alt</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-purple-600 dark:text-purple-300 mb-0.5">Batterie · Entladeleistung (W / kW)</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_power" placeholder="sensor.battery_power_discharging" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                            <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_power', unitFilter: 'power', title: 'Batterie · Entladeleistung (W / kW)' })" class="w-8 h-8 rounded-lg bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Batterie Entladeleistung (W) auswählen">
+                                                <span class="material-symbols-rounded text-base">list_alt</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-purple-600 dark:text-purple-300 mb-0.5">Batterie · Entladung Zähler (kWh Total)</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_month" placeholder="sensor.battery_energy_discharged_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-purple-500">
+                                            <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_month', unitFilter: 'energy', title: 'Batterie-Entladung Gesamt (kWh Total)' })" class="w-8 h-8 rounded-lg bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Batterie Entladung kWh-Zähler auswählen">
+                                                <span class="material-symbols-rounded text-base">list_alt</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="sm:col-span-2">
-                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Optional: Netz Kombi-Leistung (+/- W, nur falls kein getrennter Bezugs-/Einspeisesensor)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="Leer lassen, wenn oben Netzbezug &amp; Einspeisung getrennt gewählt sind" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_power', unitFilter: 'power', title: 'Netzleistung Kombi (+/- W)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
+
+                            <!-- Optionale Kombi-Leistungssensoren (+/- W) platzsparend eingeklappt -->
+                            <details class="sm:col-span-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 px-3 py-2">
+                                <summary class="text-[11px] font-bold text-slate-500 dark:text-slate-400 cursor-pointer select-none">
+                                    Optional: Kombinierte +/- Watt-Sensoren (nur falls keine getrennten Bezugs-/Einspeise- oder Lade-/Entlade-Sensoren vorhanden)
+                                </summary>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2.5">
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Netz Kombi-Leistung (+/- W)</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_power" placeholder="Leer lassen bei getrennten Sensoren" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                            <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_power', unitFilter: 'power', title: 'Netzleistung Kombi (+/- W)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Kombi-Netzsensor auswählen">
+                                                <span class="material-symbols-rounded text-base">list_alt</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Batterie Kombi-Leistung (+/- W)</label>
+                                        <div class="flex items-center gap-1">
+                                            <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="Leer lassen bei getrennten Sensoren" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                            <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_power', unitFilter: 'power', title: 'Batterie Kombi-Leistung (+/- W)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Kombi-Batteriesensor auswählen">
+                                                <span class="material-symbols-rounded text-base">list_alt</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie · Ladezustand SoC (%)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_soc" placeholder="sensor.battery_soc" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_soc', unitFilter: 'soc', title: 'Batterie · Ladezustand SoC (%)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-purple-600 dark:text-purple-300 mb-1">Batterie · Ladeleistung (W / kW)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_power" placeholder="sensor.battery_power_charging" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-purple-500">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_chg_power', unitFilter: 'power', title: 'Batterie · Ladeleistung (W / kW)' })" class="px-2.5 py-2 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Ladeleistungs-Sensor auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-purple-600 dark:text-purple-300 mb-1">Batterie · Entladeleistung (W / kW)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_power" placeholder="sensor.battery_power_discharging" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-purple-300 dark:border-purple-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-purple-500">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_power', unitFilter: 'power', title: 'Batterie · Entladeleistung (W / kW)' })" class="px-2.5 py-2 rounded-xl bg-purple-600/15 hover:bg-purple-600/25 border border-purple-500/35 text-purple-700 dark:text-purple-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Entladeleistungs-Sensor auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="sm:col-span-2">
-                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Optional: Batterie Kombi-Leistung (+/- W, nur falls kein getrennter Lade-/Entladesensor)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_power" placeholder="Leer lassen, wenn oben Lade- & Entladeleistung getrennt gewählt sind" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_power', unitFilter: 'power', title: 'Batterie Kombi-Leistung (+/- W)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer" title="Aus Gerät oder Helfer auswählen">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
+                            </details>
                         </div>
                     </div>
 
@@ -2915,7 +3043,7 @@
                                     <span>3. PV-Strings &amp; Wechselrichter-Kurven (Tagesdiagramm &amp; Auswahlkacheln)</span>
                                 </h4>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Wähle für jeden String bequem das Gerät/den Helfer und die zugehörige Leistungs- bzw. Tagesenergie-Entität aus.
+                                    Wähle für jeden String die Leistungs- (W) und optionale Energie-Entität (kWh) über das Listen-Symbol rechts aus.
                                 </p>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
@@ -2929,13 +3057,13 @@
                             </div>
                         </div>
 
-                        <div id="haStringMappingContainer" class="space-y-2.5">
+                        <div id="haStringMappingContainer" class="space-y-2">
                             <!-- Dynamisch gefüllt durch renderHaCustomStringsEditor() -->
                         </div>
                     </div>
 
                     <!-- 4. Frei konfigurierbare Einzelverbraucher (für "Aktive Verbraucher" auf dem Start-Dashboard) -->
-                    <div id="haConsumersSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div id="haConsumersSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                                 <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
@@ -2943,7 +3071,7 @@
                                     <span>4. Einzelverbraucher (Sektion „Aktive Verbraucher“ auf dem Dashboard)</span>
                                 </h4>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Wähle deine Smart-Plugs, Shellys oder Helfer über „Sensor wählen“ direkt aus der Geräteliste aus.
+                                    Kompakte Zuordnung deiner Smart-Plugs, Shellys oder Helfer über das Listen-Icon rechts neben dem Sensorfeld.
                                 </p>
                             </div>
                             <button type="button" onclick="addHaCustomConsumer()" class="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto">
@@ -2957,109 +3085,12 @@
                         </div>
                     </div>
 
-                    <!-- 5. Gesamt-Energiezähler (kWh total / total_increasing) – Single Source of Truth (Watt + kWh) -->
-                    <div id="haCountersSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div>
-                                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                                    <span class="material-symbols-rounded text-primary text-base">electric_meter</span>
-                                    <span>5. Single Source of Truth · Energiezähler (kWh Total + Live-Watt)</span>
-                                </h4>
-                                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                                    Die App kombiniert automatisch deine <strong>Live-Watt-Sensoren</strong> (aus Sektion 2/3) und deine <strong>lebenslangen Gesamtzähler (`kWh total` / `total_increasing`)</strong> zu einer zentralen Quelle für Heute, Monat und Gesamtjahr (inkl. automatischer Monotonie-Prüfung `Monat ≥ Heute`). Bei <strong>2 oder mehr Wechselrichtern</strong> füge über <strong>„+ Wechselrichter-Zähler“</strong> alle WR-Zähler hinzu – die Differenz (ΔkWh) wird automatisch addiert!
-                                </p>
-                            </div>
-                            <button type="button" onclick="addHaPvEnergyExtra()" class="px-2.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto" title="Weiteren Wechselrichter-Energiezähler (kWh) zur Gesamtsumme hinzufügen">
-                                <span class="material-symbols-rounded text-sm">add</span>
-                                <span>+ Wechselrichter-Zähler</span>
-                            </button>
-                        </div>
-
-                        <!-- Live Status Matrix: Single Source of Truth (alle 6 Energiekanäle mit Heute & Monat) -->
-                        <div id="haUnifiedSensorMatrixContainer" class="grid grid-cols-1 sm:grid-cols-3 gap-2"></div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div>
-                                <label class="block text-[11px] font-semibold text-teal-700 dark:text-teal-300 mb-1">PV-Erzeugung · Wechselrichter 1 (kWh Total / Zählerstand)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="z.B. sensor.fronius_energy_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-teal-300 dark:border-teal-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 1 (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-teal-700 dark:text-teal-300 mb-1">PV-Erzeugung · Wechselrichter 2 (kWh Total / Heute)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="z.B. sensor.hoymiles_energy_total (wird zu WR 1 addiert)" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-teal-300 dark:border-teal-700/60 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 2 (kWh Total oder Heute)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <!-- Dynamische Liste für Wechselrichter 3, 4, ... (per + Wechselrichter-Zähler) -->
-                            <div id="haPvEnergyExtraContainer" class="sm:col-span-2 space-y-2 empty:hidden"></div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzbezug Gesamt (kWh Total vom Smart Meter)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_imp_month" placeholder="sensor.smartmeter_energy_import_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_imp_month', unitFilter: 'energy', title: 'Netzbezug Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Netzeinspeisung Gesamt (kWh Total vom Smart Meter)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_grid_exp_month" placeholder="sensor.smartmeter_energy_export_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_grid_exp_month', unitFilter: 'energy', title: 'Netzeinspeisung Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Ladung Gesamt (kWh Total)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_chg_month" placeholder="sensor.battery_energy_charged_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_chg_month', unitFilter: 'energy', title: 'Batterie-Ladung Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Batterie-Entladung Gesamt (kWh Total)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_bat_dis_month" placeholder="sensor.battery_energy_discharged_total" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_bat_dis_month', unitFilter: 'energy', title: 'Batterie-Entladung Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="sm:col-span-2">
-                                <label class="block text-[11px] font-semibold text-slate-500 mb-1">Hausverbrauch Gesamt (kWh Total, optional – sonst automatisch aus Bilanz / Watt-Sensor berechnet)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" list="haEntitiesDatalist" id="ha_ent_load_month" placeholder="Optional: sensor.hausverbrauch_energy_total (leer lassen = automatisch berechnet)" class="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
-                                    <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_load_month', unitFilter: 'energy', title: 'Hausverbrauch Gesamt (kWh Total)' })" class="px-2.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 transition-all cursor-pointer">
-                                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                                        <span>Wählen</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- 6. Optionaler Webhook-Push Assistent -->
+                    <!-- 5. Optionaler Webhook-Push Assistent -->
                     <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
                         <div class="flex items-center justify-between">
                             <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                                 <span class="material-symbols-rounded text-sky-500 text-base">webhook</span>
-                                <span>Alternative: Home Assistant Webhook-Push (Falls kein externer Zugriff gewünscht)</span>
+                                <span>5. Alternative: Home Assistant Webhook-Push (Falls kein externer Zugriff gewünscht)</span>
                             </h4>
                             <button type="button" onclick="copyHaWebhookYaml()" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-[11px] font-bold cursor-pointer">
                                 YAML kopieren
@@ -3229,13 +3260,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V9.8 (Dev-Server & Service-Worker Warmup-Härtung, X-PVPro-Server Signatur & Nginx Error-Interception-Schutz) -->
-    <script src="qrcode.client.js?v=9.8"></script>
-    <script src="database.js?v=9.8"></script>
-    <script src="content.js?v=9.8"></script>
-    <script src="app.js?v=9.8"></script>
-    <script src="wiring.js?v=9.8"></script>
-    <script src="dossier.js?v=9.8"></script>
-    <script src="telemetry.js?v=9.8"></script>
+    <!-- MODULARE ARCHITEKTUR V9.9 (HA Langzeit-Statistik WebSocket, GitHub Monats-Backup, Vereinte Single-Source Sensor-UI & Kompakte Verbraucher) -->
+    <script src="qrcode.client.js?v=9.9"></script>
+    <script src="database.js?v=9.9"></script>
+    <script src="content.js?v=9.9"></script>
+    <script src="app.js?v=9.9"></script>
+    <script src="wiring.js?v=9.9"></script>
+    <script src="dossier.js?v=9.9"></script>
+    <script src="telemetry.js?v=9.9"></script>
 </body>
 </html>

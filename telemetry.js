@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.7)
-// Zentrale Single Source of Truth (Live-Watt + kWh-Zähler), selbstheilende
-// Zähler-Baselines (Monat >= Heute) & 100% vollbreites Sankey ohne Scrollen
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V9.9)
+// Zentrale Single Source of Truth (Live-Watt + kWh-Zähler), HA Long-Term
+// Statistics WebSocket-Sync & 100% vollbreites Sankey ohne Scrollen
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -56,12 +56,13 @@ let intradayHistoryTimer = null;
 
 // Baseline cache for computing Today & Month deltas from total_increasing kWh counters without HA helpers
 let energyCounterBaselines = {
-    schemaVersion: '9.7',
+    schemaVersion: '9.9',
     dayKey: '',
     monthKey: '',
     dayStartByEntity: {},
     monthStartByEntity: {},
-    lastHistorySyncMs: 0
+    lastHistorySyncMs: 0,
+    lastLongTermSyncMs: 0
 };
 
 let currentLiveTelemetry = {
@@ -219,6 +220,26 @@ async function initTelemetryAndAnalysis() {
         if (recRes.ok && recRes.data && recRes.data.success && recRes.data.records && Object.keys(recRes.data.records).length > 0) {
             performanceRecordsByProject = { ...performanceRecordsByProject, ...recRes.data.records };
             localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
+        }
+    } catch (e) {}
+
+    // 2B. Fallback to GitHub-persisted CodePersistedPlans (database.js) if local/server records are empty
+    try {
+        if (typeof CodePersistedPlans !== 'undefined' && Array.isArray(CodePersistedPlans) && CodePersistedPlans.length > 0) {
+            const latestPlan = CodePersistedPlans[0]?.data;
+            if (latestPlan) {
+                if (latestPlan.performanceRecords && typeof latestPlan.performanceRecords === 'object') {
+                    Object.keys(latestPlan.performanceRecords).forEach(projKey => {
+                        if (!performanceRecordsByProject[projKey]) {
+                            performanceRecordsByProject[projKey] = latestPlan.performanceRecords[projKey];
+                        }
+                    });
+                    localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
+                }
+                if (latestPlan.energyBaselines && typeof latestPlan.energyBaselines === 'object') {
+                    applyEnergyBaselinesFromProject(latestPlan.energyBaselines);
+                }
+            }
         }
     } catch (e) {}
 
@@ -559,14 +580,15 @@ function loadEnergyCounterBaselines() {
         const raw = localStorage.getItem('pvpro_energy_counter_baselines');
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && (parsed.schemaVersion === '9.7' || parsed.schemaVersion === '9.1')) {
+            if (parsed && typeof parsed === 'object' && (parsed.schemaVersion === '9.9' || parsed.schemaVersion === '9.7' || parsed.schemaVersion === '9.1')) {
                 energyCounterBaselines = {
-                    schemaVersion: '9.7',
+                    schemaVersion: '9.9',
                     dayKey: keys.dayKey,
                     monthKey: keys.monthKey,
                     dayStartByEntity: parsed.dayKey === keys.dayKey ? (parsed.dayStartByEntity || {}) : {},
                     monthStartByEntity: parsed.monthKey === keys.monthKey ? (parsed.monthStartByEntity || {}) : {},
-                    lastHistorySyncMs: parsed.dayKey === keys.dayKey ? (parsed.lastHistorySyncMs || 0) : 0
+                    lastHistorySyncMs: parsed.dayKey === keys.dayKey ? (parsed.lastHistorySyncMs || 0) : 0,
+                    lastLongTermSyncMs: parsed.monthKey === keys.monthKey ? (parsed.lastLongTermSyncMs || 0) : 0
                 };
                 healMonthBaselinesAgainstDayBaselines();
                 saveEnergyCounterBaselines();
@@ -575,19 +597,20 @@ function loadEnergyCounterBaselines() {
         }
     } catch (e) {}
     energyCounterBaselines = {
-        schemaVersion: '9.7',
+        schemaVersion: '9.9',
         dayKey: keys.dayKey,
         monthKey: keys.monthKey,
         dayStartByEntity: {},
         monthStartByEntity: {},
-        lastHistorySyncMs: 0
+        lastHistorySyncMs: 0,
+        lastLongTermSyncMs: 0
     };
     saveEnergyCounterBaselines();
 }
 
 function saveEnergyCounterBaselines() {
     try {
-        energyCounterBaselines.schemaVersion = '9.7';
+        energyCounterBaselines.schemaVersion = '9.9';
         localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines));
     } catch (e) {}
 }
@@ -852,8 +875,244 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
         healMonthBaselinesAgainstDayBaselines();
         energyCounterBaselines.lastHistorySyncMs = Date.now();
         saveEnergyCounterBaselines();
+
+        // Also sync Home Assistant Long-Term Statistics (recorder/statistics_during_period) via WebSocket
+        // so 1st-of-month baselines and all past months of the year are exact even after >10 days offline!
+        if (Date.now() - (energyCounterBaselines.lastLongTermSyncMs || 0) > 15 * 60 * 1000) {
+            syncLongTermStatisticsFromHa(cfg, statesMap, false);
+        }
     } catch (err) {}
 }
+
+function fetchHaLongTermStatisticsWs(rawBaseUrl, rawToken, statisticIds, startTimeIso, endTimeIso, period = 'month') {
+    return new Promise((resolve) => {
+        const cleanUrl = normalizeHaUrlClient(rawBaseUrl);
+        const cleanTok = cleanHaTokenClient(rawToken);
+        if (!cleanUrl || !cleanTok || !Array.isArray(statisticIds) || statisticIds.length === 0) {
+            resolve({ ok: false, error: 'URL, Token oder Zähler-Sensoren fehlen.' });
+            return;
+        }
+
+        const wsBase = cleanUrl.replace(/^http/i, 'ws');
+        const wsUrl = `${wsBase}/api/websocket`;
+        let settled = false;
+        let ws = null;
+
+        const finish = (resultObj) => {
+            if (settled) return;
+            settled = true;
+            try {
+                if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                    ws.close();
+                }
+            } catch (e) {}
+            resolve(resultObj);
+        };
+
+        const timeoutId = setTimeout(() => {
+            finish({ ok: false, error: 'WebSocket Timeout bei Abruf der HA Langzeit-Statistiken.' });
+        }, 9000);
+
+        try {
+            ws = new WebSocket(wsUrl);
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'auth_required') {
+                        ws.send(JSON.stringify({
+                            type: 'auth',
+                            access_token: cleanTok
+                        }));
+                    } else if (msg.type === 'auth_invalid') {
+                        clearTimeout(timeoutId);
+                        finish({ ok: false, error: 'Home Assistant Token für WebSocket abgelehnt.' });
+                    } else if (msg.type === 'auth_ok') {
+                        ws.send(JSON.stringify({
+                            id: 101,
+                            type: 'recorder/statistics_during_period',
+                            start_time: startTimeIso,
+                            end_time: endTimeIso,
+                            statistic_ids: statisticIds,
+                            period: period,
+                            types: ['change', 'state', 'sum']
+                        }));
+                    } else if (msg.type === 'result' && msg.id === 101) {
+                        clearTimeout(timeoutId);
+                        if (msg.success && msg.result && typeof msg.result === 'object') {
+                            finish({ ok: true, data: msg.result });
+                        } else {
+                            finish({ ok: false, error: msg.error?.message || 'Keine Langzeit-Statistiken verfügbar.' });
+                        }
+                    }
+                } catch (parseErr) {}
+            };
+            ws.onerror = () => {
+                clearTimeout(timeoutId);
+                finish({ ok: false, error: 'WebSocket-Verbindung zu Home Assistant fehlgeschlagen.' });
+            };
+            ws.onclose = () => {
+                clearTimeout(timeoutId);
+                finish({ ok: false, error: 'WebSocket geschlossen.' });
+            };
+        } catch (err) {
+            clearTimeout(timeoutId);
+            finish({ ok: false, error: err.message });
+        }
+    });
+}
+
+async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = null, showToast = false) {
+    if (!cfg || !cfg.baseUrl || !cfg.accessToken) {
+        if (showToast && typeof showToastNotification === 'function') {
+            showToastNotification('Bitte zuerst Home Assistant URL und Access Token eintragen.', 'warning');
+        }
+        return false;
+    }
+
+    const e = cfg.entities || {};
+    const pvCounterIds = getConfiguredPvEnergyEntities(cfg);
+    const stringEnergyIds = (cfg.customStrings || []).map(cs => String(cs?.energyEntity || '').trim()).filter(Boolean);
+    const effectivePvIds = pvCounterIds.length > 0 ? pvCounterIds : stringEnergyIds;
+
+    const allStatIds = [...new Set([
+        ...effectivePvIds,
+        e.loadEnergyMonth,
+        e.gridImportMonth,
+        e.gridExportMonth,
+        e.batteryChargeMonth,
+        e.batteryDischargeMonth
+    ].map(x => String(x || '').trim()).filter(Boolean))];
+
+    if (allStatIds.length === 0) {
+        if (showToast && typeof showToastNotification === 'function') {
+            showToastNotification('Bitte mindestens einen kWh-Gesamtzähler in Sektion 2 hinterlegen.', 'warning');
+        }
+        return false;
+    }
+
+    const now = new Date();
+    const targetYear = selectedAnalysisYear || now.getFullYear();
+    const startOfYearIso = new Date(targetYear, 0, 1, 0, 0, 0).toISOString();
+    const endOfPeriodIso = targetYear === now.getFullYear()
+        ? now.toISOString()
+        : new Date(targetYear, 11, 31, 23, 59, 59).toISOString();
+
+    const wsRes = await fetchHaLongTermStatisticsWs(cfg.baseUrl, cfg.accessToken, allStatIds, startOfYearIso, endOfPeriodIso, 'month');
+    if (!wsRes.ok || !wsRes.data) {
+        if (showToast && typeof showToastNotification === 'function') {
+            showToastNotification(wsRes.error || 'HA Langzeit-Statistik konnte nicht abgerufen werden.', 'warning');
+        }
+        return false;
+    }
+
+    const statsByEntity = wsRes.data;
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth();
+
+    // 1. Reconstruct exact 1st-of-month 00:00 counter baseline (monthStartByEntity) for current month
+    // Even if the user hasn't opened the app for >10 days and HA's short-term history purged the 1st of the month!
+    if (targetYear === curYear) {
+        allStatIds.forEach(entId => {
+            const buckets = statsByEntity[entId];
+            if (!Array.isArray(buckets) || buckets.length === 0) return;
+            const scale = getEnergyScaleForEntity(entId, statesMap);
+
+            let reconstructedMonthStart = null;
+            for (let i = 0; i < buckets.length; i++) {
+                const b = buckets[i];
+                const bDate = new Date(typeof b.start === 'number' ? b.start : b.start);
+                if (bDate.getFullYear() === curYear && bDate.getMonth() === curMonth) {
+                    if (typeof b.state === 'number' && typeof b.change === 'number' && b.state >= b.change) {
+                        reconstructedMonthStart = +((b.state - b.change) * scale).toFixed(3);
+                    } else if (i > 0 && typeof buckets[i - 1].state === 'number') {
+                        reconstructedMonthStart = +(buckets[i - 1].state * scale).toFixed(3);
+                    }
+                    break;
+                }
+            }
+
+            if (reconstructedMonthStart !== null && reconstructedMonthStart > 0) {
+                energyCounterBaselines.monthStartByEntity[entId] = reconstructedMonthStart;
+            }
+        });
+
+        healMonthBaselinesAgainstDayBaselines();
+        energyCounterBaselines.lastLongTermSyncMs = Date.now();
+        saveEnergyCounterBaselines();
+    }
+
+    // 2. Populate monthly logbook (performanceRecordsByProject) for all months in targetYear
+    const extractEntityMonthlyChange = (entId, monthIdx) => {
+        const cleanId = String(entId || '').trim();
+        if (!cleanId || !Array.isArray(statsByEntity[cleanId])) return null;
+        const scale = getEnergyScaleForEntity(cleanId, statesMap);
+        for (const b of statsByEntity[cleanId]) {
+            const bDate = new Date(typeof b.start === 'number' ? b.start : b.start);
+            if (bDate.getFullYear() === targetYear && bDate.getMonth() === monthIdx) {
+                if (typeof b.change === 'number' && !isNaN(b.change)) {
+                    return Math.max(0, +(b.change * scale).toFixed(1));
+                }
+            }
+        }
+        return null;
+    };
+
+    const months = getCurrentYearMonthsData(targetYear);
+    let updatedMonthsCount = 0;
+    const maxMonthIdx = targetYear === curYear ? curMonth : 11;
+
+    for (let m = 0; m <= maxMonthIdx; m++) {
+        if (!months[m] || months[m].source === 'manual') continue;
+
+        let pvMonthSum = 0;
+        let pvMonthFound = false;
+        effectivePvIds.forEach(id => {
+            const c = extractEntityMonthlyChange(id, m);
+            if (c !== null) {
+                pvMonthSum += c;
+                pvMonthFound = true;
+            }
+        });
+
+        const expVal = extractEntityMonthlyChange(e.gridExportMonth, m);
+        const impVal = extractEntityMonthlyChange(e.gridImportMonth, m);
+        const bChgVal = extractEntityMonthlyChange(e.batteryChargeMonth, m);
+        const bDisVal = extractEntityMonthlyChange(e.batteryDischargeMonth, m);
+
+        if (pvMonthFound || expVal !== null || impVal !== null || bChgVal !== null || bDisVal !== null) {
+            if (pvMonthFound) months[m].pvYieldKwh = +pvMonthSum.toFixed(1);
+            if (expVal !== null) months[m].gridExportKwh = expVal;
+            if (impVal !== null) months[m].gridImportKwh = impVal;
+            if (bChgVal !== null) months[m].batteryChargedKwh = bChgVal;
+            if (bDisVal !== null) months[m].batteryDischargedKwh = bDisVal;
+            months[m].source = 'ha';
+            updatedMonthsCount++;
+        }
+    }
+
+    if (updatedMonthsCount > 0) {
+        await savePerformanceRecordsLocalAndServer();
+        renderAnalysisSection();
+        renderHaUnifiedSensorMatrix();
+    }
+
+    if (showToast && typeof showToastNotification === 'function') {
+        if (updatedMonthsCount > 0) {
+            showToastNotification(`HA Langzeit-Statistik: ${updatedMonthsCount} Monate für ${targetYear} & Monats-Startwerte synchronisiert!`, 'success');
+        } else {
+            showToastNotification('HA Langzeit-Statistik geprüft (Zähler-Baselines aktualisiert).', 'info');
+        }
+    }
+    return updatedMonthsCount > 0;
+}
+
+async function triggerManualLongTermStatsSync() {
+    readHaModalIntoState();
+    await syncLongTermStatisticsFromHa(haConfigState, null, true);
+}
+
+window.syncLongTermStatisticsFromHa = syncLongTermStatisticsFromHa;
+window.triggerManualLongTermStatsSync = triggerManualLongTermStatsSync;
 
 function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
     if (!entityId || typeof entityId !== 'string') return null;
@@ -4471,10 +4730,13 @@ function onMonthlyRecordFieldChange(monthIdx, field, rawValue) {
     renderAnalysisSection();
 }
 
-function syncCurrentMonthFromLiveTelemetry(showToast = true) {
+async function syncCurrentMonthFromLiveTelemetry(showToast = true) {
     const curMonth = new Date().getMonth();
     const months = getCurrentYearMonthsData(selectedAnalysisYear);
     if (!months[curMonth]) return;
+
+    // First pull Long-Term Statistics from HA via WebSocket so past months & 1st-of-month baselines are complete
+    await syncLongTermStatisticsFromHa(haConfigState, null, false);
 
     const baseline = getPlannedSystemBaseline();
     const ledger = getUnifiedEnergyLedger(baseline);
@@ -4491,7 +4753,7 @@ function syncCurrentMonthFromLiveTelemetry(showToast = true) {
     savePerformanceRecordsLocalAndServer();
     renderAnalysisSection();
     if (showToast && typeof showToastNotification === 'function') {
-        showToastNotification(`Monatswerte (${MONTH_LABELS_LONG[curMonth]}) aus Single-Source-Telemetrie (Zähler & Watt) übernommen!`, 'success');
+        showToastNotification(`Monats- & Jahreswerte aus HA Langzeit-Statistik & Single-Source-Zählern synchronisiert!`, 'success');
     }
 }
 
@@ -4814,44 +5076,39 @@ function renderHaCustomStringsEditor() {
         const safeColor = cs.color || '#14b8a6';
 
         return `
-        <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-            <div class="sm:col-span-3 flex items-center gap-2">
-                <input type="color" value="${safeColor}" onchange="updateHaCustomStringField(${idx}, 'color', this.value)" class="w-7 h-7 rounded-full shrink-0 cursor-pointer border-0">
-                <div class="flex-1 min-w-0">
-                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Bezeichnung (Kachel & Kurve)</label>
-                    <input type="text" id="ha_str_name_${idx}" value="${safeName}" oninput="updateHaCustomStringField(${idx}, 'name', this.value)"
-                        placeholder="z.B. Fronius · String 1 DC"
-                        class="w-full text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                </div>
-            </div>
-            <div class="sm:col-span-4">
-                <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Leistungs-Entität (W / kW)</label>
-                <div class="flex items-center gap-1">
-                    <input type="text" id="ha_str_pwr_${idx}" list="haEntitiesDatalist" value="${safePower}" oninput="updateHaCustomStringField(${idx}, 'powerEntity', this.value)"
-                        placeholder="sensor.fronius_string_1_power"
-                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                    <button type="button" onclick="openHaEntityPicker({ customType: 'stringPower', index: ${idx}, unitFilter: 'power', title: 'PV-String ${idx + 1} · Leistung (W/kW)' })" class="px-2 py-1.5 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Sensor aus Gerät/Helfer wählen">
-                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                        <span>Wählen</span>
-                    </button>
-                </div>
-            </div>
-            <div class="sm:col-span-4">
-                <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Tagesenergie (kWh, optional)</label>
-                <div class="flex items-center gap-1">
-                    <input type="text" id="ha_str_nrg_${idx}" list="haEntitiesDatalist" value="${safeEnergy}" oninput="updateHaCustomStringField(${idx}, 'energyEntity', this.value)"
-                        placeholder="Leer = aus W berechnet"
-                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                    <button type="button" onclick="openHaEntityPicker({ customType: 'stringEnergy', index: ${idx}, unitFilter: 'energy', title: 'PV-String ${idx + 1} · Tagesertrag (kWh)' })" class="px-2 py-1.5 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Energiezähler aus Gerät/Helfer wählen">
-                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                        <span>Wählen</span>
-                    </button>
-                </div>
-            </div>
-            <div class="sm:col-span-1 flex justify-end sm:pt-4">
-                <button type="button" onclick="removeHaCustomString(${idx})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer" title="String entfernen">
+        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div class="flex items-center gap-2">
+                <input type="color" value="${safeColor}" onchange="updateHaCustomStringField(${idx}, 'color', this.value)" class="w-6 h-6 rounded-full shrink-0 cursor-pointer border-0" title="Kurvenfarbe">
+                <input type="text" id="ha_str_name_${idx}" value="${safeName}" oninput="updateHaCustomStringField(${idx}, 'name', this.value)"
+                    placeholder="z.B. Fronius · String 1 DC"
+                    class="flex-1 min-w-0 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <button type="button" onclick="removeHaCustomString(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="String entfernen">
                     <span class="material-symbols-rounded text-base">delete</span>
                 </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Leistung (W / kW)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="text" id="ha_str_pwr_${idx}" list="haEntitiesDatalist" value="${safePower}" oninput="updateHaCustomStringField(${idx}, 'powerEntity', this.value)"
+                            placeholder="sensor.fronius_string_1_power"
+                            class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'stringPower', index: ${idx}, unitFilter: 'power', title: 'PV-String ${idx + 1} · Leistung (W/kW)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor aus Liste wählen" aria-label="Sensor wählen">
+                            <span class="material-symbols-rounded text-base">list_alt</span>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Energiezähler (kWh, optional)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="text" id="ha_str_nrg_${idx}" list="haEntitiesDatalist" value="${safeEnergy}" oninput="updateHaCustomStringField(${idx}, 'energyEntity', this.value)"
+                            placeholder="Leer = aus W berechnet"
+                            class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'stringEnergy', index: ${idx}, unitFilter: 'energy', title: 'PV-String ${idx + 1} · Energie (kWh)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Energiezähler aus Liste wählen" aria-label="Sensor wählen">
+                            <span class="material-symbols-rounded text-base">list_alt</span>
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -4920,28 +5177,21 @@ function renderHaCustomConsumersEditor() {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(cc.name || '') : (cc.name || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.powerEntity || '') : (cc.powerEntity || '');
         return `
-        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-center">
-            <div class="sm:col-span-5">
-                <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Gerätename (z.B. Trockner, Wärmepumpe)</label>
+        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5">
+            <div class="flex items-center gap-1.5">
                 <input type="text" id="ha_cons_name_${idx}" value="${safeName}" oninput="updateHaCustomConsumerField(${idx}, 'name', this.value)"
-                    placeholder="Trockner"
-                    class="w-full text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-            </div>
-            <div class="sm:col-span-6">
-                <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Home Assistant Leistungs-Entität (W oder kW)</label>
-                <div class="flex items-center gap-1.5">
-                    <input type="text" id="ha_cons_pwr_${idx}" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomConsumerField(${idx}, 'powerEntity', this.value)"
-                        placeholder="sensor.trockner_power"
-                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                    <button type="button" onclick="openHaEntityPicker({ customType: 'consumerPower', index: ${idx}, unitFilter: 'power', title: 'Einzelverbraucher ${idx + 1} · Leistung (W/kW)' })" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Verbraucher-Sensor aus Gerät oder Helfer wählen">
-                        <span class="material-symbols-rounded text-sm">list_alt</span>
-                        <span>Wählen</span>
-                    </button>
-                </div>
-            </div>
-            <div class="sm:col-span-1 flex justify-end sm:pt-4">
-                <button type="button" onclick="removeHaCustomConsumer(${idx})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer" title="Verbraucher entfernen">
+                    placeholder="Gerätename (z.B. Trockner)"
+                    class="flex-1 min-w-0 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <button type="button" onclick="removeHaCustomConsumer(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Verbraucher entfernen" aria-label="Verbraucher entfernen">
                     <span class="material-symbols-rounded text-base">delete</span>
+                </button>
+            </div>
+            <div class="flex items-center gap-1">
+                <input type="text" id="ha_cons_pwr_${idx}" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomConsumerField(${idx}, 'powerEntity', this.value)"
+                    placeholder="sensor.shelly_pm_mini_..."
+                    class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <button type="button" onclick="openHaEntityPicker({ customType: 'consumerPower', index: ${idx}, unitFilter: 'power', title: 'Einzelverbraucher ${idx + 1} · Leistung (W/kW)' })" class="w-8 h-8 rounded-lg bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/35 text-indigo-700 dark:text-indigo-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor aus Liste wählen" aria-label="Sensor wählen">
+                    <span class="material-symbols-rounded text-base">list_alt</span>
                 </button>
             </div>
         </div>`;
@@ -4982,19 +5232,18 @@ function renderHaPvEnergyExtraList() {
         const wrNum = idx + 3;
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(entId || '') : (entId || '');
         return `
-        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-teal-500/30 flex flex-col sm:flex-row sm:items-center gap-2">
-            <label class="text-[11px] font-semibold text-teal-700 dark:text-teal-300 sm:w-64 shrink-0">PV-Erzeugung · Wechselrichter ${wrNum} (kWh)</label>
-            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+        <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-teal-500/30 flex flex-col sm:flex-row sm:items-center gap-1.5">
+            <label class="text-[10px] font-semibold text-teal-700 dark:text-teal-300 sm:w-52 shrink-0">Wechselrichter ${wrNum} · kWh Total</label>
+            <div class="flex items-center gap-1 flex-1 min-w-0">
                 <input type="text" id="ha_ent_pv_extra_${idx}" list="haEntitiesDatalist" value="${safeEnt}"
                     oninput="updateHaPvEnergyExtraField(${idx}, this.value)"
                     placeholder="sensor.wechselrichter_${wrNum}_energy_total"
-                    class="flex-1 min-w-0 text-xs font-mono px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
                 <button type="button" onclick="openHaEntityPicker({ customType: 'pvEnergyExtra', index: ${idx}, unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter ${wrNum} (kWh)' })"
-                    class="px-2.5 py-1.5 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer">
-                    <span class="material-symbols-rounded text-sm">list_alt</span>
-                    <span>Wählen</span>
+                    class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor wählen" aria-label="Sensor wählen">
+                    <span class="material-symbols-rounded text-base">list_alt</span>
                 </button>
-                <button type="button" onclick="removeHaPvEnergyExtra(${idx})" class="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer shrink-0" title="Wechselrichter-Zähler entfernen">
+                <button type="button" onclick="removeHaPvEnergyExtra(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors cursor-pointer shrink-0" title="Wechselrichter-Zähler entfernen" aria-label="Wechselrichter-Zähler entfernen">
                     <span class="material-symbols-rounded text-base">delete</span>
                 </button>
             </div>
@@ -5778,11 +6027,36 @@ function applyPerformanceRecordsFromProject(records) {
     } catch (e) {}
 }
 
+function getEnergyBaselinesForProject() {
+    return JSON.parse(JSON.stringify(energyCounterBaselines || {}));
+}
+
+function applyEnergyBaselinesFromProject(baselines) {
+    if (!baselines || typeof baselines !== 'object') return;
+    const keys = getTodayAndMonthKeys();
+    if (baselines.monthKey === keys.monthKey && baselines.monthStartByEntity) {
+        energyCounterBaselines.monthStartByEntity = {
+            ...baselines.monthStartByEntity,
+            ...energyCounterBaselines.monthStartByEntity
+        };
+    }
+    if (baselines.dayKey === keys.dayKey && baselines.dayStartByEntity) {
+        energyCounterBaselines.dayStartByEntity = {
+            ...baselines.dayStartByEntity,
+            ...energyCounterBaselines.dayStartByEntity
+        };
+    }
+    healMonthBaselinesAgainstDayBaselines();
+    saveEnergyCounterBaselines();
+}
+
 window.toggleShowAllDashboardConsumers = toggleShowAllDashboardConsumers;
 window.getSanitizedHaConfigForProject = getSanitizedHaConfigForProject;
 window.applySanitizedHaConfigFromProject = applySanitizedHaConfigFromProject;
 window.getPerformanceRecordsForProject = getPerformanceRecordsForProject;
 window.applyPerformanceRecordsFromProject = applyPerformanceRecordsFromProject;
+window.getEnergyBaselinesForProject = getEnergyBaselinesForProject;
+window.applyEnergyBaselinesFromProject = applyEnergyBaselinesFromProject;
 
 // Auto-initialize once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {

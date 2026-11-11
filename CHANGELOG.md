@@ -4,6 +4,31 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 9.9] – 2026-11-11
+
+### 🚀 Home Assistant Langzeit-Statistiken (`recorder/statistics_during_period`), GitHub-Persistenz der Monats-Bilanzen, Vereinigte Single-Source-Sektion 2 (Watt + kWh) & Kompakte Verbraucher-Karten
+
+#### 1. Home Assistant Langzeit-Statistiken via WebSocket (`fetchHaLongTermStatisticsWs` & `syncLongTermStatisticsFromHa`)
+* **Lückenlose Monats- & Jahreswerte auch nach Wochen ohne App-Start:**
+  - Während die normale Home-Assistant-Historie (`/api/history/period`) standardmäßig nach 10 Tagen bereinigt wird, speichert Home Assistant für alle Sensoren mit `state_class: total_increasing` / `total` unbegrenzt komprimierte Langzeit-Statistiken in der Tabelle `statistics`.
+  - `telemetry.js` zapft diese Langzeit-Datenbank nun direkt vom Browser aus per WebSocket (`/api/websocket` -> `recorder/statistics_during_period` mit `period: "month"`) an.
+  - **Exakter Monats-Startwert (`monthStartByEntity`):** Selbst wenn die App mitten im Monat nach mehreren Wochen Pause geöffnet wird, rekonstruiert `syncLongTermStatisticsFromHa()` aus `state - change` (bzw. dem Endstand des Vormonats) den exakten Zählerstand vom **1. des Monats um 00:00 Uhr**.
+  - **Automatische Jahres-Synchronisation:** Alle vergangenen und laufenden Monate des Jahres (`Januar .. aktueller Monat`) werden automatisch für PV-Erzeugung, Netzeinspeisung, Netzbezug, Batterie-Ladung und Batterie-Entladung in das Monats-Logbuch (`performanceRecordsByProject`) übernommen.
+
+#### 2. GitHub- & Projekt-Persistenz der Monats-Bilanzen (`database.js` & `app.js`)
+* **Dauerhafte Sicherung ohne Live-Datenmüll & ohne Token-Leak:**
+  - Monats-Ertragsbilanzen (`performanceRecords`) und Zähler-Startwerte (`energyBaselines`) werden beim Speichern eines Systemplans (`submitSaveSystemPlanToServer`), beim JSON-Export (`exportFullConfiguration`) sowie beim Speichern von Monatswerten (`POST /api/performance/records`) automatisch in `CodePersistedPlans` (`database.js`) synchronisiert.
+  - Sekündliche Live-Watt-Werte und das persönliche Home-Assistant-Token (`accessToken`) werden niemals in GitHub/Code-Dateien geschrieben.
+
+#### 3. Vereinigte Single Source of Truth in Sektion 2 & Platzsparende Sensor-Zeilen (`index.html` & `telemetry.js`)
+* **Zusammenlegung von Sektion 2 (Watt) & Sektion 5 (kWh Total):**
+  - Die bisherigen Sektionen 2 und 5 im Home-Assistant-Konfigurator (`#modal-ha-config`) wurden zu einer einzigen Sektion **`2. Haupt-Sensoren · Single Source of Truth (Live-W & kWh-Zähler)`** zusammengelegt. Für jeden Kanal (**PV-Erzeugung**, **Hausverbrauch**, **Stromnetz Bezug/Einspeisung**, **Batteriespeicher**) stehen Live-Leistung (`W`) und Gesamtzähler (`kWh Total`) direkt paarweise zusammen.
+* **Kompakte Verbraucher- & String-Karten + Nur-Icon-Auswahlbutton:**
+  - Bei den Einzelverbrauchern (`renderHaCustomConsumersEditor`) und PV-Strings (`renderHaCustomStringsEditor`) sitzt das rote Papierkorb-Symbol (`delete`) nun direkt oben rechts neben dem Gerätenamen, wodurch die bisherige leere Fußzeile komplett entfällt.
+  - Alle Sensor-Auswahlbuttons verwenden ab sofort ein kompaktes Nur-Icon-Symbol (`w-8 h-8`, `list_alt` ohne „Wählen“-Text), sodass lange Home-Assistant-Entitätsnamen (`sensor.shelly_pm_mini_gen3_...`, `sensor.opendtu_...`) maximale sichtbare Textfeldbreite erhalten.
+
+---
+
 ## [Version 9.8] – 2026-11-10
 
 ### 🛡️ Dev-Server & Service-Worker Warmup-Härtung (`X-PVPro-Server`), Network-First Strategie & Schutz vor Nginx `warmup.html` Cache-Poisoning
