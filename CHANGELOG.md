@@ -4,6 +4,25 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.1] – 2026-11-11
+
+### 🚀 Vollständige Wochen- & Monats-Telemetrie im Verlaufsdiagramm (Single Source of Truth), `end_time`-Fix & Zeitraum-Begrenzung ab Mess-Startdatum
+
+#### 1. Single Source of Truth für `Woche` (7 Tage) & `Monat` (30 Tage) im Verlaufsdiagramm (`telemetry.js` & `server.js`)
+* **Behebung des fehlenden `end_time`-Parameters beim Browser-Direktabruf (`/api/history/period`):**
+  - Die Home Assistant REST-API gibt bei `GET /api/history/period/<Startzeit>` ohne expliziten `end_time`-Parameter standardmäßig nur genau 24 Stunden ab Startzeit zurück. Während dies für `Tag` (`00:00 Uhr` bis jetzt) ausreichte, wurde bei `Monat` (Start vor 30 Tagen) nur ein einziger Tag vor 30 Tagen abgefragt – der bereits außerhalb der 10-tägigen Kurzzeit-Historie lag und daher `0 Datenpunkte` lieferte. `fetchHaHistoryInBrowser()` übergibt nun immer explizit `&end_time=<nowIso>`.
+* **Direkte Anbindung der Home Assistant WebSocket Langzeit-Statistik (`recorder/statistics_during_period`, `period: 'hour'`) für `Woche` & `Monat`:**
+  - Für den 7-Tage- und 30-Tage-Verlauf fragt `fetchHaHistoryInBrowser()` primär die stündlichen Langzeit-Statistiken (`types: ['mean', 'max', 'min', 'change', 'state', 'sum']`) aller Leistungs-Sensoren (`W`), SoC-Sensoren (`%`) und Energie-Zähler (`kWh`) ab:
+    1. **Langzeit-`kWh` als höchste Priorität (Single Source of Truth):** Besitzt ein Kanal (Haupt-Sensoren, Strings in Sektion 3 oder Einzelverbraucher in Sektion 4) einen `kWh`-Zähler in der Langzeit-Statistik, wird dessen `change`-Summe über den gewählten Zeitraum direkt für die `kWh`-Anzeige auf den Kanal-Kacheln genutzt.
+    2. **Lückenlose Leistungskurven (`mean`) & echte Spitzenwerte (`max`):** Leistungs-Sensoren (`state_class: measurement`) liefern ihre stündlichen Mittelwerte (`mean`) und ihre tatsächlichen Spitzenwerte (`max` für `W Max`) direkt aus der Langzeit-Datenbank – ohne 10-Tage-Purge-Limit und ohne mehrfache Megabyte-Downloads über Mobilfunk.
+    3. **Intelligente Fallbacks (Keine `0,00 kWh`-Kacheln mehr):** Fehlt für einen Sensor die Langzeit-Statistik, greift automatisch (a) die Kurzzeit-Historie (`/api/history/period` mit `end_time`), (b) die stündliche Leistungsableitung aus dem zugehörigen `kWh`-Zähler (`change * 1000 W`), (c) bei der `Hauslast · AC` die physikalische Energie- und Leistungsbilanz (`PV − Einspeisung − Batterie + Netzbezug`) sowie (d) die Untergrenze des heutigen Tagesertrags (`Monat >= Woche >= Heute`).
+
+#### 2. Automatische Zeitraum-Begrenzung ab dem globalen Mess-Startdatum (`getEffectiveTimeframeWindow`)
+* **Kein leerer Vorlauf vor Inbetriebnahme:**
+  - Liegt das globale Mess-Startdatum (`trackingStartDate`, z. B. `01.11.2026`) innerhalb des 7-Tage- (`Woche`) oder 30-Tage-Fensters (`Monat`), startet das Verlaufsdiagramm automatisch exakt am Mess-Startdatum (mit feiner `1h`-Auflösung bei Zeiträumen bis 14 Tage) und weist dies im Diagramm-Untertitel (`Ab Mess-Start 01.11.2026 · 1h-Auflösung`) sowie auf den Kanal-Kacheln (`ab 01.11.`) transparent aus.
+
+---
+
 ## [Version 10.0] – 2026-11-11
 
 ### 🚀 Interaktive Verbraucher-Zeilen mit Hintergrund-Fortschrittsbalken (`kWh heute`), Live/kWh-Sortierumschalter, Optionale Verbraucher-kWh-Sensoren, Globales Mess-Startdatum & Präzise Zähler-Kalibrierung

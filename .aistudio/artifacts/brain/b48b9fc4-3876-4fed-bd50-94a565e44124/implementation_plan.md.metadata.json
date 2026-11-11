@@ -1,6 +1,0 @@
-{
-  "summary":  "Implementierungsplan für Version 10.0: Interaktive Verbraucher-Zeilen mit Hintergrund-Fortschrittsbalken (Pastell bei Aktiv / Grau bei Inaktiv), Prio-1/Prio-2 Sortierung (Live W -> Heute kWh), optionale kWh-Zähler je Verbraucher sowie globales Mess-Startdatum (z. B. 01.11.2026) und Behebung der überhöhten November-Werte.",
-  "updatedAt":  "2026-11-11T11:56:45.484307646Z",
-  "requestFeedback":  true,
-  "userFacing":  true
-}

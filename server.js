@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '10.0';
+const APP_VERSION = '10.1';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1227,13 +1227,23 @@ app.all('/api/ha/history', async (req, res) => {
     const range = (req.body?.range || req.query?.range || 'day').toLowerCase();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
 
+    const trackRaw = String(cfg.trackingStartDate || '2026-11-01').trim();
+    const trackMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trackRaw);
+    const trackMs = trackMatch
+      ? new Date(Number(trackMatch[1]), Number(trackMatch[2]) - 1, Number(trackMatch[3]), 0, 0, 0).getTime()
+      : new Date(2026, 10, 1, 0, 0, 0).getTime();
+
     let startTime;
     let stepMs;
     if (range === 'month') {
-      startTime = new Date(now.getTime() - 30 * 24 * 3600 * 1000);
-      stepMs = 3 * 3600 * 1000; // 3-hour steps for 30 days
+      const rawStart = now.getTime() - 30 * 24 * 3600 * 1000;
+      const effStart = Math.min(startOfDay.getTime(), (trackMs <= now.getTime() && trackMs > rawStart) ? trackMs : rawStart);
+      startTime = new Date(effStart);
+      stepMs = (now.getTime() - effStart <= 14 * 24 * 3600 * 1000) ? 3600 * 1000 : 3 * 3600 * 1000;
     } else if (range === 'week') {
-      startTime = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+      const rawStart = now.getTime() - 7 * 24 * 3600 * 1000;
+      const effStart = Math.min(startOfDay.getTime(), (trackMs <= now.getTime() && trackMs > rawStart) ? trackMs : rawStart);
+      startTime = new Date(effStart);
       stepMs = 60 * 60 * 1000; // 1-hour steps for 7 days
     } else {
       startTime = startOfDay;

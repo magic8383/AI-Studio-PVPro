@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.0 (Interaktive Verbraucher-Zeilen mit Hintergrund-Fortschrittsbalken für Tages-kWh, Prio-Sortierumschalter Live-W vs. Heute-kWh, optionale Verbraucher-kWh-Sensoren, globales Mess-Startdatum & präzise Zähler-Kalibrierung)  
+**Aktuelle Version:** 10.1 (Single-Source-of-Truth für Wochen- & Monats-Verlaufsdiagramm aus HA Langzeit-Statistik `recorder/statistics_during_period`, `end_time`-Fix für Kurzzeit-Historie & automatische Zeitraum-Begrenzung ab Mess-Startdatum)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
