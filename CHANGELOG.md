@@ -4,6 +4,41 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.2] – 2026-11-11
+
+### 🚀 Zähler-Reset-Filter (`+163 kWh` Sprung-Schutz), Transparente `kWh`-Sensor-Diagnose & Einheitliche Gesamtpakete mit Direktem GitHub-Sync
+
+#### 1. Schutz vor Zähler-Reset-Sprüngen (`53 kWh -> 216 kWh`) in der Home-Assistant-Statistik (`telemetry.js`)
+* **Ursachenbehebung für den `+163 kWh`-Sprung:**
+  - Wenn ein Wechselrichter-Gesamtzähler (wie `sensor.opendtu_4d5150_yieldtotal`) nach einem Neustart oder Kommunikations-Reset kurzzeitig `0` meldet und anschließend wieder auf seinen historischen Lebensdauer-Zählerstand (`163 kWh`) springt, verbucht Home Assistant in der `statistics`-Tabelle einen positiven `change` von `+163,0 kWh` in einem einzigen Stunden-/Tages-Bucket.
+  - `isCounterResetSpikeJump()` prüft ab sofort jeden Stunden- und Tages-Bucket in `syncLongTermStatisticsFromHa()`, `fetchHaHistoryInBrowser()` und `syncEnergyCounterBaselinesFromHaHistory()`:
+    1. **Reset-von-Null-Erkennung:** Entspricht ein einzelner Bucket-Anstieg (`change >= 15 kWh`) nahezu dem gesamten absoluten Zählerstand (`prevState <= 0.5 kWh`), wird er als Initialisierungs-/Reset-Sprung (`0 → Gesamtertrag`) erkannt und herausgefiltert.
+    2. **Physikalisches Plausibilitäts-Limit:** Übersteigt ein einzelner Stunden- (`> 25 kWh/h`) oder Tages-Sprung (`> 85 kWh/Tag`) das physikalisch mögliche Maximum der PV-Anlage, wird der fehlerhafte Sprung verworfen, statt den Monatsstartwert (`monthStartByEntity`) künstlich auf `0` zu drücken.
+  - **Schema-Bereinigung (`schemaVersion: '10.2'`):** Veraltete `0`-Baselines und überhöhte Logbuch-Einträge (`> 135 kWh`) aus v10.0/10.1 werden beim Start automatisch bereinigt.
+
+#### 2. Transparente Diagnose für `kWh`-Sensoren in HA-Dialog, Diagramm-Kacheln & Analyse (`sensorDiagnosticsByEntity`)
+* **Keine stillschweigenden Fallbacks mehr:**
+  - Für jede konfigurierte `kWh`-Entität (Sektion 2 Hauptkanäle, Sektion 3 PV-Strings, Sektion 4 Einzelverbraucher) erfasst `sensorDiagnosticsByEntity` den tatsächlichen Nutzungsstatus:
+    - **`spike_filtered` (Amber):** Unplausibler Reset-Sprung (z. B. `+163,0 kWh`) wurde herausgefiltert.
+    - **`fallback_watt` (Amber):** Hinterlegter `kWh`-Sensor liefert `0,00 kWh`, während der `W`-Sensor Leistung misst – es wird ersatzweise die Watt-Integration genutzt.
+    - **`unavailable` / `unit_mismatch` (Rose):** Sensor ist in Home Assistant `unavailable`/`unknown` oder liefert eine Leistungs-Einheit (`W`) statt Energie (`kWh`).
+    - **`active` (Smaragd):** `kWh`-Zähler liefert reguläre Werte.
+  - **Sichtbarkeit an allen 3 Stellen:**
+    1. **Im Home-Assistant-Konfigurator (`#modal-ha-config`):** In der Sensor-Statusmatrix sowie direkt unter jedem `kWh`-Eingabefeld in Sektion 2, 3 und 4.
+    2. **Auf den Messkanal-Kacheln unter dem Verlaufsdiagramm (`#dash_curve_tiles_grid`):** Kompaktes Status-Badge direkt auf der Kachel (z. B. `⚠ Sprung +163,0 kWh gefiltert` oder `⚠ kWh=0 → W-Integration`).
+    3. **In der Analyse / Energiefluss (`#tab-analyse`):** Diagnose-Banner oberhalb des Sankey-Diagramms, sobald bei einem aktiven Kanal ein Reset-Sprung gefiltert wurde oder ein konfigurierter `kWh`-Zähler nicht genutzt werden kann.
+
+#### 3. Einheitliche Gesamtpaket-Verwaltung + Zuverlässiges Löschen + Direkter GitHub-Sync per Token (`app.js` & `server.js`)
+* **Eine gemeinsame Liste für Gesamtpakete (`Planung + Live/HA-Sensoren + Logbuch`):**
+  - Die bisherige verwirrende Trennung zwischen lokalen Planungen und Server-/GitHub-Vorlagen wurde zu einer einzigen Liste von **Gesamtpaketen** zusammengeführt. Jedes Paket speichert immer die komplette PV-Auslegung, alle Home-Assistant-Sensoren/Strings/Verbraucher (stets **ohne** geheimen HA-Token), das globale Mess-Startdatum, das Monats-Logbuch sowie den 8.760h-PVGIS-Cache.
+* **Zuverlässiges Löschen ohne Fehlermeldung (`pvpro_deleted_plan_ids` Tombstones):**
+  - Blockierende Browser-Dialoge (`window.confirm` / `window.prompt`) wurden durch direkte Inline-Aktionen ersetzt.
+  - Gelöschte Pakete werden lokal, im Server-Cache und in einer persistenten Tombstone-Liste (`pvpro_deleted_plan_ids`) vermerkt, sodass statische Vorlagen aus `data/system_plans.json` oder `database.js` gelöschte Sicherungen beim Neuladen nie wiederherstellen.
+* **Direkter GitHub-Repository-Sync per Personal Access Token:**
+  - Im Paket-Manager lässt sich optional ein GitHub Personal Access Token (`repo` / `contents:write` für `magic8383/PVPro`) hinterlegen, mit dem jedes Speichern oder Löschen direkt per GitHub REST API in `data/system_plans.json` im Repository geschrieben bzw. von dort geladen wird.
+
+---
+
 ## [Version 10.1] – 2026-11-11
 
 ### 🚀 Vollständige Wochen- & Monats-Telemetrie im Verlaufsdiagramm (Single Source of Truth), `end_time`-Fix & Zeitraum-Begrenzung ab Mess-Startdatum

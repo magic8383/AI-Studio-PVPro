@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.1';
+const APP_VERSION = '10.2';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -225,6 +225,85 @@ function saveConfiguration() {
 
 const PV_PROJECTS_KEY = 'pvpro_projects';
 const PV_ACTIVE_PROJECT_KEY = 'pvpro_active_project_id';
+const PV_DELETED_TOMBSTONES_KEY = 'pvpro_deleted_plan_ids';
+const PV_GITHUB_SYNC_KEY = 'pvpro_github_sync_config';
+
+let pendingDeleteProjectId = null;
+let pendingRenameProjectId = null;
+let pendingCreatePackageMode = null; // null | 'new' | 'clone'
+let isGitHubSyncPanelOpen = false;
+let isGitHubSyncBusy = false;
+
+function getDeletedPlanTombstones() {
+    const raw = readJsonStorage(PV_DELETED_TOMBSTONES_KEY, { ids: [], names: [] });
+    return {
+        ids: Array.isArray(raw?.ids) ? raw.ids : [],
+        names: Array.isArray(raw?.names) ? raw.names : []
+    };
+}
+
+function addDeletedPlanTombstone(planId, planName) {
+    const t = getDeletedPlanTombstones();
+    const cleanId = String(planId || '').trim();
+    const cleanName = String(planName || '').trim().toLowerCase();
+    if (cleanId && !t.ids.includes(cleanId)) t.ids.push(cleanId);
+    if (cleanName && !t.names.includes(cleanName)) t.names.push(cleanName);
+    try {
+        localStorage.setItem(PV_DELETED_TOMBSTONES_KEY, JSON.stringify(t));
+    } catch (e) {}
+}
+
+function removeDeletedPlanTombstone(planId, planName) {
+    const t = getDeletedPlanTombstones();
+    const cleanId = String(planId || '').trim();
+    const cleanName = String(planName || '').trim().toLowerCase();
+    t.ids = t.ids.filter(x => x !== cleanId);
+    t.names = t.names.filter(x => x !== cleanName);
+    try {
+        localStorage.setItem(PV_DELETED_TOMBSTONES_KEY, JSON.stringify(t));
+    } catch (e) {}
+}
+
+function isPlanTombstoned(planId, planName) {
+    const t = getDeletedPlanTombstones();
+    const cleanId = String(planId || '').trim();
+    const cleanName = String(planName || '').trim().toLowerCase();
+    if (cleanId && t.ids.includes(cleanId)) return true;
+    if (cleanName && t.names.includes(cleanName)) return true;
+    return false;
+}
+
+function getGitHubSyncConfig() {
+    let defaultRepo = 'magic8383/PVPro';
+    try {
+        const host = window.location.hostname || '';
+        if (host.endsWith('.github.io')) {
+            const owner = host.replace('.github.io', '');
+            const pathSeg = (window.location.pathname || '').split('/').filter(Boolean)[0] || 'PVPro';
+            if (owner && pathSeg) defaultRepo = `${owner}/${pathSeg}`;
+        }
+    } catch (e) {}
+    const saved = readJsonStorage(PV_GITHUB_SYNC_KEY, null) || {};
+    return {
+        repo: String(saved.repo || defaultRepo).trim() || 'magic8383/PVPro',
+        branch: String(saved.branch || 'main').trim() || 'main',
+        filePath: String(saved.filePath || 'data/system_plans.json').trim() || 'data/system_plans.json',
+        token: String(saved.token || '').trim(),
+        lastSyncAt: saved.lastSyncAt || null
+    };
+}
+
+function saveGitHubSyncConfig(partial = {}) {
+    const cur = getGitHubSyncConfig();
+    const next = {
+        ...cur,
+        ...partial
+    };
+    try {
+        localStorage.setItem(PV_GITHUB_SYNC_KEY, JSON.stringify(next));
+    } catch (e) {}
+    return next;
+}
 
 function getStoredProjects() {
     let projects = readJsonStorage(PV_PROJECTS_KEY, null);
@@ -598,23 +677,65 @@ function duplicateProjectById(projectId) {
     }
 }
 
+function startInlineRenameProject(projectId) {
+    pendingRenameProjectId = projectId;
+    pendingDeleteProjectId = null;
+    renderProjectManagerModal();
+    setTimeout(() => {
+        const inp = document.getElementById(`inlineRenameInput_${projectId}`);
+        if (inp) {
+            inp.focus();
+            inp.select();
+        }
+    }, 30);
+}
+
+function cancelInlineRenameProject() {
+    pendingRenameProjectId = null;
+    renderProjectManagerModal();
+}
+
 function renameProject(projectId, customNewName = null) {
     const projects = getStoredProjects() || [];
     const proj = projects.find(p => p.id === projectId);
     if (!proj) return;
 
     let newName = customNewName;
-    if (!newName) {
-        newName = prompt('Neuer Name für diese Planung:', proj.name);
+    if (newName === null || newName === undefined) {
+        const inp = document.getElementById(`inlineRenameInput_${projectId}`);
+        if (inp) {
+            newName = inp.value;
+        } else {
+            startInlineRenameProject(projectId);
+            return;
+        }
     }
-    if (!newName || !newName.trim() || newName.trim() === proj.name) return;
+    pendingRenameProjectId = null;
+    if (!newName || !newName.trim() || newName.trim() === proj.name) {
+        renderProjectManagerModal();
+        return;
+    }
 
+    const oldName = proj.name;
     proj.name = newName.trim();
     proj.updatedAt = new Date().toISOString();
+    removeDeletedPlanTombstone(proj.id, proj.name);
     localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
 
+    // Also update in pvpro_server_plans_cache if present
+    try {
+        let cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+        cached.forEach(c => {
+            if (c.id === projectId || c.name === oldName) {
+                c.name = proj.name;
+                c.updatedAt = proj.updatedAt;
+            }
+        });
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(cached));
+    } catch (e) {}
+
     updateHeaderProjectIndicator();
-    showToastNotification(`✏️ Planung umbenannt in "${proj.name}"`, 'info');
+    showToastNotification(`✏️ Gesamtpaket umbenannt in "${proj.name}"`, 'info');
 
     const modal = document.getElementById('modal-project-manager');
     if (modal && !modal.classList.contains('hidden')) {
@@ -622,31 +743,77 @@ function renameProject(projectId, customNewName = null) {
     }
 }
 
-function deleteProject(projectId) {
+function requestDeleteProjectInline(projectId) {
+    pendingDeleteProjectId = projectId;
+    pendingRenameProjectId = null;
+    renderProjectManagerModal();
+}
+
+function cancelDeleteProjectInline() {
+    pendingDeleteProjectId = null;
+    renderProjectManagerModal();
+}
+
+async function deleteProject(projectId, skipInlineConfirm = false) {
+    if (!skipInlineConfirm && pendingDeleteProjectId !== projectId) {
+        requestDeleteProjectInline(projectId);
+        return;
+    }
+    pendingDeleteProjectId = null;
+
     let projects = getStoredProjects() || [];
-    if (projects.length <= 1) {
-        showToastNotification('Die letzte verbleibende Planung kann nicht gelöscht werden.', 'error');
-        return;
-    }
-
     const proj = projects.find(p => p.id === projectId);
-    if (!proj) return;
+    const targetName = proj ? proj.name : '';
 
-    if (!confirm(`Möchtest du die Planung "${proj.name}" wirklich unwiderruflich löschen?`)) {
-        return;
-    }
+    // Record tombstone so static system_plans.json / CodePersistedPlans never resurrect this deleted backup!
+    addDeletedPlanTombstone(projectId, targetName);
+
+    // Remove from server plans cache as well
+    try {
+        let cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+        cached = cached.filter(p => p.id !== projectId && (!targetName || p.name !== targetName));
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(cached));
+    } catch (e) {}
+
+    // Fire-and-forget delete on local backend if running
+    try {
+        fetch(`/api/plans/persistent/${encodeURIComponent(projectId)}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
 
     const activeId = getActiveProjectId();
-    projects = projects.filter(p => p.id !== projectId);
-    localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+    projects = projects.filter(p => p.id !== projectId && (!targetName || p.name !== targetName));
 
-    if (activeId === projectId) {
-        const nextProj = projects[0];
-        localStorage.setItem(PV_ACTIVE_PROJECT_KEY, nextProj.id);
-        importFullConfiguration(nextProj.data, nextProj.name);
-        showToastNotification(`🗑️ Planung gelöscht. Zu "${nextProj.name}" gewechselt.`, 'info');
+    if (projects.length === 0) {
+        // Always keep at least 1 working slot if the user deleted the last remaining package
+        const currentData = exportFullConfiguration();
+        const fallbackProj = {
+            id: 'proj_' + Date.now(),
+            name: (LocationData && LocationData.name) ? `Gesamtpaket ${LocationData.name}` : 'Gesamtpaket 1',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            data: currentData,
+            summary: calculateProjectSummary(currentData)
+        };
+        projects = [fallbackProj];
+        localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+        localStorage.setItem(PV_ACTIVE_PROJECT_KEY, fallbackProj.id);
+        showToastNotification(`🗑️ "${targetName || 'Sicherung'}" gelöscht.`, 'info');
     } else {
-        showToastNotification(`🗑️ Planung "${proj.name}" gelöscht.`, 'info');
+        localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+        if (activeId === projectId) {
+            const nextProj = projects[0];
+            localStorage.setItem(PV_ACTIVE_PROJECT_KEY, nextProj.id);
+            importFullConfiguration(nextProj.data, nextProj.name);
+            showToastNotification(`🗑️ "${targetName || 'Gesamtpaket'}" gelöscht. Zu "${nextProj.name}" gewechselt.`, 'info');
+        } else {
+            showToastNotification(`🗑️ Gesamtpaket "${targetName || projectId}" dauerhaft gelöscht.`, 'info');
+        }
+    }
+
+    // If user configured a GitHub token, also push the deletion to GitHub automatically in background
+    const ghCfg = getGitHubSyncConfig();
+    if (ghCfg.token) {
+        pushUnifiedPackagesToGitHub(true).catch(() => {});
     }
 
     updateHeaderProjectIndicator();
@@ -658,9 +825,12 @@ function deleteProject(projectId) {
 
 let activeProjectManagerTab = 'list';
 
-function openProjectManagerModal(initialTab = 'list') {
-    // Vor dem Öffnen aktuellen Stand sichern
+async function openProjectManagerModal(initialTab = 'list') {
+    // Vor dem Öffnen aktuellen Stand inklusive HA-Sensoren & Logbuch ins aktive Gesamtpaket sichern
     saveCurrentProjectData(false);
+    pendingDeleteProjectId = null;
+    pendingRenameProjectId = null;
+    pendingCreatePackageMode = null;
 
     activeProjectManagerTab = initialTab;
     const modal = document.getElementById('modal-project-manager');
@@ -669,6 +839,12 @@ function openProjectManagerModal(initialTab = 'list') {
     modal.classList.remove('hidden');
     document.body.classList.add('overflow-hidden');
     renderProjectManagerModal(activeProjectManagerTab);
+
+    // Merge any external/GitHub packages into the unified list
+    await mergeExternalPlansIntoUnifiedProjects();
+    if (!modal.classList.contains('hidden')) {
+        renderProjectManagerModal(activeProjectManagerTab);
+    }
 }
 
 function closeProjectManagerModal() {
@@ -679,18 +855,318 @@ function closeProjectManagerModal() {
     }
 }
 
+function getPackageTelemetrySummary(projData) {
+    const d = projData || {};
+    const ha = d.haConfigSanitized || d.haConfig || {};
+    const ent = ha.entities || {};
+    const strCount = Array.isArray(ha.customStrings) ? ha.customStrings.filter(s => s && (s.powerEntity || s.energyEntity)).length : 0;
+    const consCount = Array.isArray(ha.customConsumers) ? ha.customConsumers.filter(c => c && (c.powerEntity || c.energyEntity)).length : 0;
+    const baseEntCount = Object.values(ent).filter(Boolean).length + (Array.isArray(ha.pvEnergyExtraEntities) ? ha.pvEnergyExtraEntities.filter(Boolean).length : 0);
+    const totalHaEntities = baseEntCount + strCount + consCount;
+    const trackingStart = ha.trackingStartDate || '2026-11-01';
+    const hasPvgis = !!(d.cachedSimulation && d.cachedSimulation.YieldDataCache);
+    const hasLogbook = !!(d.performanceRecords && Object.keys(d.performanceRecords).length > 0);
+    return {
+        totalHaEntities,
+        strCount,
+        consCount,
+        trackingStart,
+        hasPvgis,
+        hasLogbook,
+        hasHaUrl: Boolean(ha.baseUrl)
+    };
+}
+
+function toggleGitHubSyncPanel() {
+    isGitHubSyncPanelOpen = !isGitHubSyncPanelOpen;
+    renderProjectManagerModal();
+}
+
+function onGitHubSyncFieldInput() {
+    const repoEl = document.getElementById('ghSyncRepoInput');
+    const branchEl = document.getElementById('ghSyncBranchInput');
+    const tokenEl = document.getElementById('ghSyncTokenInput');
+    saveGitHubSyncConfig({
+        repo: repoEl ? repoEl.value.trim() : undefined,
+        branch: branchEl ? branchEl.value.trim() : undefined,
+        token: tokenEl ? tokenEl.value.trim() : undefined
+    });
+}
+
+function encodeUtf8ToBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binString = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+        binString += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    return btoa(binString);
+}
+
+function decodeBase64ToUtf8(b64) {
+    const clean = String(b64 || '').replace(/[\r\n\s]+/g, '');
+    const binString = atob(clean);
+    const bytes = new Uint8Array(binString.length);
+    for (let i = 0; i < binString.length; i++) {
+        bytes[i] = binString.charCodeAt(i);
+    }
+    return new TextDecoder().decode(bytes);
+}
+
+function buildSanitizedPackagesArrayForSync() {
+    saveCurrentProjectData(false);
+    const projects = (getStoredProjects() || []).filter(p => !isPlanTombstoned(p.id, p.name));
+    return projects.map(p => {
+        const clone = JSON.parse(JSON.stringify(p));
+        if (clone?.data?.haConfigSanitized) clone.data.haConfigSanitized.accessToken = '';
+        if (clone?.data?.haConfig) clone.data.haConfig.accessToken = '';
+        return {
+            id: clone.id,
+            name: clone.name,
+            updatedAt: clone.updatedAt || new Date().toISOString(),
+            summary: clone.summary || calculateProjectSummary(clone.data),
+            data: clone.data
+        };
+    });
+}
+
+async function pushUnifiedPackagesToGitHub(silent = false) {
+    onGitHubSyncFieldInput();
+    const cfg = getGitHubSyncConfig();
+    if (!cfg.token) {
+        isGitHubSyncPanelOpen = true;
+        renderProjectManagerModal();
+        if (!silent) {
+            showToastNotification('Bitte gib im Bereich „GitHub Direkt-Sync“ deinen GitHub Personal Access Token (PAT) ein.', 'warning');
+        }
+        return false;
+    }
+
+    const parts = cfg.repo.split('/').map(s => s.trim()).filter(Boolean);
+    if (parts.length !== 2) {
+        if (!silent) showToastNotification('Ungültiges Repository-Format. Bitte als owner/repo (z.B. magic8383/PVPro) angeben.', 'error');
+        return false;
+    }
+    const [owner, repo] = parts;
+    const branch = cfg.branch || 'main';
+    const filePath = cfg.filePath || 'data/system_plans.json';
+
+    isGitHubSyncBusy = true;
+    renderProjectManagerModal();
+
+    try {
+        const packagesPayload = buildSanitizedPackagesArrayForSync();
+        const jsonContent = JSON.stringify(packagesPayload, null, 2);
+        const contentBase64 = encodeUtf8ToBase64(jsonContent);
+
+        const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${filePath}`;
+        const headers = {
+            'Accept': 'application/vnd.github+json',
+            'Authorization': `Bearer ${cfg.token}`,
+            'X-GitHub-Api-Version': '2022-11-28'
+        };
+
+        // 1. Get existing file SHA if it exists
+        let existingSha = null;
+        const getRes = await fetch(`${apiUrl}?ref=${encodeURIComponent(branch)}&_t=${Date.now()}`, {
+            method: 'GET',
+            headers,
+            cache: 'no-store'
+        });
+        if (getRes.ok) {
+            const getJson = await getRes.json();
+            if (getJson && getJson.sha) existingSha = getJson.sha;
+        } else if (getRes.status === 401 || getRes.status === 403) {
+            throw new Error(`GitHub Token abgelehnt (HTTP ${getRes.status}). Prüfe Berechtigung 'Contents: Read & Write' bzw. 'repo'.`);
+        }
+
+        // 2. PUT updated data/system_plans.json
+        const putBody = {
+            message: `chore(sync): Update ${packagesPayload.length} PV-Planung Pro Gesamtpaket(e) [v${APP_VERSION}]`,
+            content: contentBase64,
+            branch
+        };
+        if (existingSha) putBody.sha = existingSha;
+
+        const putRes = await fetch(apiUrl, {
+            method: 'PUT',
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(putBody)
+        });
+
+        if (!putRes.ok) {
+            let errDetail = `HTTP ${putRes.status}`;
+            try {
+                const errJson = await putRes.json();
+                if (errJson && errJson.message) errDetail = errJson.message;
+            } catch (e) {}
+            throw new Error(errDetail);
+        }
+
+        try {
+            localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(packagesPayload));
+        } catch (e) {}
+
+        saveGitHubSyncConfig({ lastSyncAt: new Date().toISOString() });
+        isGitHubSyncBusy = false;
+        renderProjectManagerModal();
+        if (!silent) {
+            showToastNotification(`☁️ ${packagesPayload.length} Gesamtpaket(e) direkt in GitHub (${owner}/${repo}) gespeichert!`, 'success');
+        }
+        return true;
+    } catch (err) {
+        isGitHubSyncBusy = false;
+        renderProjectManagerModal();
+        if (!silent) {
+            showToastNotification(`GitHub-Sync fehlgeschlagen: ${err.message}`, 'error');
+        }
+        return false;
+    }
+}
+
+async function pullUnifiedPackagesFromGitHub() {
+    onGitHubSyncFieldInput();
+    const cfg = getGitHubSyncConfig();
+    const parts = cfg.repo.split('/').map(s => s.trim()).filter(Boolean);
+    if (parts.length !== 2) {
+        showToastNotification('Ungültiges Repository-Format (owner/repo).', 'error');
+        return false;
+    }
+    const [owner, repo] = parts;
+    const branch = cfg.branch || 'main';
+    const filePath = cfg.filePath || 'data/system_plans.json';
+
+    isGitHubSyncBusy = true;
+    renderProjectManagerModal();
+
+    try {
+        const apiUrl = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${filePath}?ref=${encodeURIComponent(branch)}&_t=${Date.now()}`;
+        const headers = {
+            'Accept': 'application/vnd.github+json'
+        };
+        if (cfg.token) {
+            headers['Authorization'] = `Bearer ${cfg.token}`;
+        }
+
+        const res = await fetch(apiUrl, { method: 'GET', headers, cache: 'no-store' });
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status} beim Abruf von ${owner}/${repo}`);
+        }
+        const meta = await res.json();
+        if (!meta || !meta.content) {
+            throw new Error('Keine system_plans.json Daten im Repository gefunden.');
+        }
+
+        const jsonStr = decodeBase64ToUtf8(meta.content);
+        const remotePlans = JSON.parse(jsonStr);
+        if (!Array.isArray(remotePlans) || remotePlans.length === 0) {
+            throw new Error('Die Datei system_plans.json auf GitHub ist leer.');
+        }
+
+        let localProjects = getStoredProjects() || [];
+        let importedCount = 0;
+
+        remotePlans.forEach(rp => {
+            if (!rp || (!rp.id && !rp.name) || !rp.data) return;
+            // Calling pull explicitly clears tombstones for plans present in GitHub
+            removeDeletedPlanTombstone(rp.id, rp.name);
+            const existingIdx = localProjects.findIndex(lp => lp.id === rp.id || lp.name === rp.name);
+            const normalizedEntry = {
+                id: rp.id || ('proj_' + Date.now() + '_' + importedCount),
+                name: rp.name || 'GitHub Gesamtpaket',
+                createdAt: rp.createdAt || rp.updatedAt || new Date().toISOString(),
+                updatedAt: rp.updatedAt || new Date().toISOString(),
+                data: rp.data,
+                summary: rp.summary || calculateProjectSummary(rp.data),
+                _source: 'GitHub Sync'
+            };
+            if (existingIdx >= 0) {
+                localProjects[existingIdx] = normalizedEntry;
+            } else {
+                localProjects.push(normalizedEntry);
+            }
+            importedCount++;
+        });
+
+        localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(localProjects));
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(remotePlans));
+        saveGitHubSyncConfig({ lastSyncAt: new Date().toISOString() });
+
+        // Activate first pulled package if active one matches
+        const activeId = getActiveProjectId();
+        const activeProj = localProjects.find(p => p.id === activeId) || localProjects[0];
+        if (activeProj) {
+            localStorage.setItem(PV_ACTIVE_PROJECT_KEY, activeProj.id);
+            importFullConfiguration(activeProj.data, activeProj.name);
+            updateHeaderProjectIndicator();
+        }
+
+        isGitHubSyncBusy = false;
+        renderProjectManagerModal();
+        showToastNotification(`⬇️ ${importedCount} Gesamtpaket(e) frisch von GitHub (${owner}/${repo}) geladen!`, 'success');
+        return true;
+    } catch (err) {
+        isGitHubSyncBusy = false;
+        renderProjectManagerModal();
+        showToastNotification(`GitHub-Abruf fehlgeschlagen: ${err.message}`, 'error');
+        return false;
+    }
+}
+
+async function mergeExternalPlansIntoUnifiedProjects() {
+    const extPlans = await fetchCombinedPersistentPlans();
+    if (!Array.isArray(extPlans) || extPlans.length === 0) return;
+
+    let projects = getStoredProjects() || [];
+    let changed = false;
+
+    extPlans.forEach(ep => {
+        if (!ep || (!ep.id && !ep.name) || !ep.data) return;
+        if (isPlanTombstoned(ep.id, ep.name)) return;
+
+        const cleanNameLower = String(ep.name || '').trim().toLowerCase();
+        const exists = projects.some(
+            p => p.id === ep.id || (cleanNameLower && String(p.name || '').trim().toLowerCase() === cleanNameLower)
+        );
+        if (!exists) {
+            projects.push({
+                id: ep.id || ('proj_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6)),
+                name: ep.name || 'Gesamtpaket',
+                createdAt: ep.createdAt || ep.updatedAt || new Date().toISOString(),
+                updatedAt: ep.updatedAt || new Date().toISOString(),
+                data: ep.data,
+                summary: ep.summary || calculateProjectSummary(ep.data),
+                _source: ep._source || 'GitHub / Server'
+            });
+            changed = true;
+        }
+    });
+
+    if (changed) {
+        localStorage.setItem(PV_PROJECTS_KEY, JSON.stringify(projects));
+    }
+}
+
 function renderProjectManagerModal(tab = null) {
     if (tab) activeProjectManagerTab = tab;
     const body = document.getElementById('project-manager-modal-body');
     if (!body) return;
 
-    const projects = getStoredProjects() || [];
+    const allStored = getStoredProjects() || [];
+    const projects = allStored.filter(p => !isPlanTombstoned(p.id, p.name));
     const activeId = getActiveProjectId();
+    const ghCfg = getGitHubSyncConfig();
+    const lastSyncStr = ghCfg.lastSyncAt
+        ? new Date(ghCfg.lastSyncAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+        : 'Noch nicht synchronisiert';
 
     // Badge aktualisieren
     const badgeEl = document.getElementById('projectCountBadge');
     if (badgeEl) {
-        badgeEl.innerText = `${projects.length} ${projects.length === 1 ? 'Planung' : 'Planungen'}`;
+        badgeEl.innerText = `${projects.length} ${projects.length === 1 ? 'Gesamtpaket' : 'Gesamtpakete'}`;
     }
 
     // Tab Buttons aktualisieren
@@ -698,23 +1174,137 @@ function renderProjectManagerModal(tab = null) {
     const btnCompare = document.getElementById('tabBtnProjectsCompare');
     if (btnList && btnCompare) {
         if (activeProjectManagerTab === 'list') {
-            btnList.className = 'px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold';
-            btnCompare.className = 'px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium';
+            btnList.className = 'px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold cursor-pointer';
+            btnCompare.className = 'px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium cursor-pointer';
         } else {
-            btnCompare.className = 'px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold';
-            btnList.className = 'px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium';
+            btnCompare.className = 'px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold cursor-pointer';
+            btnList.className = 'px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium cursor-pointer';
         }
     }
 
     if (activeProjectManagerTab === 'list') {
+        const inlineCreateHtml = pendingCreatePackageMode ? `
+            <div class="p-4 rounded-2xl border-2 border-teal-500 bg-teal-50/50 dark:bg-teal-950/30 space-y-2.5 animate-fadeIn">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-black uppercase tracking-wider text-teal-800 dark:text-teal-300 flex items-center gap-1.5">
+                        <span class="material-symbols-rounded text-base">${pendingCreatePackageMode === 'clone' ? 'copy_all' : 'add_circle'}</span>
+                        <span>${pendingCreatePackageMode === 'clone' ? 'Aktuelles Gesamtpaket als Variante duplizieren' : 'Neues Gesamtpaket anlegen'}</span>
+                    </span>
+                    <button type="button" onclick="cancelCreateProjectInline()" class="text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white cursor-pointer">Abbrechen</button>
+                </div>
+                <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <input type="text" id="inlineNewPackageNameInput"
+                        value="${escapeHtml(pendingCreatePackageMode === 'clone' ? ((document.getElementById('headerProjectName')?.innerText || 'Anlage') + ' (Variante)') : `Anlage ${projects.length + 1}`)}"
+                        onkeydown="if(event.key==='Enter') confirmCreateProjectInline();"
+                        placeholder="Name für das Gesamtpaket..."
+                        class="flex-1 px-3 py-2 rounded-xl border border-teal-500/40 bg-white dark:bg-slate-950 text-xs sm:text-sm font-bold text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="confirmCreateProjectInline()" class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold cursor-pointer flex items-center justify-center gap-1.5 shrink-0">
+                        <span class="material-symbols-rounded text-sm">check</span>
+                        <span>Jetzt anlegen</span>
+                    </button>
+                </div>
+            </div>
+        ` : '';
+
         body.innerHTML = `
+            <!-- Info & Schnell-Sync Leiste: Was ist im Gesamtpaket enthalten? -->
+            <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div class="flex items-start gap-2.5">
+                        <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl shrink-0 mt-0.5">inventory_2</span>
+                        <div>
+                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Einheitliche Gesamtpakete (Planung + Live &amp; HA + Logbuch)</h4>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+                                Jedes Paket speichert <strong>PV-Planung, Dach-Strings, HA-Sensoren, Einzelverbraucher, Mess-Startdatum &amp; Monats-Logbuch</strong> zusammen als eine Einheit (garantiert <strong>ohne</strong> deinen geheimen HA-Token).
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+                        <button type="button" onclick="saveAndSyncActivePackageNow()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Aktuellen Stand im aktiven Gesamtpaket sichern (und falls Token hinterlegt direkt zu GitHub pushen)">
+                            <span class="material-symbols-rounded text-sm">${isGitHubSyncBusy ? 'progress_activity' : 'save'}</span>
+                            <span>Stand sichern${ghCfg.token ? ' & GitHub Push' : ''}</span>
+                        </button>
+                        <button type="button" onclick="toggleGitHubSyncPanel()" class="px-2.5 py-1.5 rounded-xl ${ghCfg.token ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/35' : 'bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-all flex items-center gap-1 cursor-pointer">
+                            <span class="material-symbols-rounded text-sm">cloud_sync</span>
+                            <span>GitHub-Sync ${ghCfg.token ? '✓' : 'einrichten'}</span>
+                        </button>
+                        <button type="button" onclick="openShareModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="QR-Code oder JSON-Datei">
+                            <span class="material-symbols-rounded text-sm">qr_code_2</span>
+                            <span>QR / Datei</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Aufklappbares GitHub Direkt-Sync Panel (per Personal Access Token) -->
+                ${isGitHubSyncPanelOpen ? `
+                <div class="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-2.5 animate-fadeIn">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <span class="text-[11px] font-extrabold text-teal-700 dark:text-teal-300 flex items-center gap-1">
+                            <span class="material-symbols-rounded text-sm">key</span>
+                            <span>Direkter GitHub-Repository-Sync (data/system_plans.json)</span>
+                        </span>
+                        <span class="text-[10px] font-mono text-slate-400">Letzter Sync: ${lastSyncStr}</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        <div class="sm:col-span-4">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-0.5">GitHub Repo (owner/repo)</label>
+                            <input type="text" id="ghSyncRepoInput" value="${escapeHtml(ghCfg.repo)}" oninput="onGitHubSyncFieldInput()"
+                                placeholder="magic8383/PVPro"
+                                class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-0.5">Branch</label>
+                            <input type="text" id="ghSyncBranchInput" value="${escapeHtml(ghCfg.branch)}" oninput="onGitHubSyncFieldInput()"
+                                placeholder="main"
+                                class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        </div>
+                        <div class="sm:col-span-6">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-0.5">GitHub Personal Access Token (nur lokal gespeichert)</label>
+                            <input type="password" id="ghSyncTokenInput" value="${escapeHtml(ghCfg.token)}" oninput="onGitHubSyncFieldInput()"
+                                placeholder="ghp_... oder github_pat_... (Contents: Read & Write)"
+                                class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400">
+                            Der GitHub-Token bleibt zu 100% lokal in diesem Browser. In GitHub werden niemals Tokens gespeichert.
+                        </p>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button" onclick="pullUnifiedPackagesFromGitHub()" ${isGitHubSyncBusy ? 'disabled' : ''}
+                                class="px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold flex items-center gap-1 cursor-pointer">
+                                <span class="material-symbols-rounded text-sm">cloud_download</span>
+                                <span>Von GitHub laden (Pull)</span>
+                            </button>
+                            <button type="button" onclick="pushUnifiedPackagesToGitHub(false)" ${isGitHubSyncBusy ? 'disabled' : ''}
+                                class="px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1 cursor-pointer shadow-xs">
+                                <span class="material-symbols-rounded text-sm">${isGitHubSyncBusy ? 'progress_activity' : 'cloud_upload'}</span>
+                                <span>Jetzt zu GitHub pushen</span>
+                            </button>
+                            <button type="button" onclick="exportSystemPlansJsonForGitHub()"
+                                class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold flex items-center gap-1 cursor-pointer" title="system_plans.json manuell als Datei herunterladen">
+                                <span class="material-symbols-rounded text-sm">download</span>
+                                <span>JSON</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+
+            ${inlineCreateHtml}
+
+            <!-- Einheitliche Liste aller Gesamtpakete -->
             <div class="space-y-3">
-                ${projects.map((proj, idx) => {
+                ${projects.map((proj) => {
                     const isActive = proj.id === activeId;
                     const sm = proj.summary || calculateProjectSummary(proj.data);
+                    const teleSm = getPackageTelemetrySummary(proj.data);
                     const dateStr = proj.updatedAt 
                         ? new Date(proj.updatedAt).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                         : 'Unbekannt';
+                    const isDeleting = pendingDeleteProjectId === proj.id;
+                    const isRenaming = pendingRenameProjectId === proj.id;
+                    const safeIdJs = String(proj.id).replace(/'/g, "\\'");
 
                     return `
                     <div class="rounded-2xl transition-all duration-200 ${
@@ -723,37 +1313,59 @@ function renderProjectManagerModal(tab = null) {
                             : 'border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/70 hover:border-slate-300 dark:hover:border-slate-700 hover:shadow-sm'
                     } p-4 sm:p-5">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
-                            <div class="flex items-start sm:items-center gap-3">
+                            <div class="flex items-start sm:items-center gap-3 min-w-0 flex-1">
                                 <div class="w-10 h-10 rounded-xl ${isActive ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'} flex items-center justify-center shrink-0">
-                                    <span class="material-symbols-rounded text-xl">${isActive ? 'check_circle' : 'folder'}</span>
+                                    <span class="material-symbols-rounded text-xl">${isActive ? 'check_circle' : 'inventory_2'}</span>
                                 </div>
-                                <div>
-                                    <div class="flex items-center gap-2 flex-wrap">
-                                        <h4 class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight">${proj.name}</h4>
-                                        ${isActive ? `
-                                            <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500 text-white shadow-xs">
-                                                <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
-                                                Aktiv
+                                <div class="min-w-0 flex-1">
+                                    ${isRenaming ? `
+                                        <div class="flex items-center gap-1.5">
+                                            <input type="text" id="inlineRenameInput_${proj.id}" value="${escapeHtml(proj.name)}"
+                                                onkeydown="if(event.key==='Enter') renameProject('${safeIdJs}'); else if(event.key==='Escape') cancelInlineRenameProject();"
+                                                class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-teal-500 bg-white dark:bg-slate-950 text-xs sm:text-sm font-bold text-slate-900 dark:text-white outline-none">
+                                            <button type="button" onclick="renameProject('${safeIdJs}')" class="px-2.5 py-1 rounded-lg bg-teal-600 text-white text-xs font-bold cursor-pointer">Speichern</button>
+                                            <button type="button" onclick="cancelInlineRenameProject()" class="px-2 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-semibold cursor-pointer">Abbr.</button>
+                                        </div>
+                                    ` : `
+                                        <div class="flex items-center gap-1.5 flex-wrap">
+                                            <h4 class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-tight">${escapeHtml(proj.name)}</h4>
+                                            ${isActive ? `
+                                                <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500 text-white shadow-xs">
+                                                    <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                                                    Aktiv geladen
+                                                </span>
+                                            ` : ''}
+                                            <span class="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25">
+                                                HA &amp; Live (${teleSm.totalHaEntities} Sensoren)
                                             </span>
-                                        ` : ''}
-                                    </div>
+                                            <span class="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25">
+                                                Mess-Start: ${escapeHtml(teleSm.trackingStart)}
+                                            </span>
+                                            ${teleSm.hasPvgis ? `
+                                                <span class="text-[9.5px] font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">
+                                                    8.760h PVGIS
+                                                </span>
+                                            ` : ''}
+                                        </div>
+                                    `}
                                     <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
                                         <span class="material-symbols-rounded text-xs">schedule</span>
-                                        Zuletzt bearbeitet: ${dateStr}
+                                        <span>Gespeichert: ${dateStr}</span>
                                     </p>
                                 </div>
                             </div>
 
                             <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
                                 ${!isActive ? `
-                                    <button onclick="switchProject('${proj.id}')" class="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
-                                        <span class="material-symbols-rounded text-base">swap_horiz</span>
-                                        <span>Öffnen</span>
+                                    <button onclick="switchProject('${safeIdJs}')" class="px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                                        <span class="material-symbols-rounded text-base">download_done</span>
+                                        <span>Gesamtpaket laden</span>
                                     </button>
                                 ` : `
-                                    <span class="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-100/60 dark:bg-emerald-900/30">
-                                        <span class="material-symbols-rounded text-sm">edit</span> Aktuelle Bearbeitung
-                                    </span>
+                                    <button onclick="saveAndSyncActivePackageNow()" class="px-3 py-1.5 rounded-xl bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1 cursor-pointer" title="Aktuelle Änderungen in diesem Gesamtpaket sichern">
+                                        <span class="material-symbols-rounded text-sm">sync_saved_locally</span>
+                                        <span>Aktualisieren</span>
+                                    </button>
                                 `}
                             </div>
                         </div>
@@ -761,108 +1373,80 @@ function renderProjectManagerModal(tab = null) {
                         <!-- Kennzahlen-Leiste -->
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Generator</span>
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">PV-Generator</span>
                                 <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
                                     <span class="material-symbols-rounded text-amber-500 text-sm">bolt</span>
-                                    ${sm.kwp} kWp
-                                </span>
-                            </div>
-                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
-                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Module / Strings</span>
-                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
-                                    <span class="material-symbols-rounded text-primary text-sm">solar_power</span>
-                                    ${sm.panelCount} (${sm.stringCount} Str.)
+                                    ${sm.kwp} kWp (${sm.panelCount} Mod.)
                                 </span>
                             </div>
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
                                 <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Speicher</span>
-                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1 truncate">
                                     <span class="material-symbols-rounded text-emerald-500 text-sm">battery_charging_full</span>
-                                    ${sm.batteryKwh > 0 ? sm.batteryKwh + ' kWh' : 'Ohne Akku'}
+                                    ${sm.batteryKwh > 0 ? (sm.batteryName || sm.batteryKwh + ' kWh') : 'Ohne Akku'}
+                                </span>
+                            </div>
+                            <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
+                                <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Live &amp; Verbraucher</span>
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1">
+                                    <span class="material-symbols-rounded text-teal-500 text-sm">sensors</span>
+                                    ${teleSm.strCount} Str. · ${teleSm.consCount} Verbr.
                                 </span>
                             </div>
                             <div class="bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl border border-slate-100 dark:border-slate-800/80">
                                 <span class="text-[10px] uppercase font-bold text-slate-400 block leading-none mb-1">Standort</span>
-                                <span class="font-extrabold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1" title="${sm.locationName}">
+                                <span class="font-extrabold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1" title="${escapeHtml(sm.locationName)}">
                                     <span class="material-symbols-rounded text-rose-500 text-sm">location_on</span>
-                                    ${sm.locationName}
+                                    ${escapeHtml(sm.locationName)}
                                 </span>
                             </div>
                         </div>
 
-                        <!-- Aktions-Footer pro Karte -->
-                        <div class="flex items-center justify-end gap-1.5 mt-3 pt-2 border-t border-slate-100/80 dark:border-slate-800/60 text-xs">
-                            <button onclick="duplicateProjectById('${proj.id}')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold transition-colors flex items-center gap-1" title="Planung als Kopie duplizieren">
-                                <span class="material-symbols-rounded text-sm">content_copy</span> Duplizieren
-                            </button>
-                            <button onclick="renameProject('${proj.id}')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold transition-colors flex items-center gap-1" title="Planung umbenennen">
-                                <span class="material-symbols-rounded text-sm">edit</span> Umbenennen
-                            </button>
-                            ${projects.length > 1 ? `
-                                <button onclick="deleteProject('${proj.id}')" class="px-2.5 py-1 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold transition-colors flex items-center gap-1" title="Planung löschen">
+                        <!-- Aktions-Footer pro Karte (Ohne blockierendes window.confirm!) -->
+                        <div class="flex flex-wrap items-center justify-end gap-1.5 mt-3 pt-2 border-t border-slate-100/80 dark:border-slate-800/60 text-xs">
+                            ${isDeleting ? `
+                                <div class="flex items-center gap-2 bg-rose-500/10 border border-rose-500/30 px-3 py-1 rounded-xl w-full sm:w-auto justify-between sm:justify-end">
+                                    <span class="text-[11px] font-bold text-rose-600 dark:text-rose-300">Gesamtpaket wirklich löschen?</span>
+                                    <div class="flex items-center gap-1.5">
+                                        <button type="button" onclick="deleteProject('${safeIdJs}', true)" class="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold cursor-pointer">Ja, löschen</button>
+                                        <button type="button" onclick="cancelDeleteProjectInline()" class="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer">Abbrechen</button>
+                                    </div>
+                                </div>
+                            ` : `
+                                <button type="button" onclick="duplicateProjectById('${safeIdJs}')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="Gesamtpaket als Kopie duplizieren">
+                                    <span class="material-symbols-rounded text-sm">content_copy</span> Duplizieren
+                                </button>
+                                <button type="button" onclick="startInlineRenameProject('${safeIdJs}')" class="px-2.5 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="Gesamtpaket umbenennen">
+                                    <span class="material-symbols-rounded text-sm">edit</span> Umbenennen
+                                </button>
+                                <button type="button" onclick="requestDeleteProjectInline('${safeIdJs}')" class="px-2.5 py-1 rounded-lg text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold transition-colors flex items-center gap-1 cursor-pointer" title="Gesamtpaket löschen">
                                     <span class="material-symbols-rounded text-sm">delete</span> Löschen
                                 </button>
-                            ` : ''}
+                            `}
                         </div>
                     </div>
                     `;
                 }).join('')}
             </div>
-
-            <!-- Fest im Server / GitHub gespeicherte Planungen (Geräteübergreifend & Token-frei) -->
-            <div class="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-rounded text-emerald-600 dark:text-emerald-400 text-xl">cloud_sync</span>
-                        <div>
-                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">Zentral im Server / GitHub gespeicherte Planungen</h4>
-                            <p class="text-[11px] text-slate-400">Inkl. aller HA-Sensoren & PVGIS-Daten — <strong class="text-emerald-600 dark:text-emerald-400">100% sicher ohne Token</strong></p>
-                        </div>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <button onclick="openSaveSystemPlanModal()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer">
-                            <span class="material-symbols-rounded text-sm">cloud_upload</span>
-                            <span>Zentral speichern</span>
-                        </button>
-                        <button onclick="exportSystemPlansJsonForGitHub()" class="px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="system_plans.json für GitHub Pages herunterladen">
-                            <span class="material-symbols-rounded text-sm">download</span>
-                            <span>GitHub JSON</span>
-                        </button>
-                        <button onclick="openShareModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="QR-Code oder Datei-Backup für Direkt-Transfer">
-                            <span class="material-symbols-rounded text-sm">qr_code_2</span>
-                            <span>QR / Datei</span>
-                        </button>
-                    </div>
-                </div>
-                <div id="persistentServerPlansContainer" class="space-y-2">
-                    <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500">
-                        <span class="material-symbols-rounded text-lg text-emerald-500 animate-spin mb-1">sync</span>
-                        <p>Lade zentrale Planungen (Server / GitHub / Code)...</p>
-                    </div>
-                </div>
-            </div>
         `;
-
-        // Asynchron Server- & GitHub-Planungen laden
-        renderServerPlansList();
     } else {
         // Tab Variantenvergleich (Side-by-Side Matrix)
         body.innerHTML = `
             <div class="space-y-4">
                 <div class="bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 p-3.5 rounded-2xl text-xs text-blue-800 dark:text-blue-300 flex items-center gap-2.5">
                     <span class="material-symbols-rounded text-xl shrink-0">info</span>
-                    <span>Hier siehst du alle angelegten Varianten und Planungen im direkten technischen Vergleich. Klicke auf <strong>Öffnen</strong>, um eine Variante sofort aktiv zu laden.</span>
+                    <span>Hier siehst du alle gespeicherten Gesamtpakete im direkten Vergleich. Klicke auf <strong>Öffnen</strong>, um ein Paket samt Live-Sensoren und Planung aktiv zu schalten.</span>
                 </div>
 
                 <div class="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-xs">
                     <table class="w-full text-left border-collapse">
                         <thead>
                             <tr class="bg-slate-100/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
-                                <th class="p-3">Planung / Variante</th>
+                                <th class="p-3">Gesamtpaket</th>
                                 <th class="p-3 text-center">Leistung (kWp)</th>
                                 <th class="p-3 text-center">Module (Strings)</th>
                                 <th class="p-3 text-center">Speicher</th>
-                                <th class="p-3 text-center">Standort</th>
+                                <th class="p-3 text-center">HA-Sensoren</th>
                                 <th class="p-3 text-center">Status / Aktion</th>
                             </tr>
                         </thead>
@@ -870,14 +1454,16 @@ function renderProjectManagerModal(tab = null) {
                             ${projects.map(proj => {
                                 const isActive = proj.id === activeId;
                                 const sm = proj.summary || calculateProjectSummary(proj.data);
+                                const teleSm = getPackageTelemetrySummary(proj.data);
+                                const safeIdJs = String(proj.id).replace(/'/g, "\\'");
                                 return `
                                 <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors ${isActive ? 'bg-emerald-50/30 dark:bg-emerald-950/15 font-semibold' : ''}">
                                     <td class="p-3">
                                         <div class="flex items-center gap-2">
                                             <span class="material-symbols-rounded text-sm ${isActive ? 'text-emerald-500' : 'text-slate-400'}">
-                                                ${isActive ? 'check_circle' : 'folder'}
+                                                ${isActive ? 'check_circle' : 'inventory_2'}
                                             </span>
-                                            <span class="font-bold text-slate-900 dark:text-white">${proj.name}</span>
+                                            <span class="font-bold text-slate-900 dark:text-white">${escapeHtml(proj.name)}</span>
                                         </div>
                                     </td>
                                     <td class="p-3 text-center font-mono font-bold text-amber-500">${sm.kwp} kWp</td>
@@ -885,14 +1471,14 @@ function renderProjectManagerModal(tab = null) {
                                     <td class="p-3 text-center font-mono text-emerald-600 dark:text-emerald-400">
                                         ${sm.batteryKwh > 0 ? sm.batteryKwh + ' kWh' : '–'}
                                     </td>
-                                    <td class="p-3 text-center text-slate-500">${sm.locationName}</td>
+                                    <td class="p-3 text-center font-mono text-teal-600 dark:text-teal-400">${teleSm.totalHaEntities} Sensoren</td>
                                     <td class="p-3 text-center">
                                         ${isActive ? `
                                             <span class="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-500 text-white">
                                                 Aktiv
                                             </span>
                                         ` : `
-                                            <button onclick="switchProject('${proj.id}')" class="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-all shadow-xs inline-flex items-center gap-1">
+                                            <button onclick="switchProject('${safeIdJs}')" class="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-white text-[11px] font-bold transition-all shadow-xs inline-flex items-center gap-1 cursor-pointer">
                                                 <span class="material-symbols-rounded text-xs">swap_horiz</span> Öffnen
                                             </button>
                                         `}
@@ -908,20 +1494,51 @@ function renderProjectManagerModal(tab = null) {
     }
 }
 
+async function saveAndSyncActivePackageNow() {
+    saveCurrentProjectData(true);
+    // Also mirror active package into pvpro_server_plans_cache & local server API
+    const projects = getStoredProjects() || [];
+    const activeId = getActiveProjectId();
+    const activeProj = projects.find(p => p.id === activeId) || projects[0];
+    if (activeProj) {
+        removeDeletedPlanTombstone(activeProj.id, activeProj.name);
+        try {
+            fetch('/api/plans/persist', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: activeProj.id, name: activeProj.name, data: activeProj.data, summary: activeProj.summary })
+            }).catch(() => {});
+        } catch (e) {}
+    }
+    const ghCfg = getGitHubSyncConfig();
+    if (ghCfg.token) {
+        await pushUnifiedPackagesToGitHub(false);
+    } else {
+        renderProjectManagerModal();
+    }
+}
+
 async function fetchCombinedPersistentPlans() {
     const planMap = new Map();
     const addPlans = (list, defaultSource) => {
         if (!Array.isArray(list)) return;
         list.forEach(p => {
             if (!p || (!p.id && !p.name)) return;
-            const key = p.id || p.name;
+            if (isPlanTombstoned(p.id, p.name)) return;
+            const key = String(p.name || p.id).trim().toLowerCase();
             if (!planMap.has(key)) {
                 planMap.set(key, { ...p, _source: p._source || defaultSource });
             }
         });
     };
 
-    // 1. Live Server API (/api/plans/persistent)
+    // 1. Lokaler Cache (höchste Priorität für eigene Änderungen)
+    try {
+        const cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+        addPlans(cached, 'Lokaler Sync-Cache');
+    } catch (e) {}
+
+    // 2. Live Server API (/api/plans/persistent)
     try {
         const res = await fetch('/api/plans/persistent', { cache: 'no-store' });
         if (res.ok) {
@@ -935,7 +1552,7 @@ async function fetchCombinedPersistentPlans() {
         }
     } catch (e) {}
 
-    // 2. Statische Datei ./data/system_plans.json (GitHub Pages kompatibel!)
+    // 3. Statische Datei ./data/system_plans.json (GitHub Pages kompatibel!)
     try {
         const resStatic = await fetch('./data/system_plans.json?v=' + Date.now(), { cache: 'no-store' });
         if (resStatic.ok) {
@@ -949,110 +1566,27 @@ async function fetchCombinedPersistentPlans() {
         }
     } catch (e) {}
 
-    // 3. Im Code hinterlegte Planungen (window.CodePersistedPlans in database.js)
+    // 4. Im Code hinterlegte Planungen (window.CodePersistedPlans in database.js)
     try {
         if (typeof window !== 'undefined' && Array.isArray(window.CodePersistedPlans)) {
             addPlans(window.CodePersistedPlans, 'Code (database.js)');
         }
     } catch (e) {}
 
-    // 4. Lokaler Cache
-    try {
-        const cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
-        addPlans(cached, 'Lokaler Sync-Cache');
-    } catch (e) {}
-
     const combined = Array.from(planMap.values());
-    if (combined.length > 0) {
-        try {
-            localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(combined));
-        } catch (e) {}
-    }
+    try {
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(combined));
+    } catch (e) {}
     return combined;
 }
 
 async function renderServerPlansList() {
-    const container = document.getElementById('persistentServerPlansContainer');
-    if (!container) return;
-
-    const plans = await fetchCombinedPersistentPlans();
-
-    if (!plans || plans.length === 0) {
-        container.innerHTML = `
-            <div class="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 bg-slate-50/50 dark:bg-slate-900/30">
-                <span class="material-symbols-rounded text-xl text-emerald-500 mb-1 block">cloud_done</span>
-                <span class="font-bold text-slate-700 dark:text-slate-200 block">Zentraler GitHub- & Server-Speicher bereit</span>
-                <span class="text-[11px] text-slate-400 mt-0.5 block">Klicke oben auf <strong class="text-emerald-600 dark:text-emerald-400 font-bold">„Zentral speichern“</strong>, um deine komplette Anlage inkl. aller Home-Assistant-Sensoren (ohne Token!) für andere Geräte abrufbar zu sichern.</span>
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = plans.map(p => {
-        const sm = p.summary || {};
-        const hasHaEntities = !!(p.data && p.data.haConfigSanitized && (p.data.haConfigSanitized.baseUrl || (p.data.haConfigSanitized.customConsumers || []).length > 0));
-        const hasCachedPvgis = !!(p.data && p.data.cachedSimulation && p.data.cachedSimulation.YieldDataCache);
-        const dateStr = p.updatedAt ? new Date(p.updatedAt).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-
-        return `
-            <div class="p-3.5 rounded-xl border border-emerald-200/60 dark:border-emerald-900/40 bg-emerald-50/20 dark:bg-emerald-950/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                    <div class="flex flex-wrap items-center gap-1.5">
-                        <span class="text-xs font-black text-slate-900 dark:text-white">${escapeHtml(p.name)}</span>
-                        <span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">${escapeHtml(p._source || 'GitHub / Server')}</span>
-                        ${hasHaEntities ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25">HA-Sensoren inkl. (Token-frei)</span>` : ''}
-                        ${hasCachedPvgis ? `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">PVGIS 8.760h inkl.</span>` : ''}
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-                        <span class="font-bold text-slate-700 dark:text-slate-200">${sm.kwp || '–'} kWp</span>
-                        <span>•</span>
-                        <span>${sm.panelCount || '–'} Module (${sm.stringCount || '–'} Str.)</span>
-                        <span>•</span>
-                        <span>${(sm.batteryKwh > 0 || (sm.batteryName && sm.batteryName !== 'Ohne Akku')) ? `<span class="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-bold"><span class="material-symbols-rounded text-xs">battery_charging_full</span> ${sm.batteryName || sm.batteryKwh + ' kWh'}</span>` : 'Ohne Akku'}</span>
-                        <span>•</span>
-                        <span>${sm.locationName || 'Standort'}</span>
-                        ${dateStr ? `<span>•</span><span>${dateStr}</span>` : ''}
-                    </div>
-                </div>
-                <div class="flex items-center gap-2 self-end sm:self-auto shrink-0">
-                    <button onclick="loadPersistentPlanFromServer('${p.id}')" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Auf diesem Gerät laden & aktivieren">
-                        <span class="material-symbols-rounded text-sm">download</span>
-                        <span>Laden & Aktivieren</span>
-                    </button>
-                    <button onclick="deletePersistentPlanFromServer('${p.id}')" class="p-1.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer" title="Planung entfernen">
-                        <span class="material-symbols-rounded text-sm">delete</span>
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
+    await mergeExternalPlansIntoUnifiedProjects();
 }
 
 async function exportSystemPlansJsonForGitHub() {
-    // Aktuelle Planung ebenfalls als Eintrag aufnehmen (ohne Token)
-    const plans = await fetchCombinedPersistentPlans();
-    const currentCfg = exportFullConfiguration();
-    const currentSummary = calculateProjectSummary(currentCfg);
-    const activeName = document.getElementById('headerProjectName')?.innerText || `Planung ${LocationData?.name || 'PV'}`;
-
-    const entry = {
-        id: 'plan_' + Date.now(),
-        name: activeName,
-        data: currentCfg,
-        summary: currentSummary,
-        updatedAt: new Date().toISOString()
-    };
-
-    const filtered = plans.filter(p => p.name !== activeName);
-    filtered.unshift(entry);
-
-    // Garantiert alle accessToken entfernen
-    filtered.forEach(p => {
-        if (p?.data?.haConfigSanitized) p.data.haConfigSanitized.accessToken = '';
-        if (p?.data?.haConfig) p.data.haConfig.accessToken = '';
-    });
-
-    const blob = new Blob([JSON.stringify(filtered, null, 2)], { type: 'application/json' });
+    const packagesPayload = buildSanitizedPackagesArrayForSync();
+    const blob = new Blob([JSON.stringify(packagesPayload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1061,37 +1595,57 @@ async function exportSystemPlansJsonForGitHub() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToastNotification('📦 system_plans.json (mit allen Sensoren, garantiert OHNE Token) für GitHub exportiert!', 'success');
+    showToastNotification('📦 system_plans.json (alle Gesamtpakete inkl. Sensoren, garantiert OHNE Token) exportiert!', 'success');
 }
 window.exportSystemPlansJsonForGitHub = exportSystemPlansJsonForGitHub;
 
 async function deletePersistentPlanFromServer(planId) {
-    if (!confirm("Möchten Sie diese fest gespeicherte Planung wirklich vom Server löschen?")) return;
-
-    try {
-        const res = await fetch(`/api/plans/persistent/${planId}`, { method: 'DELETE' });
-        if (res.ok) {
-            showToastNotification("Planung erfolgreich vom Server gelöscht.", 'info');
-            renderServerPlansList();
-            return;
-        }
-    } catch(err) {
-        console.error("Fehler beim Löschen der Server-Planung:", err);
-    }
-    showToastNotification("Konnte Planung nicht vom Server löschen.", 'error');
+    await deleteProject(planId, true);
 }
 
 function createNewProjectPrompt(cloneCurrent = false) {
-    const projects = getStoredProjects() || [];
-    const defaultName = cloneCurrent 
-        ? `${document.getElementById('headerProjectName')?.innerText || 'Planung'} (Variante)` 
-        : `Planung ${projects.length + 1}`;
-
-    const name = prompt('Name für die neue Planung:', defaultName);
-    if (!name || !name.trim()) return;
-
-    createNewProject(name.trim(), cloneCurrent);
+    pendingCreatePackageMode = cloneCurrent ? 'clone' : 'new';
+    pendingDeleteProjectId = null;
+    pendingRenameProjectId = null;
+    renderProjectManagerModal('list');
+    setTimeout(() => {
+        const inp = document.getElementById('inlineNewPackageNameInput');
+        if (inp) {
+            inp.focus();
+            inp.select();
+        }
+    }, 30);
 }
+
+function cancelCreateProjectInline() {
+    pendingCreatePackageMode = null;
+    renderProjectManagerModal();
+}
+
+function confirmCreateProjectInline() {
+    const inp = document.getElementById('inlineNewPackageNameInput');
+    const name = inp ? inp.value.trim() : '';
+    const isClone = pendingCreatePackageMode === 'clone';
+    pendingCreatePackageMode = null;
+    if (!name) {
+        renderProjectManagerModal();
+        return;
+    }
+    removeDeletedPlanTombstone(null, name);
+    createNewProject(name, isClone);
+}
+
+window.startInlineRenameProject = startInlineRenameProject;
+window.cancelInlineRenameProject = cancelInlineRenameProject;
+window.requestDeleteProjectInline = requestDeleteProjectInline;
+window.cancelDeleteProjectInline = cancelDeleteProjectInline;
+window.cancelCreateProjectInline = cancelCreateProjectInline;
+window.confirmCreateProjectInline = confirmCreateProjectInline;
+window.toggleGitHubSyncPanel = toggleGitHubSyncPanel;
+window.onGitHubSyncFieldInput = onGitHubSyncFieldInput;
+window.pushUnifiedPackagesToGitHub = pushUnifiedPackagesToGitHub;
+window.pullUnifiedPackagesFromGitHub = pullUnifiedPackagesFromGitHub;
+window.saveAndSyncActivePackageNow = saveAndSyncActivePackageNow;
 
 // ==========================================
 // 1.1 CROSS-DEVICE TRANSFER & SHARING (V7.1.0)
@@ -4975,51 +5529,78 @@ async function submitSaveSystemPlanToServer() {
         cachedSimulation: getSerializableSimulationCache()
     };
 
+    const existingProj = Array.isArray(projects)
+        ? projects.find(p => (p.name || '').trim().toLowerCase() === name.toLowerCase())
+        : null;
+    const planId = existingProj ? existingProj.id : ('proj_' + Date.now());
+
     const newPlanEntry = {
-        id: 'plan_' + Date.now(),
+        id: planId,
         name,
         data: planData,
         summary,
+        isSystemPlan: true,
         updatedAt: new Date().toISOString()
     };
 
+    removeDeletedPlanTombstone(planId, name);
+
+    // 1. In einheitliche Gesamtpaket-Liste (pvpro_projects) übernehmen
+    if (existingProj) {
+        existingProj.name = name;
+        existingProj.data = planData;
+        existingProj.summary = summary;
+        existingProj.updatedAt = newPlanEntry.updatedAt;
+        activeProjectId = existingProj.id;
+    } else {
+        projects.unshift(newPlanEntry);
+        activeProjectId = planId;
+    }
+    localStorage.setItem('pvpro_projects', JSON.stringify(projects));
+    localStorage.setItem('pvpro_active_project_id', activeProjectId);
+    updateActiveProjectBadges();
+
+    // 2. Auch in Server-Cache spiegeln
+    try {
+        let cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
+        cached = cached.filter(p => String(p.id) !== String(planId) && (p.name || '').trim().toLowerCase() !== name.toLowerCase());
+        cached.unshift(newPlanEntry);
+        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(cached));
+    } catch(e) {}
+
+    // 3. Server-Endpoint aufrufen falls verfügbar
+    let savedToServer = false;
     try {
         const res = await fetch('/api/plans/persist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, data: planData, summary })
+            body: JSON.stringify({ id: planId, name, data: planData, summary })
         });
-
         if (res.ok) {
             const cType = (res.headers.get('content-type') || '').toLowerCase();
             if (cType.includes('application/json')) {
                 const data = await res.json();
-                if (data.success) {
-                    closeSaveSystemPlanModal();
-                    showToastNotification(`✅ Planung "${name}" inkl. aller Sensoren (ohne Token!) fest im Server & Code gespeichert!`, 'success');
-                    if (typeof renderServerPlansList === 'function') renderServerPlansList();
-                    return;
-                }
+                if (data.success) savedToServer = true;
             }
         }
-    } catch(err) {
-        console.warn("Server-Endpoint für Plan-Persistenz nicht erreichbar, sichere im lokalen Cache:", err);
+    } catch(err) {}
+
+    closeSaveSystemPlanModal();
+    if (typeof renderProjectManagerModal === 'function') renderProjectManagerModal();
+
+    // 4. Wenn GitHub-Token hinterlegt ist, direkt ins Repository pushen
+    const ghCfg = getGitHubSyncConfig();
+    if (ghCfg.token) {
+        const pushed = await pushUnifiedPackagesToGitHub(false);
+        if (pushed) return;
     }
 
-    // Fallback in Cache spiegeln
-    try {
-        let cached = JSON.parse(localStorage.getItem('pvpro_server_plans_cache') || '[]');
-        cached = cached.filter(p => p.name !== name);
-        cached.unshift(newPlanEntry);
-        localStorage.setItem('pvpro_server_plans_cache', JSON.stringify(cached));
-        closeSaveSystemPlanModal();
-        showToastNotification(`✅ Planung "${name}" (inkl. Sensoren, ohne Token) gespeichert! Für GitHub Pages kannst du zudem 'GitHub JSON' herunterladen.`, 'success');
-        if (typeof renderServerPlansList === 'function') renderServerPlansList();
-        return;
-    } catch(e) {
-        console.error("Fehler beim lokalen Sichern der Planung:", e);
-    }
-    showToastNotification("Konnte Planung nicht speichern.", 'error');
+    showToastNotification(
+        savedToServer
+            ? `✅ Gesamtpaket "${name}" (Planung + HA-Sensoren + Logbuch, ohne Token) gespeichert!`
+            : `✅ Gesamtpaket "${name}" gespeichert! Mit GitHub-Token im Paket-Manager wird es direkt mit deinem Repo synchronisiert.`,
+        'success'
+    );
 }
 
 async function loadPersistentPlanFromServer(planId) {

@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 10.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 10.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 10.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 10.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=10.1">
+    <link rel="manifest" href="manifest.json?v=10.2">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.1">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.1">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.1">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.1">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.2">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.2">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.2">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.2">
     <script>
         // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
         (function () {
@@ -28,7 +28,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v10.1') {
+                            if (key !== 'pvpro-cache-v10.2') {
                                 caches.delete(key);
                             }
                         });
@@ -411,10 +411,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=10.1" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=10.2" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.1</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.2</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2176,7 +2176,7 @@
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (V10.1: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
+    <!-- M3 More Bottom Sheet (V10.2: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
     <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
     <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1820]/95 backdrop-blur-2xl rounded-t-3xl border-t border-slate-200/90 dark:border-white/15 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
         <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
@@ -2220,15 +2220,15 @@
                 <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 shrink-0">chevron_right</span>
             </button>
 
-            <!-- 3. Projekte & GitHub-Sync (Zentrales Speichern ohne Token-Weitergabe) -->
+            <!-- 3. Gesamtpakete & GitHub-Sync (Zentrales Speichern ohne Token-Weitergabe) -->
             <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/40 hover:bg-indigo-500/15 dark:hover:bg-indigo-900/50 border border-indigo-500/30 dark:border-indigo-500/30 text-left transition-all cursor-pointer">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
                         <span class="material-symbols-rounded text-xl text-indigo-600 dark:text-indigo-400">cloud_sync</span>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">3. Projekte &amp; GitHub-Sync</p>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Zentral speichern (inkl. Sensoren, ohne Token), Varianten &amp; QR/Datei</p>
+                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">3. Gesamtpakete &amp; GitHub-Sync</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Planung + HA-Sensoren + Logbuch (ohne Token) &amp; direkter GitHub-Sync</p>
                     </div>
                 </div>
                 <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 shrink-0">chevron_right</span>
@@ -2247,7 +2247,7 @@
                     <span class="material-symbols-rounded text-xl text-sky-600 dark:text-sky-400 shrink-0">menu_book</span>
                     <div class="min-w-0">
                         <p class="text-xs font-black text-slate-900 dark:text-white truncate">4b. Handbuch</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v10.1</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v10.2</p>
                     </div>
                 </button>
             </div>
@@ -2255,7 +2255,7 @@
     </div>
 
     <!-- ========================================== -->
-    <!-- MODAL: MULTI-PLANUNGS- & VARIANTEN-MANAGER (V7.7.0) -->
+    <!-- MODAL: GESAMTPAKETE & GITHUB-SYNC MANAGER (V10.2) -->
     <!-- ========================================== -->
     <div id="modal-project-manager" class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md hidden">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
@@ -2263,14 +2263,14 @@
             <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/40">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
-                        <span class="material-symbols-rounded text-2xl">folder_open</span>
+                        <span class="material-symbols-rounded text-2xl">inventory_2</span>
                     </div>
                     <div>
                         <div class="flex items-center gap-2">
-                            <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">Planungen & Varianten</h3>
-                            <span id="projectCountBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">1 Planung</span>
+                            <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight">Gesamtpakete &amp; GitHub-Sync</h3>
+                            <span id="projectCountBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">1 Gesamtpaket</span>
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Erstelle mehrere PV-Konzepte, vergleiche Varianten und wechsle nahtlos</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">PV-Planung + Live/HA-Sensoren + Logbuch als Gesamtpaket verwalten &amp; per GitHub-Token synchronisieren</p>
                     </div>
                 </div>
                 <button onclick="closeProjectManagerModal()" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-900 dark:hover:text-white flex items-center justify-center transition-colors cursor-pointer">
@@ -2284,7 +2284,7 @@
                 <div class="flex items-center gap-1 bg-slate-200/80 dark:bg-slate-800 p-1 rounded-xl text-xs">
                     <button id="tabBtnProjectsList" onclick="renderProjectManagerModal('list')" class="px-3 py-1.5 rounded-lg bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm flex items-center gap-1 font-bold cursor-pointer">
                         <span class="material-symbols-rounded text-sm">view_list</span>
-                        <span>Alle Planungen</span>
+                        <span>Gesamtpakete</span>
                     </button>
                     <button id="tabBtnProjectsCompare" onclick="renderProjectManagerModal('compare')" class="px-3 py-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 transition-colors font-medium cursor-pointer">
                         <span class="material-symbols-rounded text-sm">compare_arrows</span>
@@ -2296,11 +2296,11 @@
                 <div class="flex items-center gap-2">
                     <button onclick="createNewProjectPrompt(false)" class="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer">
                         <span class="material-symbols-rounded text-sm">add</span>
-                        <span>Neue Planung</span>
+                        <span>Neues Paket</span>
                     </button>
-                    <button onclick="createNewProjectPrompt(true)" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer" title="Aktuelle Planung als neue Variante duplizieren">
+                    <button onclick="createNewProjectPrompt(true)" class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer" title="Aktuelles Gesamtpaket inkl. HA-Sensoren als Variante duplizieren">
                         <span class="material-symbols-rounded text-sm">copy_all</span>
-                        <span>Variante anlegen</span>
+                        <span>Duplizieren</span>
                     </button>
                 </div>
             </div>
@@ -2313,8 +2313,8 @@
             <!-- Modal Footer -->
             <div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between text-xs text-slate-500">
                 <span class="flex items-center gap-1">
-                    <span class="material-symbols-rounded text-emerald-500 text-sm">cloud_done</span>
-                    Automatisch lokal gesichert
+                    <span class="material-symbols-rounded text-emerald-500 text-sm">verified_user</span>
+                    Planung + HA-Sensoren + Logbuch (ohne Token)
                 </span>
                 <button onclick="closeProjectManagerModal()" class="px-4 py-1.5 rounded-xl bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold transition-colors cursor-pointer">
                     Schließen
@@ -3302,13 +3302,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V10.1 (Single-Source Wochen-/Monatskurven via HA Langzeit-Statistik, Mess-Startdatum & Verbraucher-Balken) -->
-    <script src="qrcode.client.js?v=10.1"></script>
-    <script src="database.js?v=10.1"></script>
-    <script src="content.js?v=10.1"></script>
-    <script src="app.js?v=10.1"></script>
-    <script src="wiring.js?v=10.1"></script>
-    <script src="dossier.js?v=10.1"></script>
-    <script src="telemetry.js?v=10.1"></script>
+    <!-- MODULARE ARCHITEKTUR V10.2 (Zähler-Reset-Filter +163kWh, Transparente kWh-Sensor-Diagnose & Einheitliche Gesamtpakete mit GitHub-Sync) -->
+    <script src="qrcode.client.js?v=10.2"></script>
+    <script src="database.js?v=10.2"></script>
+    <script src="content.js?v=10.2"></script>
+    <script src="app.js?v=10.2"></script>
+    <script src="wiring.js?v=10.2"></script>
+    <script src="dossier.js?v=10.2"></script>
+    <script src="telemetry.js?v=10.2"></script>
 </body>
 </html>

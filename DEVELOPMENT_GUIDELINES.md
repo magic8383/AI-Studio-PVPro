@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.1 (Single-Source-of-Truth für Wochen- & Monats-Verlaufsdiagramm aus HA Langzeit-Statistik `recorder/statistics_during_period`, `end_time`-Fix für Kurzzeit-Historie & automatische Zeitraum-Begrenzung ab Mess-Startdatum)  
+**Aktuelle Version:** 10.2 (Zähler-Reset-Filter für `+163 kWh`-Sprünge in HA-Langzeitstatistik, transparente `kWh`-Sensor-Diagnose in HA-Dialog/Diagramm/Analyse & einheitliche Gesamtpaket-Verwaltung inkl. direktem GitHub-Sync per Token)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

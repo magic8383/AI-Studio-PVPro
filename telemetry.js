@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V10.1)
-// Zentrale Single Source of Truth (Live-Watt + kWh-Zähler), HA Long-Term
-// Statistics für Wochen-/Monatskurven, Globales Mess-Startdatum & Verbraucher-Balken
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V10.2)
+// Zentrale Single Source of Truth (Live-Watt + kWh-Zähler), Spike-Guard für
+// HA Langzeit-Statistiken, Transparente Sensor-Diagnose & Gesamtpaket-Sync
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -52,12 +52,18 @@ let haConfigState = {
 let discoveredHaSensors = [];
 let lastKnownHaUnitMap = new Map(); // entity_id -> unit_of_measurement (populated from /api/states)
 let lastKnownHaStateClassMap = new Map(); // entity_id -> state_class
+let lastKnownHaReadingMap = new Map(); // entity_id -> latest numeric reading (scaled to kWh or W)
+let lastKnownHaAvailabilityMap = new Map(); // entity_id -> boolean (true if numeric state available)
+let sensorDiagnosticsByEntity = {}; // entity_id -> { status, reason, filteredSpikeKwh, spikeDateStr, cleanDeltaKwh, rawDeltaKwh, updatedAt }
+if (typeof window !== 'undefined') {
+    window.sensorDiagnosticsByEntity = sensorDiagnosticsByEntity;
+}
 let liveTelemetryTimer = null;
 let intradayHistoryTimer = null;
 
 // Baseline cache for computing Today & Month deltas from total_increasing kWh counters without HA helpers
 let energyCounterBaselines = {
-    schemaVersion: '10.0',
+    schemaVersion: '10.2',
     dayKey: '',
     monthKey: '',
     dayStartByEntity: {},
@@ -285,6 +291,18 @@ function ensureProjectYearInitialized(year) {
             isSampleSeed: false
         };
         savePerformanceRecordsLocalAndServer();
+        return;
+    }
+    // Heal any v10.0/v10.1 spiked current-month HA record (e.g. 216 kWh from +163 kWh counter reset jump)
+    const now = new Date();
+    if (Number(year) === now.getFullYear()) {
+        const curM = now.getMonth();
+        const mObj = existingYearRec.months[curM];
+        if (mObj && mObj.source === 'ha' && Number(mObj.pvYieldKwh) > 135 && existingYearRec.schemaHealed !== '10.2') {
+            mObj.pvYieldKwh = null;
+            existingYearRec.schemaHealed = '10.2';
+            savePerformanceRecordsLocalAndServer();
+        }
     }
 }
 
@@ -587,9 +605,9 @@ function loadEnergyCounterBaselines() {
         const raw = localStorage.getItem('pvpro_energy_counter_baselines');
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && parsed.schemaVersion === '10.0') {
+            if (parsed && typeof parsed === 'object' && parsed.schemaVersion === '10.2') {
                 energyCounterBaselines = {
-                    schemaVersion: '10.0',
+                    schemaVersion: '10.2',
                     dayKey: keys.dayKey,
                     monthKey: keys.monthKey,
                     dayStartByEntity: parsed.dayKey === keys.dayKey ? (parsed.dayStartByEntity || {}) : {},
@@ -605,7 +623,7 @@ function loadEnergyCounterBaselines() {
         }
     } catch (e) {}
     energyCounterBaselines = {
-        schemaVersion: '10.0',
+        schemaVersion: '10.2',
         dayKey: keys.dayKey,
         monthKey: keys.monthKey,
         dayStartByEntity: {},
@@ -619,9 +637,84 @@ function loadEnergyCounterBaselines() {
 
 function saveEnergyCounterBaselines() {
     try {
-        energyCounterBaselines.schemaVersion = '10.0';
+        energyCounterBaselines.schemaVersion = '10.2';
         localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines));
     } catch (e) {}
+}
+
+function setSensorDiagnostic(entityId, diagObj) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return;
+    const prev = sensorDiagnosticsByEntity[cleanId] || {};
+    // Preserve spike_filtered if already detected in this session unless explicitly cleared
+    if (prev.status === 'spike_filtered' && diagObj.status === 'ok' && !diagObj.clearSpike) {
+        sensorDiagnosticsByEntity[cleanId] = {
+            ...prev,
+            currentKwh: diagObj.currentKwh ?? prev.currentKwh,
+            deltaTodayKwh: diagObj.deltaTodayKwh ?? prev.deltaTodayKwh,
+            deltaMonthKwh: diagObj.deltaMonthKwh ?? prev.deltaMonthKwh,
+            updatedAt: Date.now()
+        };
+        return;
+    }
+    sensorDiagnosticsByEntity[cleanId] = {
+        ...prev,
+        ...diagObj,
+        entityId: cleanId,
+        updatedAt: Date.now()
+    };
+}
+
+function getSensorDiagnostic(entityId) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return null;
+    return sensorDiagnosticsByEntity[cleanId] || null;
+}
+
+function renderEntityDiagnosticSubline(entityId) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return '';
+    const d = getSensorDiagnostic(cleanId);
+    if (!d) return '';
+    const safeReason = typeof escapeHtml === 'function' ? escapeHtml(d.reason || '') : (d.reason || '');
+    if (d.status === 'spike_filtered') {
+        const spikeStr = Number(d.spikeKwh || 0).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+        return `<div class="mt-1 px-2 py-1 rounded-lg bg-amber-500/15 border border-amber-500/35 text-[10px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+            <span class="material-symbols-rounded text-xs shrink-0">warning</span>
+            <span>Reset-Sprung (+${spikeStr} kWh) gefiltert · ${safeReason || 'Zählerstand nach Sprung kalibriert'}</span>
+        </div>`;
+    }
+    if (d.status === 'unavailable' || d.status === 'wrong_unit' || d.status === 'fallback_watt') {
+        return `<div class="mt-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1">
+            <span class="material-symbols-rounded text-xs shrink-0">info</span>
+            <span>${safeReason || 'Sensor wird aktuell nicht genutzt → Berechnung aus Live-Watt'}</span>
+        </div>`;
+    }
+    if (d.status === 'ok' && d.currentKwh !== undefined && d.currentKwh !== null) {
+        const curStr = Number(d.currentKwh).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return `<div class="mt-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-[10px] font-mono text-emerald-700 dark:text-emerald-300 flex items-center justify-between gap-1">
+            <span>✓ kWh-Zähler aktiv</span>
+            <span>Rohwert: ${curStr} kWh</span>
+        </div>`;
+    }
+    return '';
+}
+
+function isCounterResetSpikeJump(dKwh, stValKwh, prevStValKwh, liveValKwh, period = 'day') {
+    if (typeof dKwh !== 'number' || isNaN(dKwh) || dKwh < 14) return false;
+    const hardCap = period === 'hour' ? 28 : 95;
+    if (dKwh > hardCap) return true;
+    // Detect 0 -> lifetime total jump (e.g. +163 kWh in one bucket when state is ~163 kWh)
+    if (stValKwh !== null && !isNaN(stValKwh) && stValKwh >= 18 && dKwh >= stValKwh * 0.62) {
+        return true;
+    }
+    if (liveValKwh !== null && !isNaN(liveValKwh) && liveValKwh >= 18 && dKwh >= liveValKwh * 0.62) {
+        return true;
+    }
+    if (prevStValKwh !== null && !isNaN(prevStValKwh) && prevStValKwh <= 1.0 && dKwh >= 15) {
+        return true;
+    }
+    return false;
 }
 
 function getEffectiveTrackingStartDate(cfg = haConfigState) {
@@ -665,20 +758,48 @@ function isEntityCumulativeTotal(entityId, statesMap = null, forceCumulative = f
 }
 
 function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options = {}) {
-    if (currentValKwh === null || currentValKwh === undefined || isNaN(currentValKwh)) return null;
     const cleanId = String(entityId || '').trim();
     if (!cleanId) return currentValKwh;
 
+    if (currentValKwh === null || currentValKwh === undefined || isNaN(currentValKwh)) {
+        const availState = lastKnownHaAvailabilityMap.get(cleanId);
+        if (availState && availState !== 'ok') {
+            setSensorDiagnostic(cleanId, {
+                status: availState === 'wrong_unit' ? 'wrong_unit' : 'unavailable',
+                reason: availState === 'wrong_unit'
+                    ? `Falsche Einheit (${lastKnownHaUnitMap.get(cleanId) || 'W'} statt kWh) → aus W berechnet`
+                    : `Sensor liefert '${availState}' in HA → aus Live-W berechnet`
+            });
+        }
+        return null;
+    }
+
     const { isCumulative = false, maxPlausibleKwh = null, upperBoundMap = null, ltsOverrideMap = null } = options;
 
-    // If Home Assistant Long-Term Statistics provided an exact monthly change for this entity, use it to anchor/verify the baseline!
+    // If Home Assistant Long-Term Statistics provided an exact monthly change for this entity, verify it against reset spikes first!
     const ltsChangeVal = ltsOverrideMap?.[cleanId];
     if (ltsChangeVal !== undefined && ltsChangeVal !== null && !isNaN(ltsChangeVal) && ltsChangeVal >= 0 && currentValKwh >= ltsChangeVal) {
-        const ltsDerivedBase = +Math.max(0, currentValKwh - ltsChangeVal).toFixed(3);
-        if (baselineMap && ltsDerivedBase > 0) {
-            baselineMap[cleanId] = ltsDerivedBase;
+        if (isCumulative && isCounterResetSpikeJump(ltsChangeVal, currentValKwh, currentValKwh - ltsChangeVal, currentValKwh, 'day')) {
+            delete ltsOverrideMap[cleanId];
+            if (baselineMap) baselineMap[cleanId] = +currentValKwh.toFixed(3);
+            saveEnergyCounterBaselines();
+            setSensorDiagnostic(cleanId, {
+                status: 'spike_filtered',
+                spikeKwh: +ltsChangeVal.toFixed(1),
+                currentKwh: +currentValKwh.toFixed(2),
+                reason: `Unplausibler Zähler-Reset-Sprung (+${ltsChangeVal.toFixed(1).replace('.', ',')} kWh auf Gesamtertrag ${currentValKwh.toFixed(1).replace('.', ',')} kWh) gefiltert`
+            });
+        } else {
+            const ltsDerivedBase = +Math.max(0, currentValKwh - ltsChangeVal).toFixed(3);
+            if (baselineMap && ltsDerivedBase > 0) {
+                baselineMap[cleanId] = ltsDerivedBase;
+            }
+            setSensorDiagnostic(cleanId, {
+                status: 'ok',
+                currentKwh: +currentValKwh.toFixed(2)
+            });
+            return +ltsChangeVal.toFixed(3);
         }
-        return +ltsChangeVal.toFixed(3);
     }
 
     let baseVal = baselineMap?.[cleanId];
@@ -701,13 +822,22 @@ function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options
         saveEnergyCounterBaselines();
     }
 
-    // Never allow baseVal === 0 on a cumulative lifetime counter (>25 kWh) to return the raw lifetime total!
-    if (baseVal === undefined || baseVal === null || isNaN(baseVal) || (isCumulative && baseVal <= 0.05 && currentValKwh > 25)) {
+    // Never allow baseVal === 0 on a cumulative lifetime counter (>18 kWh) to return the raw lifetime total!
+    if (baseVal === undefined || baseVal === null || isNaN(baseVal) || (isCumulative && baseVal <= 0.05 && currentValKwh > 18)) {
         if (isCumulative || (maxPlausibleKwh !== null && currentValKwh > maxPlausibleKwh) || currentValKwh > 40) {
+            if (isCumulative && baseVal !== undefined && baseVal !== null && baseVal <= 0.05 && currentValKwh > 18) {
+                setSensorDiagnostic(cleanId, {
+                    status: 'spike_filtered',
+                    spikeKwh: +currentValKwh.toFixed(1),
+                    currentKwh: +currentValKwh.toFixed(2),
+                    reason: `0 → ${currentValKwh.toFixed(1).replace('.', ',')} kWh Gesamtzähler-Sprung gefiltert`
+                });
+            }
             baselineMap[cleanId] = +currentValKwh.toFixed(3);
             saveEnergyCounterBaselines();
-            return null;
+            return 0;
         }
+        setSensorDiagnostic(cleanId, { status: 'ok', currentKwh: +currentValKwh.toFixed(2) });
         return +Math.max(0, currentValKwh).toFixed(3);
     }
 
@@ -715,17 +845,25 @@ function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options
     if (isCumulative || baseVal > 0.05) {
         if (currentValKwh >= baseVal) {
             const delta = +Math.max(0, currentValKwh - baseVal).toFixed(3);
-            if (maxPlausibleKwh !== null && delta > maxPlausibleKwh) {
+            if ((maxPlausibleKwh !== null && delta > maxPlausibleKwh) || (isCumulative && isCounterResetSpikeJump(delta, currentValKwh, baseVal, currentValKwh, 'day'))) {
+                setSensorDiagnostic(cleanId, {
+                    status: 'spike_filtered',
+                    spikeKwh: +delta.toFixed(1),
+                    currentKwh: +currentValKwh.toFixed(2),
+                    reason: `Unplausibler Zähler-Sprung (+${delta.toFixed(1).replace('.', ',')} kWh) gefiltert`
+                });
                 baselineMap[cleanId] = +currentValKwh.toFixed(3);
                 saveEnergyCounterBaselines();
-                return null;
+                return 0;
             }
+            setSensorDiagnostic(cleanId, { status: 'ok', currentKwh: +currentValKwh.toFixed(2) });
             return delta;
         } else {
             // Current value is smaller than baseline (e.g. counter reset at midnight or unit change)
             if (!isCumulative && currentValKwh < 15) {
                 baselineMap[cleanId] = 0;
                 saveEnergyCounterBaselines();
+                setSensorDiagnostic(cleanId, { status: 'ok', currentKwh: +currentValKwh.toFixed(2) });
                 return +Math.max(0, currentValKwh).toFixed(3);
             }
             baselineMap[cleanId] = +currentValKwh.toFixed(3);
@@ -736,10 +874,17 @@ function resolveEnergyCounterDelta(entityId, currentValKwh, baselineMap, options
 
     // For a daily-resetting sensor (baseVal ~ 0):
     if (maxPlausibleKwh !== null && currentValKwh > maxPlausibleKwh) {
+        setSensorDiagnostic(cleanId, {
+            status: 'spike_filtered',
+            spikeKwh: +currentValKwh.toFixed(1),
+            currentKwh: +currentValKwh.toFixed(2),
+            reason: `Tageslimit überschritten (+${currentValKwh.toFixed(1).replace('.', ',')} kWh) gefiltert`
+        });
         baselineMap[cleanId] = +currentValKwh.toFixed(3);
         saveEnergyCounterBaselines();
-        return null;
+        return 0;
     }
+    setSensorDiagnostic(cleanId, { status: 'ok', currentKwh: +currentValKwh.toFixed(2) });
     return +Math.max(0, currentValKwh).toFixed(3);
 }
 
@@ -838,7 +983,34 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
         if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return null;
         const entId = entityHistoryArr[0]?.entity_id;
         const scale = getEnergyScaleForEntity(entId, statesMap);
+        const isCum = isEntityCumulativeTotal(entId, statesMap, false);
         const windowEndMs = periodStartMs + 90 * 60 * 1000;
+
+        // First pass: find the final valid reading in the history array to detect 0 -> lifetime reset jumps
+        let lastValidVal = null;
+        let prevPtVal = null;
+        for (let i = 0; i < entityHistoryArr.length; i++) {
+            const rawNum = parseFloat(String(entityHistoryArr[i].state).replace(',', '.'));
+            if (!isNaN(rawNum) && rawNum >= 0) {
+                const v = rawNum * scale;
+                if (isCum && prevPtVal !== null && prevPtVal <= 1.0 && (v - prevPtVal) >= 15) {
+                    setSensorDiagnostic(entId, {
+                        status: 'spike_filtered',
+                        spikeKwh: +(v - prevPtVal).toFixed(1),
+                        currentKwh: +v.toFixed(2),
+                        reason: `Zähler-Reset-Sprung (+${(v - prevPtVal).toFixed(1).replace('.', ',')} kWh) in HA-Historie gefiltert`
+                    });
+                }
+                prevPtVal = v;
+                lastValidVal = v;
+            }
+        }
+
+        // For cumulative total counters with a lifetime value >= 18 kWh, ignore transient pre-reset readings (< 35% of final value)
+        const minPlausibleCumulativeFloor = (isCum && lastValidVal !== null && lastValidVal >= 18)
+            ? (lastValidVal * 0.35)
+            : 0;
+
         let minEarlyVal = null;
         let minPositiveVal = null;
         let firstValidVal = null;
@@ -849,6 +1021,8 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
             const rawNum = parseFloat(String(pt.state).replace(',', '.'));
             if (isNaN(rawNum) || rawNum < 0) continue;
             const val = rawNum * scale;
+            if (minPlausibleCumulativeFloor > 0 && val < minPlausibleCumulativeFloor) continue;
+
             const ts = new Date(pt.last_changed || pt.last_updated || periodStartMs).getTime();
             if (!isNaN(ts) && ts < earliestTs) earliestTs = ts;
             if (firstValidVal === null) firstValidVal = val;
@@ -1133,31 +1307,49 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
 
     const statsByEntity = wsRes.data;
 
-    // Aggregate daily buckets per month (only including buckets >= trackingStartDate!)
+    // Aggregate daily buckets per month (only including buckets >= trackingStartDate and filtering out 0->lifetime reset spikes!)
     const monthlyAggByEntity = {};
     allStatIds.forEach(entId => {
         const buckets = statsByEntity[entId];
         if (!Array.isArray(buckets) || buckets.length === 0) return;
         const scale = getEnergyScaleForEntity(entId, statesMap);
+        const liveValKwh = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
         const byMonth = {};
+        let prevBucketState = null;
 
         buckets.forEach(b => {
             const bStartMs = parseHaStatTimestampMs(b.start);
-            if (isNaN(bStartMs) || bStartMs < (trackMs - 12 * 3600 * 1000)) return;
+            const rawStVal = typeof b.state === 'number' ? (b.state * scale) : (typeof b.sum === 'number' ? (b.sum * scale) : null);
+            if (isNaN(bStartMs) || bStartMs < (trackMs - 12 * 3600 * 1000)) {
+                if (rawStVal !== null && !isNaN(rawStVal) && rawStVal > 0) prevBucketState = rawStVal;
+                return;
+            }
             const bDate = new Date(bStartMs);
             if (bDate.getFullYear() !== targetYear) return;
             const mIdx = bDate.getMonth();
             if (!byMonth[mIdx]) {
-                byMonth[mIdx] = { changeSum: 0, hasChange: false, firstState: null, lastState: null };
+                byMonth[mIdx] = { changeSum: 0, hasChange: false, firstState: null, lastState: null, filteredSpikeKwh: 0 };
             }
             if (typeof b.change === 'number' && !isNaN(b.change)) {
-                byMonth[mIdx].changeSum += (b.change * scale);
-                byMonth[mIdx].hasChange = true;
+                const dKwh = Math.max(0, b.change * scale);
+                if (isCounterResetSpikeJump(dKwh, rawStVal, prevBucketState, liveValKwh, 'day')) {
+                    byMonth[mIdx].filteredSpikeKwh += dKwh;
+                    byMonth[mIdx].hasChange = true;
+                    setSensorDiagnostic(entId, {
+                        status: 'spike_filtered',
+                        spikeKwh: +dKwh.toFixed(1),
+                        currentKwh: +(liveValKwh ?? rawStVal ?? dKwh).toFixed(2),
+                        reason: `Zähler-Reset-Sprung (+${dKwh.toFixed(1).replace('.', ',')} kWh auf Gesamtertrag) in HA-Statistik gefiltert`
+                    });
+                } else {
+                    byMonth[mIdx].changeSum += dKwh;
+                    byMonth[mIdx].hasChange = true;
+                }
             }
-            const stVal = typeof b.state === 'number' ? (b.state * scale) : (typeof b.sum === 'number' ? (b.sum * scale) : null);
-            if (stVal !== null && !isNaN(stVal)) {
-                if (byMonth[mIdx].firstState === null) byMonth[mIdx].firstState = stVal;
-                byMonth[mIdx].lastState = stVal;
+            if (rawStVal !== null && !isNaN(rawStVal)) {
+                if (rawStVal > 1.0 && byMonth[mIdx].firstState === null) byMonth[mIdx].firstState = rawStVal;
+                byMonth[mIdx].lastState = rawStVal;
+                prevBucketState = rawStVal;
             }
         });
         monthlyAggByEntity[entId] = byMonth;
@@ -1175,10 +1367,14 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
             energyCounterBaselines.ltsMonthChangeByEntity[entId] = monthChangeKwh;
 
             // If we also have the live counter reading in statesMap, derive the exact monthStartByEntity baseline
-            const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : null;
+            const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
             if (curLiveReading !== null && curLiveReading >= monthChangeKwh) {
-                energyCounterBaselines.monthStartByEntity[entId] = +Math.max(0, curLiveReading - monthChangeKwh).toFixed(3);
-            } else if (mInfo.lastState !== null && mInfo.lastState >= monthChangeKwh && mInfo.firstState !== null && mInfo.firstState > 0) {
+                const candidateBase = +Math.max(0, curLiveReading - monthChangeKwh).toFixed(3);
+                // Never anchor a cumulative counter's month baseline to 0 if curLiveReading is a lifetime total (>=18 kWh)
+                if (!(curLiveReading >= 18 && candidateBase <= 1.0)) {
+                    energyCounterBaselines.monthStartByEntity[entId] = candidateBase;
+                }
+            } else if (mInfo.lastState !== null && mInfo.lastState >= monthChangeKwh && mInfo.firstState !== null && mInfo.firstState > 1.0) {
                 energyCounterBaselines.monthStartByEntity[entId] = +Math.max(0, mInfo.lastState - monthChangeKwh).toFixed(3);
             }
         });
@@ -1330,21 +1526,44 @@ function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
     const cleanId = entityId.trim();
     if (!cleanId) return null;
     const st = statesMap.get(cleanId);
-    if (!st || st.state === 'unavailable' || st.state === 'unknown' || st.state === null || st.state === undefined) return null;
+    if (!st) {
+        lastKnownHaAvailabilityMap.set(cleanId, 'nicht gefunden');
+        return null;
+    }
+    if (st.state === 'unavailable' || st.state === 'unknown' || st.state === null || st.state === undefined) {
+        lastKnownHaAvailabilityMap.set(cleanId, String(st.state || 'unavailable'));
+        return null;
+    }
     const val = parseFloat(String(st.state).replace(',', '.'));
-    if (isNaN(val)) return null;
+    if (isNaN(val)) {
+        lastKnownHaAvailabilityMap.set(cleanId, 'ungültig');
+        return null;
+    }
     const unit = String(st.attributes?.unit_of_measurement || '').trim().toLowerCase();
     if (unit) lastKnownHaUnitMap.set(cleanId, unit);
     if (st.attributes?.state_class) lastKnownHaStateClassMap.set(cleanId, st.attributes.state_class);
 
-    if (targetUnitType === 'W') {
-        if (unit === 'kw') return val * 1000;
-        if (unit === 'mw') return val * 1000000;
-    } else if (targetUnitType === 'kWh') {
-        if (unit === 'wh') return val / 1000;
-        if (unit === 'mwh') return val * 1000;
+    // Guard against configuring a Watt power sensor inside a kWh energy counter field
+    if (targetUnitType === 'kWh' && (unit === 'w' || unit === 'kw' || unit === 'mw')) {
+        lastKnownHaAvailabilityMap.set(cleanId, 'wrong_unit');
+        setSensorDiagnostic(cleanId, {
+            status: 'wrong_unit',
+            reason: `Sensor hat Einheit '${st.attributes?.unit_of_measurement || unit}' statt kWh → wird ignoriert (aus W berechnet)`
+        });
+        return null;
     }
-    return val;
+
+    lastKnownHaAvailabilityMap.set(cleanId, 'ok');
+    let scaled = val;
+    if (targetUnitType === 'W') {
+        if (unit === 'kw') scaled = val * 1000;
+        else if (unit === 'mw') scaled = val * 1000000;
+    } else if (targetUnitType === 'kWh') {
+        if (unit === 'wh') scaled = val / 1000;
+        else if (unit === 'mwh') scaled = val * 1000;
+        lastKnownHaReadingMap.set(cleanId, scaled);
+    }
+    return scaled;
 }
 
 function pickExistingHaEntityId(statesMap, candidates = []) {
@@ -1850,6 +2069,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                 let hasKwhChange = false;
                 let firstStateKwh = null;
                 let lastStateKwh = null;
+                let prevStValKwh = null;
+                const liveValKwh = lastKnownHaReadingMap.get(entId) ?? null;
 
                 buckets.forEach(b => {
                     const bStartMs = parseHaStatTimestampMs(b.start);
@@ -1872,21 +2093,35 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         }
                     }
 
-                    // 2) Energy counter statistics (change / state / sum)
+                    // 2) Energy counter statistics (change / state / sum) with Reset-Spike Guard
                     if (energyEntitySet.has(entId)) {
+                        const stVal = typeof b.sum === 'number' ? (b.sum * eScale) : (typeof b.state === 'number' ? (b.state * eScale) : null);
                         if (effEndMs >= startTime.getTime()) {
                             if (typeof b.change === 'number' && !isNaN(b.change)) {
                                 const dKwh = Math.max(0, b.change * eScale);
-                                kwhChangeSum += dKwh;
-                                hasKwhChange = true;
-                                const derivedW = (dKwh * 1000) / dtHours;
-                                derivedPowerPts.push({ startMs: bStartMs, endMs: effEndMs, midMs, val: derivedW, maxVal: derivedW });
+                                if (isCounterResetSpikeJump(dKwh, stVal, prevStValKwh, liveValKwh, 'hour')) {
+                                    hasKwhChange = true;
+                                    setSensorDiagnostic(entId, {
+                                        status: 'spike_filtered',
+                                        spikeKwh: +dKwh.toFixed(1),
+                                        currentKwh: +(liveValKwh ?? stVal ?? dKwh).toFixed(2),
+                                        reason: `Zähler-Reset-Sprung (+${dKwh.toFixed(1).replace('.', ',')} kWh) im Diagramm/Monat gefiltert`
+                                    });
+                                    derivedPowerPts.push({ startMs: bStartMs, endMs: effEndMs, midMs, val: 0, maxVal: 0 });
+                                } else {
+                                    kwhChangeSum += dKwh;
+                                    hasKwhChange = true;
+                                    const derivedW = (dKwh * 1000) / dtHours;
+                                    derivedPowerPts.push({ startMs: bStartMs, endMs: effEndMs, midMs, val: derivedW, maxVal: derivedW });
+                                }
                             }
-                            const stVal = typeof b.sum === 'number' ? (b.sum * eScale) : (typeof b.state === 'number' ? (b.state * eScale) : null);
                             if (stVal !== null && !isNaN(stVal)) {
-                                if (firstStateKwh === null) firstStateKwh = stVal;
+                                if (stVal > 1.0 && firstStateKwh === null) firstStateKwh = stVal;
                                 lastStateKwh = stVal;
                             }
+                        }
+                        if (stVal !== null && !isNaN(stVal) && stVal > 0) {
+                            prevStValKwh = stVal;
                         }
                     }
                 });
@@ -1900,7 +2135,10 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                 if (hasKwhChange) {
                     ltsKwhByEntity.set(entId, +Math.max(0, kwhChangeSum).toFixed(3));
                 } else if (firstStateKwh !== null && lastStateKwh !== null && lastStateKwh >= firstStateKwh) {
-                    ltsKwhByEntity.set(entId, +Math.max(0, lastStateKwh - firstStateKwh).toFixed(3));
+                    const diffKwh = Math.max(0, lastStateKwh - firstStateKwh);
+                    if (!isCounterResetSpikeJump(diffKwh, lastStateKwh, firstStateKwh, liveValKwh, 'day')) {
+                        ltsKwhByEntity.set(entId, +diffKwh.toFixed(3));
+                    }
                 }
 
                 if (derivedPowerPts.length > 0) {
@@ -3359,6 +3597,54 @@ function resetIntradayCurveFocus() {
     renderIntradayCurveSection();
 }
 
+function getChannelEnergyDiagnosticBadge(energyEntities, explicitKwhUsed, calcWattKwh) {
+    const ids = (Array.isArray(energyEntities) ? energyEntities : [energyEntities])
+        .map(x => String(x || '').trim())
+        .filter(Boolean);
+    if (ids.length === 0) {
+        return {
+            tone: 'watt',
+            text: '∫ aus Live-W berechnet'
+        };
+    }
+
+    // 1. Check if any configured kWh entity had a reset spike filtered
+    for (const id of ids) {
+        const d = getSensorDiagnostic(id);
+        if (d && d.status === 'spike_filtered') {
+            const sp = Number(d.spikeKwh || 0).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+            return {
+                tone: 'warning',
+                text: `⚠ Sprung (+${sp} kWh) gefiltert`
+            };
+        }
+    }
+
+    // 2. Check if any configured kWh entity is unavailable or has wrong unit
+    for (const id of ids) {
+        const d = getSensorDiagnostic(id);
+        if (d && (d.status === 'unavailable' || d.status === 'wrong_unit')) {
+            return {
+                tone: 'warning',
+                text: d.status === 'wrong_unit' ? '⚠ Einheit ≠ kWh → aus W' : '⚠ kWh inaktiv → aus W'
+            };
+        }
+    }
+
+    // 3. Check if configured kWh sensor delivered 0 while Watt integral is positive (>0.08 kWh)
+    if ((!explicitKwhUsed || explicitKwhUsed <= 0.001) && calcWattKwh > 0.08) {
+        return {
+            tone: 'warning',
+            text: '⚠ kWh=0 → aus W berechnet'
+        };
+    }
+
+    return {
+        tone: 'ok',
+        text: '✓ kWh-Zähler aktiv'
+    };
+}
+
 function getAvailableCurveDefinitions() {
     const t = currentLiveTelemetry;
     const intKwh = intradaySeriesState.integratedKwh || {};
@@ -3370,6 +3656,7 @@ function getAvailableCurveDefinitions() {
         ? haConfigState.customStrings
         : DEFAULT_CUSTOM_STRINGS;
     const customConsumers = Array.isArray(haConfigState.customConsumers) ? haConfigState.customConsumers : [];
+    const e = haConfigState.entities || {};
 
     const isDay = currentCurveTimeframe === 'day';
     const isMonth = currentCurveTimeframe === 'month';
@@ -3385,12 +3672,14 @@ function getAvailableCurveDefinitions() {
     customStrings.forEach((cs, idx) => {
         const teleItem = (t.customStringsTelemetry || []).find(x => x.id === cs.id);
         const liveW = teleItem ? teleItem.powerW : (t.stringTelemetry?.[cs.id]?.powerW || 0);
-        const explicitTodayKwh = teleItem?.energyKwh ?? t.stringTelemetry?.[cs.id]?.energyKwh ?? dayIntCache[cs.id] ?? 0;
+        const rawExplicitKwh = teleItem?.energyKwh ?? t.stringTelemetry?.[cs.id]?.energyKwh ?? null;
+        const explicitTodayKwh = rawExplicitKwh ?? dayIntCache[cs.id] ?? 0;
         const calcKwh = intKwh[cs.id] ?? 0;
         const kwhVal = isDay
             ? (explicitTodayKwh > 0 ? explicitTodayKwh : calcKwh)
             : Math.max(calcKwh, explicitTodayKwh || 0);
         const peakW = Math.max(liveW, peaks[cs.id] || 0, isDay ? 0 : (dayPeakCache[cs.id] || 0));
+        const diag = getChannelEnergyDiagnosticBadge(cs.energyEntity, rawExplicitKwh, calcKwh);
 
         defs.push({
             key: cs.id,
@@ -3402,11 +3691,14 @@ function getAvailableCurveDefinitions() {
             liveDisplay: formatPowerDe(liveW, true),
             subLine1: `${formatKwhDe(kwhVal, 2)} ${periodSuffix}`,
             subLine2: `${formatPowerDe(peakW, true)} Max`,
-            subDisplay: `${formatKwhDe(kwhVal, 2)} · Max ${formatPowerDe(peakW, true)}`
+            subDisplay: `${formatKwhDe(kwhVal, 2)} · Max ${formatPowerDe(peakW, true)}`,
+            diagTone: diag.tone,
+            diagText: diag.text
         });
     });
 
     // 2. PV gesamt · DC
+    const pvCounterIds = getConfiguredPvEnergyEntities(haConfigState);
     const todayPvKwh = ledger?.today?.pvTotal ?? t.pvEnergyTodayKwh ?? dayIntCache.pv_total ?? 0;
     const monthPvKwh = ledger?.month?.pvTotal ?? t.pvEnergyMonthKwh ?? 0;
     const pvTotalKwh = isDay
@@ -3415,6 +3707,7 @@ function getAvailableCurveDefinitions() {
             ? ((intKwh.pv_total && intKwh.pv_total > 0) ? Math.max(intKwh.pv_total, todayPvKwh) : Math.max(monthPvKwh, todayPvKwh))
             : Math.max(intKwh.pv_total ?? 0, todayPvKwh));
     const pvPeakW = Math.max(t.pvPowerW || 0, peaks.pv_total || 0, isDay ? 0 : (dayPeakCache.pv_total || 0));
+    const pvDiag = getChannelEnergyDiagnosticBadge(pvCounterIds, t.pvEnergyTodayKwh, intKwh.pv_total ?? 0);
     defs.push({
         key: 'pv_total',
         name: 'PV gesamt · DC',
@@ -3425,7 +3718,9 @@ function getAvailableCurveDefinitions() {
         liveDisplay: formatPowerDe(t.pvPowerW, t.pvPowerW < 1000),
         subLine1: `${formatKwhDe(pvTotalKwh, 2)} ${periodSuffix}`,
         subLine2: `${formatPowerDe(pvPeakW, true)} Max`,
-        subDisplay: `${formatKwhDe(pvTotalKwh, 2)} · Max ${formatPowerDe(pvPeakW, true)}`
+        subDisplay: `${formatKwhDe(pvTotalKwh, 2)} · Max ${formatPowerDe(pvPeakW, true)}`,
+        diagTone: pvDiag.tone,
+        diagText: pvDiag.text
     });
 
     // 3. Hausverbrauch · AC
@@ -3437,6 +3732,7 @@ function getAvailableCurveDefinitions() {
             ? ((intKwh.house_load && intKwh.house_load > 0) ? Math.max(intKwh.house_load, todayLoadKwh) : Math.max(monthLoadKwh, todayLoadKwh))
             : Math.max(intKwh.house_load ?? 0, todayLoadKwh));
     const loadPeakW = Math.max(t.loadPowerW || 0, peaks.house_load || 0, isDay ? 0 : (dayPeakCache.house_load || 0));
+    const loadDiag = getChannelEnergyDiagnosticBadge(e.loadEnergyMonth, t.loadEnergyTodayKwh, intKwh.house_load ?? 0);
     defs.push({
         key: 'house_load',
         name: 'Hauslast · AC',
@@ -3447,7 +3743,9 @@ function getAvailableCurveDefinitions() {
         liveDisplay: formatPowerDe(t.loadPowerW),
         subLine1: `${formatKwhDe(loadKwh, 2)} ${periodSuffix}`,
         subLine2: `${formatPowerDe(loadPeakW, true)} Max`,
-        subDisplay: `${formatKwhDe(loadKwh, 2)} · Max ${formatPowerDe(loadPeakW, true)}`
+        subDisplay: `${formatKwhDe(loadKwh, 2)} · Max ${formatPowerDe(loadPeakW, true)}`,
+        diagTone: loadDiag.tone,
+        diagText: loadDiag.text
     });
 
     // 4. Netzbezug
@@ -3460,6 +3758,7 @@ function getAvailableCurveDefinitions() {
             ? ((intKwh.grid_power && intKwh.grid_power > 0) ? Math.max(intKwh.grid_power, todayGridImpKwh) : Math.max(monthGridImpKwh, todayGridImpKwh))
             : Math.max(intKwh.grid_power ?? 0, todayGridImpKwh));
     const gridImpPeakW = Math.max(gridImportLive, peaks.grid_power || 0, isDay ? 0 : (dayPeakCache.grid_power || 0));
+    const gridImpDiag = getChannelEnergyDiagnosticBadge(e.gridImportMonth, t.gridImportTodayKwh, intKwh.grid_power ?? 0);
     defs.push({
         key: 'grid_power',
         name: 'Netzbezug',
@@ -3470,7 +3769,9 @@ function getAvailableCurveDefinitions() {
         liveDisplay: formatPowerDe(gridImportLive),
         subLine1: `${formatKwhDe(gridImportKwh, 2)} ${periodSuffix}`,
         subLine2: `${formatPowerDe(gridImpPeakW, true)} Max`,
-        subDisplay: `${formatKwhDe(gridImportKwh, 2)} · Max ${formatPowerDe(gridImpPeakW, true)}`
+        subDisplay: `${formatKwhDe(gridImportKwh, 2)} · Max ${formatPowerDe(gridImpPeakW, true)}`,
+        diagTone: gridImpDiag.tone,
+        diagText: gridImpDiag.text
     });
 
     // 5. Netzeinspeisung
@@ -3483,6 +3784,7 @@ function getAvailableCurveDefinitions() {
             ? ((intKwh.grid_feedin && intKwh.grid_feedin > 0) ? Math.max(intKwh.grid_feedin, todayGridExpKwh) : Math.max(monthGridExpKwh, todayGridExpKwh))
             : Math.max(intKwh.grid_feedin ?? 0, todayGridExpKwh));
     const gridExpPeakW = Math.max(gridExportLive, peaks.grid_feedin || 0, isDay ? 0 : (dayPeakCache.grid_feedin || 0));
+    const gridExpDiag = getChannelEnergyDiagnosticBadge(e.gridExportMonth, t.gridExportTodayKwh, intKwh.grid_feedin ?? 0);
     defs.push({
         key: 'grid_feedin',
         name: 'Netzeinspeisung',
@@ -3493,7 +3795,9 @@ function getAvailableCurveDefinitions() {
         liveDisplay: formatPowerDe(gridExportLive),
         subLine1: `${formatKwhDe(gridExportKwh, 2)} ${periodSuffix}`,
         subLine2: `${formatPowerDe(gridExpPeakW, true)} Max`,
-        subDisplay: `${formatKwhDe(gridExportKwh, 2)} · Max ${formatPowerDe(gridExpPeakW, true)}`
+        subDisplay: `${formatKwhDe(gridExportKwh, 2)} · Max ${formatPowerDe(gridExpPeakW, true)}`,
+        diagTone: gridExpDiag.tone,
+        diagText: gridExpDiag.text
     });
 
     // 6. Batterie · Leistung (W)
@@ -3514,6 +3818,11 @@ function getAvailableCurveDefinitions() {
             ? ((intKwh.battery_discharge && intKwh.battery_discharge > 0) ? Math.max(intKwh.battery_discharge, todayBatDis) : Math.max(monthBatDis, todayBatDis))
             : Math.max(intKwh.battery_discharge ?? 0, todayBatDis));
     const batLiveSign = batLiveW > 15 ? '+' : (batLiveW < -15 ? '−' : '');
+    const batDiag = getChannelEnergyDiagnosticBadge(
+        [e.batteryChargeMonth, e.batteryDischargeMonth],
+        (t.batteryChargeTodayKwh ?? 0) + (t.batteryDischargeTodayKwh ?? 0),
+        (intKwh.battery_charge ?? 0) + (intKwh.battery_discharge ?? 0)
+    );
     defs.push({
         key: 'battery_power',
         name: `${batName} · Leistung`,
@@ -3524,7 +3833,9 @@ function getAvailableCurveDefinitions() {
         liveDisplay: `${batLiveSign}${formatPowerDe(Math.abs(batLiveW), true)}`,
         subLine1: `↑ ${formatKwhDe(batChgKwh, 2)} Ladung`,
         subLine2: `↓ ${formatKwhDe(batDisKwh, 2)} Entl.`,
-        subDisplay: `↑${formatKwhDe(batChgKwh, 1)} · ↓${formatKwhDe(batDisKwh, 1)}`
+        subDisplay: `↑${formatKwhDe(batChgKwh, 1)} · ↓${formatKwhDe(batDisKwh, 1)}`,
+        diagTone: batDiag.tone,
+        diagText: batDiag.text
     });
 
     // 7. Batterie · Ladezustand (%)
@@ -3552,12 +3863,14 @@ function getAvailableCurveDefinitions() {
         const cKey = `consumer_${cc.id}`;
         const teleCons = (t.consumersTelemetry || []).find(x => x.id === cc.id);
         const liveW = teleCons ? (teleCons.powerW || 0) : 0;
-        const todayConsKwh = teleCons?.energyTodayKwh ?? dayIntCache[cKey] ?? 0;
+        const rawConsExplicit = teleCons?.energyKwh ?? null;
+        const todayConsKwh = teleCons?.energyTodayKwh ?? rawConsExplicit ?? dayIntCache[cKey] ?? 0;
         const calcKwh = intKwh[cKey] ?? 0;
         const cKwh = isDay
             ? (todayConsKwh > 0 ? todayConsKwh : calcKwh)
             : Math.max(calcKwh, todayConsKwh || 0);
         const cPeakW = Math.max(liveW, peaks[cKey] || 0, isDay ? 0 : (dayPeakCache[cKey] || 0));
+        const consDiag = getChannelEnergyDiagnosticBadge(cc.energyEntity, rawConsExplicit, calcKwh);
 
         defs.push({
             key: cKey,
@@ -3569,7 +3882,9 @@ function getAvailableCurveDefinitions() {
             liveDisplay: formatPowerDe(liveW, true),
             subLine1: `${formatKwhDe(cKwh, 2)} ${periodSuffix}`,
             subLine2: `${formatPowerDe(cPeakW, true)} Max`,
-            subDisplay: `${formatKwhDe(cKwh, 2)} · Max ${formatPowerDe(cPeakW, true)}`
+            subDisplay: `${formatKwhDe(cKwh, 2)} · Max ${formatPowerDe(cPeakW, true)}`,
+            diagTone: consDiag.tone,
+            diagText: consDiag.text
         });
     });
 
@@ -3723,6 +4038,13 @@ function renderIntradayCurveSection(baseline) {
                 <div class="mt-1 space-y-0.5 font-mono tabular-nums">
                     <p class="text-[11px] font-bold ${isActive ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-tight">${d.subLine1 || d.subDisplay}</p>
                     <p class="text-[10px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-tight">${d.subLine2 || ''}</p>
+                    ${d.diagText ? `
+                    <p class="text-[9.5px] font-bold truncate pt-0.5 ${
+                        d.diagTone === 'warning'
+                            ? 'text-amber-600 dark:text-amber-400'
+                            : (d.diagTone === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500')
+                    }" title="${typeof escapeHtml === 'function' ? escapeHtml(d.diagText) : d.diagText}">${d.diagText}</p>
+                    ` : ''}
                 </div>
             </div>`;
         }).join('');
@@ -5188,10 +5510,34 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
         `;
     }
 
-    // 3. Render Summary Ribbon Below Sankey (4 cards in a clean 2x2 mobile / 4-col desktop grid)
+    // 3. Render Summary Ribbon Below Sankey (including transparent kWh Sensor Diagnostics banner if any sensor had a spike or fallback)
     const ribbon = document.getElementById('sankeySummaryRibbon');
     if (ribbon) {
+        const diagWarnings = Object.values(sensorDiagnosticsByEntity || {}).filter(
+            x => x && (x.status === 'spike_filtered' || x.status === 'unavailable' || x.status === 'wrong_unit')
+        );
+        const diagBannerHtml = diagWarnings.length > 0 ? `
+            <div class="col-span-full p-3 rounded-2xl bg-amber-500/10 border border-amber-500/35 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div class="flex items-start gap-2.5 min-w-0">
+                    <span class="material-symbols-rounded text-amber-600 dark:text-amber-400 text-lg shrink-0 mt-0.5">warning</span>
+                    <div class="min-w-0 flex-1 space-y-0.5">
+                        <p class="text-[11px] font-extrabold uppercase tracking-wider text-amber-700 dark:text-amber-300">kWh-Sensor-Diagnose (${diagWarnings.length} Hinweis${diagWarnings.length > 1 ? 'e' : ''})</p>
+                        ${diagWarnings.map(w => `
+                            <p class="text-[11px] font-mono leading-snug truncate" title="${typeof escapeHtml === 'function' ? escapeHtml(w.entityId + ': ' + (w.reason || '')) : ''}">
+                                <strong>${typeof escapeHtml === 'function' ? escapeHtml(w.entityId) : w.entityId}:</strong> ${typeof escapeHtml === 'function' ? escapeHtml(w.reason || '') : (w.reason || '')}
+                            </p>
+                        `).join('')}
+                    </div>
+                </div>
+                <button type="button" onclick="openHaConfigModal('counters')" class="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-[11px] font-bold text-amber-900 dark:text-amber-100 shrink-0 cursor-pointer flex items-center gap-1 self-start sm:self-center">
+                    <span class="material-symbols-rounded text-sm">tune</span>
+                    <span>Sensoren prüfen</span>
+                </button>
+            </div>
+        ` : '';
+
         ribbon.innerHTML = `
+            ${diagBannerHtml}
             ${flowDetailHtml}
             <div class="p-2.5 rounded-xl bg-white/80 dark:bg-[#13232b]/85 border border-slate-200/80 dark:border-teal-500/20">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Zeitraum</span>
@@ -5681,12 +6027,14 @@ function renderHaUnifiedSensorMatrix() {
     const ent = haConfigState.entities || {};
     const ledger = getUnifiedEnergyLedger();
     const fmt = (v, d = 2) => Number(v || 0).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const pvIds = getConfiguredPvEnergyEntities(haConfigState);
 
     const channels = [
         {
             name: 'PV-Erzeugung',
             wattEnt: ent.pvPower || (Array.isArray(haConfigState.customStrings) && haConfigState.customStrings.some(s => s.powerEntity) ? 'PV-Strings (DC)' : ''),
-            kwhEnt: ent.pvEnergyToday || ent.pvEnergyMonth || '',
+            kwhEnt: pvIds.join(', '),
+            kwhIds: pvIds,
             todayVal: ledger.today.pvTotal,
             monthVal: ledger.month.pvTotal
         },
@@ -5694,6 +6042,7 @@ function renderHaUnifiedSensorMatrix() {
             name: 'Hausverbrauch',
             wattEnt: ent.loadPower || '',
             kwhEnt: ent.loadEnergyMonth || '',
+            kwhIds: ent.loadEnergyMonth ? [ent.loadEnergyMonth] : [],
             todayVal: ledger.today.houseTotal,
             monthVal: ledger.month.houseTotal
         },
@@ -5701,6 +6050,7 @@ function renderHaUnifiedSensorMatrix() {
             name: 'Netzbezug (Import)',
             wattEnt: ent.gridImportPower || ent.gridPower || '',
             kwhEnt: ent.gridImportMonth || '',
+            kwhIds: ent.gridImportMonth ? [ent.gridImportMonth] : [],
             todayVal: ledger.today.gridImp,
             monthVal: ledger.month.gridImp
         },
@@ -5708,6 +6058,7 @@ function renderHaUnifiedSensorMatrix() {
             name: 'Netzeinspeisung',
             wattEnt: ent.gridExportPower || ent.gridPower || '',
             kwhEnt: ent.gridExportMonth || '',
+            kwhIds: ent.gridExportMonth ? [ent.gridExportMonth] : [],
             todayVal: ledger.today.gridExp,
             monthVal: ledger.month.gridExp
         },
@@ -5715,6 +6066,7 @@ function renderHaUnifiedSensorMatrix() {
             name: 'Batterie Ladung',
             wattEnt: ent.batteryChargePower || ent.batteryPower || '',
             kwhEnt: ent.batteryChargeMonth || '',
+            kwhIds: ent.batteryChargeMonth ? [ent.batteryChargeMonth] : [],
             todayVal: ledger.today.batChg,
             monthVal: ledger.month.batChg
         },
@@ -5722,6 +6074,7 @@ function renderHaUnifiedSensorMatrix() {
             name: 'Batterie Entladung',
             wattEnt: ent.batteryDischargePower || ent.batteryPower || '',
             kwhEnt: ent.batteryDischargeMonth || '',
+            kwhIds: ent.batteryDischargeMonth ? [ent.batteryDischargeMonth] : [],
             todayVal: ledger.today.batDis,
             monthVal: ledger.month.batDis
         }
@@ -5730,14 +6083,28 @@ function renderHaUnifiedSensorMatrix() {
     box.innerHTML = channels.map(ch => {
         const hasWatt = Boolean(ch.wattEnt);
         const hasKwh = Boolean(ch.kwhEnt);
-        const statusColor = (hasWatt && hasKwh)
-            ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5'
-            : ((hasWatt || hasKwh)
-                ? 'text-teal-600 dark:text-teal-400 border-teal-500/30 bg-teal-500/5'
-                : 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5');
-        const modeText = (hasWatt && hasKwh)
-            ? 'Watt + kWh aktiv'
-            : (hasKwh ? 'kWh-Zähler aktiv' : (hasWatt ? 'Watt-Integral aktiv' : 'Bilanz / Offen'));
+        const channelWarns = (ch.kwhIds || []).map(id => getSensorDiagnostic(id)).filter(d => d && d.status !== 'ok');
+        const hasWarn = channelWarns.length > 0;
+
+        const statusColor = hasWarn
+            ? 'text-amber-700 dark:text-amber-300 border-amber-500/45 bg-amber-500/10'
+            : ((hasWatt && hasKwh)
+                ? 'text-emerald-600 dark:text-emerald-400 border-emerald-500/30 bg-emerald-500/5'
+                : ((hasWatt || hasKwh)
+                    ? 'text-teal-600 dark:text-teal-400 border-teal-500/30 bg-teal-500/5'
+                    : 'text-amber-600 dark:text-amber-400 border-amber-500/30 bg-amber-500/5'));
+
+        const modeText = hasWarn
+            ? (channelWarns[0].status === 'spike_filtered' ? '⚠ Sprung gefiltert' : '⚠ Fallback auf W')
+            : ((hasWatt && hasKwh)
+                ? 'Watt + kWh aktiv'
+                : (hasKwh ? 'kWh-Zähler aktiv' : (hasWatt ? 'Watt-Integral aktiv' : 'Bilanz / Offen')));
+
+        const warnDetailHtml = hasWarn
+            ? `<div class="mt-1 pt-1 border-t border-amber-500/25 text-[9.5px] font-mono text-amber-800 dark:text-amber-200 leading-snug">
+                ${channelWarns.map(w => `<div>• <strong>${typeof escapeHtml === 'function' ? escapeHtml(w.entityId) : w.entityId}:</strong> ${typeof escapeHtml === 'function' ? escapeHtml(w.reason || '') : (w.reason || '')}</div>`).join('')}
+               </div>`
+            : '';
 
         return `
         <div class="p-2.5 rounded-xl border ${statusColor} flex flex-col justify-between gap-1">
@@ -5749,6 +6116,7 @@ function renderHaUnifiedSensorMatrix() {
                 <span>Heute: <strong>${fmt(ch.todayVal, 2)} kWh</strong></span>
                 <span>Monat: <strong>${fmt(ch.monthVal, 1)} kWh</strong></span>
             </div>
+            ${warnDetailHtml}
         </div>`;
     }).join('');
 }
@@ -5856,6 +6224,7 @@ function renderHaCustomStringsEditor() {
         const safePower = typeof escapeHtml === 'function' ? escapeHtml(cs.powerEntity || '') : (cs.powerEntity || '');
         const safeEnergy = typeof escapeHtml === 'function' ? escapeHtml(cs.energyEntity || '') : (cs.energyEntity || '');
         const safeColor = cs.color || '#14b8a6';
+        const diagHtml = renderEntityDiagnosticSubline(cs.energyEntity);
 
         return `
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
@@ -5890,6 +6259,7 @@ function renderHaCustomStringsEditor() {
                             <span class="material-symbols-rounded text-base">list_alt</span>
                         </button>
                     </div>
+                    ${diagHtml}
                 </div>
             </div>
         </div>`;
@@ -5959,6 +6329,7 @@ function renderHaCustomConsumersEditor() {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(cc.name || '') : (cc.name || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.powerEntity || '') : (cc.powerEntity || '');
         const safeNrgEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.energyEntity || '') : (cc.energyEntity || '');
+        const diagHtml = renderEntityDiagnosticSubline(cc.energyEntity);
         return `
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5">
             <div class="flex items-center gap-1.5">
@@ -5991,6 +6362,7 @@ function renderHaCustomConsumersEditor() {
                             <span class="material-symbols-rounded text-base">list_alt</span>
                         </button>
                     </div>
+                    ${diagHtml}
                 </div>
             </div>
         </div>`;
@@ -6031,22 +6403,26 @@ function renderHaPvEnergyExtraList() {
     container.innerHTML = list.map((entId, idx) => {
         const wrNum = idx + 3;
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(entId || '') : (entId || '');
+        const diagHtml = renderEntityDiagnosticSubline(entId);
         return `
-        <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-teal-500/30 flex flex-col sm:flex-row sm:items-center gap-1.5">
-            <label class="text-[10px] font-semibold text-teal-700 dark:text-teal-300 sm:w-52 shrink-0">Wechselrichter ${wrNum} · kWh Total</label>
-            <div class="flex items-center gap-1 flex-1 min-w-0">
-                <input type="text" id="ha_ent_pv_extra_${idx}" list="haEntitiesDatalist" value="${safeEnt}"
-                    oninput="updateHaPvEnergyExtraField(${idx}, this.value)"
-                    placeholder="sensor.wechselrichter_${wrNum}_energy_total"
-                    class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                <button type="button" onclick="openHaEntityPicker({ customType: 'pvEnergyExtra', index: ${idx}, unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter ${wrNum} (kWh)' })"
-                    class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor wählen" aria-label="Sensor wählen">
-                    <span class="material-symbols-rounded text-base">list_alt</span>
-                </button>
-                <button type="button" onclick="removeHaPvEnergyExtra(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors cursor-pointer shrink-0" title="Wechselrichter-Zähler entfernen" aria-label="Wechselrichter-Zähler entfernen">
-                    <span class="material-symbols-rounded text-base">delete</span>
-                </button>
+        <div class="p-2 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-teal-500/30 space-y-1">
+            <div class="flex flex-col sm:flex-row sm:items-center gap-1.5">
+                <label class="text-[10px] font-semibold text-teal-700 dark:text-teal-300 sm:w-52 shrink-0">Wechselrichter ${wrNum} · kWh Total</label>
+                <div class="flex items-center gap-1 flex-1 min-w-0">
+                    <input type="text" id="ha_ent_pv_extra_${idx}" list="haEntitiesDatalist" value="${safeEnt}"
+                        oninput="updateHaPvEnergyExtraField(${idx}, this.value)"
+                        placeholder="sensor.wechselrichter_${wrNum}_energy_total"
+                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="openHaEntityPicker({ customType: 'pvEnergyExtra', index: ${idx}, unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter ${wrNum} (kWh)' })"
+                        class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor wählen" aria-label="Sensor wählen">
+                        <span class="material-symbols-rounded text-base">list_alt</span>
+                    </button>
+                    <button type="button" onclick="removeHaPvEnergyExtra(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors cursor-pointer shrink-0" title="Wechselrichter-Zähler entfernen" aria-label="Wechselrichter-Zähler entfernen">
+                        <span class="material-symbols-rounded text-base">delete</span>
+                    </button>
+                </div>
             </div>
+            ${diagHtml}
         </div>`;
     }).join('');
 }

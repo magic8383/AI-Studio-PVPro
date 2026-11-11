@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '10.1';
+const APP_VERSION = '10.2';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -446,8 +446,12 @@ app.post('/api/plans/persist', (req, res) => {
       createdAt: now
     };
 
-    const existingIdx = plans.findIndex(p => p.id === planId);
+    const existingIdx = plans.findIndex(p =>
+      String(p.id) === String(planId) ||
+      (p.name && p.name.trim().toLowerCase() === name.trim().toLowerCase())
+    );
     if (existingIdx >= 0) {
+      planObj.id = plans[existingIdx].id || planId;
       planObj.createdAt = plans[existingIdx].createdAt || now;
       plans[existingIdx] = planObj;
     } else {
@@ -458,7 +462,7 @@ app.post('/api/plans/persist', (req, res) => {
 
     res.json({
       success: true,
-      message: `Planung "${name}" fest im System/Code gespeichert`,
+      message: `Gesamtpaket "${name}" fest im System/Code gespeichert`,
       plan: planObj,
       plans
     });
@@ -468,14 +472,19 @@ app.post('/api/plans/persist', (req, res) => {
   }
 });
 
-// DELETE /api/plans/persistent/:id: Remove a persistent system plan
+// DELETE /api/plans/persistent/:id: Remove a persistent system plan by id or name
 app.delete('/api/plans/persistent/:id', (req, res) => {
   try {
-    const { id } = req.params;
+    const id = decodeURIComponent(req.params.id || '');
+    const targetName = String(req.query.name || '').trim().toLowerCase();
     let plans = loadSystemPlans();
-    plans = plans.filter(p => p.id !== id);
+    plans = plans.filter(p => {
+      if (String(p.id) === id) return false;
+      if (targetName && (p.name || '').trim().toLowerCase() === targetName) return false;
+      return true;
+    });
     saveSystemPlans(plans);
-    res.json({ success: true, message: 'Planung gelöscht', plans });
+    res.json({ success: true, message: 'Gesamtpaket gelöscht', plans });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
