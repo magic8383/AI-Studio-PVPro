@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 10.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 10.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 10.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 10.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=10.4">
+    <link rel="manifest" href="manifest.json?v=10.6">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.4">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.4">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.4">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.4">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.6">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.6">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.6">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.6">
     <script>
         // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
         (function () {
@@ -28,7 +28,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v10.4') {
+                            if (key !== 'pvpro-cache-v10.6') {
                                 caches.delete(key);
                             }
                         });
@@ -43,10 +43,10 @@
         })();
     </script>
 
-    <!-- Fonts & Icons: Plus Jakarta Sans & Material Symbols Rounded -->
+    <!-- Fonts & Icons: Plus Jakarta Sans, Outfit, DM Sans, Manrope & Material Symbols Rounded -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet">
 
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -55,7 +55,7 @@
             theme: {
                 extend: {
                     fontFamily: {
-                        sans: ['"Plus Jakarta Sans"', 'system-ui', 'sans-serif'],
+                        sans: ['var(--font-sans, "Plus Jakarta Sans")', 'system-ui', 'sans-serif'],
                     },
                     colors: {
                         primary: {
@@ -75,29 +75,40 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
+            --font-sans: "Plus Jakarta Sans";
             --color-primary: #0d9488;
             --color-primary-hover: #0f766e;
             --color-primary-text: #ffffff;
             --color-accent: #10b981;
             --color-accent-hover: #059669;
+            --glass-tint-rgb: 13, 148, 136;
+            --orb-1-rgb: 45, 212, 191;
+            --orb-2-rgb: 56, 189, 248;
+            --bg-light-start: #d5efe9;
+            --bg-light-mid: #eaf6f3;
+            --bg-light-end: #f4faf8;
+            --bg-dark-start: #071014;
+            --bg-dark-mid: #0b181e;
+            --bg-dark-end: #071116;
         }
 
         body {
+            font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
             overscroll-behavior-y: none;
             -webkit-tap-highlight-color: transparent;
             background:
-                radial-gradient(circle at 15% 12%, rgba(45, 212, 191, 0.24) 0%, transparent 42%),
-                radial-gradient(circle at 86% 22%, rgba(56, 189, 248, 0.18) 0%, transparent 40%),
-                radial-gradient(circle at 50% 88%, rgba(16, 185, 129, 0.15) 0%, transparent 45%),
-                linear-gradient(155deg, #d5efe9 0%, #eaf6f3 48%, #f4faf8 100%);
+                radial-gradient(circle at 14% 11%, rgba(var(--orb-1-rgb), 0.28) 0%, transparent 43%),
+                radial-gradient(circle at 86% 20%, rgba(var(--orb-2-rgb), 0.20) 0%, transparent 40%),
+                radial-gradient(circle at 50% 88%, rgba(var(--glass-tint-rgb), 0.16) 0%, transparent 46%),
+                linear-gradient(155deg, var(--bg-light-start) 0%, var(--bg-light-mid) 48%, var(--bg-light-end) 100%);
         }
         html.dark body {
             background:
-                radial-gradient(circle at 14% 10%, rgba(20, 184, 166, 0.24) 0%, transparent 40%),
-                radial-gradient(circle at 88% 18%, rgba(56, 189, 248, 0.17) 0%, transparent 38%),
+                radial-gradient(circle at 14% 10%, rgba(var(--orb-1-rgb), 0.26) 0%, transparent 40%),
+                radial-gradient(circle at 88% 18%, rgba(var(--orb-2-rgb), 0.19) 0%, transparent 38%),
                 radial-gradient(circle at 75% 82%, rgba(139, 92, 246, 0.14) 0%, transparent 42%),
-                radial-gradient(circle at 20% 85%, rgba(16, 185, 129, 0.15) 0%, transparent 42%),
-                linear-gradient(160deg, #071014 0%, #0b181e 50%, #071116 100%);
+                radial-gradient(circle at 20% 85%, rgba(var(--glass-tint-rgb), 0.17) 0%, transparent 42%),
+                linear-gradient(160deg, var(--bg-dark-start) 0%, var(--bg-dark-mid) 50%, var(--bg-dark-end) 100%);
         }
 
         ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -123,66 +134,132 @@
             to { opacity: 1; transform: translateY(0); } 
         }
 
-        /* ==========================================
-           LIQUID GLASS DESIGN SYSTEM (V8.5)
-           Authentic Refraction, Specular Rim & Depth
-           ========================================== */
+        /* =========================================================
+           LIQUID GLASS 2.0 & THEME WORLDS (V10.5)
+           1. liquid-glass (Geschärftes Liquid Glass 2.0)
+           2. vibrant-pop  (Poppig-Leuchtendes Color-Glass)
+           3. neo-modern   (Simpel, Kristallklar & Kontraststark)
+           ========================================================= */
         .dash-main-card,
         .liquid-glass-card {
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.62) 100%);
-            backdrop-filter: blur(28px) saturate(190%);
-            -webkit-backdrop-filter: blur(28px) saturate(190%);
-            border: 1px solid rgba(255, 255, 255, 0.88);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.84) 0%, rgba(255, 255, 255, 0.67) 100%);
+            backdrop-filter: blur(30px) saturate(200%);
+            -webkit-backdrop-filter: blur(30px) saturate(200%);
+            border: 1px solid rgba(255, 255, 255, 0.94);
             box-shadow:
-                0 14px 36px -10px rgba(15, 23, 42, 0.08),
-                inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
-                inset 0 -1px 0 0 rgba(255, 255, 255, 0.45);
+                0 16px 38px -10px rgba(var(--glass-tint-rgb), 0.11),
+                0 6px 18px -6px rgba(15, 23, 42, 0.06),
+                inset 0 1.5px 0 0 rgba(255, 255, 255, 0.98),
+                inset 0 -1px 0 0 rgba(var(--glass-tint-rgb), 0.14);
         }
         html.dark .dash-main-card,
         html.dark .liquid-glass-card {
-            background: linear-gradient(145deg, rgba(24, 43, 52, 0.62) 0%, rgba(14, 26, 33, 0.52) 100%);
-            backdrop-filter: blur(30px) saturate(200%);
-            -webkit-backdrop-filter: blur(30px) saturate(200%);
-            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: linear-gradient(145deg, rgba(22, 41, 50, 0.68) 0%, rgba(12, 24, 31, 0.56) 100%);
+            backdrop-filter: blur(32px) saturate(210%);
+            -webkit-backdrop-filter: blur(32px) saturate(210%);
+            border: 1px solid rgba(255, 255, 255, 0.16);
             box-shadow:
-                0 20px 44px -10px rgba(0, 0, 0, 0.62),
-                inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
-                inset 0 -1px 0 0 rgba(45, 212, 191, 0.08);
+                0 22px 46px -10px rgba(0, 0, 0, 0.68),
+                0 0 28px -10px rgba(var(--glass-tint-rgb), 0.22),
+                inset 0 1.5px 0 0 rgba(255, 255, 255, 0.26),
+                inset 0 -1px 0 0 rgba(var(--orb-1-rgb), 0.15);
+        }
+
+        /* THEME WORLD 2: VIBRANT POP-GLASS */
+        html[data-design-style="vibrant-pop"] .dash-main-card,
+        html[data-design-style="vibrant-pop"] .liquid-glass-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.90) 0%, rgba(255, 255, 255, 0.74) 55%, rgba(var(--orb-1-rgb), 0.14) 100%);
+            border: 1.5px solid rgba(var(--glass-tint-rgb), 0.34);
+            box-shadow:
+                0 18px 40px -10px rgba(var(--glass-tint-rgb), 0.20),
+                inset 0 2px 0 0 rgba(255, 255, 255, 1);
+        }
+        html.dark[data-design-style="vibrant-pop"] .dash-main-card,
+        html.dark[data-design-style="vibrant-pop"] .liquid-glass-card {
+            background: linear-gradient(135deg, rgba(19, 36, 46, 0.80) 0%, rgba(13, 25, 34, 0.70) 58%, rgba(var(--orb-1-rgb), 0.18) 100%);
+            border: 1.5px solid rgba(var(--orb-1-rgb), 0.42);
+            box-shadow:
+                0 22px 48px -10px rgba(0, 0, 0, 0.74),
+                0 0 34px -8px rgba(var(--orb-1-rgb), 0.30),
+                inset 0 1.5px 0 0 rgba(255, 255, 255, 0.32);
+        }
+
+        /* THEME WORLD 3: NEO-MODERN POP (Clean, Simple, Crisp & Tactile) */
+        html[data-design-style="neo-modern"] body {
+            background: linear-gradient(180deg, #f1f7f6 0%, #f8fafc 100%);
+        }
+        html.dark[data-design-style="neo-modern"] body {
+            background: linear-gradient(180deg, #091116 0%, #0d171e 100%);
+        }
+        html[data-design-style="neo-modern"] .dash-main-card,
+        html[data-design-style="neo-modern"] .liquid-glass-card {
+            background: #ffffff !important;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            border: 1.5px solid rgba(var(--glass-tint-rgb), 0.24);
+            box-shadow:
+                0 10px 26px -8px rgba(15, 23, 42, 0.08),
+                0 2px 6px -1px rgba(var(--glass-tint-rgb), 0.08);
+        }
+        html.dark[data-design-style="neo-modern"] .dash-main-card,
+        html.dark[data-design-style="neo-modern"] .liquid-glass-card {
+            background: #101c24 !important;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            border: 1.5px solid rgba(var(--orb-1-rgb), 0.30);
+            box-shadow:
+                0 14px 32px -8px rgba(0, 0, 0, 0.65),
+                0 0 0 1px rgba(255, 255, 255, 0.04);
+        }
+
+        /* UI DENSITY MODES (Kompakt / Standard / Luftig) */
+        html[data-ui-density="compact"] .dash-main-card {
+            padding: 0.85rem !important;
+            border-radius: 20px !important;
+        }
+        html[data-ui-density="compact"] main.space-y-5,
+        html[data-ui-density="compact"] #live-hub-view.space-y-4,
+        html[data-ui-density="compact"] #analyse-hub-view.space-y-5 {
+            gap: 0.65rem !important;
+        }
+        html[data-ui-density="spacious"] .dash-main-card {
+            padding: 1.5rem !important;
+            border-radius: 30px !important;
         }
 
         .liquid-glass-header {
-            background: linear-gradient(180deg, rgba(255, 255, 255, 0.76) 0%, rgba(255, 255, 255, 0.58) 100%);
-            backdrop-filter: blur(26px) saturate(190%);
-            -webkit-backdrop-filter: blur(26px) saturate(190%);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.78);
-            box-shadow: 0 6px 24px -8px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-        }
-        html.dark .liquid-glass-header {
-            background: linear-gradient(180deg, rgba(18, 34, 42, 0.68) 0%, rgba(12, 23, 29, 0.54) 100%);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(255, 255, 255, 0.64) 100%);
             backdrop-filter: blur(28px) saturate(200%);
             -webkit-backdrop-filter: blur(28px) saturate(200%);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-            box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.86);
+            box-shadow: 0 6px 24px -8px rgba(var(--glass-tint-rgb), 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        }
+        html.dark .liquid-glass-header {
+            background: linear-gradient(180deg, rgba(16, 31, 39, 0.76) 0%, rgba(11, 22, 28, 0.62) 100%);
+            backdrop-filter: blur(30px) saturate(205%);
+            -webkit-backdrop-filter: blur(30px) saturate(205%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
         }
 
         .liquid-glass-pill {
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.68) 100%);
-            backdrop-filter: blur(28px) saturate(200%);
-            -webkit-backdrop-filter: blur(28px) saturate(200%);
-            border: 1px solid rgba(255, 255, 255, 0.92);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.72) 100%);
+            backdrop-filter: blur(30px) saturate(205%);
+            -webkit-backdrop-filter: blur(30px) saturate(205%);
+            border: 1px solid rgba(255, 255, 255, 0.95);
             box-shadow:
                 0 16px 38px -8px rgba(15, 23, 42, 0.18),
-                inset 0 1px 0 rgba(255, 255, 255, 0.95);
+                inset 0 1.5px 0 rgba(255, 255, 255, 0.98);
         }
         html.dark .liquid-glass-pill {
-            background: linear-gradient(145deg, rgba(26, 46, 56, 0.72) 0%, rgba(15, 28, 35, 0.62) 100%);
-            backdrop-filter: blur(32px) saturate(210%);
-            -webkit-backdrop-filter: blur(32px) saturate(210%);
-            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: linear-gradient(145deg, rgba(24, 44, 54, 0.78) 0%, rgba(14, 27, 34, 0.68) 100%);
+            backdrop-filter: blur(32px) saturate(215%);
+            -webkit-backdrop-filter: blur(32px) saturate(215%);
+            border: 1px solid rgba(255, 255, 255, 0.20);
             box-shadow:
-                0 20px 46px -6px rgba(0, 0, 0, 0.72),
-                inset 0 1px 0 rgba(255, 255, 255, 0.24),
-                inset 0 -1px 0 rgba(45, 212, 191, 0.12);
+                0 20px 46px -6px rgba(0, 0, 0, 0.75),
+                inset 0 1.5px 0 rgba(255, 255, 255, 0.26),
+                inset 0 -1px 0 rgba(var(--orb-1-rgb), 0.16);
         }
 
         /* Tinted Liquid Glass Status Tiles */
@@ -459,10 +536,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('live')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zum Start-Dashboard">
-                            <img src="icon.svg?v=10.4" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=10.6" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">bolt</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.4</span>
+                        <span id="app-header-version" class="text-[11px] font-extrabold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.6</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -480,9 +557,21 @@
                     </button>
 
                     <!-- Project / Variant Switcher Pill -->
-                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/75 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 text-slate-800 dark:text-slate-100 border border-white/80 dark:border-white/15 text-xs font-semibold transition-all cursor-pointer shrink-0" title="Anlage / Planung wechseln">
+                    <button id="btnHeaderProject" onclick="openProjectManagerModal()" class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/75 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 text-slate-800 dark:text-slate-100 border border-white/80 dark:border-white/15 text-xs font-semibold transition-all cursor-pointer shrink-0" title="Gesamtpakete, Speichern unter & Datei öffnen">
                         <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-sm shrink-0">folder_open</span>
-                        <span id="headerProjectName" class="max-w-[92px] sm:max-w-[140px] truncate font-bold">Planung 1</span>
+                        <span id="headerProjectName" class="max-w-[84px] sm:max-w-[130px] truncate font-bold">Planung 1</span>
+                    </button>
+
+                    <!-- Windows-Style: Speichern unter... (NAS / Gerät inkl. HA-Token) -->
+                    <button onclick="saveProjectFileAs()" class="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 text-teal-800 dark:text-teal-200 border border-teal-500/30 text-xs font-bold transition-all cursor-pointer shrink-0" title="Speichern unter... (Komplettpaket inkl. HA-Token als Datei für NAS, Handy, Tablet & PC speichern)">
+                        <span class="material-symbols-rounded text-teal-600 dark:text-teal-300 text-sm">save_as</span>
+                        <span class="hidden md:inline">Speichern unter…</span>
+                    </button>
+
+                    <!-- Windows-Style: Datei öffnen... (Vom NAS / Gerät laden) -->
+                    <button onclick="openProjectFileFromDisk()" class="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/75 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 text-slate-800 dark:text-slate-100 border border-white/80 dark:border-white/15 text-xs font-semibold transition-all cursor-pointer shrink-0" title="Datei öffnen... (Gespeicherte .pvpro.json Datei vom NAS oder Gerät einspielen)">
+                        <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 text-sm">upload_file</span>
+                        <span class="hidden lg:inline">Öffnen…</span>
                     </button>
 
                     <!-- Quick Home Assistant Sensor & Reverse-Proxy Setup Button -->
@@ -492,9 +581,9 @@
                     </button>
 
                     <!-- Save Button -->
-                    <button id="btnHeaderSave" onclick="saveConfiguration()" class="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0" title="Planung speichern">
+                    <button id="btnHeaderSave" onclick="saveConfiguration()" class="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold shadow-2xs transition-all cursor-pointer shrink-0" title="Im Browser speichern">
                         <span class="material-symbols-rounded text-sm">save</span>
-                        <span class="hidden md:inline">Speichern</span>
+                        <span class="hidden xl:inline">Speichern</span>
                     </button>
                 </div>
             </div>
@@ -1644,29 +1733,58 @@
                         </div>
                     </div>
 
-                    <!-- 2x2 Annual Performance KPI Cards -->
+                    <!-- 2x2 Annual Performance KPI Cards (Interaktiv: Klick öffnet Ebene 2 Balkendiagramm-Cockpit!) -->
                     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                        <div class="dash-tile-grid rounded-2xl p-3.5">
-                            <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">PVGIS Jahres-Soll</p>
+                        <div onclick="openAnalyseBarExplorer('year', ['pvTotal', 'pvgisSoll'])" role="button" tabindex="0" title="Tippen für interaktives Balkendiagramm (Tag / Woche / Monat / Jahr)" class="dash-tile-grid rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-sky-500/40 transition-all group">
+                            <div class="flex items-center justify-between gap-1">
+                                <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">PVGIS Jahres-Soll</p>
+                                <span class="text-[9.5px] font-bold text-sky-600 dark:text-sky-300 opacity-80 group-hover:opacity-100 flex items-center gap-0.5">Balken <span class="material-symbols-rounded text-xs">bar_chart</span></span>
+                            </div>
                             <p id="ana_kpi_soll_year" class="text-xl sm:text-2xl font-black text-sky-700 dark:text-sky-300 font-mono tabular-nums mt-1">0 kWh</p>
                             <p id="ana_kpi_soll_sub" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">Spezifisch: 0 kWh/kWp</p>
                         </div>
-                        <div class="dash-tile-pv rounded-2xl p-3.5">
-                            <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Realer Ist-Ertrag</p>
+                        <div onclick="openAnalyseBarExplorer('month', ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'])" role="button" tabindex="0" title="Tippen für interaktives Balkendiagramm aller kWh-Zähler & Verbraucher" class="dash-tile-pv rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-teal-500/40 transition-all group">
+                            <div class="flex items-center justify-between gap-1">
+                                <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Realer Ist-Ertrag</p>
+                                <span class="text-[9.5px] font-bold text-teal-700 dark:text-teal-300 opacity-80 group-hover:opacity-100 flex items-center gap-0.5">Balken <span class="material-symbols-rounded text-xs">bar_chart</span></span>
+                            </div>
                             <p id="ana_kpi_ist_sum" class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white font-mono tabular-nums mt-1">0 kWh</p>
                             <p id="ana_kpi_ist_sub" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">Soll im Zeitraum: 0 kWh</p>
                         </div>
-                        <div class="dash-tile-bat rounded-2xl p-3.5">
-                            <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Erfüllungsgrad (PR)</p>
+                        <div onclick="openAnalyseBarExplorer('month', ['autarkyPct', 'eigenPct'])" role="button" tabindex="0" title="Tippen für Balkendiagramm: Autarkiegrad, Eigenverbrauch & Batterie" class="dash-tile-bat rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-purple-500/40 transition-all group">
+                            <div class="flex items-center justify-between gap-1">
+                                <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Erfüllungsgrad (PR)</p>
+                                <span class="text-[9.5px] font-bold text-purple-700 dark:text-purple-300 opacity-80 group-hover:opacity-100 flex items-center gap-0.5">Balken <span class="material-symbols-rounded text-xs">bar_chart</span></span>
+                            </div>
                             <p id="ana_kpi_perf_idx" class="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">100.0 %</p>
                             <p id="ana_kpi_perf_sub" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">+0.0 % ggü. Prognose</p>
                         </div>
-                        <div class="dash-tile-load rounded-2xl p-3.5">
-                            <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Real-Ersparnis (€)</p>
+                        <div onclick="openAnalyseBarExplorer('year', ['savingsEur', 'pvTotal'])" role="button" tabindex="0" title="Tippen für Balkendiagramm: Finanz-Ersparnis (€) & Ertrag" class="dash-tile-load rounded-2xl p-3.5 cursor-pointer hover:ring-2 hover:ring-amber-500/40 transition-all group">
+                            <div class="flex items-center justify-between gap-1">
+                                <p class="text-[11px] font-semibold text-slate-600 dark:text-slate-300">Real-Ersparnis (€)</p>
+                                <span class="text-[9.5px] font-bold text-amber-700 dark:text-amber-300 opacity-80 group-hover:opacity-100 flex items-center gap-0.5">Balken <span class="material-symbols-rounded text-xs">bar_chart</span></span>
+                            </div>
                             <p id="ana_kpi_euro_real" class="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 font-mono tabular-nums mt-1">0 €</p>
                             <p id="ana_kpi_euro_sub" class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-mono tabular-nums truncate">Eigenstrom + EEG</p>
                         </div>
                     </div>
+
+                    <!-- Direkt-Einstieg in Ebene 2: Interaktives Balkendiagramm-Cockpit (Tag · Woche · Monat · Jahr) -->
+                    <button type="button" onclick="openAnalyseBarExplorer('month')" class="w-full p-3.5 rounded-2xl bg-gradient-to-r from-teal-500/15 via-sky-500/10 to-emerald-500/15 hover:from-teal-500/25 hover:to-emerald-500/25 border border-teal-500/35 flex items-center justify-between gap-3 text-left transition-all cursor-pointer group">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                                <span class="material-symbols-rounded text-xl">equalizer</span>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">Interaktives Balkendiagramm-Cockpit öffnen (Tag · Woche · Monat · Jahr)</p>
+                                <p class="text-[11px] text-slate-600 dark:text-slate-300 truncate">Alle kWh-Zähler, PV-Strings, Einzelverbraucher (Trockner, TV etc.), Batterie, Autarkie % &amp; €-Ersparnis im Zeitverlauf vergleichen</p>
+                            </div>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-xl bg-teal-600 text-white text-[11px] font-bold flex items-center gap-1 shrink-0 group-hover:translate-x-0.5 transition-transform">
+                            <span>Ebene 2</span>
+                            <span class="material-symbols-rounded text-sm">arrow_forward</span>
+                        </span>
+                    </button>
                 </div>
 
                 <!-- ZWEI-SPALTEN-SPLIT IM QUERFORMAT & DESKTOP: SANKEY LINKS + MONATLICHE ERTRAGSLEISTUNG RECHTS -->
@@ -1821,16 +1939,126 @@
             <!-- ANALYSE EBENE 2 (DETAIL-ANSICHT MIT ZURÜCK-BUTTON IN DER KOPFZEILE)   -->
             <!-- ===================================================================== -->
             <div id="analyse-detail-view" class="hidden dash-main-card rounded-[28px] p-4 sm:p-6 space-y-6">
-                <!-- Legacy hidden sub-nav buttons kept for DOM ID compatibility -->
-                <div class="hidden">
-                    <button id="btn-analysis-sub-soll-ist" onclick="openAnalyseDrillDown('soll-ist')"></button>
-                    <button id="btn-analysis-sub-autarkie-bat" onclick="openAnalyseDrillDown('autarkie-bat')"></button>
-                    <button id="btn-analysis-sub-amortisation" onclick="openAnalyseDrillDown('amortisation')"></button>
-                    <button id="btn-analysis-sub-logbuch" onclick="openAnalyseDrillDown('logbuch')"></button>
+                <!-- Ebene 2 Schnell-Umschalter zwischen allen 5 Analyse-Detailbereichen -->
+                <div class="flex items-center gap-1.5 overflow-x-auto hide-scroll pb-1 border-b border-slate-200/70 dark:border-white/10">
+                    <button id="btn-analysis-sub-balken-explorer" onclick="openAnalyseDrillDown('balken-explorer')" class="px-3.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                        <span class="material-symbols-rounded text-sm">equalizer</span>
+                        <span>Balken-Explorer (Tag/Woche/Monat/Jahr)</span>
+                    </button>
+                    <button id="btn-analysis-sub-soll-ist" onclick="openAnalyseDrillDown('soll-ist')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                        <span class="material-symbols-rounded text-sm">compare_arrows</span>
+                        <span>Soll-Ist (PVGIS)</span>
+                    </button>
+                    <button id="btn-analysis-sub-autarkie-bat" onclick="openAnalyseDrillDown('autarkie-bat')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                        <span class="material-symbols-rounded text-sm">battery_charging_80</span>
+                        <span>Autarkie &amp; Batterie</span>
+                    </button>
+                    <button id="btn-analysis-sub-amortisation" onclick="openAnalyseDrillDown('amortisation')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                        <span class="material-symbols-rounded text-sm">savings</span>
+                        <span>Amortisation &amp; €</span>
+                    </button>
+                    <button id="btn-analysis-sub-logbuch" onclick="openAnalyseDrillDown('logbuch')" class="px-3.5 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap">
+                        <span class="material-symbols-rounded text-sm">table_chart</span>
+                        <span>Monats-Logbuch</span>
+                    </button>
+                </div>
+
+                <!-- SUB-PANEL 0: INTERAKTIVER BALKEN-EXPLORER (TAG | WOCHE | MONAT | JAHR) -->
+                <div id="analysis-panel-balken-explorer" class="hidden space-y-5">
+                    <!-- Top Toolbar: Zeitraum (Tag | Woche | Monat | Jahr) + Datums-Navigation -->
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl">equalizer</span>
+                                <h4 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">Performance-Balkendiagramm · Alle Zähler &amp; Kanäle</h4>
+                            </div>
+                            <p id="barExplorerSubtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                Vergleiche kWh-Erträge, PV-Strings, Einzelverbraucher, Batterie, Autarkie &amp; €-Ersparnis für jeden Zeitraum
+                            </p>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <!-- Timeframe Pill Switcher: Tag | Woche | Monat | Jahr -->
+                            <div class="inline-flex rounded-2xl p-1 bg-slate-200/80 dark:bg-white/10 border border-white/60 dark:border-white/10 text-xs font-bold">
+                                <button type="button" id="btnBarExpHorizon_day" onclick="setAnalyseBarExplorerHorizon('day')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                    Tag
+                                </button>
+                                <button type="button" id="btnBarExpHorizon_week" onclick="setAnalyseBarExplorerHorizon('week')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                    Woche
+                                </button>
+                                <button type="button" id="btnBarExpHorizon_month" onclick="setAnalyseBarExplorerHorizon('month')" class="px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer">
+                                    Monat
+                                </button>
+                                <button type="button" id="btnBarExpHorizon_year" onclick="setAnalyseBarExplorerHorizon('year')" class="px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer">
+                                    Jahr
+                                </button>
+                            </div>
+
+                            <!-- Period Navigation (Zurück / Zeitraum-Label / Vor / Heute) -->
+                            <div class="inline-flex items-center gap-1 rounded-2xl p-1 bg-slate-100 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10 text-xs font-bold">
+                                <button type="button" onclick="shiftAnalyseBarExplorerPeriod(-1)" class="w-7 h-7 rounded-xl hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-700 dark:text-slate-200 cursor-pointer" title="Vorheriger Zeitraum">
+                                    <span class="material-symbols-rounded text-base">chevron_left</span>
+                                </button>
+                                <span id="barExplorerPeriodLabel" class="px-2.5 font-mono text-xs font-extrabold text-slate-900 dark:text-white whitespace-nowrap">Aktueller Monat</span>
+                                <button type="button" onclick="shiftAnalyseBarExplorerPeriod(1)" class="w-7 h-7 rounded-xl hover:bg-slate-200 dark:hover:bg-white/10 flex items-center justify-center text-slate-700 dark:text-slate-200 cursor-pointer" title="Nächster Zeitraum">
+                                    <span class="material-symbols-rounded text-base">chevron_right</span>
+                                </button>
+                                <button type="button" onclick="shiftAnalyseBarExplorerPeriod(0)" class="px-2 py-1 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 text-teal-700 dark:text-teal-300 text-[11px] font-bold cursor-pointer">
+                                    Jetzt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4-KPI Summary Strip for Selected Period & Channels -->
+                    <div id="barExplorerSummaryKpis" class="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+                        <!-- Dynamically populated by renderAnalyseBarExplorer() -->
+                    </div>
+
+                    <!-- Interactive Bar Chart Container + Readout Bar -->
+                    <div class="rounded-2xl bg-white/75 dark:bg-[#0b151b]/90 border border-slate-200/80 dark:border-white/10 p-3 sm:p-4 space-y-2.5">
+                        <div class="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-slate-200/60 dark:border-white/10">
+                            <p id="barExplorerHoverReadout" class="text-xs font-mono tabular-nums text-slate-700 dark:text-slate-200 truncate">
+                                Tippe oder fahre über einen Balken für exakte Werte im gewählten Zeitfenster
+                            </p>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button type="button" id="btnBarExpStackedToggle" onclick="toggleAnalyseBarExplorerStacked()" class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-slate-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer">
+                                    <span class="material-symbols-rounded text-xs">stacked_bar_chart</span>
+                                    <span id="btnBarExpStackedLabel">Nebeneinander</span>
+                                </button>
+                                <button type="button" onclick="reloadAnalyseBarExplorerData()" class="px-2.5 py-1 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 text-teal-700 dark:text-teal-300 text-[11px] font-bold flex items-center gap-1 cursor-pointer" title="Historische Statistik frisch von Home Assistant abrufen">
+                                    <span class="material-symbols-rounded text-xs">refresh</span>
+                                    <span>Aktualisieren</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="relative h-72 sm:h-80 lg:h-96 w-full">
+                            <canvas id="analysisExplorerBarChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Metric & Channel Selector Tiles (All tracked kWh, Strings, Consumers, %, €) -->
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between gap-2 flex-wrap">
+                            <h5 class="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                                <span class="material-symbols-rounded text-sm text-teal-500">tune</span>
+                                <span>Messkanäle &amp; Sensoren im Balkendiagramm ein-/ausblenden (Tipp auf Kachel = An/Aus · ◎ = Solo-Fokus)</span>
+                            </h5>
+                            <div class="flex items-center gap-1.5 text-[11px] font-bold">
+                                <button type="button" onclick="selectAnalyseBarPreset(['pvTotal', 'houseTotal', 'gridImp', 'gridExp'])" class="px-2.5 py-1 rounded-lg bg-teal-500/15 text-teal-700 dark:text-teal-300 hover:bg-teal-500/25 cursor-pointer">Haupt-Bilanz</button>
+                                <button type="button" onclick="selectAnalyseBarPreset('strings')" class="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300 hover:bg-amber-500/25 cursor-pointer">Alle Strings</button>
+                                <button type="button" onclick="selectAnalyseBarPreset('consumers')" class="px-2.5 py-1 rounded-lg bg-sky-500/15 text-sky-700 dark:text-sky-300 hover:bg-sky-500/25 cursor-pointer">Verbraucher</button>
+                                <button type="button" onclick="selectAnalyseBarPreset(['batChg', 'batDis'])" class="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-700 dark:text-purple-300 hover:bg-purple-500/25 cursor-pointer">Batterie</button>
+                            </div>
+                        </div>
+                        <div id="analysisExplorerChannelsGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                            <!-- Dynamically populated by renderAnalyseBarExplorer() -->
+                        </div>
+                    </div>
                 </div>
 
                 <!-- SUB-PANEL 1: SOLL-IST-VERGLEICH -->
-                <div id="analysis-panel-soll-ist" class="space-y-6">
+                <div id="analysis-panel-soll-ist" class="hidden space-y-6">
                     <div>
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
                             <div>
@@ -2241,20 +2469,25 @@
         </div>
 
         <div class="space-y-2.5">
-            <!-- 1. Design & Erscheinungsbild -->
-            <div class="flex items-center justify-between p-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
-                <div class="flex items-center gap-3 min-w-0">
+            <!-- 1. Design- & Darstellungs-Studio (Themes, Akzentfarbe, Schriftart, Schriftgröße & Kompaktheit) -->
+            <div class="flex items-center justify-between gap-2 p-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
+                <button type="button" onclick="closeMoreSheet(); openDesignStudioModal();" class="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group">
                     <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
-                        <span id="bnavThemeIcon" class="material-symbols-rounded text-xl text-amber-500 fill-1">dark_mode</span>
+                        <span class="material-symbols-rounded text-xl text-amber-500 fill-1">palette</span>
                     </div>
-                    <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">1. Design &amp; Darstellung</p>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Liquid Glass Hell- / Dunkel-Modus umschalten</p>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white group-hover:text-primary transition-colors">1. Design- &amp; Darstellungs-Studio</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Themes (Liquid Glass / Pop / Neo), Akzentfarbe, Schrift &amp; Kompaktheit</p>
                     </div>
-                </div>
-                <button onclick="toggleDarkMode()" id="bnav-theme" class="px-3.5 py-2 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-xs font-bold transition-all cursor-pointer shrink-0">
-                    Wechseln
                 </button>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onclick="closeMoreSheet(); openDesignStudioModal();" class="px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold transition-all cursor-pointer">
+                        Anpassen
+                    </button>
+                    <button type="button" onclick="toggleDarkMode()" id="bnav-theme" class="w-9 h-9 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 flex items-center justify-center transition-all cursor-pointer" title="Hell- / Dunkel-Modus direkt umschalten">
+                        <span id="bnavThemeIcon" class="material-symbols-rounded text-lg">dark_mode</span>
+                    </button>
+                </div>
             </div>
 
             <!-- 2. Home Assistant & Sensoren -->
@@ -2271,19 +2504,31 @@
                 <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 shrink-0">chevron_right</span>
             </button>
 
-            <!-- 3. Gesamtpakete & GitHub-Sync (Zentrales Speichern ohne Token-Weitergabe) -->
-            <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/40 hover:bg-indigo-500/15 dark:hover:bg-indigo-900/50 border border-indigo-500/30 dark:border-indigo-500/30 text-left transition-all cursor-pointer">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl text-indigo-600 dark:text-indigo-400">cloud_sync</span>
+            <!-- 3. Speichern unter (NAS / Datei inkl. Token) & Gesamtpakete -->
+            <div class="p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/40 border border-indigo-500/30 space-y-2.5">
+                <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 text-left transition-all cursor-pointer">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                            <span class="material-symbols-rounded text-xl text-indigo-600 dark:text-indigo-400">folder_special</span>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">3. Speichern unter… (NAS) &amp; Gesamtpakete</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Wie bei Windows als Datei inkl. HA-Token aufs NAS legen &amp; überall öffnen</p>
+                        </div>
                     </div>
-                    <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">3. Gesamtpakete &amp; GitHub-Sync</p>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Planung + HA-Sensoren + Logbuch (ohne Token) &amp; direkter GitHub-Sync</p>
-                    </div>
+                    <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 shrink-0">chevron_right</span>
+                </button>
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                    <button type="button" onclick="closeMoreSheet(); saveProjectFileAs();" class="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
+                        <span class="material-symbols-rounded text-base">save_as</span>
+                        <span>Speichern unter…</span>
+                    </button>
+                    <button type="button" onclick="closeMoreSheet(); openProjectFileFromDisk();" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer">
+                        <span class="material-symbols-rounded text-base text-indigo-500">upload_file</span>
+                        <span>Datei öffnen…</span>
+                    </button>
                 </div>
-                <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 shrink-0">chevron_right</span>
-            </button>
+            </div>
 
             <!-- 4. VDE-Projektdossier (PDF) & Handbuch -->
             <div class="grid grid-cols-2 gap-2.5">
@@ -2705,7 +2950,7 @@
             </div>
 
             <!-- Body -->
-            <div class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+            <div id="haModalScrollBody" class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-6">
                 <datalist id="haEntitiesDatalist"></datalist>
 
                 <!-- ========================================================= -->
@@ -2923,40 +3168,49 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <!-- KANAL A: PV-ERZEUGUNG (W + kWh) -->
                             <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-teal-500/25 space-y-2">
-                                <div class="flex items-center justify-between">
+                                <div class="flex items-center justify-between gap-1">
                                     <span class="text-[11px] font-extrabold uppercase tracking-wider text-teal-700 dark:text-teal-300 flex items-center gap-1">
                                         <span class="material-symbols-rounded text-sm">wb_sunny</span>
-                                        <span>PV-Erzeugung (W &amp; kWh)</span>
+                                        <span>PV-Erzeugung · Gesamt (W &amp; kWh)</span>
                                     </span>
+                                    <span class="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-teal-500/10 text-teal-700 dark:text-teal-300">Leer = Summe Strings</span>
                                 </div>
                                 <div>
-                                    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">PV gesamt · Live-Leistung (W/kW, leer = Summe Strings)</label>
+                                    <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">PV gesamt · Live-Leistung (W/kW, leer = summiert automatisch alle Strings)</label>
                                     <div class="flex items-center gap-1">
-                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="Leer = Summe aus Strings (Sektion 3)" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_power" placeholder="Leer lassen = automatische Summe aus Strings (Sektion 3)" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
                                         <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_power', unitFilter: 'power', title: 'PV gesamt · DC (Leistung)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="PV-Leistungssensor (W) auswählen">
                                             <span class="material-symbols-rounded text-base">list_alt</span>
                                         </button>
                                     </div>
                                 </div>
                                 <div>
-                                    <label class="block text-[10px] font-semibold text-teal-700 dark:text-teal-300 mb-0.5">Wechselrichter 1 · Gesamtzähler (kWh Total)</label>
+                                    <label class="block text-[10px] font-semibold text-teal-700 dark:text-teal-300 mb-0.5">PV gesamt · Gesamtzähler (kWh Total, leer = summiert automatisch alle Strings)</label>
                                     <div class="flex items-center gap-1">
-                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="z.B. sensor.fronius_energy_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 1 (kWh Total)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Wechselrichter 1 kWh-Zähler auswählen">
+                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_month" placeholder="Leer lassen = Summe der String-kWh (oder Gesamt-WR kWh)" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_month', unitFilter: 'energy', title: 'PV-Erzeugung Gesamt (kWh Total)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="PV-Gesamtzähler (kWh) auswählen">
                                             <span class="material-symbols-rounded text-base">list_alt</span>
                                         </button>
                                     </div>
+                                    <div id="haMainDiag_pv_month"></div>
                                 </div>
-                                <div>
-                                    <label class="block text-[10px] font-semibold text-teal-700 dark:text-teal-300 mb-0.5">Wechselrichter 2 · Gesamtzähler (kWh Total, optional)</label>
-                                    <div class="flex items-center gap-1">
-                                        <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="z.B. sensor.hoymiles_energy_total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-teal-300 dark:border-teal-700/60 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                                        <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Erzeugung · Wechselrichter 2 (kWh Total)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="Wechselrichter 2 kWh-Zähler auswählen">
-                                            <span class="material-symbols-rounded text-base">list_alt</span>
-                                        </button>
+                                <details id="haPvExtraDetailsBox" class="pt-1 border-t border-slate-200/70 dark:border-slate-800 text-[10px]">
+                                    <summary class="cursor-pointer font-semibold text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-300 select-none">
+                                        Optional: Weiterer Wechselrichter-Gesamtzähler (falls 2. WR ohne String-Zähler)
+                                    </summary>
+                                    <div class="pt-2 space-y-2">
+                                        <div>
+                                            <label class="block text-[10px] font-semibold text-slate-500 mb-0.5">2. Wechselrichter · Gesamtzähler (kWh Total, optional)</label>
+                                            <div class="flex items-center gap-1">
+                                                <input type="text" list="haEntitiesDatalist" id="ha_ent_pv_today" placeholder="Optional: 2. Wechselrichter kWh Total" class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                                                <button type="button" onclick="openHaEntityPicker({ targetInputId: 'ha_ent_pv_today', unitFilter: 'energy', title: 'PV-Erzeugung · 2. Wechselrichter (kWh Total)' })" class="w-8 h-8 rounded-lg bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="2. Wechselrichter kWh-Zähler auswählen">
+                                                    <span class="material-symbols-rounded text-base">list_alt</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div id="haPvEnergyExtraContainer" class="space-y-1.5 empty:hidden"></div>
                                     </div>
-                                </div>
-                                <div id="haPvEnergyExtraContainer" class="space-y-1.5 empty:hidden"></div>
+                                </details>
                             </div>
 
                             <!-- KANAL B: HAUSVERBRAUCH (W + kWh) -->
@@ -3350,16 +3604,55 @@
         </div>
     </div>
 
+    <!-- ========================================================================= -->
+    <!-- MODAL: DESIGN- & DARSTELLUNGS-STUDIO (THEMES, AKZENTFARBE, SCHRIFT & DICHTE) -->
+    <!-- ========================================================================= -->
+    <div id="modal-design-studio" class="fixed inset-0 z-[135] flex items-center justify-center p-2.5 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeDesignStudioModal()">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- Header -->
+            <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950 shrink-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-2xl">palette</span>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">Design- &amp; Darstellungs-Studio</h3>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate">Theme-Stil, Akzentfarbe (Hell/Dunkel), Schriftart, Schriftgröße &amp; Kompaktheit</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeDesignStudioModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0">
+                    <span class="material-symbols-rounded text-lg">close</span>
+                </button>
+            </div>
+
+            <!-- Scrollable Studio Body -->
+            <div id="designStudioModalBody" class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-5">
+                <!-- Dynamically rendered by renderDesignStudioModalContent() in app.js -->
+            </div>
+
+            <!-- Footer -->
+            <div class="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between gap-3 shrink-0">
+                <button type="button" onclick="resetDesignStudioSettings()" class="px-3.5 py-2 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-sm">restart_alt</span>
+                    <span>Standard wiederherstellen</span>
+                </button>
+                <button type="button" onclick="closeDesignStudioModal()" class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold shadow-sm cursor-pointer">
+                    Fertig &amp; Schließen
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V10.4 (Zwei-Spalten-Cockpit für Tablet/Desktop, Verbraucher-kWh Fix, Bereinigte Repo-Planungen & Hardware-Katalog Overflow-Fix) -->
-    <script src="qrcode.client.js?v=10.4"></script>
-    <script src="database.js?v=10.4"></script>
-    <script src="content.js?v=10.4"></script>
-    <script src="app.js?v=10.4"></script>
-    <script src="wiring.js?v=10.4"></script>
-    <script src="dossier.js?v=10.4"></script>
-    <script src="telemetry.js?v=10.4"></script>
+    <!-- MODULARE ARCHITEKTUR V10.6 (Speichern unter fürs NAS inkl. HA-Token, Ungekürzter Sensor-Picker mit Aktiv-Markierung, Interaktives Balken-Cockpit & Design-Studio) -->
+    <script src="qrcode.client.js?v=10.6"></script>
+    <script src="database.js?v=10.6"></script>
+    <script src="content.js?v=10.6"></script>
+    <script src="app.js?v=10.6"></script>
+    <script src="wiring.js?v=10.6"></script>
+    <script src="dossier.js?v=10.6"></script>
+    <script src="telemetry.js?v=10.6"></script>
 </body>
 </html>

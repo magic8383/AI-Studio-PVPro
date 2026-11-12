@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.4 (Zwei-Spalten-Cockpit für Tablet-Querformat & Desktop, lückenlose `kWh`-Erkennung für Einzelverbraucher wie Trockner/TV-Verstärker, Entfernung alter Test-Planungen & Hardware-Katalog Overflow-Fix)  
+**Aktuelle Version:** 10.6 (Hotfix `currentLiveTelemetry` im Balken-Explorer & Lazy-Load auf Analyse-Ebene 2, Windows-Style „Speichern unter…“ & „Datei öffnen…“ inkl. HA-Token, vereinfachtes PV-Gesamterzeugungs-Feld, ungekürzter Sensor-Picker mit Aktiv-Markierung & Design-Studio)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

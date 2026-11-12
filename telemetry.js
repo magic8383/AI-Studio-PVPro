@@ -4626,7 +4626,7 @@ function applyIntradayFullscreenRotationStyle() {
 
 function switchAnalysisSubTab(subTab) {
     activeAnalysisSubTab = subTab;
-    ['soll-ist', 'autarkie-bat', 'amortisation', 'logbuch'].forEach(id => {
+    ['balken-explorer', 'soll-ist', 'autarkie-bat', 'amortisation', 'logbuch'].forEach(id => {
         const panel = document.getElementById(`analysis-panel-${id}`);
         const btn = document.getElementById(`btn-analysis-sub-${id}`);
         if (panel) {
@@ -5118,6 +5118,778 @@ function renderAnalysisSection(baseline) {
     renderAutarkyBatteryPanel(baseline, metrics);
     renderRealAmortizationPanel(baseline, metrics);
     renderMonthlyLogbookTable(baseline, metrics);
+    const l2Visible = !document.getElementById('analyse-level-2')?.classList.contains('hidden');
+    const barPanelVisible = !document.getElementById('analysis-panel-balken-explorer')?.classList.contains('hidden');
+    if (l2Visible && (activeAnalysisSubTab === 'balken-explorer' || barPanelVisible)) {
+        renderAnalyseBarExplorer(baseline, metrics);
+    }
+}
+
+// ============================================================================
+// 6A. INTERACTIVE BAR CHART EXPLORER ON ANALYSE LEVEL 2 (TAG | WOCHE | MONAT | JAHR)
+// ============================================================================
+let analyseBarExplorerState = {
+    horizon: 'month', // 'day' | 'week' | 'month' | 'year'
+    periodOffset: 0,  // 0 = current day/week/month/year, -1 = previous, etc.
+    stacked: false,
+    activeChannels: ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'],
+    soloChannel: null,
+    cacheByPeriodKey: {},
+    isFetching: false,
+    chartInstance: null
+};
+
+function openAnalyseBarExplorer(initialHorizon = null, presetChannels = null) {
+    if (initialHorizon && ['day', 'week', 'month', 'year'].includes(initialHorizon)) {
+        analyseBarExplorerState.horizon = initialHorizon;
+        analyseBarExplorerState.periodOffset = 0;
+    }
+    if (Array.isArray(presetChannels) && presetChannels.length > 0) {
+        analyseBarExplorerState.activeChannels = [...presetChannels];
+        analyseBarExplorerState.soloChannel = null;
+    }
+    if (typeof openAnalyseDrillDown === 'function') {
+        openAnalyseDrillDown('balken-explorer');
+    } else {
+        switchAnalysisSubTab('balken-explorer');
+    }
+}
+
+function setAnalyseBarExplorerHorizon(horizon) {
+    if (!['day', 'week', 'month', 'year'].includes(horizon)) return;
+    analyseBarExplorerState.horizon = horizon;
+    analyseBarExplorerState.periodOffset = 0;
+    renderAnalyseBarExplorer();
+}
+
+function shiftAnalyseBarExplorerPeriod(delta) {
+    if (delta === 0) {
+        analyseBarExplorerState.periodOffset = 0;
+    } else {
+        analyseBarExplorerState.periodOffset = Math.min(0, analyseBarExplorerState.periodOffset + delta);
+    }
+    if (analyseBarExplorerState.horizon === 'year') {
+        const targetYear = new Date().getFullYear() + analyseBarExplorerState.periodOffset;
+        selectedAnalysisYear = targetYear;
+        ensureProjectYearInitialized(selectedAnalysisYear);
+    }
+    renderAnalyseBarExplorer();
+}
+
+function toggleAnalyseBarExplorerStacked() {
+    analyseBarExplorerState.stacked = !analyseBarExplorerState.stacked;
+    const lbl = document.getElementById('btnBarExpStackedLabel');
+    if (lbl) lbl.innerText = analyseBarExplorerState.stacked ? 'Gestapelt' : 'Nebeneinander';
+    renderAnalyseBarExplorer();
+}
+
+function toggleAnalyseBarChannel(channelId) {
+    analyseBarExplorerState.soloChannel = null;
+    const idx = analyseBarExplorerState.activeChannels.indexOf(channelId);
+    if (idx >= 0) {
+        if (analyseBarExplorerState.activeChannels.length > 1) {
+            analyseBarExplorerState.activeChannels.splice(idx, 1);
+        }
+    } else {
+        analyseBarExplorerState.activeChannels.push(channelId);
+    }
+    renderAnalyseBarExplorer();
+}
+
+function focusSingleAnalyseBarChannel(channelId, ev) {
+    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+    if (analyseBarExplorerState.soloChannel === channelId && analyseBarExplorerState.activeChannels.length === 1) {
+        analyseBarExplorerState.soloChannel = null;
+        analyseBarExplorerState.activeChannels = ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'];
+    } else {
+        analyseBarExplorerState.soloChannel = channelId;
+        analyseBarExplorerState.activeChannels = [channelId];
+    }
+    renderAnalyseBarExplorer();
+}
+
+function selectAnalyseBarPreset(preset) {
+    analyseBarExplorerState.soloChannel = null;
+    if (Array.isArray(preset)) {
+        analyseBarExplorerState.activeChannels = [...preset];
+    } else if (preset === 'strings') {
+        const strChannels = (haConfigState.customStrings || [])
+            .map((s, idx) => (s && (s.energyEntity || s.powerEntity)) ? `str_${idx}` : null)
+            .filter(Boolean);
+        analyseBarExplorerState.activeChannels = strChannels.length > 0 ? ['pvTotal', ...strChannels] : ['pvTotal'];
+    } else if (preset === 'consumers') {
+        const consChannels = (haConfigState.customConsumers || [])
+            .map((c, idx) => (c && (c.energyEntity || c.powerEntity)) ? `cons_${idx}` : null)
+            .filter(Boolean);
+        analyseBarExplorerState.activeChannels = consChannels.length > 0 ? ['houseTotal', ...consChannels] : ['houseTotal'];
+    }
+    renderAnalyseBarExplorer();
+}
+
+function reloadAnalyseBarExplorerData() {
+    analyseBarExplorerState.cacheByPeriodKey = {};
+    renderAnalyseBarExplorer(null, null, true);
+}
+
+function getAnalyseBarExplorerChannelCatalog() {
+    const channels = [
+        { id: 'pvTotal', label: 'PV-Erzeugung Gesamt', unit: 'kWh', color: '#14b8a6', group: 'core', icon: 'wb_sunny' },
+        { id: 'pvgisSoll', label: 'PVGIS-Prognose (Soll)', unit: 'kWh', color: '#38bdf8', group: 'core', icon: 'cloud_Queue' },
+        { id: 'houseTotal', label: 'Hausverbrauch Gesamt', unit: 'kWh', color: '#f59e0b', group: 'core', icon: 'home' },
+        { id: 'gridImp', label: 'Netzbezug (Import)', unit: 'kWh', color: '#3b82f6', group: 'core', icon: 'download' },
+        { id: 'gridExp', label: 'Netzeinspeisung (Export)', unit: 'kWh', color: '#06b6d4', group: 'core', icon: 'upload' },
+        { id: 'batChg', label: 'Batterie Ladung', unit: 'kWh', color: '#a855f7', group: 'core', icon: 'battery_charging_full' },
+        { id: 'batDis', label: 'Batterie Entladung', unit: 'kWh', color: '#c084fc', group: 'core', icon: 'battery_5_bar' },
+        { id: 'autarkyPct', label: 'Autarkiegrad (%)', unit: '%', color: '#10b981', group: 'ratio', icon: 'shield', yAxisID: 'yPct' },
+        { id: 'eigenPct', label: 'Eigenverbrauchsquote (%)', unit: '%', color: '#0ea5e9', group: 'ratio', icon: 'donut_large', yAxisID: 'yPct' },
+        { id: 'savingsEur', label: 'Finanz-Ersparnis (€)', unit: '€', color: '#22c55e', group: 'finance', icon: 'savings' }
+    ];
+
+    const stringPalette = ['#2dd4bf', '#34d399', '#60a5fa', '#fbbf24', '#818cf8', '#f472b6'];
+    (haConfigState.customStrings || []).forEach((cs, idx) => {
+        if (!cs || (!cs.energyEntity && !cs.powerEntity)) return;
+        channels.push({
+            id: `str_${idx}`,
+            label: cs.name || `PV-String ${idx + 1}`,
+            unit: 'kWh',
+            color: cs.color || stringPalette[idx % stringPalette.length],
+            group: 'string',
+            icon: 'solar_power',
+            energyEntity: cs.energyEntity || '',
+            powerEntity: cs.powerEntity || ''
+        });
+    });
+
+    const consumerPalette = ['#fb923c', '#f43f5e', '#38bdf8', '#a3e635', '#e879f9', '#fbbf24', '#2dd4bf', '#818cf8'];
+    (haConfigState.customConsumers || []).forEach((cc, idx) => {
+        if (!cc || (!cc.energyEntity && !cc.powerEntity)) return;
+        channels.push({
+            id: `cons_${idx}`,
+            label: cc.name || `Verbraucher ${idx + 1}`,
+            unit: 'kWh',
+            color: cc.color || consumerPalette[idx % consumerPalette.length],
+            group: 'consumer',
+            icon: cc.icon || 'power',
+            energyEntity: cc.energyEntity || '',
+            powerEntity: cc.powerEntity || ''
+        });
+    });
+
+    return channels;
+}
+
+function getAnalyseBarExplorerPeriodWindow() {
+    const now = new Date();
+    const h = analyseBarExplorerState.horizon;
+    const off = analyseBarExplorerState.periodOffset || 0;
+
+    if (h === 'day') {
+        const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + off, 0, 0, 0, 0);
+        const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+        const label = d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+        const key = `day_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return { start: d, end, label, key, wsPeriod: 'hour', bucketCount: 24 };
+    }
+    if (h === 'week') {
+        const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (off * 7), 23, 59, 59, 999);
+        const startDay = new Date(endDay.getFullYear(), endDay.getMonth(), endDay.getDate() - 6, 0, 0, 0, 0);
+        const fmt = (dt) => dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+        const label = `${fmt(startDay)} – ${fmt(endDay)}.${endDay.getFullYear()}`;
+        const key = `week_${startDay.toISOString().slice(0, 10)}_${endDay.toISOString().slice(0, 10)}`;
+        return { start: startDay, end: endDay, label, key, wsPeriod: 'day', bucketCount: 7 };
+    }
+    if (h === 'month') {
+        const mDate = new Date(now.getFullYear(), now.getMonth() + off, 1, 0, 0, 0, 0);
+        const daysInMonth = new Date(mDate.getFullYear(), mDate.getMonth() + 1, 0).getDate();
+        const end = new Date(mDate.getFullYear(), mDate.getMonth(), daysInMonth, 23, 59, 59, 999);
+        const label = `${MONTH_LABELS_LONG[mDate.getMonth()]} ${mDate.getFullYear()}`;
+        const key = `month_${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}`;
+        return { start: mDate, end, label, key, wsPeriod: 'day', bucketCount: daysInMonth, monthIndex: mDate.getMonth(), year: mDate.getFullYear() };
+    }
+    // 'year'
+    const yr = selectedAnalysisYear || (now.getFullYear() + off);
+    const start = new Date(yr, 0, 1, 0, 0, 0, 0);
+    const end = new Date(yr, 11, 31, 23, 59, 59, 999);
+    const label = `Gesamtjahr ${yr}`;
+    const key = `year_${yr}`;
+    return { start, end, label, key, wsPeriod: 'month', bucketCount: 12, year: yr };
+}
+
+function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1) {
+    if (!statRow || typeof statRow !== 'object') return 0;
+    const isPower = isPowerSensorEntityId(entityId);
+    if (isPower) {
+        if (Number.isFinite(Number(statRow.mean))) {
+            const w = normalizePowerReadingToWatts(statRow.mean, entityId);
+            return Math.max(0, (w * hoursInBucket) / 1000);
+        }
+        return 0;
+    }
+    if (statRow.change !== null && statRow.change !== undefined && Number.isFinite(Number(statRow.change))) {
+        const chg = Number(statRow.change);
+        if (chg >= 0) {
+            return scaleEnergyReadingToKwh(chg, entityId);
+        }
+    }
+    return 0;
+}
+
+function isPowerSensorEntityId(entityId) {
+    if (!entityId) return false;
+    const unit = getKnownEntityUnit(entityId).toLowerCase();
+    if (unit === 'w' || unit === 'kw') return true;
+    if (unit.includes('wh')) return false;
+    return /(_power|_leistung|_watt|_w$)/i.test(entityId) && !/(energy|yield|kwh|total)/i.test(entityId);
+}
+
+async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    if (!metrics) metrics = computeAggregatedPerformanceMetrics(baseline);
+
+    const catalog = getAnalyseBarExplorerChannelCatalog();
+    const labels = [];
+    const seriesById = {};
+    catalog.forEach(ch => {
+        seriesById[ch.id] = new Array(win.bucketCount).fill(0);
+    });
+
+    const now = new Date();
+    const ent = haConfigState.entities || {};
+    const pvEnergyIds = getConfiguredPvEnergyEntities(haConfigState);
+
+    // Build list of all HA entities to query via Long-Term Statistics WS
+    const allStatEntities = new Set();
+    pvEnergyIds.forEach(id => { if (id) allStatEntities.add(id); });
+    if (ent.pvPower) allStatEntities.add(ent.pvPower);
+    if (ent.loadEnergyMonth) allStatEntities.add(ent.loadEnergyMonth);
+    if (ent.loadPower) allStatEntities.add(ent.loadPower);
+    if (ent.gridImportMonth) allStatEntities.add(ent.gridImportMonth);
+    if (ent.gridImportPower) allStatEntities.add(ent.gridImportPower);
+    if (ent.gridExportMonth) allStatEntities.add(ent.gridExportMonth);
+    if (ent.gridExportPower) allStatEntities.add(ent.gridExportPower);
+    if (ent.batteryChargeMonth) allStatEntities.add(ent.batteryChargeMonth);
+    if (ent.batteryChargePower) allStatEntities.add(ent.batteryChargePower);
+    if (ent.batteryDischargeMonth) allStatEntities.add(ent.batteryDischargeMonth);
+    if (ent.batteryDischargePower) allStatEntities.add(ent.batteryDischargePower);
+
+    (haConfigState.customStrings || []).forEach(cs => {
+        if (cs?.energyEntity) allStatEntities.add(cs.energyEntity);
+        if (cs?.powerEntity) allStatEntities.add(cs.powerEntity);
+    });
+    (haConfigState.customConsumers || []).forEach(cc => {
+        if (cc?.energyEntity) allStatEntities.add(cc.energyEntity);
+        if (cc?.powerEntity) allStatEntities.add(cc.powerEntity);
+    });
+
+    let wsStats = null;
+    if (haConfigState.baseUrl && haConfigState.accessToken && allStatEntities.size > 0) {
+        try {
+            wsStats = await fetchHaLongTermStatisticsWs(
+                haConfigState.baseUrl,
+                haConfigState.accessToken,
+                win.start.toISOString(),
+                win.end.toISOString(),
+                [...allStatEntities],
+                win.wsPeriod
+            );
+        } catch (e) {}
+    }
+
+    // Helper to map a timestamp into bucket index [0 .. bucketCount-1]
+    const getBucketIdx = (tsMs) => {
+        if (!Number.isFinite(tsMs)) return -1;
+        const dt = new Date(tsMs);
+        if (win. start && tsMs < win.start.getTime() - 1800000) return -1;
+        if (win.end && tsMs > win.end.getTime() + 1800000) return -1;
+        if (analyseBarExplorerState.horizon === 'day') {
+            return dt.getHours();
+        }
+        if (analyseBarExplorerState.horizon === 'week') {
+            const diffDays = Math.floor((new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).getTime() - win.start.getTime()) / 86400000);
+            return (diffDays >= 0 && diffDays < 7) ? diffDays : -1;
+        }
+        if (analyseBarExplorerState.horizon === 'month') {
+            if (dt.getMonth() !== win.monthIndex || dt.getFullYear() !== win.year) return -1;
+            return dt.getDate() - 1;
+        }
+        if (analyseBarExplorerState.horizon === 'year') {
+            if (dt.getFullYear() !== win.year) return -1;
+            return dt.getMonth();
+        }
+        return -1;
+    };
+
+    const hoursPerBucket = analyseBarExplorerState.horizon === 'day' ? 1 : (analyseBarExplorerState.horizon === 'year' ? 730 : 24);
+
+    // Build X-axis labels and PVGIS Soll baseline per bucket
+    if (analyseBarExplorerState.horizon === 'day') {
+        const mIdx = win.start.getMonth();
+        const daysInM = new Date(win.start.getFullYear(), mIdx + 1, 0).getDate() || 30;
+        const dailySoll = (baseline.monthlySollTotal[mIdx] || 0) / daysInMonthOr30(daysInM);
+        for (let h = 0; h < 24; h++) {
+            labels.push(`${String(h).padStart(2, '0')}:00`);
+            const sunWeight = (h >= 6 && h <= 19) ? Math.sin(((h - 6) / 13) * Math.PI) : 0;
+            seriesById.pvgisSoll[h] = +(dailySoll * (sunWeight / 8.28)).toFixed(2);
+        }
+    } else if (analyseBarExplorerState.horizon === 'week') {
+        for (let d = 0; d < 7; d++) {
+            const cur = new Date(win.start.getFullYear(), win.start.getMonth(), win.start.getDate() + d);
+            labels.push(cur.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }));
+            const mIdx = cur.getMonth();
+            const daysInM = new Date(cur.getFullYear(), mIdx + 1, 0).getDate() || 30;
+            seriesById.pvgisSoll[d] = +((baseline.monthlySollTotal[mIdx] || 0) / daysInM).toFixed(2);
+        }
+    } else if (analyseBarExplorerState.horizon === 'month') {
+        const dailySoll = (baseline.monthlySollTotal[win.monthIndex] || 0) / Math.max(1, win.bucketCount);
+        for (let d = 1; d <= win.bucketCount; d++) {
+            labels.push(`${String(d).padStart(2, '0')}.${String(win.monthIndex + 1).padStart(2, '0')}.`);
+            seriesById.pvgisSoll[d - 1] = +dailySoll.toFixed(2);
+        }
+    } else {
+        for (let m = 0; m < 12; m++) {
+            labels.push(MONTH_LABELS_SHORT[m]);
+            seriesById.pvgisSoll[m] = +(baseline.monthlySollTotal[m] || 0).toFixed(1);
+        }
+    }
+
+    // Helper to extract bucket array for an entity (or prefer energyEntity over powerEntity)
+    const getEntityBucketSeries = (energyId, powerId) => {
+        const out = new Array(win.bucketCount).fill(0);
+        let filled = false;
+        if (wsStats && energyId && Array.isArray(wsStats[energyId]) && wsStats[energyId].length > 0) {
+            wsStats[energyId].forEach(row => {
+                const bIdx = getBucketIdx(Number(row.start));
+                if (bIdx >= 0 && bIdx < win.bucketCount) {
+                    const v = extractStatBucketDeltaKwh(row, energyId, hoursPerBucket);
+                    if (v > 0) {
+                        out[bIdx] += v;
+                        filled = true;
+                    }
+                }
+            });
+        }
+        if (!filled && wsStats && powerId && Array.isArray(wsStats[powerId]) && wsStats[powerId].length > 0) {
+            wsStats[powerId].forEach(row => {
+                const bIdx = getBucketIdx(Number(row.start));
+                if (bIdx >= 0 && bIdx < win.bucketCount) {
+                    const v = extractStatBucketDeltaKwh(row, powerId, hoursPerBucket);
+                    if (v > 0) {
+                        out[bIdx] += v;
+                        filled = true;
+                    }
+                }
+            });
+        }
+        return { series: out, filled };
+    };
+
+    // 1. Populate Strings & Consumers
+    (haConfigState.customStrings || []).forEach((cs, idx) => {
+        const chId = `str_${idx}`;
+        if (!seriesById[chId]) return;
+        const res = getEntityBucketSeries(cs?.energyEntity, cs?.powerEntity);
+        seriesById[chId] = res.series.map(v => +v.toFixed(2));
+    });
+
+    (haConfigState.customConsumers || []).forEach((cc, idx) => {
+        const chId = `cons_${idx}`;
+        if (!seriesById[chId]) return;
+        const res = getEntityBucketSeries(cc?.energyEntity, cc?.powerEntity);
+        seriesById[chId] = res.series.map(v => +v.toFixed(2));
+    });
+
+    // 2. Populate Core Channels from WS Stats
+    if (wsStats) {
+        // PV Total: sum of configured pvEnergyIds, or fallback to customStrings sum, or pvPower
+        let pvFilled = false;
+        pvEnergyIds.forEach(pid => {
+            if (wsStats[pid] && Array.isArray(wsStats[pid])) {
+                wsStats[pid].forEach(row => {
+                    const bIdx = getBucketIdx(Number(row.start));
+                    if (bIdx >= 0 && bIdx < win.bucketCount) {
+                        const v = extractStatBucketDeltaKwh(row, pid, hoursPerBucket);
+                        if (v > 0) {
+                            seriesById.pvTotal[bIdx] += v;
+                            pvFilled = true;
+                        }
+                    }
+                });
+            }
+        });
+        if (!pvFilled) {
+            const strRes = getEntityBucketSeries(null, ent.pvPower);
+            if (strRes.filled) {
+                seriesById.pvTotal = strRes.series;
+            } else {
+                // Sum from customStrings
+                (haConfigState.customStrings || []).forEach((cs, idx) => {
+                    const sArr = seriesById[`str_${idx}`] || [];
+                    sArr.forEach((v, bIdx) => { seriesById.pvTotal[bIdx] += v; });
+                });
+            }
+        }
+
+        const gridImpRes = getEntityBucketSeries(ent.gridImportMonth, ent.gridImportPower || ent.gridPower);
+        seriesById.gridImp = gridImpRes.series;
+
+        const gridExpRes = getEntityBucketSeries(ent.gridExportMonth, ent.gridExportPower);
+        seriesById.gridExp = gridExpRes.series;
+
+        const batChgRes = getEntityBucketSeries(ent.batteryChargeMonth, ent.batteryChargePower);
+        seriesById.batChg = batChgRes.series;
+
+        const batDisRes = getEntityBucketSeries(ent.batteryDischargeMonth, ent.batteryDischargePower);
+        seriesById.batDis = batDisRes.series;
+
+        const loadRes = getEntityBucketSeries(ent.loadEnergyMonth, ent.loadPower);
+        for (let b = 0; b < win.bucketCount; b++) {
+            if (loadRes.series[b] > 0) {
+                seriesById.houseTotal[b] = loadRes.series[b];
+            } else {
+                const pvSelf = Math.max(0, seriesById.pvTotal[b] - seriesById.gridExp[b] - seriesById.batChg[b]);
+                seriesById.houseTotal[b] = Math.max(0, pvSelf + seriesById.batDis[b] + seriesById.gridImp[b]);
+            }
+        }
+    }
+
+    // 3. For 'year' horizon, merge with monthlyComparison (Logbuch & Live current month) so manual logbook entries & live ledger are 100% reflected
+    if (analyseBarExplorerState.horizon === 'year' && metrics && Array.isArray(metrics.monthlyComparison)) {
+        metrics.monthlyComparison.forEach((mObj, mIdx) => {
+            if (!mObj || !mObj.hasReal) return;
+            if (mObj.realPv !== null) seriesById.pvTotal[mIdx] = Math.max(seriesById.pvTotal[mIdx], +Number(mObj.realPv || 0).toFixed(1));
+            if (mObj.gridImp > 0) seriesById.gridImp[mIdx] = Math.max(seriesById.gridImp[mIdx], +Number(mObj.gridImp || 0).toFixed(1));
+            if (mObj.gridExp > 0) seriesById.gridExp[mIdx] = Math.max(seriesById.gridExp[mIdx], +Number(mObj.gridExp || 0).toFixed(1));
+            if (mObj.batChg > 0) seriesById.batChg[mIdx] = Math.max(seriesById.batChg[mIdx], +Number(mObj.batChg || 0).toFixed(1));
+            if (mObj.batDis > 0) seriesById.batDis[mIdx] = Math.max(seriesById.batDis[mIdx], +Number(mObj.batDis || 0).toFixed(1));
+            if (mObj.houseConsKwh > 0) seriesById.houseTotal[mIdx] = Math.max(seriesById.houseTotal[mIdx], +Number(mObj.houseConsKwh || 0).toFixed(1));
+        });
+    }
+
+    // 4. Ensure today's bucket in 'month' or 'week' reflects at least the live today ledger if viewing the current period
+    const ledger = getUnifiedEnergyLedger(baseline);
+    const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).getTime();
+    const todayBIdx = getBucketIdx(todayStartMs);
+    if (todayBIdx >= 0 && todayBIdx < win.bucketCount && analyseBarExplorerState.horizon !== 'day' && analyseBarExplorerState.horizon !== 'year') {
+        seriesById.pvTotal[todayBIdx] = Math.max(seriesById.pvTotal[todayBIdx], +(ledger.today.pvTotal || 0).toFixed(2));
+        seriesById.houseTotal[todayBIdx] = Math.max(seriesById.houseTotal[todayBIdx], +(ledger.today.houseTotal || 0).toFixed(2));
+        seriesById.gridImp[todayBIdx] = Math.max(seriesById.gridImp[todayBIdx], +(ledger.today.gridImp || 0).toFixed(2));
+        seriesById.gridExp[todayBIdx] = Math.max(seriesById.gridExp[todayBIdx], +(ledger.today.gridExp || 0).toFixed(2));
+        seriesById.batChg[todayBIdx] = Math.max(seriesById.batChg[todayBIdx], +(ledger.today.batChg || 0).toFixed(2));
+        seriesById.batDis[todayBIdx] = Math.max(seriesById.batDis[todayBIdx], +(ledger.today.batDis || 0).toFixed(2));
+
+        (haConfigState.customStrings || []).forEach((cs, idx) => {
+            const k = `str_${idx}`;
+            const teleStr = (currentLiveTelemetry?.customStringsTelemetry || []).find(x => x && x.id === cs?.id);
+            const kwh = Number(teleStr?.energyTodayKwh ?? teleStr?.energyKwh ?? 0);
+            if (seriesById[k] && kwh > 0) {
+                seriesById[k][todayBIdx] = Math.max(seriesById[k][todayBIdx], +kwh.toFixed(2));
+            }
+        });
+        (haConfigState.customConsumers || []).forEach((cc, idx) => {
+            const k = `cons_${idx}`;
+            const teleCons = (currentLiveTelemetry?.consumersTelemetry || []).find(x => x && x.id === cc?.id);
+            const kwh = Number(teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? 0);
+            if (seriesById[k] && kwh > 0) {
+                seriesById[k][todayBIdx] = Math.max(seriesById[k][todayBIdx], +kwh.toFixed(2));
+            }
+        });
+    }
+
+    // 5. Compute derived ratio & financial channels per bucket (Autarky %, Eigenverbrauch %, Financial Savings €)
+    const gridPrice = baseline.gridPriceEur || 0.32;
+    const eegRate = baseline.eegRateEur || 0.08;
+    for (let b = 0; b < win.bucketCount; b++) {
+        const pv = seriesById.pvTotal[b] || 0;
+        const imp = seriesById.gridImp[b] || 0;
+        const exp = seriesById.gridExp[b] || 0;
+        const bChg = seriesById.batChg[b] || 0;
+        const bDis = seriesById.batDis[b] || 0;
+        const house = seriesById.houseTotal[b] || Math.max(0, (pv - exp - bChg) + bDis + imp);
+
+        const selfCovered = Math.max(0, house - imp);
+        seriesById.autarkyPct[b] = house > 0.01 ? +Math.min(100, (selfCovered / house) * 100).toFixed(1) : 0;
+
+        const pvUsedLocally = Math.max(0, pv - exp);
+        seriesById.eigenPct[b] = pv > 0.01 ? +Math.min(100, (pvUsedLocally / pv) * 100).toFixed(1) : 0;
+
+        const eur = (selfCovered * gridPrice) + (exp * eegRate);
+        seriesById.savingsEur[b] = +eur.toFixed(2);
+
+        // Round core arrays cleanly
+        seriesById.pvTotal[b] = +pv.toFixed(2);
+        seriesById.houseTotal[b] = +house.toFixed(2);
+        seriesById.gridImp[b] = +imp.toFixed(2);
+        seriesById.gridExp[b] = +exp.toFixed(2);
+        seriesById.batChg[b] = +bChg.toFixed(2);
+        seriesById.batDis[b] = +bDis.toFixed(2);
+    }
+
+    return { labels, seriesById, win };
+}
+
+function daysInMonthOr30(d) {
+    return d > 0 ? d : 30;
+}
+
+async function renderAnalyseBarExplorer(baseline = null, metrics = null, forceReload = false) {
+    const panel = document.getElementById('analysis-panel-balken-explorer');
+    if (!panel) return;
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    if (!metrics) metrics = computeAggregatedPerformanceMetrics(baseline);
+
+    // 1. Update Horizon Buttons
+    ['day', 'week', 'month', 'year'].forEach(h => {
+        const btn = document.getElementById(`btnBarExpHorizon_${h}`);
+        if (!btn) return;
+        if (analyseBarExplorerState.horizon === h) {
+            btn.className = "px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer";
+        } else {
+            btn.className = "px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer";
+        }
+    });
+
+    const win = getAnalyseBarExplorerPeriodWindow();
+    setElText('barExplorerPeriodLabel', win.label);
+
+    if (!forceReload && analyseBarExplorerState.cacheByPeriodKey[win.key]) {
+        drawAnalyseBarExplorerView(analyseBarExplorerState.cacheByPeriodKey[win.key], baseline, metrics);
+        return;
+    }
+
+    const readoutEl = document.getElementById('barExplorerHoverReadout');
+    if (readoutEl) {
+        readoutEl.innerHTML = `<span class="text-teal-600 dark:text-teal-300 font-bold">Lade Balkendiagramm-Daten für ${typeof escapeHtml === 'function' ? escapeHtml(win.label) : win.label}...</span>`;
+    }
+
+    const data = await fetchAnalyseBarExplorerPeriodData(win, baseline, metrics);
+    analyseBarExplorerState.cacheByPeriodKey[win.key] = data;
+    drawAnalyseBarExplorerView(data, baseline, metrics);
+}
+
+function drawAnalyseBarExplorerView(data, baseline, metrics) {
+    if (!data) return;
+    const catalog = getAnalyseBarExplorerChannelCatalog();
+    const { labels, seriesById, win } = data;
+
+    // Ensure at least one valid channel is active
+    const validIds = new Set(catalog.map(c => c.id));
+    analyseBarExplorerState.activeChannels = analyseBarExplorerState.activeChannels.filter(id => validIds.has(id));
+    if (analyseBarExplorerState.activeChannels.length === 0) {
+        analyseBarExplorerState.activeChannels = ['pvTotal', 'houseTotal'];
+    }
+
+    const activeObjs = catalog.filter(c => analyseBarExplorerState.activeChannels.includes(c.id));
+    const primaryCh = activeObjs[0] || catalog[0];
+    const primaryArr = seriesById[primaryCh.id] || [];
+
+    // Compute Summary KPIs for primary active channel + overall PV/Autarky in period
+    const sumVal = primaryArr.reduce((a, b) => a + (Number(b) || 0), 0);
+    const nonZeroBuckets = primaryArr.filter(v => Number(v) > 0).length;
+    const avgVal = primaryCh.unit === '%'
+        ? (nonZeroBuckets > 0 ? sumVal / nonZeroBuckets : 0)
+        : (labels.length > 0 ? sumVal / labels.length : 0);
+
+    let peakVal = 0;
+    let peakLabel = '—';
+    primaryArr.forEach((v, idx) => {
+        if (Number(v) > peakVal) {
+            peakVal = Number(v);
+            peakLabel = labels[idx] || '';
+        }
+    });
+
+    const pvSumPeriod = (seriesById.pvTotal || []).reduce((a, b) => a + (Number(b) || 0), 0);
+    const houseSumPeriod = (seriesById.houseTotal || []).reduce((a, b) => a + (Number(b) || 0), 0);
+    const impSumPeriod = (seriesById.gridImp || []).reduce((a, b) => a + (Number(b) || 0), 0);
+    const autarkyPeriod = houseSumPeriod > 0.05 ? Math.min(100, Math.max(0, ((houseSumPeriod - impSumPeriod) / houseSumPeriod) * 100)) : 0;
+
+    const fmtNum = (v, d = 1) => Number(v || 0).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
+    const kpiBox = document.getElementById('barExplorerSummaryKpis');
+    if (kpiBox) {
+        const unitLabel = primaryCh.unit;
+        const bucketUnitName = analyseBarExplorerState.horizon === 'day' ? 'Stunde' : (analyseBarExplorerState.horizon === 'year' ? 'Monat' : 'Tag');
+        kpiBox.innerHTML = `
+            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">${escapeHtml(primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittelwert' : 'Summe'}</p>
+                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
+                    ${fmtNum(primaryCh.unit === '%' ? avgVal : sumVal, primaryCh.unit === 'kWh' && sumVal < 10 ? 2 : 1)} ${unitLabel}
+                </p>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">${escapeHtml(win.label)}</p>
+            </div>
+            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
+                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-300 mt-0.5">
+                    ${fmtNum(avgVal, avgVal < 10 ? 2 : 1)} ${unitLabel}
+                </p>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">${nonZeroBuckets} aktive Zeitfenster</p>
+            </div>
+            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
+                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+                    ${fmtNum(peakVal, peakVal < 10 ? 2 : 1)} ${unitLabel}
+                </p>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">Zeitpunkt: ${escapeHtml(peakLabel)}</p>
+            </div>
+            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Bilanz im Zeitraum</p>
+                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    ${fmtNum(autarkyPeriod, 1)} % Autarkie
+                </p>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">PV: ${fmtNum(pvSumPeriod, 1)} kWh · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
+            </div>
+        `;
+    }
+
+    // 2. Render Channel Selector Grid
+    const gridEl = document.getElementById('analysisExplorerChannelsGrid');
+    if (gridEl) {
+        gridEl.innerHTML = catalog.map(ch => {
+            const isActive = analyseBarExplorerState.activeChannels.includes(ch.id);
+            const isSolo = analyseBarExplorerState.soloChannel === ch.id;
+            const arr = seriesById[ch.id] || [];
+            const total = arr.reduce((a, b) => a + (Number(b) || 0), 0);
+            const nz = arr.filter(v => Number(v) > 0).length;
+            const displayVal = ch.unit === '%' ? (nz > 0 ? total / nz : 0) : total;
+            const valFmt = fmtNum(displayVal, displayVal < 10 && displayVal > 0 ? 2 : 1);
+
+            return `
+            <div onclick="toggleAnalyseBarChannel('${ch.id}')" role="button" tabindex="0"
+                class="p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                    isActive
+                        ? 'bg-teal-500/10 dark:bg-teal-500/15 border-teal-500/50 shadow-2xs'
+                        : 'bg-white/60 dark:bg-slate-900/50 border-slate-200/70 dark:border-white/10 opacity-65 hover:opacity-100'
+                }">
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${ch.color}"></span>
+                        <span class="text-xs font-bold text-slate-900 dark:text-white break-words leading-tight">${escapeHtml(ch.label)}</span>
+                    </div>
+                    <p class="text-[11px] font-mono font-extrabold tabular-nums text-teal-700 dark:text-teal-300 mt-1">
+                        ${valFmt} ${ch.unit} <span class="text-[9.5px] font-normal text-slate-400">(${ch.unit === '%' ? 'Ø' : 'Summe'})</span>
+                    </p>
+                </div>
+                <button type="button" onclick="focusSingleAnalyseBarChannel('${ch.id}', event)"
+                    title="Nur diesen Kanal solo im Balkendiagramm anzeigen"
+                    class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 transition-colors cursor-pointer ${
+                        isSolo
+                            ? 'bg-teal-600 text-white'
+                            : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-teal-500/20'
+                    }">
+                    ◎
+                </button>
+            </div>`;
+        }).join('');
+    }
+
+    // 3. Render Chart.js Bar Chart
+    const canvas = document.getElementById('analysisExplorerBarChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const hasPctAxis = activeObjs.some(c => c.unit === '%');
+    const hasMainAxis = activeObjs.some(c => c.unit !== '%');
+
+    const datasets = activeObjs.map(ch => ({
+        label: `${ch.label} (${ch.unit})`,
+        data: seriesById[ch.id] || [],
+        backgroundColor: ch.color + (isDark ? 'cc' : 'd9'),
+        hoverBackgroundColor: ch.color,
+        borderColor: ch.color,
+        borderWidth: 1,
+        borderRadius: 6,
+        yAxisID: ch.unit === '%' ? 'yPct' : 'y'
+    }));
+
+    if (analyseBarExplorerState.chartInstance) {
+        analyseBarExplorerState.chartInstance.destroy();
+        analyseBarExplorerState.chartInstance = null;
+    }
+
+    const readoutEl = document.getElementById('barExplorerHoverReadout');
+    if (readoutEl) {
+        readoutEl.innerHTML = `<span class="font-bold text-teal-600 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${activeObjs.length} ${activeObjs.length === 1 ? 'Kanal' : 'Kanäle'} aktiv — Tippe auf einen Balken für Details`;
+    }
+
+    analyseBarExplorerState.chartInstance = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            onHover: (event, elements) => {
+                if (!elements || elements.length === 0 || !readoutEl) return;
+                const idx = elements[0].index;
+                const bucketLbl = labels[idx] || '';
+                const parts = activeObjs.map(ch => {
+                    const v = (seriesById[ch.id] || [])[idx] || 0;
+                    return `<span style="color:${ch.color}" class="font-bold">${escapeHtml(ch.label)}: ${fmtNum(v, v < 10 && v > 0 ? 2 : 1)} ${ch.unit}</span>`;
+                });
+                readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)}:</strong> ${parts.join(' · ')}`;
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: isDark ? '#cbd5e1' : '#334155',
+                        boxWidth: 10,
+                        usePointStyle: true,
+                        font: { size: 11, weight: 'bold' }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.96)',
+                    titleColor: isDark ? '#f8fafc' : '#0f172a',
+                    bodyColor: isDark ? '#cbd5e1' : '#334155',
+                    borderColor: isDark ? 'rgba(45, 212, 191, 0.3)' : 'rgba(13, 148, 136, 0.3)',
+                    borderWidth: 1
+                }
+            },
+            scales: {
+                x: {
+                    stacked: analyseBarExplorerState.stacked,
+                    grid: { display: false },
+                    ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { size: 10 } }
+                },
+                y: {
+                    display: hasMainAxis,
+                    stacked: analyseBarExplorerState.stacked,
+                    beginAtZero: true,
+                    grid: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' },
+                    ticks: {
+                        color: isDark ? '#94a3b8' : '#64748b',
+                        font: { size: 10 },
+                        callback: (v) => `${v} ${activeObjs.find(c => c.unit !== '%')?.unit || 'kWh'}`
+                    }
+                },
+                yPct: {
+                    display: hasPctAxis,
+                    position: 'right',
+                    beginAtZero: true,
+                    max: 100,
+                    grid: { drawOnChartArea: !hasMainAxis },
+                    ticks: {
+                        color: '#10b981',
+                        font: { size: 10 },
+                        callback: (v) => `${v} %`
+                    }
+                }
+            }
+        }
+    });
+}
+
+if (typeof window !== 'undefined') {
+    window.openAnalyseBarExplorer = openAnalyseBarExplorer;
+    window.setAnalyseBarExplorerHorizon = setAnalyseBarExplorerHorizon;
+    window.shiftAnalyseBarExplorerPeriod = shiftAnalyseBarExplorerPeriod;
+    window.toggleAnalyseBarExplorerStacked = toggleAnalyseBarExplorerStacked;
+    window.toggleAnalyseBarChannel = toggleAnalyseBarChannel;
+    window.focusSingleAnalyseBarChannel = focusSingleAnalyseBarChannel;
+    window.selectAnalyseBarPreset = selectAnalyseBarPreset;
+    window.reloadAnalyseBarExplorerData = reloadAnalyseBarExplorerData;
+    window.renderAnalyseBarExplorer = renderAnalyseBarExplorer;
 }
 
 // ============================================================================
@@ -6113,6 +6885,7 @@ function switchHaModalTab(tab = 'config') {
     const panelGuide = document.getElementById('ha-modal-panel-guide');
     const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
+    const scrollBody = document.getElementById('haModalScrollBody');
 
     if (tab === 'guide') {
         if (panelCfg) panelCfg.classList.add('hidden');
@@ -6124,6 +6897,9 @@ function switchHaModalTab(tab = 'config') {
         if (panelGuide) panelGuide.classList.add('hidden');
         if (btnCfg) btnCfg.className = "px-3.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-xs";
         if (btnGuide) btnGuide.className = "px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+    }
+    if (scrollBody) {
+        scrollBody.scrollTop = 0;
     }
 }
 
@@ -6280,7 +7056,20 @@ function openHaConfigModal(focusSection = null) {
     updateHaWebhookYamlSnippet();
     updateHaReverseProxyYamlDynamic();
 
+    const pvDiagEl = document.getElementById('haMainDiag_pv_month');
+    if (pvDiagEl) {
+        pvDiagEl.innerHTML = ent.pvEnergyMonth ? renderEntityDiagnosticSubline(ent.pvEnergyMonth) : '';
+    }
+    const extraDetails = document.getElementById('haPvExtraDetailsBox');
+    if (extraDetails) {
+        const hasExtra = Boolean(ent.pvEnergyToday) || (Array.isArray(haConfigState.pvEnergyExtraEntities) && haConfigState.pvEnergyExtraEntities.some(Boolean));
+        if (hasExtra) extraDetails.setAttribute('open', 'open');
+    }
+
     modal.classList.remove('hidden');
+
+    const scrollBody = document.getElementById('haModalScrollBody');
+    if (scrollBody) scrollBody.scrollTop = 0;
 
     if (focusSection === 'guide') {
         switchHaModalTab('guide');
@@ -6908,6 +7697,24 @@ async function testHaConnectionAndLoadSensors() {
 
 async function openHaEntityPicker(options = {}) {
     readHaModalIntoState();
+
+    // Resolve currently assigned entity_id so we can mark & scroll to the active sensor!
+    let currentEntityId = '';
+    if (options.targetInputId) {
+        const inp = document.getElementById(options.targetInputId);
+        if (inp && inp.value) currentEntityId = String(inp.value).trim();
+    } else if (options.customType === 'stringPower' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.customStrings?.[options.index]?.powerEntity || '').trim();
+    } else if (options.customType === 'stringEnergy' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.customStrings?.[options.index]?.energyEntity || '').trim();
+    } else if (options.customType === 'consumerPower' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.customConsumers?.[options.index]?.powerEntity || '').trim();
+    } else if (options.customType === 'consumerEnergy' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.customConsumers?.[options.index]?.energyEntity || '').trim();
+    } else if (options.customType === 'pvEnergyExtra' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.pvEnergyExtraEntities?.[options.index] || '').trim();
+    }
+
     haPickerState = {
         targetInputId: options.targetInputId || null,
         customType: options.customType || null,
@@ -6917,6 +7724,7 @@ async function openHaEntityPicker(options = {}) {
         unitFilter: options.unitFilter || 'all',
         selectedGroup: '__ALL__',
         searchQuery: '',
+        currentEntityId,
         isLoading: false
     };
 
@@ -6935,7 +7743,13 @@ async function openHaEntityPicker(options = {}) {
     if (discoveredHaSensors.length === 0) {
         await reloadHaPickerSensors();
     } else {
-        renderHaEntityPickerUI();
+        // If currentEntityId belongs to a sensor whose unit doesn't match unitFilter, widen unitFilter to 'all' so the active sensor is visible
+        const activeSensor = currentEntityId ? discoveredHaSensors.find(s => s.entity_id === currentEntityId) : null;
+        if (activeSensor && haPickerState.unitFilter !== 'all' && activeSensor.unitCategory !== haPickerState.unitFilter) {
+            haPickerState.unitFilter = 'all';
+            updateHaPickerFilterButtonsUI();
+        }
+        renderHaEntityPickerUI(true);
     }
 }
 
@@ -6947,7 +7761,7 @@ function closeHaEntityPicker() {
 async function reloadHaPickerSensors() {
     readHaModalIntoState();
     haPickerState.isLoading = true;
-    renderHaEntityPickerUI();
+    renderHaEntityPickerUI(false);
 
     const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
     if (directRes.ok && Array.isArray(directRes.data)) {
@@ -6960,25 +7774,25 @@ async function reloadHaPickerSensors() {
         updateHaEntitiesDatalistElement();
     }
     haPickerState.isLoading = false;
-    renderHaEntityPickerUI();
+    renderHaEntityPickerUI(true);
 }
 
 function setHaPickerCategory(cat) {
     haPickerState.category = cat || 'all';
     haPickerState.selectedGroup = '__ALL__';
     updateHaPickerFilterButtonsUI();
-    renderHaEntityPickerUI();
+    renderHaEntityPickerUI(false);
 }
 
 function setHaPickerUnitFilter(unitFilter) {
     haPickerState.unitFilter = unitFilter || 'all';
     updateHaPickerFilterButtonsUI();
-    renderHaEntityPickerUI();
+    renderHaEntityPickerUI(false);
 }
 
 function selectHaPickerGroup(groupKey) {
     haPickerState.selectedGroup = groupKey || '__ALL__';
-    renderHaEntityPickerUI();
+    renderHaEntityPickerUI(false);
 }
 
 function onHaPickerSearchInput(val) {
@@ -6992,7 +7806,7 @@ function onHaPickerSearchInput(val) {
         if (haPickerState.searchQuery.length > 0) clearBtn.classList.remove('hidden');
         else clearBtn.classList.add('hidden');
     }
-    renderHaEntityPickerUI();
+    renderHaEntityPickerUI(false);
 }
 
 function updateHaPickerFilterButtonsUI() {
@@ -7033,7 +7847,7 @@ function getFilteredPickerSensors(ignoreGroupSelection = false) {
     });
 }
 
-function renderHaEntityPickerUI() {
+function renderHaEntityPickerUI(scrollToActive = false) {
     const groupsEl = document.getElementById('haPickerGroupsList');
     const entitiesEl = document.getElementById('haPickerEntitiesList');
     if (!groupsEl || !entitiesEl) return;
@@ -7058,18 +7872,26 @@ function renderHaEntityPickerUI() {
         return;
     }
 
+    const activeEntityId = haPickerState.currentEntityId || '';
+    const activeSensorObj = activeEntityId ? discoveredHaSensors.find(s => s.entity_id === activeEntityId) : null;
+
     // 1. Build Groups (Devices & Helpers) matching Category + Unit + Search
     const baseFiltered = getFilteredPickerSensors(true);
     const groupMap = new Map();
     baseFiltered.forEach(s => {
         const key = s.groupName || 'Sonstige';
         if (!groupMap.has(key)) {
-            groupMap.set(key, { name: key, category: s.category, count: 0 });
+            groupMap.set(key, { name: key, category: s.category, count: 0, hasActive: false });
         }
-        groupMap.get(key).count++;
+        const entry = groupMap.get(key);
+        entry.count++;
+        if (activeEntityId && s.entity_id === activeEntityId) {
+            entry.hasActive = true;
+        }
     });
 
     const groupsArr = [...groupMap.values()].sort((a, b) => {
+        if (a.hasActive !== b.hasActive) return a.hasActive ? -1 : 1;
         if (a.category !== b.category) return a.category === 'device' ? -1 : 1;
         return a.name.localeCompare(b.name, 'de');
     });
@@ -7084,11 +7906,11 @@ function renderHaEntityPickerUI() {
                     ? 'bg-teal-600 text-white shadow-xs'
                     : 'bg-white dark:bg-[#13242c] text-slate-700 dark:text-slate-200 hover:bg-teal-500/10 border border-slate-200/80 dark:border-white/10'
             }">
-            <span class="flex items-center gap-2 truncate">
-                <span class="material-symbols-rounded text-base">apps</span>
-                <span class="truncate">Alle passenden Sensoren</span>
+            <span class="flex items-center gap-2 min-w-0">
+                <span class="material-symbols-rounded text-base shrink-0">apps</span>
+                <span class="break-words whitespace-normal leading-snug">Alle passenden Sensoren</span>
             </span>
-            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'}">${baseFiltered.length}</span>
+            <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${isAllSelected ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'}">${baseFiltered.length}</span>
         </button>
     `;
 
@@ -7096,7 +7918,7 @@ function renderHaEntityPickerUI() {
         const isSel = haPickerState.selectedGroup === g.name;
         const safeGName = typeof escapeHtml === 'function' ? escapeHtml(g.name) : g.name;
         const iconName = g.category === 'helper' ? 'functions' : 'memory';
-        const iconColor = isSel ? 'text-white' : (g.category === 'helper' ? 'text-amber-400' : 'text-teal-400');
+        const iconColor = isSel ? 'text-white' : (g.hasActive ? 'text-emerald-500' : (g.category === 'helper' ? 'text-amber-400' : 'text-teal-400'));
         const safeJsArg = g.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
         return `
@@ -7104,11 +7926,13 @@ function renderHaEntityPickerUI() {
             class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 transition-all cursor-pointer ${
                 isSel
                     ? 'bg-teal-600 text-white shadow-xs font-bold'
-                    : 'bg-white dark:bg-[#13242c] text-slate-700 dark:text-slate-200 hover:bg-teal-500/10 border border-slate-200/80 dark:border-white/10'
+                    : (g.hasActive
+                        ? 'bg-emerald-500/10 dark:bg-emerald-500/15 text-emerald-900 dark:text-emerald-200 border-2 border-emerald-500/60 font-bold'
+                        : 'bg-white dark:bg-[#13242c] text-slate-700 dark:text-slate-200 hover:bg-teal-500/10 border border-slate-200/80 dark:border-white/10')
             }">
-            <span class="flex items-center gap-2 min-w-0">
-                <span class="material-symbols-rounded text-base shrink-0 ${iconColor}">${iconName}</span>
-                <span class="truncate">${safeGName}</span>
+            <span class="flex items-start gap-2 min-w-0 flex-1">
+                <span class="material-symbols-rounded text-base shrink-0 mt-0.5 ${iconColor}">${g.hasActive ? 'check_circle' : iconName}</span>
+                <span class="break-words whitespace-normal leading-snug">${safeGName}</span>
             </span>
             <span class="text-[10px] font-mono px-1.5 py-0.5 rounded-md shrink-0 ${isSel ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300'}">${g.count}</span>
         </button>`;
@@ -7116,13 +7940,13 @@ function renderHaEntityPickerUI() {
 
     groupsEl.innerHTML = groupsHtml;
 
-    // 2. Build Entities List for Step 2
+    // 2. Build Entities List for Step 2 (Never truncate sensor names or entity_ids!)
     const matchingEntities = getFilteredPickerSensors(false);
     setElText('haPickerEntityCountBadge', `${matchingEntities.length} Sensoren`);
     setElText(
         'haPickerActiveGroupTitle',
         haPickerState.selectedGroup === '__ALL__'
-            ? '2. Entität antippen zum Übernehmen'
+            ? '2. Entität antippen zum Übernehmen (Vollständige Namen)'
             : `2. ${haPickerState.selectedGroup}`
     );
 
@@ -7138,7 +7962,14 @@ function renderHaEntityPickerUI() {
         return;
     }
 
-    entitiesEl.innerHTML = matchingEntities.slice(0, 250).map(s => {
+    // Ensure currently selected sensor appears in the rendered slice (or at top if not in first 300)
+    let listToRender = matchingEntities.slice(0, 300);
+    if (activeSensorObj && matchingEntities.some(s => s.entity_id === activeEntityId) && !listToRender.some(s => s.entity_id === activeEntityId)) {
+        listToRender = [activeSensorObj, ...listToRender];
+    }
+
+    entitiesEl.innerHTML = listToRender.map(s => {
+        const isCurrentActive = Boolean(activeEntityId && s.entity_id === activeEntityId);
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(s.name) : s.name;
         const safeId = typeof escapeHtml === 'function' ? escapeHtml(s.entity_id) : s.entity_id;
         const safeGroup = typeof escapeHtml === 'function' ? escapeHtml(s.groupName) : s.groupName;
@@ -7146,32 +7977,54 @@ function renderHaEntityPickerUI() {
         const safeState = typeof escapeHtml === 'function' ? escapeHtml(`${s.state} ${s.unit}`.trim()) : `${s.state} ${s.unit}`.trim();
         const jsEntityId = s.entity_id.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
+        const activeBadge = isCurrentActive
+            ? `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black uppercase tracking-wider shadow-2xs">✓ Aktuell ausgewählt</span>`
+            : '';
+
         const badgeType = s.category === 'helper'
-            ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-300 text-[9px] font-bold">Helfer</span>`
-            : `<span class="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-600 dark:text-teal-300 text-[9px] font-bold">${safeGroup}</span>`;
+            ? `<span class="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-300 text-[9.5px] font-bold">Helfer</span>`
+            : `<span class="px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-600 dark:text-teal-300 text-[9.5px] font-bold break-words">${safeGroup}</span>`;
 
         const areaBadge = safeArea
-            ? `<span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 text-[9px] font-semibold">${safeArea}</span>`
+            ? `<span class="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 text-[9.5px] font-semibold">${safeArea}</span>`
             : '';
 
         return `
-        <button type="button" onclick="pickHaEntityFromModal('${jsEntityId}')"
-            class="w-full text-left p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#14252d] hover:bg-teal-500/10 dark:hover:bg-teal-500/15 border border-slate-200/90 dark:border-white/10 hover:border-teal-500/50 transition-all flex items-center justify-between gap-2.5 group cursor-pointer">
-            <div class="min-w-0 flex-1">
+        <button type="button" ${isCurrentActive ? 'id="haPickerActiveEntityRow"' : ''} onclick="pickHaEntityFromModal('${jsEntityId}')"
+            class="w-full text-left p-3 rounded-xl transition-all flex items-start justify-between gap-3 group cursor-pointer ${
+                isCurrentActive
+                    ? 'bg-emerald-500/12 dark:bg-emerald-500/20 border-2 border-emerald-500 ring-2 ring-emerald-500/20 shadow-sm'
+                    : 'bg-white dark:bg-[#14252d] hover:bg-teal-500/10 dark:hover:bg-teal-500/15 border border-slate-200/90 dark:border-white/10 hover:border-teal-500/50'
+            }">
+            <div class="min-w-0 flex-1 space-y-1">
                 <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="text-xs sm:text-sm font-bold text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate">${safeName}</span>
+                    ${activeBadge}
                     ${badgeType}
                     ${areaBadge}
                 </div>
-                <p class="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate mt-0.5">${safeId}</p>
+                <p class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-300 break-words whitespace-normal leading-snug">
+                    ${safeName}
+                </p>
+                <p class="text-[11px] font-mono text-slate-500 dark:text-slate-300 break-all whitespace-normal leading-snug">
+                    ${safeId}
+                </p>
             </div>
-            <div class="text-right shrink-0">
-                <span class="inline-block px-2 py-1 rounded-lg bg-slate-100 dark:bg-[#0b151a] border border-slate-200 dark:border-teal-500/30 text-xs font-black font-mono tabular-nums text-teal-700 dark:text-teal-300">
+            <div class="text-right shrink-0 pt-0.5">
+                <span class="inline-block px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#0b151a] border border-slate-200 dark:border-teal-500/30 text-xs font-black font-mono tabular-nums text-teal-700 dark:text-teal-300">
                     ${safeState || '—'}
                 </span>
             </div>
         </button>`;
     }).join('');
+
+    if (scrollToActive && activeEntityId) {
+        setTimeout(() => {
+            const activeRow = document.getElementById('haPickerActiveEntityRow');
+            if (activeRow && typeof activeRow.scrollIntoView === 'function') {
+                activeRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 60);
+    }
 }
 
 function pickHaEntityFromModal(entityId) {
@@ -7356,9 +8209,55 @@ function applyEnergyBaselinesFromProject(baselines) {
     saveEnergyCounterBaselines();
 }
 
+function getFullHaConfigWithTokenForBackup() {
+    return JSON.parse(JSON.stringify(haConfigState || {}));
+}
+
+function applyFullHaConfigWithTokenFromBackup(fullCfg) {
+    if (!fullCfg || typeof fullCfg !== 'object') return;
+    const incomingToken = String(fullCfg.accessToken || '').trim();
+    const effectiveToken = incomingToken || haConfigState.accessToken || '';
+    haConfigState = {
+        ...haConfigState,
+        mode: fullCfg.mode || haConfigState.mode || 'poll',
+        baseUrl: fullCfg.baseUrl || haConfigState.baseUrl,
+        accessToken: effectiveToken,
+        pollIntervalSec: fullCfg.pollIntervalSec || haConfigState.pollIntervalSec || 10,
+        autoSyncMonthly: fullCfg.autoSyncMonthly !== undefined ? fullCfg.autoSyncMonthly : true,
+        trackingStartDate: fullCfg.trackingStartDate || haConfigState.trackingStartDate || '2026-11-01',
+        batteryName: fullCfg.batteryName || haConfigState.batteryName || 'BYD HVS+',
+        entities: { ...haConfigState.entities, ...(fullCfg.entities || {}) },
+        pvEnergyExtraEntities: Array.isArray(fullCfg.pvEnergyExtraEntities)
+            ? JSON.parse(JSON.stringify(fullCfg.pvEnergyExtraEntities))
+            : (haConfigState.pvEnergyExtraEntities || []),
+        customStrings: Array.isArray(fullCfg.customStrings) && fullCfg.customStrings.length > 0
+            ? JSON.parse(JSON.stringify(fullCfg.customStrings))
+            : haConfigState.customStrings,
+        customConsumers: Array.isArray(fullCfg.customConsumers)
+            ? JSON.parse(JSON.stringify(fullCfg.customConsumers))
+            : haConfigState.customConsumers,
+        loadedFromSharedProject: !effectiveToken
+    };
+    try {
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+    } catch (e) {}
+    try {
+        fetch('/api/ha/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: haConfigState })
+        }).catch(() => {});
+    } catch (e) {}
+    energyCounterBaselines.lastHistorySyncMs = 0;
+    startLiveTelemetryLoop();
+    refreshIntradayHistoryAndLive();
+}
+
 window.toggleShowAllDashboardConsumers = toggleShowAllDashboardConsumers;
 window.getSanitizedHaConfigForProject = getSanitizedHaConfigForProject;
 window.applySanitizedHaConfigFromProject = applySanitizedHaConfigFromProject;
+window.getFullHaConfigWithTokenForBackup = getFullHaConfigWithTokenForBackup;
+window.applyFullHaConfigWithTokenFromBackup = applyFullHaConfigWithTokenFromBackup;
 window.getPerformanceRecordsForProject = getPerformanceRecordsForProject;
 window.applyPerformanceRecordsFromProject = applyPerformanceRecordsFromProject;
 window.getEnergyBaselinesForProject = getEnergyBaselinesForProject;

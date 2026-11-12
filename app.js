@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.4';
+const APP_VERSION = '10.6';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -41,7 +41,16 @@ let YieldDataCache = null, ConsumptionCache = null, FlowCache = null, activeGrou
 let strings = [], currentDetailMonth = null;
 let chartYield = null, chartAutarkyCons = null, chartAutarkyGen = null, detailConsChart = null, detailGenChart = null;
 
-const DEFAULT_THEME = { primary: '#3b82f6', accent: '#10b981', dark: false };
+const DEFAULT_THEME = {
+    primary: '#0d9488',
+    accent: '#10b981',
+    dark: false,
+    style: 'liquid-glass', // 'liquid-glass' | 'vibrant-pop' | 'neo-modern'
+    preset: 'turquoise',   // 'turquoise' | 'emerald' | 'cyber-sky' | 'indigo' | 'amber' | 'coral' | 'lime' | 'custom'
+    fontFamily: 'Plus Jakarta Sans', // 'Plus Jakarta Sans' | 'Outfit' | 'DM Sans' | 'Manrope'
+    fontScale: 'normal',   // 'compact' | 'normal' | 'large' | 'xlarge'
+    density: 'normal'      // 'compact' | 'normal' | 'spacious'
+};
 
 function readJsonStorage(key, fallback) {
     try {
@@ -64,7 +73,12 @@ function getThemeSettings() {
     return {
         primary: isHexColor(stored.primary) ? stored.primary : DEFAULT_THEME.primary,
         accent: isHexColor(stored.accent) ? stored.accent : DEFAULT_THEME.accent,
-        dark: stored.dark === true
+        dark: stored.dark === true,
+        style: ['liquid-glass', 'vibrant-pop', 'neo-modern'].includes(stored.style) ? stored.style : DEFAULT_THEME.style,
+        preset: stored.preset || DEFAULT_THEME.preset,
+        fontFamily: ['Plus Jakarta Sans', 'Outfit', 'DM Sans', 'Manrope'].includes(stored.fontFamily) ? stored.fontFamily : DEFAULT_THEME.fontFamily,
+        fontScale: ['compact', 'normal', 'large', 'xlarge'].includes(stored.fontScale) ? stored.fontScale : DEFAULT_THEME.fontScale,
+        density: ['compact', 'normal', 'spacious'].includes(stored.density) ? stored.density : DEFAULT_THEME.density
     };
 }
 
@@ -1244,30 +1258,60 @@ function renderProjectManagerModal(tab = null) {
         ` : '';
 
         body.innerHTML = `
+            <!-- WINDOWS-STYLE DIREKT-DATEI FÜR NAS, HANDY, TABLET & PC (INKL. HA-TOKEN!) -->
+            <div class="p-4 rounded-2xl bg-gradient-to-r from-teal-500/15 via-emerald-500/10 to-sky-500/15 border-2 border-teal-500/40 space-y-3">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="flex items-start gap-3">
+                        <div class="w-10 h-10 rounded-2xl bg-teal-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                            <span class="material-symbols-rounded text-xl">save_as</span>
+                        </div>
+                        <div>
+                            <h4 class="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                                <span>Wie bei Windows: „Speichern unter…“ &amp; „Datei öffnen…“ (für dein NAS)</span>
+                                <span class="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black uppercase">Inkl. HA-Token</span>
+                            </h4>
+                            <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug mt-0.5">
+                                Speichert deine komplette Anlage (PV-Planung, alle Sensoren, <strong>Home Assistant Token</strong>, Logbuch &amp; Design) in einer einzigen Datei (<code>.pvpro.json</code>). Lege sie auf dein <strong>NAS</strong> und öffne sie auf Handy, Tablet oder PC mit 1 Klick – ohne erneute Token-Eingabe!
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 shrink-0">
+                        <button type="button" onclick="saveProjectFileAs()" class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                            <span class="material-symbols-rounded text-base">save_as</span>
+                            <span>Speichern unter… (NAS / Datei)</span>
+                        </button>
+                        <button type="button" onclick="openProjectFileFromDisk()" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 text-xs font-extrabold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer">
+                            <span class="material-symbols-rounded text-base text-indigo-500">upload_file</span>
+                            <span>Datei öffnen… (Vom NAS laden)</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Info & Schnell-Sync Leiste: Was ist im Gesamtpaket enthalten? -->
             <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                     <div class="flex items-start gap-2.5">
                         <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-xl shrink-0 mt-0.5">inventory_2</span>
                         <div>
-                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Einheitliche Gesamtpakete (Planung + Live &amp; HA + Logbuch)</h4>
+                            <h4 class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">Lokale &amp; GitHub-Gesamtpakete</h4>
                             <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
-                                <strong>Speichern ohne Token:</strong> Klicke auf <strong>„Im Server &amp; Code sichern“</strong> – in AI Studio wird dein Gesamtpaket direkt ohne Token in <code>data/system_plans.json</code> geschrieben (beim nächsten GitHub-Export automatisch im Repo). Nur wenn du die App direkt auf <code>github.io</code> nutzt, wird für Direkt-Pushes ein GitHub-Token benötigt.
+                                Lokale Browser-Liste und optionaler GitHub-Repository-Sync (<code>data/system_plans.json</code>).
                             </p>
                         </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-1.5 shrink-0">
-                        <button type="button" onclick="saveAndSyncActivePackageNow()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Speichert das aktive Gesamtpaket direkt ohne Token im Server/Code (data/system_plans.json) und im Browser">
+                        <button type="button" onclick="saveAndSyncActivePackageNow()" class="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer" title="Speichert das aktive Gesamtpaket im Browser und Server">
                             <span class="material-symbols-rounded text-sm">${isGitHubSyncBusy ? 'progress_activity' : 'save'}</span>
-                            <span>Im Server &amp; Code sichern${ghCfg.token ? ' + GitHub' : ' (ohne Token)'}</span>
+                            <span>Lokal &amp; Server sichern</span>
                         </button>
                         <button type="button" onclick="toggleGitHubSyncPanel()" class="px-2.5 py-1.5 rounded-xl ${ghCfg.token ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/35' : 'bg-slate-200/80 dark:bg-slate-800 text-slate-700 dark:text-slate-200'} text-xs font-bold transition-all flex items-center gap-1 cursor-pointer">
                             <span class="material-symbols-rounded text-sm">cloud_sync</span>
-                            <span>GitHub Direkt-Push ${ghCfg.token ? '✓' : '(optional)'}</span>
+                            <span>GitHub Sync ${ghCfg.token ? '✓' : '(optional)'}</span>
                         </button>
-                        <button type="button" onclick="openShareModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="QR-Code oder JSON-Datei">
+                        <button type="button" onclick="openShareModal()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="QR-Code oder Transfer-Link">
                             <span class="material-symbols-rounded text-sm">qr_code_2</span>
-                            <span>QR / Datei</span>
+                            <span>QR-Code</span>
                         </button>
                     </div>
                 </div>
@@ -1785,6 +1829,7 @@ function exportFullConfiguration() {
         version: APP_VERSION,
         exportedAt: new Date().toISOString(),
         appName: 'PV-Planung Pro',
+        projectName: document.getElementById('headerProjectName')?.innerText || LocationData?.name || 'PV-Anlage',
         strings: strings || [],
         LocationData: LocationData || {},
         consumption: (typeof getConsumptionSettingsPayload === 'function' ? getConsumptionSettingsPayload() : JSON.parse(localStorage.getItem('pvpro_cons') || '{}')),
@@ -1793,6 +1838,7 @@ function exportFullConfiguration() {
         wiring: (typeof wiringSettings !== 'undefined' ? wiringSettings : JSON.parse(localStorage.getItem('pvpro_wiring') || '{}')),
         userDB: (typeof userDB !== 'undefined' ? userDB : JSON.parse(localStorage.getItem('pvpro_user_db') || '{}')),
         batMap: (typeof batMap !== 'undefined' ? batMap : JSON.parse(localStorage.getItem('pvpro_batmap') || '{}')),
+        themeSettings: getThemeSettings(),
         haConfigSanitized: (typeof getSanitizedHaConfigForProject === 'function' ? getSanitizedHaConfigForProject() : null),
         performanceRecords: (typeof getPerformanceRecordsForProject === 'function' ? getPerformanceRecordsForProject() : null),
         energyBaselines: (typeof getEnergyBaselinesForProject === 'function' ? getEnergyBaselinesForProject() : null),
@@ -1800,11 +1846,20 @@ function exportFullConfiguration() {
     };
 }
 
+function exportFullConfigurationWithToken() {
+    const base = exportFullConfiguration();
+    if (typeof getFullHaConfigWithTokenForBackup === 'function') {
+        base.haConfigFull = getFullHaConfigWithTokenForBackup();
+    }
+    return base;
+}
+
 function getShareableConfig(fullConfig) {
     const clean = JSON.parse(JSON.stringify(fullConfig));
-    // Always guarantee accessToken is stripped
+    // Always guarantee accessToken is stripped for public QR/GitHub sharing
     if (clean.haConfigSanitized) clean.haConfigSanitized.accessToken = '';
     if (clean.haConfig) clean.haConfig.accessToken = '';
+    delete clean.haConfigFull;
     // If userDB contains document attachments (base64 PDFs/images), strip large binary payloads for URL/QR transfer
     if (clean.userDB && typeof clean.userDB === 'object') {
         ['panels', 'inverters', 'batteries'].forEach(cat => {
@@ -1830,6 +1885,14 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
     if (!config || typeof config !== 'object') {
         showToastNotification('Ungültiges Konfigurations-Format.', 'error');
         return false;
+    }
+
+    // Support importing both direct config objects and wrapped project objects ({ name, data: {...} })
+    if (config.data && typeof config.data === 'object' && Array.isArray(config.data.strings)) {
+        if (!sourceLabel || sourceLabel === 'Geteilte Konfiguration') {
+            sourceLabel = config.name || sourceLabel;
+        }
+        config = config.data;
     }
     
     try {
@@ -1871,7 +1934,14 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
             if (typeof batMap !== 'undefined') Object.assign(batMap, config.batMap);
             localStorage.setItem('pvpro_batmap', JSON.stringify(config.batMap));
         }
-        if (config.haConfigSanitized && typeof applySanitizedHaConfigFromProject === 'function') {
+        if (config.themeSettings && typeof config.themeSettings === 'object') {
+            const mergedTheme = { ...getThemeSettings(), ...config.themeSettings };
+            localStorage.setItem('pvpro_theme', JSON.stringify(mergedTheme));
+            applyThemeSettingsObj(mergedTheme);
+        }
+        if (config.haConfigFull && typeof applyFullHaConfigWithTokenFromBackup === 'function') {
+            applyFullHaConfigWithTokenFromBackup(config.haConfigFull);
+        } else if (config.haConfigSanitized && typeof applySanitizedHaConfigFromProject === 'function') {
             applySanitizedHaConfigFromProject(config.haConfigSanitized);
         }
         if (config.performanceRecords && typeof applyPerformanceRecordsFromProject === 'function') {
@@ -1887,12 +1957,22 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
             } catch (e) {}
         }
 
+        // Persist imported state into the active local project slot
+        saveCurrentProjectData(false);
+
         // Re-run physics and render
         updatePhysicsOnly();
         if (typeof renderWiringTab === 'function') renderWiringTab();
         if (typeof renderLiveCockpitUI === 'function') renderLiveCockpitUI();
+        if (typeof renderAnalysisSection === 'function') renderAnalysisSection();
         
-        showToastNotification(`✅ Konfiguration (${sourceLabel}) inkl. Sensoren übernommen!`, 'success');
+        const hasTokenRestored = Boolean(config.haConfigFull && config.haConfigFull.accessToken);
+        showToastNotification(
+            hasTokenRestored
+                ? `✅ Komplettpaket (${sourceLabel}) inkl. Home Assistant Token & Sensoren sofort geladen!`
+                : `✅ Konfiguration (${sourceLabel}) inkl. Sensoren übernommen!`,
+            'success'
+        );
         return true;
     } catch (err) {
         console.error("Import Error:", err);
@@ -2347,11 +2427,37 @@ function shareViaWebShare(url, code) {
     }
 }
 
-function downloadConfigurationFile() {
-    const config = exportFullConfiguration();
+async function saveProjectFileAs() {
+    saveCurrentProjectData(false);
+    const config = exportFullConfigurationWithToken();
     const dateStr = new Date().toISOString().slice(0, 10);
-    const fileName = `PV-Planung_${(LocationData?.name || 'Anlage').replace(/[^a-zA-Z0-9_-]/g, '_')}_${dateStr}.json`;
-    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const rawName = document.getElementById('headerProjectName')?.innerText || LocationData?.name || 'Anlage';
+    const cleanName = rawName.replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
+    const fileName = `PVPro_${cleanName}_${dateStr}.pvpro.json`;
+    const jsonText = JSON.stringify(config, null, 2);
+
+    // Try native Windows/macOS/Chrome File System Access API ("Speichern unter...") first if not blocked by iframe
+    if (typeof window.showSaveFilePicker === 'function') {
+        try {
+            const handle = await window.showSaveFilePicker({
+                suggestedName: fileName,
+                types: [{
+                    description: 'PV-Planung Pro Komplettpaket (.pvpro.json)',
+                    accept: { 'application/json': ['.pvpro.json', '.json'] }
+                }]
+            });
+            const writable = await handle.createWritable();
+            await writable.write(jsonText);
+            await writable.close();
+            showToastNotification(`💾 Komplettpaket inkl. HA-Token gespeichert als „${handle.name || fileName}“!`, 'success');
+            return;
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            // If blocked by cross-origin iframe or unsupported, fall through to direct file download
+        }
+    }
+
+    const blob = new Blob([jsonText], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2360,7 +2466,15 @@ function downloadConfigurationFile() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToastNotification('📄 Konfigurations-Datei wurde heruntergeladen!', 'success');
+    showToastNotification(`💾 Datei „${fileName}“ (inkl. HA-Token & Sensoren) gespeichert!`, 'success');
+}
+
+function openProjectFileFromDisk() {
+    triggerConfigurationFileInput();
+}
+
+function downloadConfigurationFile() {
+    saveProjectFileAs();
 }
 
 function triggerConfigurationFileInput() {
@@ -2369,7 +2483,7 @@ function triggerConfigurationFileInput() {
         inp = document.createElement('input');
         inp.id = 'file-config-upload';
         inp.type = 'file';
-        inp.accept = '.json,application/json';
+        inp.accept = '.json,.pvpro.json,application/json';
         inp.style.display = 'none';
         inp.onchange = (e) => handleConfigurationFileUpload(e);
         document.body.appendChild(inp);
@@ -2386,17 +2500,21 @@ function handleConfigurationFileUpload(e) {
         try {
             const cfg = JSON.parse(event.target.result);
             if (cfg && typeof cfg === 'object') {
-                importFullConfiguration(cfg, file.name);
+                importFullConfiguration(cfg, file.name.replace(/\.pvpro\.json$|\.json$/i, ''));
                 closeShareModal();
+                closeProjectManagerModal();
             } else {
-                alert('Ungültiges Format der JSON-Datei.');
+                showToastNotification('Ungültiges Format der JSON-Datei.', 'error');
             }
         } catch (err) {
-            alert('Fehler beim Lesen der JSON-Datei: ' + err.message);
+            showToastNotification('Fehler beim Lesen der Datei: ' + err.message, 'error');
         }
     };
     reader.readAsText(file);
 }
+
+window.saveProjectFileAs = saveProjectFileAs;
+window.openProjectFileFromDisk = openProjectFileFromDisk;
 
 async function loadConfigurationByCode(code) {
     if (!code || !code.trim()) {
@@ -2761,15 +2879,24 @@ function openAnalyseDrillDown(subTab = 'soll-ist') {
     pushAppNavHistoryState('analyse', 2, subTab);
 
     const titles = {
+        'balken-explorer': 'Balken-Cockpit',
         'soll-ist': 'Soll-Ist',
         'autarkie-bat': 'Effizienz',
         'amortisation': 'Amortisation',
         'logbuch': 'Logbuch'
     };
 
+    const subtitles = {
+        'balken-explorer': 'Ebene 2 · Interaktive Balkendiagramme (Tag · Woche · Monat · Jahr)',
+        'soll-ist': 'Ebene 2 · PVGIS Soll-Ist-Vergleich & Monatsabweichungen',
+        'autarkie-bat': 'Ebene 2 · Autarkiegrad, Eigenverbrauch & Batterie-Wirkungsgrad',
+        'amortisation': 'Ebene 2 · Reale Stromkosten-Ersparnis, EEG & Break-Even',
+        'logbuch': 'Ebene 2 · Monatswerte-Logbuch, HA-Sync & CSV'
+    };
+
     updateTwoRowHeader(
         titles[subTab] || 'Analyse',
-        'Ebene 2 · Sankey & Performance-Analyse',
+        subtitles[subTab] || 'Ebene 2 · Sankey & Performance-Analyse',
         'monitoring',
         2,
         'Zurück zur Analyse'
@@ -6457,20 +6584,146 @@ function generateSyntheticPVGISData(lat, tilt, azimuth, peakPower) {
 }
 
 // ==========================================
-// THEME & DESIGN MANAGEMENT
+// THEME & DESIGN STUDIO MANAGEMENT (V10.5)
 // ==========================================
+const THEME_COLOR_PRESETS = {
+    turquoise: {
+        label: 'Türkis Breeze (Standard)',
+        primary: '#0d9488',
+        accent: '#10b981',
+        glassTintRgb: '13, 148, 136',
+        orb1Rgb: '45, 212, 191',
+        orb2Rgb: '56, 189, 248',
+        bgLight: ['#d5efe9', '#eaf6f3', '#f4faf8'],
+        bgDark: ['#071014', '#0b181e', '#071116']
+    },
+    emerald: {
+        label: 'Solar Emerald',
+        primary: '#059669',
+        accent: '#10b981',
+        glassTintRgb: '5, 150, 105',
+        orb1Rgb: '52, 211, 153',
+        orb2Rgb: '16, 185, 129',
+        bgLight: ['#d6f3e5', '#ebf9f2', '#f4fbf7'],
+        bgDark: ['#06120e', '#0a1c15', '#06110d']
+    },
+    'cyber-sky': {
+        label: 'Arctic Sky & Cyan',
+        primary: '#0284c7',
+        accent: '#06b6d4',
+        glassTintRgb: '2, 132, 199',
+        orb1Rgb: '56, 189, 248',
+        orb2Rgb: '34, 211, 238',
+        bgLight: ['#d8eefb', '#ebf6fd', '#f5fafe'],
+        bgDark: ['#060f18', '#0a1826', '#07111b']
+    },
+    indigo: {
+        label: 'Electric Indigo Pop',
+        primary: '#4f46e5',
+        accent: '#06b6d4',
+        glassTintRgb: '79, 70, 229',
+        orb1Rgb: '129, 140, 248',
+        orb2Rgb: '56, 189, 248',
+        bgLight: ['#e2e5fc', '#eff1fe', '#f7f8ff'],
+        bgDark: ['#090b1a', '#10142b', '#090b18']
+    },
+    amber: {
+        label: 'Sunburst Amber & Gold',
+        primary: '#d97706',
+        accent: '#10b981',
+        glassTintRgb: '217, 119, 6',
+        orb1Rgb: '251, 191, 36',
+        orb2Rgb: '45, 212, 191',
+        bgLight: ['#faecd4', '#fdf5e8', '#fefaf4'],
+        bgDark: ['#140e06', '#1e160a', '#120d06']
+    },
+    coral: {
+        label: 'Sunset Coral Pop',
+        primary: '#e11d48',
+        accent: '#f59e0b',
+        glassTintRgb: '225, 29, 72',
+        orb1Rgb: '251, 113, 133',
+        orb2Rgb: '251, 191, 36',
+        bgLight: ['#fbe0e6', '#fdf0f3', '#fef7f8'],
+        bgDark: ['#16080d', '#220d14', '#13070b']
+    },
+    lime: {
+        label: 'Eco Lime Pulse',
+        primary: '#65a30d',
+        accent: '#0d9488',
+        glassTintRgb: '101, 163, 13',
+        orb1Rgb: '163, 230, 53',
+        orb2Rgb: '45, 212, 191',
+        bgLight: ['#e4f4cf', '#f1f9e6', '#f8fcf2'],
+        bgDark: ['#0b1306', '#121e0a', '#091005']
+    }
+};
+
+function hexToRgbString(hex) {
+    if (!isHexColor(hex)) return '13, 148, 136';
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `${r}, ${g}, ${b}`;
+}
+
 function loadThemeSettings() {
     const theme = getThemeSettings();
     let pInput = document.getElementById('themePrimaryColor');
     let aInput = document.getElementById('themeAccentColor');
-    if(pInput) pInput.value = theme.primary;
-    if(aInput) aInput.value = theme.accent;
-    applyTheme(theme.primary, theme.accent, theme.dark);
+    if (pInput) pInput.value = theme.primary;
+    if (aInput) aInput.value = theme.accent;
+    applyThemeSettingsObj(theme);
 }
 
 function toggleThemePanel() {
-    let p = document.getElementById('themeSettingsPanel');
-    if(p) p.classList.toggle('hidden');
+    openDesignStudioModal();
+}
+
+function applyThemeSettingsObj(themeObj) {
+    const t = { ...DEFAULT_THEME, ...(themeObj || {}) };
+    const html = document.documentElement;
+
+    // 1. Style World ('liquid-glass' | 'vibrant-pop' | 'neo-modern')
+    html.setAttribute('data-design-style', t.style || 'liquid-glass');
+
+    // 2. UI Density ('compact' | 'normal' | 'spacious')
+    html.setAttribute('data-ui-density', t.density || 'normal');
+
+    // 3. Font Family
+    const fontName = t.fontFamily || 'Plus Jakarta Sans';
+    html.style.setProperty('--font-sans', `"${fontName}"`);
+
+    // 4. Font Scale
+    const scaleMap = {
+        compact: '14.8px',
+        normal: '16px',
+        large: '17.1px',
+        xlarge: '18.2px'
+    };
+    html.style.fontSize = scaleMap[t.fontScale] || '16px';
+
+    // 5. Color Preset & Ambient Tints
+    const presetCfg = THEME_COLOR_PRESETS[t.preset];
+    if (presetCfg && t.preset !== 'custom') {
+        html.style.setProperty('--glass-tint-rgb', presetCfg.glassTintRgb);
+        html.style.setProperty('--orb-1-rgb', presetCfg.orb1Rgb);
+        html.style.setProperty('--orb-2-rgb', presetCfg.orb2Rgb);
+        html.style.setProperty('--bg-light-start', presetCfg.bgLight[0]);
+        html.style.setProperty('--bg-light-mid', presetCfg.bgLight[1]);
+        html.style.setProperty('--bg-light-end', presetCfg.bgLight[2]);
+        html.style.setProperty('--bg-dark-start', presetCfg.bgDark[0]);
+        html.style.setProperty('--bg-dark-mid', presetCfg.bgDark[1]);
+        html.style.setProperty('--bg-dark-end', presetCfg.bgDark[2]);
+    } else {
+        const rgb = hexToRgbString(t.primary);
+        const accRgb = hexToRgbString(t.accent);
+        html.style.setProperty('--glass-tint-rgb', rgb);
+        html.style.setProperty('--orb-1-rgb', rgb);
+        html.style.setProperty('--orb-2-rgb', accRgb);
+    }
+
+    applyTheme(t.primary, t.accent, t.dark);
 }
 
 function applyTheme(primary, accent, dark) {
@@ -6518,16 +6771,263 @@ function updateThemeColors(primary, accent) {
     let theme = getThemeSettings();
     if(isHexColor(primary)) theme.primary = primary;
     if(isHexColor(accent)) theme.accent = accent;
+    theme.preset = 'custom';
     localStorage.setItem('pvpro_theme', JSON.stringify(theme));
-    applyTheme(theme.primary, theme.accent, theme.dark);
+    applyThemeSettingsObj(theme);
+    renderDesignStudioModalContent();
 }
 
 function toggleDarkMode() {
     let theme = getThemeSettings();
     theme.dark = !theme.dark;
     localStorage.setItem('pvpro_theme', JSON.stringify(theme));
-    applyTheme(theme.primary, theme.accent, theme.dark);
+    applyThemeSettingsObj(theme);
+    renderDesignStudioModalContent();
 }
+
+function openDesignStudioModal() {
+    const modal = document.getElementById('modal-design-studio');
+    if (!modal) return;
+    renderDesignStudioModalContent();
+    modal.classList.remove('hidden');
+}
+
+function closeDesignStudioModal() {
+    const modal = document.getElementById('modal-design-studio');
+    if (modal) modal.classList.add('hidden');
+}
+
+function setDesignStudioSetting(patch) {
+    const theme = { ...getThemeSettings(), ...patch };
+    if (patch.preset && THEME_COLOR_PRESETS[patch.preset]) {
+        theme.primary = THEME_COLOR_PRESETS[patch.preset].primary;
+        theme.accent = THEME_COLOR_PRESETS[patch.preset].accent;
+    }
+    localStorage.setItem('pvpro_theme', JSON.stringify(theme));
+    applyThemeSettingsObj(theme);
+    renderDesignStudioModalContent();
+}
+
+function resetDesignStudioSettings() {
+    localStorage.setItem('pvpro_theme', JSON.stringify(DEFAULT_THEME));
+    applyThemeSettingsObj(DEFAULT_THEME);
+    renderDesignStudioModalContent();
+    showToastNotification('🎨 Design & Darstellung auf Liquid-Glass-Standard zurückgesetzt!', 'info');
+}
+
+function renderDesignStudioModalContent() {
+    const body = document.getElementById('designStudioModalBody');
+    if (!body) return;
+    const t = getThemeSettings();
+
+    const styleOptions = [
+        {
+            id: 'liquid-glass',
+            title: 'Liquid Glass 2.0 (Geschärft)',
+            desc: 'Edle Tiefen-Refraktion, heller Glanzrand (Specular Rim) & sanfter Ambient-Glow',
+            icon: 'blur_on'
+        },
+        {
+            id: 'vibrant-pop',
+            title: 'Vibrant Pop-Glass (Neu)',
+            desc: 'Poppig-leuchtendes Color-Glass mit farbintensiven Kanten & dynamischer Sättigung',
+            icon: 'auto_awesome'
+        },
+        {
+            id: 'neo-modern',
+            title: 'Neo-Modern Clean (Neu)',
+            desc: 'Simpel, kristallklar & maximal kontraststark ohne Hintergrund-Unschärfe',
+            icon: 'grid_view'
+        }
+    ];
+
+    const fontOptions = [
+        { id: 'Plus Jakarta Sans', label: 'Plus Jakarta Sans', sub: 'Standard · Ausgewogen & Modern' },
+        { id: 'Outfit', label: 'Outfit', sub: 'Geometrisch & Poppig' },
+        { id: 'DM Sans', label: 'DM Sans', sub: 'Klar & Technisch' },
+        { id: 'Manrope', label: 'Manrope', sub: 'Präzise Zahlen & Hohe Lesbarkeit' }
+    ];
+
+    const scaleOptions = [
+        { id: 'compact', label: 'Kompakt (93%)' },
+        { id: 'normal', label: 'Standard (100%)' },
+        { id: 'large', label: 'Groß (107%)' },
+        { id: 'xlarge', label: 'Extra Groß (114%)' }
+    ];
+
+    const densityOptions = [
+        { id: 'compact', label: 'Eng & Kompakt', desc: 'Mehr Kacheln auf einen Blick' },
+        { id: 'normal', label: 'Ausgewogen (Standard)', desc: 'Ideale Touch-Ergonomie' },
+        { id: 'spacious', label: 'Luftig & Großzügig', desc: 'Mehr Raum auf großen Displays' }
+    ];
+
+    body.innerHTML = `
+        <!-- 1. Hell / Dunkel Modus -->
+        <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+            <div>
+                <h4 class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-amber-500">${t.dark ? 'dark_mode' : 'light_mode'}</span>
+                    <span>1. Farbmodus (Hell / Dunkel)</span>
+                </h4>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    Aktuell aktiv: <strong>${t.dark ? 'Dark Mode (Tiefes Nachtglas)' : 'Light Mode (Helles Tageslicht-Glas)'}</strong>
+                </p>
+            </div>
+            <div class="inline-flex rounded-xl p-1 bg-slate-200/80 dark:bg-slate-800 text-xs font-bold shrink-0">
+                <button type="button" onclick="setDesignStudioSetting({ dark: false })" class="px-3 py-1.5 rounded-lg transition-all cursor-pointer ${!t.dark ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 dark:text-slate-300'}">
+                    ☀️ Hell
+                </button>
+                <button type="button" onclick="setDesignStudioSetting({ dark: true })" class="px-3 py-1.5 rounded-lg transition-all cursor-pointer ${t.dark ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'}">
+                    🌙 Dunkel
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. Theme-Stilwelt (Liquid Glass 2.0 vs. Vibrant Pop-Glass vs. Neo-Modern Clean) -->
+        <div class="space-y-2">
+            <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-base text-teal-500">style</span>
+                <span>2. Theme-Stilwelt</span>
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                ${styleOptions.map(st => {
+                    const active = t.style === st.id;
+                    return `
+                    <button type="button" onclick="setDesignStudioSetting({ style: '${st.id}' })"
+                        class="p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                            active
+                                ? 'border-2 border-primary bg-teal-500/10 dark:bg-teal-500/15 shadow-xs'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-teal-500/40'
+                        }">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="material-symbols-rounded text-xl text-primary">${st.icon}</span>
+                            ${active ? `<span class="px-2 py-0.5 rounded-full bg-primary text-white text-[9.5px] font-black uppercase">Aktiv</span>` : ''}
+                        </div>
+                        <div>
+                            <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-snug">${st.title}</p>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">${st.desc}</p>
+                        </div>
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>
+
+        <!-- 3. Akzent- & Hintergrund-Farbwelt (Hell & Dunkel synchron) -->
+        <div class="space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-teal-500">color_lens</span>
+                    <span>3. Akzentfarbe &amp; Glas-Tönung (anstelle von Standard-Türkis frei wählbar)</span>
+                </h4>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                ${Object.entries(THEME_COLOR_PRESETS).map(([key, cfg]) => {
+                    const isSel = t.preset === key;
+                    return `
+                    <button type="button" onclick="setDesignStudioSetting({ preset: '${key}' })"
+                        class="p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 ${
+                            isSel
+                                ? 'border-2 border-slate-900 dark:border-white bg-slate-100 dark:bg-white/10 font-bold shadow-2xs'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-slate-400'
+                        }">
+                        <span class="w-6 h-6 rounded-full shrink-0 border border-white/60 shadow-xs" style="background: linear-gradient(135deg, ${cfg.primary} 0%, ${cfg.accent} 100%)"></span>
+                        <span class="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight">${cfg.label}</span>
+                    </button>`;
+                }).join('')}
+            </div>
+
+            <!-- Freie Farbwahl (Custom Hex Pickers) -->
+            <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <span class="font-bold text-slate-600 dark:text-slate-300">Eigene Wunschfarbe mischen:</span>
+                <div class="flex items-center gap-4">
+                    <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+                        <span>Hauptakzent:</span>
+                        <input type="color" value="${t.primary}" onchange="updateThemeColors(this.value, null)" class="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent">
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+                        <span>Zweitakzent:</span>
+                        <input type="color" value="${t.accent}" onchange="updateThemeColors(null, this.value)" class="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent">
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. Schriftart (Typografie) -->
+        <div class="space-y-2">
+            <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-base text-teal-500">font_download</span>
+                <span>4. Schriftart (Typografie)</span>
+            </h4>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                ${fontOptions.map(f => {
+                    const active = t.fontFamily === f.id;
+                    return `
+                    <button type="button" onclick="setDesignStudioSetting({ fontFamily: '${f.id}' })"
+                        style="font-family: '${f.id}', sans-serif"
+                        class="p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            active
+                                ? 'border-2 border-primary bg-teal-500/10 dark:bg-teal-500/15'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-teal-500/40'
+                        }">
+                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">${f.label}</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">${f.sub}</p>
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>
+
+        <!-- 5. Schriftgröße & UI-Kompaktheit -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="space-y-2">
+                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-teal-500">format_size</span>
+                    <span>5. Schriftgröße</span>
+                </h4>
+                <div class="grid grid-cols-2 gap-2">
+                    ${scaleOptions.map(sc => {
+                        const active = t.fontScale === sc.id;
+                        return `
+                        <button type="button" onclick="setDesignStudioSetting({ fontScale: '${sc.id}' })"
+                            class="px-3 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                                active
+                                    ? 'border-2 border-primary bg-teal-500/15 text-slate-900 dark:text-white'
+                                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-300'
+                            }">
+                            ${sc.label}
+                        </button>`;
+                    }).join('')}
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-base text-teal-500">density_medium</span>
+                    <span>6. Kompaktheit &amp; Abstände</span>
+                </h4>
+                <div class="grid grid-cols-1 gap-1.5">
+                    ${densityOptions.map(dn => {
+                        const active = t.density === dn.id;
+                        return `
+                        <button type="button" onclick="setDesignStudioSetting({ density: '${dn.id}' })"
+                            class="px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                active
+                                    ? 'border-2 border-primary bg-teal-500/15 text-slate-900 dark:text-white'
+                                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-300'
+                            }">
+                            <span class="text-xs font-bold">${dn.label}</span>
+                            <span class="text-[10px] text-slate-500 dark:text-slate-400">${dn.desc}</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+window.openDesignStudioModal = openDesignStudioModal;
+window.closeDesignStudioModal = closeDesignStudioModal;
+window.setDesignStudioSetting = setDesignStudioSetting;
+window.resetDesignStudioSettings = resetDesignStudioSettings;
 
 function adjustColorBrightness(hex, percent) {
     let R = parseInt(hex.substring(1,3),16);

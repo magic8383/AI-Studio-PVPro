@@ -4,6 +4,61 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.6] – 2026-11-12
+
+### 🛠️ Hotfix: `currentLiveTelemetry`-Anbindung im Balkendiagramm-Explorer & Lazy-Rendering auf Analyse-Ebene 2 (`telemetry.js`, `index.html`)
+* **Behebung von `ReferenceError: liveTelemetryState is not defined` in `fetchAnalyseBarExplorerPeriodData()`:**
+  - Beim Abgleich des heutigen Tages-Buckets in der Wochen- und Monatsansicht des neuen Balkendiagramm-Explorers wird nun korrekt auf `currentLiveTelemetry.customStringsTelemetry` und `currentLiveTelemetry.consumersTelemetry` (über die jeweilige String-/Verbraucher-ID) zugegriffen.
+* **Sauberer Initial-Zustand von `#analysis-panel-balken-explorer`:**
+  - Das Sub-Panel `#analysis-panel-balken-explorer` startet wie alle anderen Ebene-2-Panels mit `hidden` und wird erst gerendert, wenn Ebene 2 (`#analyse-level-2`) geöffnet wird.
+
+---
+
+## [Version 10.5] – 2026-11-12
+
+### 🚀 Windows-Style „Speichern unter…“ & „Datei öffnen…“ (inkl. HA-Token fürs NAS), Vereinfachte PV-Erzeugung, Ungekürzter Sensor-Picker mit Aktiv-Markierung, Interaktiver Analyse-Balken-Explorer (`Tag | Woche | Monat | Jahr`) & Neues Design-Studio
+
+#### 1. Windows-Style „Speichern unter…“ & „Datei öffnen…“ für NAS, Handy, Tablet & PC (`app.js`, `telemetry.js`, `index.html`)
+* **Direktes Speichern & Öffnen wie unter Windows (`window.showSaveFilePicker` + Fallback-Download):**
+  - Über die neuen Direkt-Buttons **„Speichern unter…“** und **„Datei öffnen…“** in der oberen Kopfzeile, im Hauptmenü (`#m3MoreSheet`) sowie ganz oben im Dialog *Projekte & Gesamtpakete* lässt sich der gesamte Anwendungsstand mit einem Klick als Datei (`.pvpro.json`) direkt auf dem NAS, Netzlaufwerk, iCloud/Nextcloud oder lokal ablegen und auf jedem anderen Gerät (Handy, Tablet, PC) sofort wieder einspielen.
+* **Komplettpaket inklusive Home Assistant Token (`accessToken`):**
+  - Im Gegensatz zum öffentlichen GitHub-Sync enthält die lokal bzw. auf dem privaten NAS gespeicherte Datei auch die vollständige `haConfig` **inklusive des persönlichen Home-Assistant-Tokens (`accessToken`)**, alle zugeordneten Sensoren, Strings, Einzelverbraucher, das Monats-Logbuch, Zähler-Baselines, den 8.760h-PVGIS-Cache sowie die Einstellungen aus dem Design-Studio. Nach dem Einspielen verbindet sich das Zweitgerät sofort automatisch mit Home Assistant.
+
+#### 2. Vereinfachte PV-Erzeugung in den Sensor-Einstellungen (`index.html`, `telemetry.js`)
+* **Ein klares Feld für `W` und ein klares Feld für `kWh` (leer = automatische String-Summierung):**
+  - Im Kanal **A. PV-Erzeugung** stehen ab sofort zwei klar verständliche Hauptfelder nebeneinander:
+    1. **PV gesamt · Live-Leistung (`W` / `kW`)** – *leer lassen = summiert automatisch alle PV-Strings aus Sektion 3*.
+    2. **PV gesamt · Gesamtzähler (`kWh Total`)** – *leer lassen = summiert automatisch alle String-`kWh`-Zähler aus Sektion 3*.
+  - Optionale Zusatz-Zähler für einen 2. oder weiteren Wechselrichter ohne String-Zähler sind übersichtlich in ein aufklappbares `<details>`-Element (*„Optional: 2. / weitere Wechselrichter-Gesamtzähler (kWh)“*) ausgelagert.
+
+#### 3. Ungekürzter Home-Assistant Sensor-Picker mit Aktiv-Markierung & Reparierte Anleitung (`telemetry.js`, `index.html`)
+* **Kein Abschneiden (`truncate`) von Sensornamen oder `entity_id`s mehr:**
+  - Im Sensor-Picker (`#modal-ha-entity-picker`) brechen sowohl Geräte-/Gruppennamen als auch lange `friendly_name`-Bezeichnungen und `entity_id`s mehrzeilig um (`break-words whitespace-normal leading-snug`), sodass jeder Sensor vollständig lesbar ist.
+* **Hervorhebung & Auto-Scroll zum aktuell gewählten Sensor:**
+  - Öffnet man den Sensor-Picker für ein Feld erneut, wird der aktuell zugewiesene Sensor automatisch in seiner Gruppe geöffnet, farblich mit einem Smaragd-Rahmen und dem Badge **„✓ Aktuell ausgewählt“** hervorgehoben und direkt in den sichtbaren Bereich gescrollt (`scrollIntoView({ block: 'center' })`).
+* **Vollständig lesbare Anleitung im Home-Assistant-Dialog (`#haModalScrollBody`):**
+  - Der obere Bereich der Reverse-Proxy- & Einrichtungsanleitung im Home-Assistant-Modal wird nicht mehr abgeschnitten; der Dialog-Inhalt besitzt nun einen dedizierten Scroll-Container (`min-h-0 overflow-y-auto`), der beim Öffnen und beim Tab-Wechsel sauber auf `scrollTop = 0` startet.
+
+#### 4. Interaktiver Balkendiagramm-Explorer (`Tag | Woche | Monat | Jahr`) als 2. Ebene der Performance-Kacheln (`index.html`, `telemetry.js`, `app.js`)
+* **Drill-Down direkt über die 4 Performance-KPI-Kacheln im Tab Analyse:**
+  - Ein Klick auf eine der 4 Performance-Kacheln (*Spezifischer Ertrag*, *Performance Ratio*, *Finanz-Vorteil IST*, *Autarkie / Eigenverbrauch*) oder auf den neuen Button **„Balken-Explorer (Tag / Woche / Monat / Jahr)“** öffnet die 2. Analyse-Ebene mit dem interaktiven **Balkendiagramm-Explorer**.
+* **Zeitraum-Umschalter (`Tag` 24h | `Woche` 7d | `Monat` 28–31d | `Jahr` 12m) mit Vor-/Zurück-Navigation:**
+  - Nahtloses Umschalten zwischen Stundenbalken (`Tag`), Tagesbalken (`Woche` & `Monat`) und Monatsbalken (`Jahr`) inklusive Perioden-Navigation (`◀` / `▶` / `Jetzt`) und `Stapel`/`Gruppiert`-Modus.
+* **Alle getrackten Kanäle & Kennzahlen frei kombinierbar:**
+  - Per Klick auf die Kanal-Kacheln unter dem Diagramm lassen sich `PV-Erzeugung (Ist)`, `PVGIS-Prognose (Soll)`, `Hausverbrauch`, `Netzbezug`, `Netzeinspeisung`, `Batterie-Ladung`, `Batterie-Entladung`, `Autarkiegrad (%)`, `Eigenverbrauch (%)`, `Finanz-Vorteil (€)` sowie **jeder einzelne PV-String** und **jeder einzelne Smart-Home-Verbraucher** ein- und ausblenden oder per `◎` einzeln fokussieren.
+
+#### 5. Neues Design- & Darstellungs-Studio (`Menü -> 1. Design & Darstellung` in `index.html`, `app.js`)
+* **3 wählbare Design-Welten (Themes):**
+  1. **Liquid Glass 2.0 (Verfeinert):** Mehrschichtige Tiefen-Glaskanten, feine Specular-Highlights und sanfter Ambient-Glow.
+  2. **Vibrant Pop-Glass (Poppig & Modern):** Ausdrucksstarke Farbverläufe, leuchtende Glas-Akzente und energiegeladene Kontraste.
+  3. **Neo-Modern Clean (Simpel & Klar):**Gestochen scharfe, minimalistische Bento-Karten ohne Hintergrund-Unschärfe für maximale Ruhe und Lesbarkeit.
+* **Freie Akzent- & Glasfarben-Auswahl (inkl. Türkis-Tönung für Light & Dark Mode):**
+  - 7 kuratierte Farb-Presets (*Liquid Türkis*, *Ozean-Blau*, *Smaragd-Grün*, *Electric Violet*, *Solar-Amber*, *Pop-Coral/Pink*, *Monochrom*) plus freier Hex-Farbwähler, der sowohl die Akzentfarbe als auch die subtile Glas-Tönung im Hell- und Dunkelmodus dynamisch steuert.
+* **Typografie & UI-Kompaktheit (Dichte):**
+  - Auswahl zwischen **4 modernen Schriftarten** (*Plus Jakarta Sans*, *Outfit*, *DM Sans*, *Manrope*), **4 Schriftgrößen-Stufen** (*Kompakt*, *Standard*, *Groß*, *Extra Groß*) und **3 Abstands-/Dichte-Modi** (*Kompakt*, *Standard*, *Luftig*).
+
+---
+
 ## [Version 10.4] – 2026-11-11
 
 ### 🚀 Zwei-Spalten-Cockpit für Tablet-Querformat & Desktop, Einzelverbraucher-`kWh`-Fix (`Trockner` & `TV-Verstärker`), Bereinigung alter Repo-Testplanungen & Hardware-Katalog Overflow-Fix
