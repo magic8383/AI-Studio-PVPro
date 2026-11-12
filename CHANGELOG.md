@@ -4,6 +4,34 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.7] – 2026-11-12
+
+### 🚀 Smartes Analyse-Balkendiagramm-Cockpit (Sticky Top, Full-Bleed Zoom, Anker-SOLIX Kategorien, Sofortige Tageswerte), Global Wirksames Design-Studio & HA-Dialog Overflow-Fix
+
+#### 1. Smartes Analyse-Balkendiagramm-Cockpit (`Tag | Woche | Monat | Jahr` auf Analyse-Ebene 2, `telemetry.js`, `index.html`)
+* **Oben fixiertes Diagramm (`sticky top-0`) & In-Place Full-Bleed-Zoom (`Randlos`):**
+  - Genau wie beim Live-Verlaufsdiagramm bleibt das Balkendiagramm beim Scrollen durch die Kanäle oben fixiert (`sticky top-0 z-20`).
+  - Ein Tipp direkt ins Diagramm oder auf den Button **„Randlos“** vergrößert das Balkendiagramm in-place bis an den linken und rechten Bildschirmrand und blendet die seitlichen Y-Achsen-Zahlen aus, sodass auf Smartphones maximale Balkenbreite zur Verfügung steht.
+* **Sofortige Live-Werte in der Ansicht `Tag` (24h) – kein Warten auf Tagesende mehr:**
+  - Behebung des Parameter-Reihenfolgefehlers beim Aufruf von `fetchHaLongTermStatisticsWs`, korrekte Zeitstempel-Konvertierung (`parseHaStatTimestampMs`) und Einheiten-Skalierung (`getEnergyScaleForEntity` / `getPowerScaleForEntity`).
+  - Für die Tagesansicht (`Tag`) ruft die Engine zusätzlich die Home-Assistant-Kurzzeithistorie (`/api/history/period` ab `00:00` Uhr) ab und gleicht die 24 Stunden-Buckets mit dem Live-Tageszähler (`getUnifiedEnergyLedger`) ab, sodass der laufende Tag und die aktuell laufende Stunde sofort reale Balken zeigen.
+* **Anker-SOLIX-Stil Kategorien + 3-Spalten-Kacheln (ohne Smart-Home-Einzelverbraucher):**
+  - Direkt unter dem Diagramm ermöglichen 5 schnelle Kategorie-Buttons (**⚡ Bilanz**, **☀️ PV & Strings**, **🏠 Haus & Akku**, **🔌 Stromnetz**, **💶 Autarkie & €**) den gezielten Wechsel der Ansicht.
+  - Darunter zeigt ein aufgeräumtes **3-Spalten-Raster** die Hauptkanäle und PV-Strings inklusive Zeitraum-Summe, Spitzenwert (`Peak`) und Solo-Fokus (`◎`). Einzelne Smart-Home-Verbraucher (Lichtschalter, Steckdosen) werden im Analyse-Balkendiagramm bewusst ausgeblendet.
+
+#### 2. Voll Wirksames Design- & Darstellungs-Studio (`app.js`, `index.html`)
+* **Globale Akzentfarben-Engine (übersteuert festes Standard-Türkis in Light & Dark Mode):**
+  - `applyThemeSettingsObj()` erzeugt nun dynamische globale CSS-Regeln (`#dynamic-design-studio-styles`), die sämtliche fest codierten `teal-*`-Klassen (`.bg-teal-600`, `.text-teal-*`, `.border-teal-*`, `.dash-tile-pv`) mit der im Design-Studio gewählten Akzentfarbe (z. B. *Electric Indigo Pop*, *Sunset Coral*, *Sunburst Amber*, *Arctic Sky*, *Solar Emerald*, *Eco Lime* oder eigene Hex-Wunschfarbe) überschreiben.
+* **Klar unterscheidbare Theme-Stilwelten & proportionale Schrift-/Kompaktheits-Skalierung:**
+  - **Liquid Glass 2.0**, **Vibrant Pop-Glass** (leuchtende Farbverläufe & kräftige 2px-Akzentkanten) und **Neo-Modern Clean** (kristallklare, flache Solid-Karten ohne Hintergrund-Blur) unterscheiden sich optisch sofort.
+  - Die gewählte **Schriftgröße** (`Kompakt`, `Standard`, `Groß`, `Extra Groß`) skaliert ab sofort auch alle festen Pixel-Klassen (`.text-[10px]`, `.text-[11px]`, `.text-xs`, `.text-sm` usw.) proportional mit.
+
+#### 3. Kein Rechts-Überlauf mehr bei der Anleitung im Home-Assistant-Dialog (`index.html`, `telemetry.js`)
+* **Kompakte 2-Spalten-Tab-Leiste & Umbruch-Sicherung:**
+  - Die Tab-Umschaltung im Home-Assistant-Modal (`1. Sensoren & Setup` | `2. Proxy-Anleitung`) ist als umbruchfähiges 2-Spalten-Grid ohne `whitespace-nowrap` aufgebaut; zusätzlich sind der Scroll-Container (`overflow-x-hidden`) und alle Diagnose-Zeilen (`break-words`) gegen seitliches Herausragen gesichert.
+
+---
+
 ## [Version 10.6] – 2026-11-12
 
 ### 🛠️ Hotfix: `currentLiveTelemetry`-Anbindung im Balkendiagramm-Explorer & Lazy-Rendering auf Analyse-Ebene 2 (`telemetry.js`, `index.html`)

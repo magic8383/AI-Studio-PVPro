@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.6';
+const APP_VERSION = '10.7';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -6685,10 +6685,12 @@ function applyThemeSettingsObj(themeObj) {
     const html = document.documentElement;
 
     // 1. Style World ('liquid-glass' | 'vibrant-pop' | 'neo-modern')
-    html.setAttribute('data-design-style', t.style || 'liquid-glass');
+    const styleWorld = t.style || 'liquid-glass';
+    html.setAttribute('data-design-style', styleWorld);
 
     // 2. UI Density ('compact' | 'normal' | 'spacious')
-    html.setAttribute('data-ui-density', t.density || 'normal');
+    const densityMode = t.density || 'normal';
+    html.setAttribute('data-ui-density', densityMode);
 
     // 3. Font Family
     const fontName = t.fontFamily || 'Plus Jakarta Sans';
@@ -6696,19 +6698,37 @@ function applyThemeSettingsObj(themeObj) {
 
     // 4. Font Scale
     const scaleMap = {
-        compact: '14.8px',
+        compact: '14.5px',
         normal: '16px',
-        large: '17.1px',
-        xlarge: '18.2px'
+        large: '17.6px',
+        xlarge: '19.2px'
+    };
+    const scaleFactorMap = {
+        compact: 0.91,
+        normal: 1.0,
+        large: 1.10,
+        xlarge: 1.20
     };
     html.style.fontSize = scaleMap[t.fontScale] || '16px';
+    const sf = scaleFactorMap[t.fontScale] || 1.0;
 
     // 5. Color Preset & Ambient Tints
     const presetCfg = THEME_COLOR_PRESETS[t.preset];
+    let primaryHex = t.primary || '#0d9488';
+    let accentHex = t.accent || '#10b981';
+    let tintRgb = hexToRgbString(primaryHex);
+    let orb1Rgb = tintRgb;
+    let orb2Rgb = hexToRgbString(accentHex);
+
     if (presetCfg && t.preset !== 'custom') {
-        html.style.setProperty('--glass-tint-rgb', presetCfg.glassTintRgb);
-        html.style.setProperty('--orb-1-rgb', presetCfg.orb1Rgb);
-        html.style.setProperty('--orb-2-rgb', presetCfg.orb2Rgb);
+        primaryHex = presetCfg.primary;
+        accentHex = presetCfg.accent;
+        tintRgb = presetCfg.glassTintRgb;
+        orb1Rgb = presetCfg.orb1Rgb;
+        orb2Rgb = presetCfg.orb2Rgb;
+        html.style.setProperty('--glass-tint-rgb', tintRgb);
+        html.style.setProperty('--orb-1-rgb', orb1Rgb);
+        html.style.setProperty('--orb-2-rgb', orb2Rgb);
         html.style.setProperty('--bg-light-start', presetCfg.bgLight[0]);
         html.style.setProperty('--bg-light-mid', presetCfg.bgLight[1]);
         html.style.setProperty('--bg-light-end', presetCfg.bgLight[2]);
@@ -6716,14 +6736,116 @@ function applyThemeSettingsObj(themeObj) {
         html.style.setProperty('--bg-dark-mid', presetCfg.bgDark[1]);
         html.style.setProperty('--bg-dark-end', presetCfg.bgDark[2]);
     } else {
-        const rgb = hexToRgbString(t.primary);
-        const accRgb = hexToRgbString(t.accent);
-        html.style.setProperty('--glass-tint-rgb', rgb);
-        html.style.setProperty('--orb-1-rgb', rgb);
-        html.style.setProperty('--orb-2-rgb', accRgb);
+        html.style.setProperty('--glass-tint-rgb', tintRgb);
+        html.style.setProperty('--orb-1-rgb', orb1Rgb);
+        html.style.setProperty('--orb-2-rgb', orb2Rgb);
+        html.style.setProperty('--bg-light-start', `rgba(${tintRgb}, 0.22)`);
+        html.style.setProperty('--bg-light-mid', `rgba(${tintRgb}, 0.10)`);
+        html.style.setProperty('--bg-light-end', '#f8fafc');
+        html.style.setProperty('--bg-dark-start', '#060c14');
+        html.style.setProperty('--bg-dark-mid', '#0b1522');
+        html.style.setProperty('--bg-dark-end', '#060b12');
     }
 
-    applyTheme(t.primary, t.accent, t.dark);
+    const hoverHex = adjustColorBrightness(primaryHex, -15);
+    const lightTextHex = adjustColorBrightness(primaryHex, 28);
+    const darkTextHex = adjustColorBrightness(primaryHex, -18);
+
+    // 6. Inject Dynamic Global Stylesheet so hardcoded Tailwind teal-* classes, font sizes, density, and theme worlds respond 100% live!
+    let dynStyle = document.getElementById('dynamic-design-studio-styles');
+    if (!dynStyle) {
+        dynStyle = document.createElement('style');
+        dynStyle.id = 'dynamic-design-studio-styles';
+        document.head.appendChild(dynStyle);
+    }
+
+    const px = (basePx) => `${+(basePx * sf).toFixed(2)}px`;
+
+    dynStyle.textContent = `
+        /* Global Typography & Font Family Enforcement */
+        body, button, input, select, textarea {
+            font-family: "${fontName}", -apple-system, BlinkMacSystemFont, sans-serif !important;
+        }
+        /* Proportional Font-Scale Overrides including Tailwind fixed-px utility classes */
+        .text-\\[9px\\] { font-size: ${px(9)} !important; }
+        .text-\\[9\\.5px\\] { font-size: ${px(9.5)} !important; }
+        .text-\\[10px\\] { font-size: ${px(10)} !important; }
+        .text-\\[11px\\] { font-size: ${px(11)} !important; }
+        .text-xs { font-size: ${px(12)} !important; }
+        .text-sm { font-size: ${px(14)} !important; }
+        .text-base { font-size: ${px(16)} !important; }
+        .text-lg { font-size: ${px(18)} !important; }
+        .text-xl { font-size: ${px(20)} !important; }
+
+        /* Global Accent & Primary Color Overrides (replaces hardcoded Teal everywhere) */
+        .bg-teal-600, .bg-teal-500, .bg-primary {
+            background-color: ${primaryHex} !important;
+        }
+        .hover\\:bg-teal-500:hover, .hover\\:bg-teal-600:hover, .hover\\:bg-primary-hover:hover {
+            background-color: ${hoverHex} !important;
+        }
+        .text-teal-500, .text-teal-600, .text-primary {
+            color: ${primaryHex} !important;
+        }
+        .text-teal-700, .text-teal-800, .text-teal-900 {
+            color: ${darkTextHex} !important;
+        }
+        html.dark .dark\\:text-teal-200,
+        html.dark .dark\\:text-teal-300,
+        html.dark .dark\\:text-teal-400 {
+            color: ${lightTextHex} !important;
+        }
+        .border-teal-500, .border-teal-600, .border-primary {
+            border-color: ${primaryHex} !important;
+        }
+        .border-teal-500\\/20, .border-teal-500\\/25, .border-teal-500\\/30, .border-teal-500\\/35 {
+            border-color: rgba(${tintRgb}, 0.34) !important;
+        }
+        .border-teal-500\\/40, .border-teal-500\\/50, .border-teal-500\\/60, .border-teal-400\\/60 {
+            border-color: rgba(${tintRgb}, 0.58) !important;
+        }
+        .bg-teal-500\\/5, .bg-teal-500\\/10, .bg-teal-600\\/10, .bg-teal-600\\/12 {
+            background-color: rgba(${tintRgb}, 0.12) !important;
+        }
+        .bg-teal-500\\/15, .bg-teal-600\\/15, .bg-teal-500\\/20, .bg-teal-600\\/20 {
+            background-color: rgba(${tintRgb}, 0.20) !important;
+        }
+        .hover\\:bg-teal-500\\/15:hover, .hover\\:bg-teal-500\\/20:hover {
+            background-color: rgba(${tintRgb}, 0.24) !important;
+        }
+        .dash-tile-pv {
+            border-color: rgba(${tintRgb}, 0.42) !important;
+            background: linear-gradient(155deg, rgba(${tintRgb}, 0.22) 0%, rgba(255, 255, 255, 0.72) 100%) !important;
+        }
+        html.dark .dash-tile-pv {
+            border-color: rgba(${tintRgb}, 0.45) !important;
+            background: linear-gradient(155deg, rgba(${tintRgb}, 0.25) 0%, rgba(15, 23, 42, 0.78) 100%) !important;
+        }
+
+        /* Distinct Theme Worlds */
+        html[data-design-style="vibrant-pop"] .bg-teal-600,
+        html[data-design-style="vibrant-pop"] .bnav-btn.bnav-active {
+            background: linear-gradient(135deg, ${primaryHex} 0%, ${accentHex} 100%) !important;
+            box-shadow: 0 8px 22px -4px rgba(${tintRgb}, 0.48) !important;
+        }
+        html[data-design-style="vibrant-pop"] #app-header,
+        html[data-design-style="vibrant-pop"] #floatingBottomNav > div {
+            border: 2px solid rgba(${tintRgb}, 0.50) !important;
+            box-shadow: 0 14px 36px -6px rgba(${tintRgb}, 0.28) !important;
+        }
+        html[data-design-style="neo-modern"] * {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        html[data-design-style="neo-modern"] #app-header,
+        html[data-design-style="neo-modern"] #floatingBottomNav > div {
+            background: ${t.dark ? '#0f172a' : '#ffffff'} !important;
+            border: 1.5px solid ${t.dark ? '#334155' : '#cbd5e1'} !important;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+        }
+    `;
+
+    applyTheme(primaryHex, accentHex, t.dark);
 }
 
 function applyTheme(primary, accent, dark) {

@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.6 (Hotfix `currentLiveTelemetry` im Balken-Explorer & Lazy-Load auf Analyse-Ebene 2, Windows-Style „Speichern unter…“ & „Datei öffnen…“ inkl. HA-Token, vereinfachtes PV-Gesamterzeugungs-Feld, ungekürzter Sensor-Picker mit Aktiv-Markierung & Design-Studio)  
+**Aktuelle Version:** 10.7 (Smartes Analyse-Balkendiagramm-Cockpit mit Sticky-Top, Full-Bleed-Zoom, Anker-Kategorien, 3-Spalten-Kacheln ohne Einzelverbraucher & sofortigen Live-Tageswerten, global wirksames Design-Studio für Themes/Akzentfarben/Schriftgrößen & Overflow-Fix im HA-Dialog)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

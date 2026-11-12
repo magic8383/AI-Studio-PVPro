@@ -676,9 +676,9 @@ function renderEntityDiagnosticSubline(entityId) {
         : '–';
 
     if (d.status === 'unavailable' || d.status === 'wrong_unit' || d.status === 'fallback_watt') {
-        return `<div class="mt-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] font-semibold text-amber-700 dark:text-amber-300 flex items-center gap-1">
-            <span class="material-symbols-rounded text-xs shrink-0">info</span>
-            <span>${safeReason || 'Sensor liefert aktuell keinen kWh-Wert → Berechnung aus Live-Watt'}</span>
+        return `<div class="mt-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] font-semibold text-amber-700 dark:text-amber-300 flex items-start gap-1 break-words max-w-full overflow-hidden">
+            <span class="material-symbols-rounded text-xs shrink-0 mt-0.5">info</span>
+            <span class="break-words min-w-0">${safeReason || 'Sensor liefert aktuell keinen kWh-Wert → Berechnung aus Live-Watt'}</span>
         </div>`;
     }
 
@@ -686,24 +686,24 @@ function renderEntityDiagnosticSubline(entityId) {
     if (d.currentKwh !== undefined && d.currentKwh !== null) {
         const parts = [`Aktuell: ${fmtNum(d.currentKwh, 2)} kWh`];
         if (d.deltaTodayKwh !== undefined && d.deltaTodayKwh !== null) {
-            const bDay = d.baseTodayKwh !== undefined && d.baseTodayKwh !== null ? ` (Start 00:00: ${fmtNum(d.baseTodayKwh, 2)})` : '';
+            const bDay = d.baseTodayKwh !== undefined && d.baseTodayKwh !== null ? ` (00:00: ${fmtNum(d.baseTodayKwh, 2)})` : '';
             parts.push(`Heute: +${fmtNum(d.deltaTodayKwh, 2)} kWh${bDay}`);
         }
         if (d.deltaMonthKwh !== undefined && d.deltaMonthKwh !== null) {
             const bMo = d.baseMonthKwh !== undefined && d.baseMonthKwh !== null ? ` (Start: ${fmtNum(d.baseMonthKwh, 1)})` : '';
             parts.push(`Monat: +${fmtNum(d.deltaMonthKwh, 1)} kWh${bMo}`);
         }
-        html += `<div class="mt-1 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-800 dark:text-emerald-300 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+        html += `<div class="mt-1 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-800 dark:text-emerald-300 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 break-words max-w-full overflow-hidden">
             <span class="font-bold">✓ 1:1 kWh-Zähler aktiv</span>
-            <span>${parts.join(' · ')}</span>
+            <span class="break-words min-w-0">${parts.join(' · ')}</span>
         </div>`;
     }
 
     if (d.jumpInfo) {
         const safeJump = typeof escapeHtml === 'function' ? escapeHtml(d.jumpInfo) : d.jumpInfo;
-        html += `<div class="mt-1 px-2 py-1 rounded-lg bg-sky-500/10 border border-sky-500/30 text-[10px] font-semibold text-sky-800 dark:text-sky-300 flex items-center gap-1">
-            <span class="material-symbols-rounded text-xs shrink-0">info</span>
-            <span>${safeJump} (wird 1:1 ungefiltert mitgezählt)</span>
+        html += `<div class="mt-1 px-2 py-1 rounded-lg bg-sky-500/10 border border-sky-500/30 text-[10px] font-semibold text-sky-800 dark:text-sky-300 flex items-start gap-1 break-words max-w-full overflow-hidden">
+            <span class="material-symbols-rounded text-xs shrink-0 mt-0.5">info</span>
+            <span class="break-words min-w-0">${safeJump} (wird 1:1 ungefiltert mitgezählt)</span>
         </div>`;
     }
     return html;
@@ -5129,9 +5129,11 @@ function renderAnalysisSection(baseline) {
 // 6A. INTERACTIVE BAR CHART EXPLORER ON ANALYSE LEVEL 2 (TAG | WOCHE | MONAT | JAHR)
 // ============================================================================
 let analyseBarExplorerState = {
-    horizon: 'month', // 'day' | 'week' | 'month' | 'year'
+    horizon: 'day', // 'day' | 'week' | 'month' | 'year' (starts with immediate live day view or preserves user choice)
     periodOffset: 0,  // 0 = current day/week/month/year, -1 = previous, etc.
     stacked: false,
+    isExpanded: false,
+    activeCategory: 'bilanz', // 'bilanz' | 'solar' | 'haus_bat' | 'netz' | 'finanz'
     activeChannels: ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'],
     soloChannel: null,
     cacheByPeriodKey: {},
@@ -5147,6 +5149,13 @@ function openAnalyseBarExplorer(initialHorizon = null, presetChannels = null) {
     if (Array.isArray(presetChannels) && presetChannels.length > 0) {
         analyseBarExplorerState.activeChannels = [...presetChannels];
         analyseBarExplorerState.soloChannel = null;
+        if (presetChannels.includes('savingsEur') || presetChannels.includes('autarkyPct')) {
+            analyseBarExplorerState.activeCategory = 'finanz';
+        } else if (presetChannels.length <= 2 && presetChannels.includes('pvTotal')) {
+            analyseBarExplorerState.activeCategory = 'solar';
+        } else {
+            analyseBarExplorerState.activeCategory = 'bilanz';
+        }
     }
     if (typeof openAnalyseDrillDown === 'function') {
         openAnalyseDrillDown('balken-explorer');
@@ -5183,6 +5192,73 @@ function toggleAnalyseBarExplorerStacked() {
     renderAnalyseBarExplorer();
 }
 
+function toggleAnalyseBarInlineExpand(ev) {
+    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+    analyseBarExplorerState.isExpanded = !analyseBarExplorerState.isExpanded;
+    applyAnalyseBarInlineExpandUi();
+    const win = getAnalyseBarExplorerPeriodWindow();
+    const cached = analyseBarExplorerState.cacheByPeriodKey[win.key];
+    if (cached) {
+        drawAnalyseBarExplorerView(cached, getPlannedSystemBaseline(), null);
+    } else {
+        renderAnalyseBarExplorer();
+    }
+}
+
+function onAnalyseBarStageClick(ev) {
+    if (ev && ev.target && ev.target.closest('button')) return;
+    toggleAnalyseBarInlineExpand(ev);
+}
+
+function applyAnalyseBarInlineExpandUi() {
+    const exp = !!analyseBarExplorerState.isExpanded;
+    const card = document.getElementById('barExplorerStickyCard');
+    const stage = document.getElementById('barExplorerStageBox');
+    const icon = document.getElementById('iconBarInlineExpand');
+    const lbl = document.getElementById('lblBarInlineExpand');
+    const hint = document.getElementById('barExplorerZoomHint');
+
+    if (card) {
+        if (exp) {
+            card.className = "sticky top-0 z-20 -mx-3 sm:-mx-5 px-2 sm:px-3 py-2.5 rounded-none sm:rounded-2xl bg-white/96 dark:bg-slate-900/96 backdrop-blur-2xl border-y sm:border border-teal-500/40 shadow-xl transition-all duration-300";
+        } else {
+            card.className = "sticky top-0 z-20 p-3 sm:p-4 rounded-3xl bg-white/92 dark:bg-slate-900/92 backdrop-blur-xl border border-slate-200/90 dark:border-white/10 shadow-md transition-all duration-300";
+        }
+    }
+    if (stage) {
+        stage.className = exp
+            ? "relative w-full h-72 sm:h-96 cursor-pointer select-none transition-all duration-300"
+            : "relative w-full h-56 sm:h-72 cursor-pointer select-none transition-all duration-300";
+    }
+    if (icon) icon.innerText = exp ? 'close_fullscreen' : 'open_in_full';
+    if (lbl) lbl.innerText = exp ? 'Kompakt' : 'Randlos';
+    if (hint) {
+        hint.innerText = exp
+            ? 'Randloser Vollbild-Zoom aktiv (Y-Skala ausgeblendet für maximale Balkenbreite · Tippen zum Verkleinern)'
+            : 'Tipp: Direkt ins Diagramm tippen für randlosen Vollbild-Zoom';
+    }
+}
+
+function selectAnalyseBarCategory(cat) {
+    analyseBarExplorerState.activeCategory = cat;
+    analyseBarExplorerState.soloChannel = null;
+    if (cat === 'bilanz') {
+        analyseBarExplorerState.activeChannels = ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'];
+    } else if (cat === 'solar') {
+        const strIds = (haConfigState.customStrings || [])
+            .map((s, idx) => (s && (s.energyEntity || s.powerEntity)) ? `str_${idx}` : null)
+            .filter(Boolean);
+        analyseBarExplorerState.activeChannels = ['pvTotal', 'pvgisSoll', ...strIds];
+    } else if (cat === 'haus_bat') {
+        analyseBarExplorerState.activeChannels = ['houseTotal', 'batChg', 'batDis'];
+    } else if (cat === 'netz') {
+        analyseBarExplorerState.activeChannels = ['gridImp', 'gridExp'];
+    } else if (cat === 'finanz') {
+        analyseBarExplorerState.activeChannels = ['autarkyPct', 'eigenPct', 'savingsEur'];
+    }
+    renderAnalyseBarExplorer();
+}
+
 function toggleAnalyseBarChannel(channelId) {
     analyseBarExplorerState.soloChannel = null;
     const idx = analyseBarExplorerState.activeChannels.indexOf(channelId);
@@ -5200,7 +5276,8 @@ function focusSingleAnalyseBarChannel(channelId, ev) {
     if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
     if (analyseBarExplorerState.soloChannel === channelId && analyseBarExplorerState.activeChannels.length === 1) {
         analyseBarExplorerState.soloChannel = null;
-        analyseBarExplorerState.activeChannels = ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'];
+        selectAnalyseBarCategory(analyseBarExplorerState.activeCategory || 'bilanz');
+        return;
     } else {
         analyseBarExplorerState.soloChannel = channelId;
         analyseBarExplorerState.activeChannels = [channelId];
@@ -5209,19 +5286,16 @@ function focusSingleAnalyseBarChannel(channelId, ev) {
 }
 
 function selectAnalyseBarPreset(preset) {
+    if (typeof preset === 'string' && ['bilanz', 'solar', 'haus_bat', 'netz', 'finanz'].includes(preset)) {
+        selectAnalyseBarCategory(preset);
+        return;
+    }
     analyseBarExplorerState.soloChannel = null;
     if (Array.isArray(preset)) {
         analyseBarExplorerState.activeChannels = [...preset];
     } else if (preset === 'strings') {
-        const strChannels = (haConfigState.customStrings || [])
-            .map((s, idx) => (s && (s.energyEntity || s.powerEntity)) ? `str_${idx}` : null)
-            .filter(Boolean);
-        analyseBarExplorerState.activeChannels = strChannels.length > 0 ? ['pvTotal', ...strChannels] : ['pvTotal'];
-    } else if (preset === 'consumers') {
-        const consChannels = (haConfigState.customConsumers || [])
-            .map((c, idx) => (c && (c.energyEntity || c.powerEntity)) ? `cons_${idx}` : null)
-            .filter(Boolean);
-        analyseBarExplorerState.activeChannels = consChannels.length > 0 ? ['houseTotal', ...consChannels] : ['houseTotal'];
+        selectAnalyseBarCategory('solar');
+        return;
     }
     renderAnalyseBarExplorer();
 }
@@ -5232,46 +5306,36 @@ function reloadAnalyseBarExplorerData() {
 }
 
 function getAnalyseBarExplorerChannelCatalog() {
+    // Clean PV App catalog (Anker SOLIX / Energy Dashboard style):
+    // Core channels + PV-Strings only. Individual smart-home consumers (light switches, plugs) are intentionally excluded!
     const channels = [
-        { id: 'pvTotal', label: 'PV-Erzeugung Gesamt', unit: 'kWh', color: '#14b8a6', group: 'core', icon: 'wb_sunny' },
-        { id: 'pvgisSoll', label: 'PVGIS-Prognose (Soll)', unit: 'kWh', color: '#38bdf8', group: 'core', icon: 'cloud_Queue' },
-        { id: 'houseTotal', label: 'Hausverbrauch Gesamt', unit: 'kWh', color: '#f59e0b', group: 'core', icon: 'home' },
-        { id: 'gridImp', label: 'Netzbezug (Import)', unit: 'kWh', color: '#3b82f6', group: 'core', icon: 'download' },
-        { id: 'gridExp', label: 'Netzeinspeisung (Export)', unit: 'kWh', color: '#06b6d4', group: 'core', icon: 'upload' },
-        { id: 'batChg', label: 'Batterie Ladung', unit: 'kWh', color: '#a855f7', group: 'core', icon: 'battery_charging_full' },
-        { id: 'batDis', label: 'Batterie Entladung', unit: 'kWh', color: '#c084fc', group: 'core', icon: 'battery_5_bar' },
-        { id: 'autarkyPct', label: 'Autarkiegrad (%)', unit: '%', color: '#10b981', group: 'ratio', icon: 'shield', yAxisID: 'yPct' },
-        { id: 'eigenPct', label: 'Eigenverbrauchsquote (%)', unit: '%', color: '#0ea5e9', group: 'ratio', icon: 'donut_large', yAxisID: 'yPct' },
-        { id: 'savingsEur', label: 'Finanz-Ersparnis (€)', unit: '€', color: '#22c55e', group: 'finance', icon: 'savings' }
+        { id: 'pvTotal', label: 'PV-Erzeugung Gesamt', shortLabel: 'PV-Erzeugung', unit: 'kWh', color: '#14b8a6', group: 'core', category: 'solar', icon: 'wb_sunny' },
+        { id: 'pvgisSoll', label: 'PVGIS-Prognose (Soll)', shortLabel: 'PVGIS-Soll', unit: 'kWh', color: '#38bdf8', group: 'core', category: 'solar', icon: 'cloud_queue' },
+        { id: 'houseTotal', label: 'Hausverbrauch Gesamt', shortLabel: 'Hausverbrauch', unit: 'kWh', color: '#f59e0b', group: 'core', category: 'haus_bat', icon: 'home' },
+        { id: 'batChg', label: 'Batterie Ladung', shortLabel: 'Akku Ladung', unit: 'kWh', color: '#a855f7', group: 'core', category: 'haus_bat', icon: 'battery_charging_full' },
+        { id: 'batDis', label: 'Batterie Entladung', shortLabel: 'Akku Entladung', unit: 'kWh', color: '#c084fc', group: 'core', category: 'haus_bat', icon: 'battery_5_bar' },
+        { id: 'gridImp', label: 'Netzbezug (Import)', shortLabel: 'Netzbezug', unit: 'kWh', color: '#3b82f6', group: 'core', category: 'netz', icon: 'download' },
+        { id: 'gridExp', label: 'Netzeinspeisung (Export)', shortLabel: 'Einspeisung', unit: 'kWh', color: '#06b6d4', group: 'core', category: 'netz', icon: 'upload' },
+        { id: 'autarkyPct', label: 'Autarkiegrad (%)', shortLabel: 'Autarkie %', unit: '%', color: '#10b981', group: 'ratio', category: 'finanz', icon: 'shield', yAxisID: 'yPct' },
+        { id: 'eigenPct', label: 'Eigenverbrauchsquote (%)', shortLabel: 'Eigenquote %', unit: '%', color: '#0ea5e9', group: 'ratio', category: 'finanz', icon: 'donut_large', yAxisID: 'yPct' },
+        { id: 'savingsEur', label: 'Finanz-Ersparnis (€)', shortLabel: 'Ersparnis €', unit: '€', color: '#22c55e', group: 'finance', category: 'finanz', icon: 'savings' }
     ];
 
     const stringPalette = ['#2dd4bf', '#34d399', '#60a5fa', '#fbbf24', '#818cf8', '#f472b6'];
     (haConfigState.customStrings || []).forEach((cs, idx) => {
         if (!cs || (!cs.energyEntity && !cs.powerEntity)) return;
+        const name = cs.name || `PV-String ${idx + 1}`;
         channels.push({
             id: `str_${idx}`,
-            label: cs.name || `PV-String ${idx + 1}`,
+            label: name,
+            shortLabel: name,
             unit: 'kWh',
             color: cs.color || stringPalette[idx % stringPalette.length],
             group: 'string',
+            category: 'solar',
             icon: 'solar_power',
             energyEntity: cs.energyEntity || '',
             powerEntity: cs.powerEntity || ''
-        });
-    });
-
-    const consumerPalette = ['#fb923c', '#f43f5e', '#38bdf8', '#a3e635', '#e879f9', '#fbbf24', '#2dd4bf', '#818cf8'];
-    (haConfigState.customConsumers || []).forEach((cc, idx) => {
-        if (!cc || (!cc.energyEntity && !cc.powerEntity)) return;
-        channels.push({
-            id: `cons_${idx}`,
-            label: cc.name || `Verbraucher ${idx + 1}`,
-            unit: 'kWh',
-            color: cc.color || consumerPalette[idx % consumerPalette.length],
-            group: 'consumer',
-            icon: cc.icon || 'power',
-            energyEntity: cc.energyEntity || '',
-            powerEntity: cc.powerEntity || ''
         });
     });
 
@@ -5288,7 +5352,7 @@ function getAnalyseBarExplorerPeriodWindow() {
         const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
         const label = d.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
         const key = `day_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        return { start: d, end, label, key, wsPeriod: 'hour', bucketCount: 24 };
+        return { start: d, end, label, key, wsPeriod: 'hour', bucketCount: 24, isToday: off === 0 };
     }
     if (h === 'week') {
         const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (off * 7), 23, 59, 59, 999);
@@ -5296,7 +5360,7 @@ function getAnalyseBarExplorerPeriodWindow() {
         const fmt = (dt) => dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
         const label = `${fmt(startDay)} – ${fmt(endDay)}.${endDay.getFullYear()}`;
         const key = `week_${startDay.toISOString().slice(0, 10)}_${endDay.toISOString().slice(0, 10)}`;
-        return { start: startDay, end: endDay, label, key, wsPeriod: 'day', bucketCount: 7 };
+        return { start: startDay, end: endDay, label, key, wsPeriod: 'day', bucketCount: 7, isCurrent: off === 0 };
     }
     if (h === 'month') {
         const mDate = new Date(now.getFullYear(), now.getMonth() + off, 1, 0, 0, 0, 0);
@@ -5304,7 +5368,7 @@ function getAnalyseBarExplorerPeriodWindow() {
         const end = new Date(mDate.getFullYear(), mDate.getMonth(), daysInMonth, 23, 59, 59, 999);
         const label = `${MONTH_LABELS_LONG[mDate.getMonth()]} ${mDate.getFullYear()}`;
         const key = `month_${mDate.getFullYear()}-${String(mDate.getMonth() + 1).padStart(2, '0')}`;
-        return { start: mDate, end, label, key, wsPeriod: 'day', bucketCount: daysInMonth, monthIndex: mDate.getMonth(), year: mDate.getFullYear() };
+        return { start: mDate, end, label, key, wsPeriod: 'day', bucketCount: daysInMonth, monthIndex: mDate.getMonth(), year: mDate.getFullYear(), isCurrent: off === 0 };
     }
     // 'year'
     const yr = selectedAnalysisYear || (now.getFullYear() + off);
@@ -5312,34 +5376,56 @@ function getAnalyseBarExplorerPeriodWindow() {
     const end = new Date(yr, 11, 31, 23, 59, 59, 999);
     const label = `Gesamtjahr ${yr}`;
     const key = `year_${yr}`;
-    return { start, end, label, key, wsPeriod: 'month', bucketCount: 12, year: yr };
-}
-
-function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1) {
-    if (!statRow || typeof statRow !== 'object') return 0;
-    const isPower = isPowerSensorEntityId(entityId);
-    if (isPower) {
-        if (Number.isFinite(Number(statRow.mean))) {
-            const w = normalizePowerReadingToWatts(statRow.mean, entityId);
-            return Math.max(0, (w * hoursInBucket) / 1000);
-        }
-        return 0;
-    }
-    if (statRow.change !== null && statRow.change !== undefined && Number.isFinite(Number(statRow.change))) {
-        const chg = Number(statRow.change);
-        if (chg >= 0) {
-            return scaleEnergyReadingToKwh(chg, entityId);
-        }
-    }
-    return 0;
+    return { start, end, label, key, wsPeriod: 'month', bucketCount: 12, year: yr, isCurrent: yr === now.getFullYear() };
 }
 
 function isPowerSensorEntityId(entityId) {
     if (!entityId) return false;
-    const unit = getKnownEntityUnit(entityId).toLowerCase();
-    if (unit === 'w' || unit === 'kw') return true;
-    if (unit.includes('wh')) return false;
-    return /(_power|_leistung|_watt|_w$)/i.test(entityId) && !/(energy|yield|kwh|total)/i.test(entityId);
+    const cleanId = String(entityId).trim();
+    const u = String(lastKnownHaUnitMap.get(cleanId) || '').trim().toLowerCase();
+    if (u === 'w' || u === 'kw' || u === 'mw') return true;
+    if (u.includes('wh')) return false;
+    const found = discoveredHaSensors.find(s => s.entity_id === cleanId);
+    if (found && found.unit) {
+        const fu = String(found.unit).toLowerCase();
+        if (fu === 'w' || fu === 'kw') return true;
+        if (fu.includes('wh')) return false;
+    }
+    return /(_power|_leistung|_watt|_w$)/i.test(cleanId) && !/(energy|yield|kwh|total)/i.test(cleanId);
+}
+
+function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1, prevStateKwh = null) {
+    if (!statRow || typeof statRow !== 'object') return { deltaKwh: 0, currentStateKwh: prevStateKwh };
+    const isPower = isPowerSensorEntityId(entityId);
+    if (isPower) {
+        const pScale = getPowerScaleForEntity(entityId, null);
+        const rawMean = typeof statRow.mean === 'number' ? statRow.mean : (typeof statRow.state === 'number' ? statRow.state : null);
+        if (rawMean !== null && Number.isFinite(rawMean)) {
+            const w = rawMean * pScale;
+            return { deltaKwh: Math.max(0, (w * hoursInBucket) / 1000), currentStateKwh: prevStateKwh };
+        }
+        return { deltaKwh: 0, currentStateKwh: prevStateKwh };
+    }
+
+    const eScale = getEnergyScaleForEntity(entityId, null);
+    const rawNum = typeof statRow.state === 'number'
+        ? statRow.state
+        : (typeof statRow.sum === 'number'
+            ? statRow.sum
+            : (typeof statRow.max === 'number' ? statRow.max : null));
+    const curStateKwh = (rawNum !== null && Number.isFinite(rawNum)) ? (rawNum * eScale) : null;
+
+    if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
+        const dKwh = Math.max(0, statRow.change * eScale);
+        return { deltaKwh: dKwh, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
+    }
+
+    if (curStateKwh !== null && prevStateKwh !== null) {
+        const stepDiff = curStateKwh >= prevStateKwh ? (curStateKwh - prevStateKwh) : curStateKwh;
+        return { deltaKwh: Math.max(0, stepDiff), currentStateKwh: curStateKwh };
+    }
+
+    return { deltaKwh: 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
 }
 
 async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
@@ -5357,7 +5443,7 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
     const ent = haConfigState.entities || {};
     const pvEnergyIds = getConfiguredPvEnergyEntities(haConfigState);
 
-    // Build list of all HA entities to query via Long-Term Statistics WS
+    // Build list of all HA entities (Core + PV Strings only)
     const allStatEntities = new Set();
     pvEnergyIds.forEach(id => { if (id) allStatEntities.add(id); });
     if (ent.pvPower) allStatEntities.add(ent.pvPower);
@@ -5365,6 +5451,7 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
     if (ent.loadPower) allStatEntities.add(ent.loadPower);
     if (ent.gridImportMonth) allStatEntities.add(ent.gridImportMonth);
     if (ent.gridImportPower) allStatEntities.add(ent.gridImportPower);
+    if (ent.gridPower) allStatEntities.add(ent.gridPower);
     if (ent.gridExportMonth) allStatEntities.add(ent.gridExportMonth);
     if (ent.gridExportPower) allStatEntities.add(ent.gridExportPower);
     if (ent.batteryChargeMonth) allStatEntities.add(ent.batteryChargeMonth);
@@ -5376,30 +5463,110 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         if (cs?.energyEntity) allStatEntities.add(cs.energyEntity);
         if (cs?.powerEntity) allStatEntities.add(cs.powerEntity);
     });
-    (haConfigState.customConsumers || []).forEach(cc => {
-        if (cc?.energyEntity) allStatEntities.add(cc.energyEntity);
-        if (cc?.powerEntity) allStatEntities.add(cc.powerEntity);
-    });
 
+    // 1. Query Home Assistant Long-Term Statistics WS with the exact parameter signature:
+    // (rawBaseUrl, rawToken, statisticIds, startTimeIso, endTimeIso, period, customTypes)
     let wsStats = null;
     if (haConfigState.baseUrl && haConfigState.accessToken && allStatEntities.size > 0) {
         try {
-            wsStats = await fetchHaLongTermStatisticsWs(
+            const wsRes = await fetchHaLongTermStatisticsWs(
                 haConfigState.baseUrl,
                 haConfigState.accessToken,
+                [...allStatEntities],
                 win.start.toISOString(),
                 win.end.toISOString(),
-                [...allStatEntities],
-                win.wsPeriod
+                win.wsPeriod,
+                ['change', 'state', 'sum', 'max', 'mean']
             );
+            if (wsRes && wsRes.ok && wsRes.data) {
+                wsStats = wsRes.data;
+            }
+        } catch (e) {}
+    }
+
+    // 2. For 'day' (24h) or recent days, also query Short-Term REST History (/api/history/period)
+    // so the currently running day and current hour immediately show values without waiting for the day to end!
+    const restHourlyByEntity = new Map();
+    if (analyseBarExplorerState.horizon === 'day' && haConfigState.baseUrl && haConfigState.accessToken && allStatEntities.size > 0) {
+        try {
+            const startIso = win.start.toISOString();
+            const endIso = (win.isToday ? now : win.end).toISOString();
+            const endpoint = `/api/history/period/${encodeURIComponent(startIso)}?filter_entity_id=${encodeURIComponent([...allStatEntities].join(','))}&end_time=${encodeURIComponent(endIso)}&significant_changes_only=0&minimal_response&no_attributes`;
+            const histRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, endpoint);
+            if (histRes && histRes.ok && Array.isArray(histRes.data)) {
+                histRes.data.forEach(entityHistoryArr => {
+                    if (!Array.isArray(entityHistoryArr) || entityHistoryArr.length === 0) return;
+                    const entId = entityHistoryArr[0]?.entity_id;
+                    if (!entId) return;
+                    const hourlyArr = new Array(24).fill(0);
+                    let hasData = false;
+
+                    if (isPowerSensorEntityId(entId)) {
+                        const pScale = getPowerScaleForEntity(entId, null);
+                        const pts = [];
+                        entityHistoryArr.forEach(pt => {
+                            const val = parseFloat(String(pt.state).replace(',', '.'));
+                            const ts = new Date(pt.last_changed || pt.last_updated || startIso).getTime();
+                            if (!isNaN(val) && !isNaN(ts)) pts.push({ ts, w: Math.max(0, val * pScale) });
+                        });
+                        pts.sort((a, b) => a.ts - b.ts);
+                        for (let i = 0; i < pts.length; i++) {
+                            const cur = pts[i];
+                            const nextTs = (i + 1 < pts.length) ? pts[i + 1].ts : Math.min(win.end.getTime(), now.getTime());
+                            const dtHours = Math.max(0, Math.min(1.0, (nextTs - cur.ts) / 3600000));
+                            const hIdx = new Date(cur.ts).getHours();
+                            if (hIdx >= 0 && hIdx < 24 && dtHours > 0) {
+                                hourlyArr[hIdx] += (cur.w * dtHours) / 1000;
+                                if (cur.w > 0) hasData = true;
+                            }
+                        }
+                    } else {
+                        const eScale = getEnergyScaleForEntity(entId, null);
+                        const pts = [];
+                        entityHistoryArr.forEach(pt => {
+                            const val = parseFloat(String(pt.state).replace(',', '.'));
+                            const ts = new Date(pt.last_changed || pt.last_updated || startIso).getTime();
+                            if (!isNaN(val) && val >= 0 && !isNaN(ts)) pts.push({ ts, kwh: val * eScale });
+                        });
+                        pts.sort((a, b) => a.ts - b.ts);
+                        for (let i = 1; i < pts.length; i++) {
+                            const prev = pts[i - 1];
+                            const cur = pts[i];
+                            const diff = cur.kwh >= prev.kwh ? (cur.kwh - prev.kwh) : cur.kwh;
+                            if (diff > 0 && diff < 250) {
+                                const hIdx = new Date(cur.ts).getHours();
+                                if (hIdx >= 0 && hIdx < 24) {
+                                    hourlyArr[hIdx] += diff;
+                                    hasData = true;
+                                }
+                            }
+                        }
+                        // Also include live reading delta since last history point if viewing today
+                        if (win.isToday && pts.length > 0 && lastKnownHaReadingMap.has(entId)) {
+                            const liveKwh = Number(lastKnownHaReadingMap.get(entId)) * eScale;
+                            const lastPt = pts[pts.length - 1];
+                            if (Number.isFinite(liveKwh) && liveKwh > lastPt.kwh && (liveKwh - lastPt.kwh) < 100) {
+                                const curHour = now.getHours();
+                                hourlyArr[curHour] += (liveKwh - lastPt.kwh);
+                                hasData = true;
+                            }
+                        }
+                    }
+
+                    if (hasData) {
+                        restHourlyByEntity.set(entId, hourlyArr);
+                    }
+                });
+            }
         } catch (e) {}
     }
 
     // Helper to map a timestamp into bucket index [0 .. bucketCount-1]
-    const getBucketIdx = (tsMs) => {
+    const getBucketIdx = (rawTs) => {
+        const tsMs = parseHaStatTimestampMs(rawTs);
         if (!Number.isFinite(tsMs)) return -1;
         const dt = new Date(tsMs);
-        if (win. start && tsMs < win.start.getTime() - 1800000) return -1;
+        if (win.start && tsMs < win.start.getTime() - 1800000) return -1;
         if (win.end && tsMs > win.end.getTime() + 1800000) return -1;
         if (analyseBarExplorerState.horizon === 'day') {
             return dt.getHours();
@@ -5452,38 +5619,62 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         }
     }
 
-    // Helper to extract bucket array for an entity (or prefer energyEntity over powerEntity)
+    // Helper to extract bucket array for an entity (merging WS stats + REST hourly fallback for 'day')
     const getEntityBucketSeries = (energyId, powerId) => {
         const out = new Array(win.bucketCount).fill(0);
         let filled = false;
+
         if (wsStats && energyId && Array.isArray(wsStats[energyId]) && wsStats[energyId].length > 0) {
+            let prevState = null;
             wsStats[energyId].forEach(row => {
-                const bIdx = getBucketIdx(Number(row.start));
-                if (bIdx >= 0 && bIdx < win.bucketCount) {
-                    const v = extractStatBucketDeltaKwh(row, energyId, hoursPerBucket);
-                    if (v > 0) {
-                        out[bIdx] += v;
-                        filled = true;
-                    }
+                const bIdx = getBucketIdx(row.start);
+                const step = extractStatBucketDeltaKwh(row, energyId, hoursPerBucket, prevState);
+                prevState = step.currentStateKwh;
+                if (bIdx >= 0 && bIdx < win.bucketCount && step.deltaKwh > 0) {
+                    out[bIdx] += step.deltaKwh;
+                    filled = true;
                 }
             });
         }
+
+        // Merge REST hourly history for 'day' mode (especially for the running hour or sensors without LTS)
+        if (analyseBarExplorerState.horizon === 'day' && energyId && restHourlyByEntity.has(energyId)) {
+            const restArr = restHourlyByEntity.get(energyId);
+            for (let h = 0; h < 24; h++) {
+                if (restArr[h] > out[h]) {
+                    out[h] = restArr[h];
+                    filled = true;
+                }
+            }
+        }
+
         if (!filled && wsStats && powerId && Array.isArray(wsStats[powerId]) && wsStats[powerId].length > 0) {
+            let prevState = null;
             wsStats[powerId].forEach(row => {
-                const bIdx = getBucketIdx(Number(row.start));
-                if (bIdx >= 0 && bIdx < win.bucketCount) {
-                    const v = extractStatBucketDeltaKwh(row, powerId, hoursPerBucket);
-                    if (v > 0) {
-                        out[bIdx] += v;
-                        filled = true;
-                    }
+                const bIdx = getBucketIdx(row.start);
+                const step = extractStatBucketDeltaKwh(row, powerId, hoursPerBucket, prevState);
+                prevState = step.currentStateKwh;
+                if (bIdx >= 0 && bIdx < win.bucketCount && step.deltaKwh > 0) {
+                    out[bIdx] += step.deltaKwh;
+                    filled = true;
                 }
             });
         }
+
+        if (analyseBarExplorerState.horizon === 'day' && powerId && restHourlyByEntity.has(powerId)) {
+            const restArr = restHourlyByEntity.get(powerId);
+            for (let h = 0; h < 24; h++) {
+                if (!filled || restArr[h] > out[h]) {
+                    out[h] = Math.max(out[h], restArr[h]);
+                    if (out[h] > 0) filled = true;
+                }
+            }
+        }
+
         return { series: out, filled };
     };
 
-    // 1. Populate Strings & Consumers
+    // 3. Populate PV Strings
     (haConfigState.customStrings || []).forEach((cs, idx) => {
         const chId = `str_${idx}`;
         if (!seriesById[chId]) return;
@@ -5491,68 +5682,105 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         seriesById[chId] = res.series.map(v => +v.toFixed(2));
     });
 
-    (haConfigState.customConsumers || []).forEach((cc, idx) => {
-        const chId = `cons_${idx}`;
-        if (!seriesById[chId]) return;
-        const res = getEntityBucketSeries(cc?.energyEntity, cc?.powerEntity);
-        seriesById[chId] = res.series.map(v => +v.toFixed(2));
+    // 4. Populate Core Channels from WS Stats + REST Day History
+    let pvFilled = false;
+    pvEnergyIds.forEach(pid => {
+        const res = getEntityBucketSeries(pid, null);
+        if (res.filled) {
+            for (let b = 0; b < win.bucketCount; b++) {
+                seriesById.pvTotal[b] += res.series[b];
+            }
+            pvFilled = true;
+        }
     });
-
-    // 2. Populate Core Channels from WS Stats
-    if (wsStats) {
-        // PV Total: sum of configured pvEnergyIds, or fallback to customStrings sum, or pvPower
-        let pvFilled = false;
-        pvEnergyIds.forEach(pid => {
-            if (wsStats[pid] && Array.isArray(wsStats[pid])) {
-                wsStats[pid].forEach(row => {
-                    const bIdx = getBucketIdx(Number(row.start));
-                    if (bIdx >= 0 && bIdx < win.bucketCount) {
-                        const v = extractStatBucketDeltaKwh(row, pid, hoursPerBucket);
-                        if (v > 0) {
-                            seriesById.pvTotal[bIdx] += v;
-                            pvFilled = true;
-                        }
+    if (!pvFilled) {
+        const strRes = getEntityBucketSeries(null, ent.pvPower);
+        if (strRes.filled) {
+            seriesById.pvTotal = strRes.series;
+            pvFilled = true;
+        } else {
+            (haConfigState.customStrings || []).forEach((cs, idx) => {
+                const sArr = seriesById[`str_${idx}`] || [];
+                sArr.forEach((v, bIdx) => {
+                    if (v > 0) {
+                        seriesById.pvTotal[bIdx] += v;
+                        pvFilled = true;
                     }
                 });
-            }
-        });
-        if (!pvFilled) {
-            const strRes = getEntityBucketSeries(null, ent.pvPower);
-            if (strRes.filled) {
-                seriesById.pvTotal = strRes.series;
-            } else {
-                // Sum from customStrings
-                (haConfigState.customStrings || []).forEach((cs, idx) => {
-                    const sArr = seriesById[`str_${idx}`] || [];
-                    sArr.forEach((v, bIdx) => { seriesById.pvTotal[bIdx] += v; });
-                });
-            }
-        }
-
-        const gridImpRes = getEntityBucketSeries(ent.gridImportMonth, ent.gridImportPower || ent.gridPower);
-        seriesById.gridImp = gridImpRes.series;
-
-        const gridExpRes = getEntityBucketSeries(ent.gridExportMonth, ent.gridExportPower);
-        seriesById.gridExp = gridExpRes.series;
-
-        const batChgRes = getEntityBucketSeries(ent.batteryChargeMonth, ent.batteryChargePower);
-        seriesById.batChg = batChgRes.series;
-
-        const batDisRes = getEntityBucketSeries(ent.batteryDischargeMonth, ent.batteryDischargePower);
-        seriesById.batDis = batDisRes.series;
-
-        const loadRes = getEntityBucketSeries(ent.loadEnergyMonth, ent.loadPower);
-        for (let b = 0; b < win.bucketCount; b++) {
-            if (loadRes.series[b] > 0) {
-                seriesById.houseTotal[b] = loadRes.series[b];
-            } else {
-                const pvSelf = Math.max(0, seriesById.pvTotal[b] - seriesById.gridExp[b] - seriesById.batChg[b]);
-                seriesById.houseTotal[b] = Math.max(0, pvSelf + seriesById.batDis[b] + seriesById.gridImp[b]);
-            }
+            });
         }
     }
 
-    // 3. For 'year' horizon, merge with monthlyComparison (Logbuch & Live current month) so manual logbook entries & live ledger are 100% reflected
+    const gridImpRes = getEntityBucketSeries(ent.gridImportMonth, ent.gridImportPower || ent.gridPower);
+    seriesById.gridImp = gridImpRes.series;
+
+    const gridExpRes = getEntityBucketSeries(ent.gridExportMonth, ent.gridExportPower);
+    seriesById.gridExp = gridExpRes.series;
+
+    const batChgRes = getEntityBucketSeries(ent.batteryChargeMonth, ent.batteryChargePower);
+    seriesById.batChg = batChgRes.series;
+
+    const batDisRes = getEntityBucketSeries(ent.batteryDischargeMonth, ent.batteryDischargePower);
+    seriesById.batDis = batDisRes.series;
+
+    const loadRes = getEntityBucketSeries(ent.loadEnergyMonth, ent.loadPower);
+    for (let b = 0; b < win.bucketCount; b++) {
+        if (loadRes.series[b] > 0) {
+            seriesById.houseTotal[b] = loadRes.series[b];
+        } else {
+            const pvSelf = Math.max(0, seriesById.pvTotal[b] - seriesById.gridExp[b] - seriesById.batChg[b]);
+            seriesById.houseTotal[b] = Math.max(0, pvSelf + seriesById.batDis[b] + seriesById.gridImp[b]);
+        }
+    }
+
+    // 5. Reconcile Today's Live Ledger so 'Tag' (24h), 'Woche', and 'Monat' ALWAYS show immediate live energy even before the day/hour is over!
+    const ledger = getUnifiedEnergyLedger(baseline);
+    if (analyseBarExplorerState.horizon === 'day' && win.isToday) {
+        const curH = now.getHours();
+        const reconcileHourly = (arr, targetTodayKwh, distributeSolarCurve = false) => {
+            const target = Number(targetTodayKwh || 0);
+            if (!(target > 0)) return;
+            const currentSum = arr.reduce((a, b) => a + (Number(b) || 0), 0);
+            if (currentSum <= 0.01) {
+                // If no hourly breakdown arrived yet from HA history, distribute cleanly up to curH (or put in curH)
+                if (distributeSolarCurve && curH >= 7) {
+                    let wSum = 0;
+                    const weights = [];
+                    for (let h = 0; h <= curH; h++) {
+                        const w = (h >= 6 && h <= 20) ? Math.max(0.15, Math.sin(((h - 6) / 14) * Math.PI)) : 0.05;
+                        weights.push(w);
+                        wSum += w;
+                    }
+                    for (let h = 0; h <= curH; h++) {
+                        arr[h] = +((target * weights[h]) / Math.max(0.01, wSum)).toFixed(2);
+                    }
+                } else {
+                    arr[curH] = +target.toFixed(2);
+                }
+            } else if (target > currentSum + 0.02) {
+                // Add the live unbucketed delta of the currently running hour directly to curH
+                arr[curH] = +(arr[curH] + (target - currentSum)).toFixed(2);
+            }
+        };
+
+        reconcileHourly(seriesById.pvTotal, ledger.today.pvTotal, true);
+        reconcileHourly(seriesById.houseTotal, ledger.today.houseTotal, false);
+        reconcileHourly(seriesById.gridImp, ledger.today.gridImp, false);
+        reconcileHourly(seriesById.gridExp, ledger.today.gridExp, true);
+        reconcileHourly(seriesById.batChg, ledger.today.batChg, true);
+        reconcileHourly(seriesById.batDis, ledger.today.batDis, false);
+
+        (haConfigState.customStrings || []).forEach((cs, idx) => {
+            const k = `str_${idx}`;
+            const teleStr = (currentLiveTelemetry?.customStringsTelemetry || []).find(x => x && x.id === cs?.id);
+            const kwh = Number(teleStr?.energyTodayKwh ?? teleStr?.energyKwh ?? 0);
+            if (seriesById[k] && kwh > 0) {
+                reconcileHourly(seriesById[k], kwh, true);
+            }
+        });
+    }
+
+    // 6. For 'year' horizon, merge with monthlyComparison (Logbuch & Live current month)
     if (analyseBarExplorerState.horizon === 'year' && metrics && Array.isArray(metrics.monthlyComparison)) {
         metrics.monthlyComparison.forEach((mObj, mIdx) => {
             if (!mObj || !mObj.hasReal) return;
@@ -5565,11 +5793,10 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         });
     }
 
-    // 4. Ensure today's bucket in 'month' or 'week' reflects at least the live today ledger if viewing the current period
-    const ledger = getUnifiedEnergyLedger(baseline);
-    const todayStartMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).getTime();
-    const todayBIdx = getBucketIdx(todayStartMs);
-    if (todayBIdx >= 0 && todayBIdx < win.bucketCount && analyseBarExplorerState.horizon !== 'day' && analyseBarExplorerState.horizon !== 'year') {
+    // 7. Ensure today's bucket in 'month' or 'week' reflects at least the live today ledger if viewing the current period
+    const todayNoonMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).getTime();
+    const todayBIdx = getBucketIdx(todayNoonMs);
+    if (todayBIdx >= 0 && todayBIdx < win.bucketCount && (analyseBarExplorerState.horizon === 'week' || analyseBarExplorerState.horizon === 'month')) {
         seriesById.pvTotal[todayBIdx] = Math.max(seriesById.pvTotal[todayBIdx], +(ledger.today.pvTotal || 0).toFixed(2));
         seriesById.houseTotal[todayBIdx] = Math.max(seriesById.houseTotal[todayBIdx], +(ledger.today.houseTotal || 0).toFixed(2));
         seriesById.gridImp[todayBIdx] = Math.max(seriesById.gridImp[todayBIdx], +(ledger.today.gridImp || 0).toFixed(2));
@@ -5585,17 +5812,9 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
                 seriesById[k][todayBIdx] = Math.max(seriesById[k][todayBIdx], +kwh.toFixed(2));
             }
         });
-        (haConfigState.customConsumers || []).forEach((cc, idx) => {
-            const k = `cons_${idx}`;
-            const teleCons = (currentLiveTelemetry?.consumersTelemetry || []).find(x => x && x.id === cc?.id);
-            const kwh = Number(teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? 0);
-            if (seriesById[k] && kwh > 0) {
-                seriesById[k][todayBIdx] = Math.max(seriesById[k][todayBIdx], +kwh.toFixed(2));
-            }
-        });
     }
 
-    // 5. Compute derived ratio & financial channels per bucket (Autarky %, Eigenverbrauch %, Financial Savings €)
+    // 8. Compute derived ratio & financial channels per bucket (Autarky %, Eigenverbrauch %, Financial Savings €)
     const gridPrice = baseline.gridPriceEur || 0.32;
     const eegRate = baseline.eegRateEur || 0.08;
     for (let b = 0; b < win.bucketCount; b++) {
@@ -5637,14 +5856,27 @@ async function renderAnalyseBarExplorer(baseline = null, metrics = null, forceRe
     if (!baseline) baseline = getPlannedSystemBaseline();
     if (!metrics) metrics = computeAggregatedPerformanceMetrics(baseline);
 
+    applyAnalyseBarInlineExpandUi();
+
     // 1. Update Horizon Buttons
     ['day', 'week', 'month', 'year'].forEach(h => {
         const btn = document.getElementById(`btnBarExpHorizon_${h}`);
         if (!btn) return;
         if (analyseBarExplorerState.horizon === h) {
-            btn.className = "px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer";
+            btn.className = "px-2.5 sm:px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer";
         } else {
-            btn.className = "px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer";
+            btn.className = "px-2.5 sm:px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer";
+        }
+    });
+
+    // 2. Update Anker-Style Category Buttons
+    ['bilanz', 'solar', 'haus_bat', 'netz', 'finanz'].forEach(cat => {
+        const cBtn = document.getElementById(`btnBarCat_${cat}`);
+        if (!cBtn) return;
+        if (analyseBarExplorerState.activeCategory === cat && !analyseBarExplorerState.soloChannel) {
+            cBtn.className = "px-3 py-1.5 rounded-xl text-xs font-black bg-teal-600 text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5";
+        } else {
+            cBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 hover:bg-teal-500/15 border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer flex items-center gap-1.5";
         }
     });
 
@@ -5709,38 +5941,38 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         const unitLabel = primaryCh.unit;
         const bucketUnitName = analyseBarExplorerState.horizon === 'day' ? 'Stunde' : (analyseBarExplorerState.horizon === 'year' ? 'Monat' : 'Tag');
         kpiBox.innerHTML = `
-            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
-                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">${escapeHtml(primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittelwert' : 'Summe'}</p>
-                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
+            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</p>
+                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
                     ${fmtNum(primaryCh.unit === '%' ? avgVal : sumVal, primaryCh.unit === 'kWh' && sumVal < 10 ? 2 : 1)} ${unitLabel}
                 </p>
-                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">${escapeHtml(win.label)}</p>
+                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">${escapeHtml(win.label)}</p>
             </div>
-            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
+            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
                 <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
-                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-teal-600 dark:text-teal-300 mt-0.5">
+                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-teal-600 dark:text-teal-300 mt-0.5">
                     ${fmtNum(avgVal, avgVal < 10 ? 2 : 1)} ${unitLabel}
                 </p>
-                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">${nonZeroBuckets} aktive Zeitfenster</p>
+                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">${nonZeroBuckets} aktive Intervalle</p>
             </div>
-            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
+            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
                 <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
-                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
                     ${fmtNum(peakVal, peakVal < 10 ? 2 : 1)} ${unitLabel}
                 </p>
-                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">Zeitpunkt: ${escapeHtml(peakLabel)}</p>
+                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">Zeit: ${escapeHtml(peakLabel)}</p>
             </div>
-            <div class="p-3 rounded-2xl bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-white/10">
-                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Bilanz im Zeitraum</p>
-                <p class="text-lg sm:text-xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    ${fmtNum(autarkyPeriod, 1)} % Autarkie
+            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Autarkie im Zeitraum</p>
+                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    ${fmtNum(autarkyPeriod, 1)} %
                 </p>
-                <p class="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate">PV: ${fmtNum(pvSumPeriod, 1)} kWh · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
+                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">PV: ${fmtNum(pvSumPeriod, 1)} · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
             </div>
         `;
     }
 
-    // 2. Render Channel Selector Grid
+    // 2. Render 3-Column Channel Selector Tiles (Anker SOLIX / Live-Level-2 style)
     const gridEl = document.getElementById('analysisExplorerChannelsGrid');
     if (gridEl) {
         gridEl.innerHTML = catalog.map(ch => {
@@ -5750,53 +5982,62 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             const total = arr.reduce((a, b) => a + (Number(b) || 0), 0);
             const nz = arr.filter(v => Number(v) > 0).length;
             const displayVal = ch.unit === '%' ? (nz > 0 ? total / nz : 0) : total;
+            const maxVal = arr.reduce((m, v) => Math.max(m, Number(v) || 0), 0);
             const valFmt = fmtNum(displayVal, displayVal < 10 && displayVal > 0 ? 2 : 1);
+            const maxFmt = fmtNum(maxVal, maxVal < 10 && maxVal > 0 ? 2 : 1);
 
             return `
             <div onclick="toggleAnalyseBarChannel('${ch.id}')" role="button" tabindex="0"
-                class="p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                class="p-2.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
                     isActive
-                        ? 'bg-teal-500/10 dark:bg-teal-500/15 border-teal-500/50 shadow-2xs'
-                        : 'bg-white/60 dark:bg-slate-900/50 border-slate-200/70 dark:border-white/10 opacity-65 hover:opacity-100'
+                        ? 'bg-teal-500/10 dark:bg-teal-500/15 border-teal-500/60 shadow-2xs'
+                        : 'bg-slate-50/70 dark:bg-slate-950/40 border-slate-200/80 dark:border-white/10 opacity-60 hover:opacity-100'
                 }">
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
+                <div class="flex items-start justify-between gap-1">
+                    <div class="flex items-center gap-1.5 min-w-0">
                         <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${ch.color}"></span>
-                        <span class="text-xs font-bold text-slate-900 dark:text-white break-words leading-tight">${escapeHtml(ch.label)}</span>
+                        <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 dark:text-white truncate leading-tight">${escapeHtml(ch.shortLabel || ch.label)}</span>
                     </div>
-                    <p class="text-[11px] font-mono font-extrabold tabular-nums text-teal-700 dark:text-teal-300 mt-1">
-                        ${valFmt} ${ch.unit} <span class="text-[9.5px] font-normal text-slate-400">(${ch.unit === '%' ? 'Ø' : 'Summe'})</span>
-                    </p>
+                    <button type="button" onclick="focusSingleAnalyseBarChannel('${ch.id}', event)"
+                        title="Nur diesen Kanal solo anzeigen"
+                        class="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0 transition-colors cursor-pointer ${
+                            isSolo
+                                ? 'bg-teal-600 text-white'
+                                : 'bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-teal-500/20'
+                        }">
+                        ◎
+                    </button>
                 </div>
-                <button type="button" onclick="focusSingleAnalyseBarChannel('${ch.id}', event)"
-                    title="Nur diesen Kanal solo im Balkendiagramm anzeigen"
-                    class="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-black shrink-0 transition-colors cursor-pointer ${
-                        isSolo
-                            ? 'bg-teal-600 text-white'
-                            : 'bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-teal-500/20'
-                    }">
-                    ◎
-                </button>
+                <div class="flex items-baseline justify-between gap-1 pt-0.5">
+                    <span class="text-xs sm:text-sm font-black font-mono tabular-nums text-teal-700 dark:text-teal-300">
+                        ${valFmt} <span class="text-[10px] font-bold">${ch.unit}</span>
+                    </span>
+                    <span class="text-[9.5px] font-mono text-slate-400 dark:text-slate-500 truncate" title="Spitzenwert im Zeitraum">
+                        Peak ${maxFmt}
+                    </span>
+                </div>
             </div>`;
         }).join('');
     }
 
-    // 3. Render Chart.js Bar Chart
+    // 3. Render Chart.js Bar Chart (Full-Bleed hides Y-axis numbers for max bar width)
     const canvas = document.getElementById('analysisExplorerBarChart');
     if (!canvas || typeof Chart === 'undefined') return;
 
     const isDark = document.documentElement.classList.contains('dark');
+    const isExp = !!analyseBarExplorerState.isExpanded;
     const hasPctAxis = activeObjs.some(c => c.unit === '%');
     const hasMainAxis = activeObjs.some(c => c.unit !== '%');
 
     const datasets = activeObjs.map(ch => ({
-        label: `${ch.label} (${ch.unit})`,
+        label: `${ch.shortLabel || ch.label} (${ch.unit})`,
         data: seriesById[ch.id] || [],
-        backgroundColor: ch.color + (isDark ? 'cc' : 'd9'),
+        backgroundColor: ch.color + (isDark ? 'd9' : 'e6'),
         hoverBackgroundColor: ch.color,
         borderColor: ch.color,
         borderWidth: 1,
-        borderRadius: 6,
+        borderRadius: isExp ? 5 : 4,
+        maxBarThickness: isExp ? 44 : 32,
         yAxisID: ch.unit === '%' ? 'yPct' : 'y'
     }));
 
@@ -5807,7 +6048,7 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
 
     const readoutEl = document.getElementById('barExplorerHoverReadout');
     if (readoutEl) {
-        readoutEl.innerHTML = `<span class="font-bold text-teal-600 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${activeObjs.length} ${activeObjs.length === 1 ? 'Kanal' : 'Kanäle'} aktiv — Tippe auf einen Balken für Details`;
+        readoutEl.innerHTML = `<span class="font-bold text-teal-600 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${activeObjs.length} ${activeObjs.length === 1 ? 'Kanal' : 'Kanäle'} aktiv — Tippe auf Balken für exakte Werte`;
     }
 
     analyseBarExplorerState.chartInstance = new Chart(canvas.getContext('2d'), {
@@ -5816,6 +6057,9 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            layout: {
+                padding: isExp ? { left: 2, right: 2, top: 4, bottom: 0 } : { left: 0, right: 0, top: 2, bottom: 0 }
+            },
             interaction: { mode: 'index', intersect: false },
             onHover: (event, elements) => {
                 if (!elements || elements.length === 0 || !readoutEl) return;
@@ -5823,7 +6067,7 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
                 const bucketLbl = labels[idx] || '';
                 const parts = activeObjs.map(ch => {
                     const v = (seriesById[ch.id] || [])[idx] || 0;
-                    return `<span style="color:${ch.color}" class="font-bold">${escapeHtml(ch.label)}: ${fmtNum(v, v < 10 && v > 0 ? 2 : 1)} ${ch.unit}</span>`;
+                    return `<span style="color:${ch.color}" class="font-bold">${escapeHtml(ch.shortLabel || ch.label)}: ${fmtNum(v, v < 10 && v > 0 ? 2 : 1)} ${ch.unit}</span>`;
                 });
                 readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)}:</strong> ${parts.join(' · ')}`;
             },
@@ -5835,14 +6079,14 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
                         color: isDark ? '#cbd5e1' : '#334155',
                         boxWidth: 10,
                         usePointStyle: true,
-                        font: { size: 11, weight: 'bold' }
+                        font: { size: 10, weight: 'bold' }
                     }
                 },
                 tooltip: {
-                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.96)',
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.95)' : 'rgba(255, 255, 255, 0.97)',
                     titleColor: isDark ? '#f8fafc' : '#0f172a',
                     bodyColor: isDark ? '#cbd5e1' : '#334155',
-                    borderColor: isDark ? 'rgba(45, 212, 191, 0.3)' : 'rgba(13, 148, 136, 0.3)',
+                    borderColor: isDark ? 'rgba(45, 212, 191, 0.35)' : 'rgba(13, 148, 136, 0.35)',
                     borderWidth: 1
                 }
             },
@@ -5850,28 +6094,34 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
                 x: {
                     stacked: analyseBarExplorerState.stacked,
                     grid: { display: false },
-                    ticks: { color: isDark ? '#94a3b8' : '#64748b', font: { size: 10 } }
+                    ticks: {
+                        color: isDark ? '#94a3b8' : '#64748b',
+                        font: { size: 9.5 },
+                        maxRotation: 0,
+                        autoSkip: true,
+                        maxTicksLimit: analyseBarExplorerState.horizon === 'day' ? 8 : (analyseBarExplorerState.horizon === 'month' ? 10 : 12)
+                    }
                 },
                 y: {
-                    display: hasMainAxis,
+                    display: hasMainAxis && !isExp,
                     stacked: analyseBarExplorerState.stacked,
                     beginAtZero: true,
                     grid: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' },
                     ticks: {
                         color: isDark ? '#94a3b8' : '#64748b',
-                        font: { size: 10 },
+                        font: { size: 9.5 },
                         callback: (v) => `${v} ${activeObjs.find(c => c.unit !== '%')?.unit || 'kWh'}`
                     }
                 },
                 yPct: {
-                    display: hasPctAxis,
+                    display: hasPctAxis && !isExp,
                     position: 'right',
                     beginAtZero: true,
                     max: 100,
                     grid: { drawOnChartArea: !hasMainAxis },
                     ticks: {
                         color: '#10b981',
-                        font: { size: 10 },
+                        font: { size: 9.5 },
                         callback: (v) => `${v} %`
                     }
                 }
@@ -5885,6 +6135,9 @@ if (typeof window !== 'undefined') {
     window.setAnalyseBarExplorerHorizon = setAnalyseBarExplorerHorizon;
     window.shiftAnalyseBarExplorerPeriod = shiftAnalyseBarExplorerPeriod;
     window.toggleAnalyseBarExplorerStacked = toggleAnalyseBarExplorerStacked;
+    window.toggleAnalyseBarInlineExpand = toggleAnalyseBarInlineExpand;
+    window.onAnalyseBarStageClick = onAnalyseBarStageClick;
+    window.selectAnalyseBarCategory = selectAnalyseBarCategory;
     window.toggleAnalyseBarChannel = toggleAnalyseBarChannel;
     window.focusSingleAnalyseBarChannel = focusSingleAnalyseBarChannel;
     window.selectAnalyseBarPreset = selectAnalyseBarPreset;
@@ -6887,16 +7140,19 @@ function switchHaModalTab(tab = 'config') {
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
     const scrollBody = document.getElementById('haModalScrollBody');
 
+    const activeCls = "px-3 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-center leading-tight";
+    const inactiveCls = "px-3 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center leading-tight";
+
     if (tab === 'guide') {
         if (panelCfg) panelCfg.classList.add('hidden');
         if (panelGuide) panelGuide.classList.remove('hidden');
-        if (btnGuide) btnGuide.className = "px-3.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-xs";
-        if (btnCfg) btnCfg.className = "px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+        if (btnGuide) btnGuide.className = activeCls;
+        if (btnCfg) btnCfg.className = inactiveCls;
     } else {
         if (panelCfg) panelCfg.classList.remove('hidden');
         if (panelGuide) panelGuide.classList.add('hidden');
-        if (btnCfg) btnCfg.className = "px-3.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shadow-xs";
-        if (btnGuide) btnGuide.className = "px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap";
+        if (btnCfg) btnCfg.className = activeCls;
+        if (btnGuide) btnGuide.className = inactiveCls;
     }
     if (scrollBody) {
         scrollBody.scrollTop = 0;
