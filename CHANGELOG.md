@@ -4,6 +4,28 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.3] – 2026-11-13
+
+### ✨ Echter Sofort-Start ohne Lade-Blockade (Entfall des 13-Tage-Rohhistorie-Downloads beim Start) & Exakte 7-Tage-Werte für `Netzbezug` und `TV Wand`
+
+#### 1. Warum das Laden trotz IndexedDB noch verzögert war – und die Behebung (`telemetry.js`)
+* **Ursache 1: Nicht existierende Standard-Platzhalter hielten `allHaveBaselines` dauerhaft auf `false`:**
+  - In `syncEnergyCounterBaselinesFromHaHistory` wurden auch unbelegte Standard-Platzhalter (wie `sensor.pv_energy_monthly`) geprüft. Da diese in Home Assistant nicht existieren, erhielten sie nie einen Startwert (`dayStartByEntity[id] === undefined`), wodurch die App bei **jedem Start und alle 10 Sekunden** den kompletten Monatsverlauf (`/api/history/period/<Monatsbeginn>?significant_changes_only=0`) neu herunterlud.
+  - **Fix:** `uniqueEntities` prüft nur noch Sensoren, die in Home Assistant tatsächlich existieren (`extractHaNumericClient !== null`). Zudem wird für den Monatsstart keine langsame 13-Tage-Rohhistorie mehr über REST geladen, sondern die ~60 ms schnelle WebSocket-Langzeitstatistik (`recorder/statistics_during_period`) genutzt.
+* **Ursache 2: `refreshLiveTelemetryNow()` wartete blockierend auf die Historie:**
+  - `await hydrateFromPersistentIndexedDB()` läuft nun direkt vor `startLiveTelemetryLoop()`, sodass alle gecachten Diagramme (`Tag`, `Woche`, `Monat`) bereits vor dem ersten Frame im Speicher liegen. `syncEnergyCounterBaselinesFromHaHistory()` arbeitet komplett asynchron im Hintergrund und blockiert weder das Live-Rendering noch das Laden des Diagramms.
+
+#### 2. Korrektur der falschen 7-Tage-Werte bei `Netzbezug` (`652,32 kWh` / `6.510 W Max`) und `TV Wand` (`telemetry.js`)
+* **Kein Überschreiben bereinigter `change`-Summen durch `stateSpanKwh`:**
+  - In `fetchHaHistoryInBrowser` und `syncLongTermStatisticsFromHa` wurde der Zähler-Offset-Sprung (z. B. `0,15 kWh -> 610 kWh` beim Netzbezug oder `+85 kWh` Shelly-Übertrag bei der TV Wand) zwar aus `kwhChangeSum` herausgefiltert, danach aber durch `Math.max(kwhChangeSum, stateSpanKwh)` (`Endzählerstand - Startzählerstand = 652,32 kWh`) wieder überschrieben.
+  - **Fix:** Erkannte Offset-Sprünge (`jumpOffsetSum`) werden von `stateSpanKwh` abgezogen, und `kwhChangeSum` hat bei vorhandenen `change`-Buckets strikten Vorrang. Zusätzlich gleicht `resolveChannelKwh` den Zählerwert bei vorhandener Leistungskurve (`W`) auf Plausibilität mit dem Kurven-Integral ab.
+* **Einzelverbraucher-Schutz (`TV Wand`, `Trockner` etc.):**
+  - Alle `kWh`/`Wh`-Zähler ohne explizites Tages-Keyword (`today`, `heute`, `daily`) werden standardmäßig als kumulative Gesamtzähler behandelt, und für Einzelverbraucher (`customConsumers`) gilt eine physikalische Sprunggrenze von `4,0 kWh` pro Einzelintervall.
+* **Getrennte Vorzeichen-Spitzenwerte (`W Max`) für bidirektionale Netzsensoren (`e.gridPower`):**
+  - Bei einem kombinierten Zweirichtungs-Netzsensor (`+` = Netzbezug, `-` = Einspeisung) wurde bisher `Math.abs(rawMin)` (`-6.510 W` Mittagseinspeisung) auch dem `Netzbezug` als `6.510 W Max` zugewiesen. `ltsPosPeakByEntity` (nur positive Bezugsspitzen) und `ltsNegPeakByEntity` (nur negative Einspeisespitzen) werden nun strikt getrennt ausgewertet.
+
+---
+
 ## [Version 11.2] – 2026-11-13
 
 ### ✨ Service-Worker MIME-Type Guard gegen `text/html`-Fehler, Fester Handy-Speicher via IndexedDB (`PVProPersistentDB`) + `navigator.storage.persist()` & Sofort-Hydrierung aller Diagramme (`< 20 ms`)

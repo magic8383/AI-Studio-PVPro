@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.2 (Service-Worker MIME-Type Guard gegen `text/html` Update-Fehler, feste lokale Handy-Datenbank `PVProPersistentDB` auf Basis von IndexedDB & `navigator.storage.persist()` gegen Android-Auto-Bereinigung sowie verzögerungsfreies `<20 ms` Stale-While-Revalidate-Laden aller Verlaufs-, Balken- und Raumklima-Diagramme)  
+**Aktuelle Version:** 11.3 (Echter Sofort-Start durch vorgezogene IndexedDB-Hydrierung vor dem Live-Loop, nicht-blockierende Hintergrund-Kalibrierung ohne 13-Tage-Rohhistorie-Download, Korrektur der `7 Tage`-Werte & Spitzenleistung bei `Netzbezug` (`652,32 kWh` / `6.510 W Max`) und `TV Wand` durch Bereinigung von Zähler-Offset-Sprüngen in `stateSpanKwh` sowie getrennte Vorzeichen-Spitzenwerte für bidirektionale Netzsensoren)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
