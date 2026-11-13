@@ -1,5 +1,5 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V10.3)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.0)
 // Zentrale Single Source of Truth (1:1 Echte HA-Sensorwerte ohne Filter-Eingriffe,
 // Transparente Ursachen-Diagnose & Gesamtpaket-Sync)
 // ============================================================================
@@ -130,6 +130,10 @@ let intradaySeriesState = {
 
 let activeCurveKeys = new Set(['str_fronius_1', 'str_fronius_2', 'str_hoymiles', 'pv_total', 'battery_soc']);
 let currentCurveTimeframe = 'day'; // 'day' | 'week' | 'month'
+let intradayDayZoomMode = 'auto'; // 'auto' (Ab Aktivität + 1h Zukunft) | 'full' (00:00 – +1h)
+let intradayDayPanOffsetBuckets = 0; // 5-Minuten-Buckets Verschiebung nach links (<0) oder rechts (>0)
+let intradayVisibleStartIdx = 0; // Start-Index des sichtbaren Fensters im Tagesdiagramm
+let intradayRealBucketsCount = 0; // Anzahl echter Messpunkte ohne +1h Zukunfts-Padding
 let selectedSankeyFlow = null; // null | 'pv_direct' | 'pv_bat' | 'pv_exp' | 'bat_house' | 'grid_house'
 
 let activeAnalysisSubTab = 'soll-ist'; // 'soll-ist' | 'autarkie-bat' | 'amortisation' | 'logbuch'
@@ -186,12 +190,16 @@ async function initTelemetryAndAnalysis() {
         if (savedSort === 'kwh_first' || savedSort === 'live_first') {
             consumerSortMode = savedSort;
         }
+        const savedDayZoom = localStorage.getItem('pvpro_intraday_day_zoom');
+        if (savedDayZoom === 'full' || savedDayZoom === 'auto') {
+            intradayDayZoomMode = savedDayZoom;
+        }
     } catch (e) {}
 
     // Load cached kWh total counter baselines for Today / Month delta calculation
     loadEnergyCounterBaselines();
 
-    // 1. Load local cached HA config & performance records
+    // 1. Load local cached HA config & performance records synchronously (0 ms)
     try {
         const localHa = localStorage.getItem('pvpro_ha_config');
         if (localHa) {
@@ -203,7 +211,9 @@ async function initTelemetryAndAnalysis() {
                 pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
                 weatherEntity: typeof parsed.weatherEntity === 'string' ? parsed.weatherEntity : (haConfigState.weatherEntity || ''),
                 outdoorTempEntity: typeof parsed.outdoorTempEntity === 'string' ? parsed.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-                customWeatherSensors: Array.isArray(parsed.customWeatherSensors) ? parsed.customWeatherSensors : (haConfigState.customWeatherSensors || []),
+                customWeatherSensors: Array.isArray(parsed.customWeatherSensors) && parsed.customWeatherSensors.length > 0
+                    ? parsed.customWeatherSensors
+                    : (haConfigState.customWeatherSensors || []),
                 customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : haConfigState.customConsumers
             };
@@ -217,7 +227,19 @@ async function initTelemetryAndAnalysis() {
         }
     } catch (e) {}
 
-    // 2. Sync with backend server asynchronously (safe on GitHub Pages / static hosts)
+    // 1B. INSTANT 0ms BOOT SNAPSHOT: Immediately restore last known live values, weather & room climate before any network await!
+    restoreInstantBootSnapshot();
+    try {
+        renderHomeTab();
+        renderLiveCockpitUI();
+    } catch (e) {}
+
+    // 1C. Fire immediate live states poll right away (without waiting for /api/ha/config or 24h history)
+    if (haConfigState.baseUrl && haConfigState.accessToken) {
+        startLiveTelemetryLoop();
+    }
+
+    // 2. Sync with backend server asynchronously in background (safe on GitHub Pages / static hosts)
     try {
         const [haRes, recRes] = await Promise.all([
             safeFetchBackendJson('/api/ha/config'),
@@ -225,16 +247,22 @@ async function initTelemetryAndAnalysis() {
         ]);
 
         if (haRes.ok && haRes.data && haRes.data.success && haRes.data.config) {
+            const srvCfg = haRes.data.config;
             haConfigState = {
                 ...haConfigState,
-                ...haRes.data.config,
-                entities: { ...haConfigState.entities, ...(haRes.data.config.entities || {}) },
-                pvEnergyExtraEntities: Array.isArray(haRes.data.config.pvEnergyExtraEntities) ? haRes.data.config.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
-                weatherEntity: typeof haRes.data.config.weatherEntity === 'string' ? haRes.data.config.weatherEntity : (haConfigState.weatherEntity || ''),
-                outdoorTempEntity: typeof haRes.data.config.outdoorTempEntity === 'string' ? haRes.data.config.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-                customWeatherSensors: Array.isArray(haRes.data.config.customWeatherSensors) ? haRes.data.config.customWeatherSensors : (haConfigState.customWeatherSensors || []),
-                customStrings: Array.isArray(haRes.data.config.customStrings) && haRes.data.config.customStrings.length > 0 ? haRes.data.config.customStrings : haConfigState.customStrings,
-                customConsumers: Array.isArray(haRes.data.config.customConsumers) ? haRes.data.config.customConsumers : haConfigState.customConsumers
+                ...srvCfg,
+                accessToken: srvCfg.accessToken || haConfigState.accessToken || '',
+                entities: { ...haConfigState.entities, ...(srvCfg.entities || {}) },
+                pvEnergyExtraEntities: Array.isArray(srvCfg.pvEnergyExtraEntities) && srvCfg.pvEnergyExtraEntities.length > 0
+                    ? srvCfg.pvEnergyExtraEntities
+                    : (haConfigState.pvEnergyExtraEntities || []),
+                weatherEntity: (typeof srvCfg.weatherEntity === 'string' && srvCfg.weatherEntity) ? srvCfg.weatherEntity : (haConfigState.weatherEntity || ''),
+                outdoorTempEntity: (typeof srvCfg.outdoorTempEntity === 'string' && srvCfg.outdoorTempEntity) ? srvCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
+                customWeatherSensors: Array.isArray(srvCfg.customWeatherSensors) && srvCfg.customWeatherSensors.length > 0
+                    ? srvCfg.customWeatherSensors
+                    : (haConfigState.customWeatherSensors || []),
+                customStrings: Array.isArray(srvCfg.customStrings) && srvCfg.customStrings.length > 0 ? srvCfg.customStrings : haConfigState.customStrings,
+                customConsumers: Array.isArray(srvCfg.customConsumers) && srvCfg.customConsumers.length > 0 ? srvCfg.customConsumers : haConfigState.customConsumers
             };
             localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
         }
@@ -280,9 +308,10 @@ async function initTelemetryAndAnalysis() {
 
     ensureProjectYearInitialized(selectedAnalysisYear);
 
-    // Start live dashboard immediately if dashboard tab is active
+    // Start live telemetry loop if Home or Live tab is active
+    const homeTab = document.getElementById('tab-home');
     const liveTab = document.getElementById('tab-live');
-    if (liveTab && liveTab.classList.contains('active')) {
+    if ((homeTab && homeTab.classList.contains('active')) || (liveTab && liveTab.classList.contains('active'))) {
         startLiveTelemetryLoop();
     }
 }
@@ -2671,7 +2700,7 @@ async function refreshLiveTelemetryNow() {
             localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
         }
 
-        // Build statesMap first so unit scaling (Wh/kWh/MWh) & state_class are known before syncing 00:00 history baselines!
+        // Build statesMap first so unit scaling (Wh/kWh/MWh) & state_class are known
         const statesMap = new Map();
         directRes.data.forEach(s => {
             if (s && s.entity_id) {
@@ -2682,6 +2711,23 @@ async function refreshLiveTelemetryNow() {
             }
         });
 
+        // FAST-FIRST RENDER (v11.0): Parse & display live W, SoC %, Weather & Room Climate IMMEDIATELY (~150ms)
+        // before awaiting any 24h / 30d history baseline requests!
+        const fastParsed = parseHaStatesInBrowser(directRes.data, haConfigState, statesMap);
+        currentLiveTelemetry = {
+            ...currentLiveTelemetry,
+            ...fastParsed,
+            batterySocPct: fastParsed.batterySocPct !== null && fastParsed.batterySocPct !== undefined
+                ? +(Number(fastParsed.batterySocPct).toFixed(1))
+                : (baseline.totalBatteryKwh > 0 ? 50 : null),
+            connectionOk: true,
+            lastError: null
+        };
+        try { updateHomeStatesFromHaArray(directRes.data); } catch (e) {}
+        renderLiveCockpitUI(baseline);
+        saveInstantBootSnapshot();
+
+        // Now sync 00:00 & month-start counter baselines in the background and refine kWh deltas
         await syncEnergyCounterBaselinesFromHaHistory(haConfigState, statesMap);
 
         const parsed = parseHaStatesInBrowser(directRes.data, haConfigState, statesMap);
@@ -2697,9 +2743,9 @@ async function refreshLiveTelemetryNow() {
         if (haConfigState.autoSyncMonthly && parsed.pvEnergyMonthKwh !== null && parsed.pvEnergyMonthKwh !== undefined && parsed.pvEnergyMonthKwh > 0) {
             syncCurrentMonthFromLiveTelemetry(false);
         }
-        try { updateHomeStatesFromHaArray(directRes.data); } catch (e) {}
         renderLiveCockpitUI(baseline);
         renderIntradayCurveSection(baseline);
+        saveInstantBootSnapshot();
         return;
     }
 
@@ -3524,8 +3570,8 @@ function renderLiveCockpitUI(baseline) {
                     : 'border-slate-200/75 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/55 hover:border-slate-300 dark:hover:border-slate-700';
 
                 const fillBarClasses = isActive
-                    ? 'bg-gradient-to-r from-teal-500/[0.11] via-emerald-500/[0.07] to-transparent dark:from-teal-400/[0.16] dark:via-emerald-400/[0.10] dark:to-transparent'
-                    : 'bg-slate-200/55 dark:bg-slate-800/45';
+                    ? 'consumer-progress-fill-active'
+                    : (consKwh > 0.002 ? 'consumer-progress-fill-idle' : 'bg-slate-200/55 dark:bg-slate-800/45');
 
                 const nameClasses = isActive
                     ? 'text-slate-900 dark:text-white font-medium'
@@ -4026,6 +4072,70 @@ function getAvailableCurveDefinitions() {
     return defs;
 }
 
+function toggleIntradayDayZoomMode(event = null) {
+    if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+    if (intradayDayPanOffsetBuckets !== 0) {
+        intradayDayPanOffsetBuckets = 0;
+        intradayDayZoomMode = 'auto';
+    } else {
+        intradayDayZoomMode = intradayDayZoomMode === 'auto' ? 'full' : 'auto';
+    }
+    try {
+        localStorage.setItem('pvpro_intraday_day_zoom', intradayDayZoomMode);
+    } catch (e) {}
+    renderIntradayCurveSection();
+}
+
+function panIntradayDayWindow(deltaBuckets = -12, event = null) {
+    if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+    if (currentCurveTimeframe !== 'day') return;
+    intradayDayPanOffsetBuckets = (intradayDayPanOffsetBuckets || 0) + Number(deltaBuckets || 0);
+    // Clamp pan offset within reasonable day bounds (-144 to +144 buckets)
+    intradayDayPanOffsetBuckets = Math.max(-180, Math.min(180, intradayDayPanOffsetBuckets));
+    renderIntradayCurveSection();
+}
+
+if (typeof window !== 'undefined') {
+    window.toggleIntradayDayZoomMode = toggleIntradayDayZoomMode;
+    window.panIntradayDayWindow = panIntradayDayWindow;
+}
+
+function computeIntradayDayAutoStartIndex(defs) {
+    const labels = intradaySeriesState.labels || [];
+    const nReal = labels.length;
+    if (nReal <= 16) return 0;
+
+    const activeDefs = (defs || getAvailableCurveDefinitions()).filter(d => activeCurveKeys.has(d.key) && d.axis === 'yPower');
+    if (activeDefs.length === 0) return 0;
+
+    // Prefer PV / generation curves if any are active so night flatlines (00:00-07:30) are cleanly trimmed
+    const pvLikeKeys = new Set(['pv_total', 'grid_exp', 'bat_chg']);
+    const pvActiveDefs = activeDefs.filter(d => pvLikeKeys.has(d.key) || String(d.key).startsWith('str_'));
+    const scanDefs = pvActiveDefs.length > 0 ? pvActiveDefs : activeDefs;
+    const thresholdW = pvActiveDefs.length > 0 ? 15 : 40;
+
+    let firstActiveIdx = -1;
+    for (let i = 0; i < nReal; i++) {
+        const hasActivity = scanDefs.some(d => {
+            const arr = intradaySeriesState.series[d.key] || [];
+            return Math.abs(Number(arr[i] || 0)) >= thresholdW;
+        });
+        if (hasActivity) {
+            firstActiveIdx = i;
+            break;
+        }
+    }
+
+    if (firstActiveIdx <= 0) {
+        // If no activity yet today (e.g. early morning), show the last 3 hours up to now + 1h future
+        return Math.max(0, nReal - 36);
+    }
+
+    // Start 6 buckets (30 minutes) before first activity so the morning ramp-up has clean breathing room
+    const paddedStart = Math.max(0, firstActiveIdx - 6);
+    return Math.min(paddedStart, Math.max(0, nReal - 18));
+}
+
 function toggleIntradayCurve(curveKey) {
     if (activeCurveKeys.has(curveKey)) {
         if (activeCurveKeys.size > 1) {
@@ -4046,7 +4156,7 @@ function renderIntradayCurveSection(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const defs = getAvailableCurveDefinitions();
 
-    // 1. Update View Title, Reset-Focus Button & Timeframe Pills
+    // 1. Update View Title, Reset-Focus Button, Day Window Controls & Timeframe Pills
     const titleEl = document.getElementById('intraday_view_title');
     if (titleEl) {
         const defaultTitle = currentCurveTimeframe === 'week'
@@ -4058,6 +4168,12 @@ function renderIntradayCurveSection(baseline) {
     if (resetBtn) {
         if (currentFocusedCurveMode) resetBtn.classList.remove('hidden');
         else resetBtn.classList.add('hidden');
+    }
+
+    const dayWinCtrl = document.getElementById('intradayDayWindowControls');
+    if (dayWinCtrl) {
+        if (currentCurveTimeframe === 'day') dayWinCtrl.classList.remove('hidden');
+        else dayWinCtrl.classList.add('hidden');
     }
 
     ['day', 'week', 'month'].forEach(t => {
@@ -4079,7 +4195,7 @@ function renderIntradayCurveSection(baseline) {
     const startStr = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const stepHours = Math.max(1, Math.round(win.stepMs / 3600000));
 
-    let rangeString = `${dateStr} · 00:00 – ${timeStr} Uhr`;
+    let rangeString = `${dateStr} · 00:00 – ${timeStr} Uhr (+1h Vorschau)`;
     if (currentCurveTimeframe === 'week') {
         rangeString = win.boundedByTrackingStart
             ? `Ab Mess-Start ${startStr} · 1h-Auflösung (bis ${dateStr}, ${timeStr} Uhr)`
@@ -4125,7 +4241,7 @@ function renderIntradayCurveSection(baseline) {
     // 3B. Apply In-Place Full-Bleed Expansion State to DOM
     applyIntradayInlineExpandDOM();
 
-    // 4. Render Compact 3-Column Technical Channel Cards Below Chart (Theme-Aware for Light & Dark Mode)
+    // 4. Render Compact Technical Channel Cards Below Chart (Theme-Aware for Light & Dark Mode)
     const isDark = document.documentElement.classList.contains('dark');
     const tilesGrid = document.getElementById('dash_curve_tiles_grid');
     if (tilesGrid) {
@@ -4180,13 +4296,14 @@ function renderIntradayCurveSection(baseline) {
         }).join('');
     }
 
-    // 5. Update Crosshair Readout Ribbon (only if user is not actively scrubbing)
-    if (!isIntradayHovering) {
-        updateIntradayHoverReadout((intradaySeriesState.labels.length || 1) - 1, defs);
-    }
-
-    // 6. Render Dual-Axis Chart.js Line Chart (Zero-Flicker In-Place Update)
+    // 5. Render Dual-Axis Chart.js Line Chart first so intradayVisibleStartIdx is up to date
     renderIntradayCanvasInstance('intradayTelemetryChart', defs, false);
+
+    // 6. Update Crosshair Readout Ribbon (only if user is not actively scrubbing)
+    if (!isIntradayHovering) {
+        const lastLocalIdx = Math.max(0, ((intradaySeriesState.labels.length || 1) - 1) - (currentCurveTimeframe === 'day' ? intradayVisibleStartIdx : 0));
+        updateIntradayHoverReadout(lastLocalIdx, defs);
+    }
 
     const fsModal = document.getElementById('modal-intraday-fullscreen');
     if (fsModal && !fsModal.classList.contains('hidden')) {
@@ -4203,10 +4320,33 @@ function hexToRgba(hex, alpha) {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Custom Chart.js Crosshair Line Plugin (Replaces blocking floating tooltip)
+// Custom Chart.js Crosshair Line & "Jetzt" Live Marker Plugin
 const intradayCrosshairPlugin = {
     id: 'intradayCrosshairLine',
     afterDatasetsDraw(chart) {
+        const ctx = chart.ctx;
+        const isDark = document.documentElement.classList.contains('dark');
+        const { top, bottom, left, right } = chart.chartArea || {};
+        if (top === undefined || bottom === undefined) return;
+
+        // Draw subtle vertical "Jetzt" marker line at the live point when in 'day' view with +1h future buffer
+        if (currentCurveTimeframe === 'day' && intradayRealBucketsCount > 0) {
+            const liveLocalIdx = (intradayRealBucketsCount - 1) - intradayVisibleStartIdx;
+            const meta0 = chart.getDatasetMeta(0);
+            const livePt = meta0?.data?.[liveLocalIdx];
+            if (livePt && livePt.x >= left && livePt.x <= right) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.moveTo(livePt.x, top);
+                ctx.lineTo(livePt.x, bottom);
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = isDark ? 'rgba(148, 163, 184, 0.22)' : 'rgba(100, 116, 139, 0.22)';
+                ctx.setLineDash([2, 3]);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
         const idx = activeCrosshairIndex;
         if (idx === null || idx === undefined || idx < 0) return;
         const meta = chart.getDatasetMeta(0);
@@ -4214,11 +4354,7 @@ const intradayCrosshairPlugin = {
 
         const pt = meta.data[idx];
         const x = pt.x;
-        const { top, bottom } = chart.chartArea;
-        if (x < chart.chartArea.left || x > chart.chartArea.right) return;
-
-        const ctx = chart.ctx;
-        const isDark = document.documentElement.classList.contains('dark');
+        if (x < left || x > right) return;
 
         ctx.save();
         ctx.beginPath();
@@ -4233,7 +4369,7 @@ const intradayCrosshairPlugin = {
         chart.data.datasets.forEach((ds, dsIdx) => {
             const dsMeta = chart.getDatasetMeta(dsIdx);
             const el = dsMeta?.data?.[idx];
-            if (!el || isNaN(el.y)) return;
+            if (!el || isNaN(el.y) || ds.data?.[idx] === null || ds.data?.[idx] === undefined) return;
             ctx.beginPath();
             ctx.arc(el.x, el.y, 3.5, 0, Math.PI * 2);
             ctx.fillStyle = ds.borderColor || '#14b8a6';
@@ -4261,8 +4397,60 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     // Hide left & right Y-scales when in-place expanded OR in fullscreen mode to gain +20% full-bleed width
     const hideSideScales = isFullscreen || isIntradayChartExpanded;
 
+    // Build visible window & +1h future padding for 'day' view
+    const rawLabels = intradaySeriesState.labels || [];
+    const nReal = rawLabels.length;
+    intradayRealBucketsCount = nReal;
+
+    let futureLabels = [];
+    let visStartIdx = 0;
+
+    if (currentCurveTimeframe === 'day' && nReal > 0) {
+        const lastBucketMs = intradaySeriesState.bucketTimes?.[nReal - 1] || Date.now();
+        const endOfDay = new Date(lastBucketMs);
+        endOfDay.setHours(23, 59, 59, 999);
+        const endOfDayMs = endOfDay.getTime();
+
+        // Add +1 hour (12 x 5-min buckets) into the future so live position is clearly visible with breathing room on the right
+        for (let k = 1; k <= 12; k++) {
+            const futMs = lastBucketMs + k * 300000;
+            if (futMs > endOfDayMs + 60000) break;
+            const futDate = new Date(futMs);
+            futureLabels.push(futDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+        }
+
+        const autoStart = computeIntradayDayAutoStartIndex(defs);
+        const baseStart = intradayDayZoomMode === 'full' ? 0 : autoStart;
+        visStartIdx = Math.max(0, Math.min(Math.max(0, nReal - 8), baseStart + (intradayDayPanOffsetBuckets || 0)));
+        intradayVisibleStartIdx = visStartIdx;
+
+        // Update Zoom/Window button badge in header
+        const zoomBtn = document.getElementById('btnIntradayDayZoomMode');
+        if (zoomBtn) {
+            const startLbl = rawLabels[visStartIdx] || '00:00';
+            if (intradayDayZoomMode === 'full' && intradayDayPanOffsetBuckets === 0) {
+                zoomBtn.innerText = '0–24h +1h';
+            } else if (intradayDayPanOffsetBuckets !== 0) {
+                zoomBtn.innerText = `Ab ${startLbl} +1h`;
+            } else {
+                zoomBtn.innerText = visStartIdx > 0 ? `Aktiv (${startLbl}) +1h` : 'Aktiv +1h';
+            }
+        }
+    } else {
+        intradayVisibleStartIdx = 0;
+    }
+
+    const paddedLabels = [...rawLabels, ...futureLabels];
+    const visibleLabels = paddedLabels.slice(visStartIdx);
+    const liveLocalIdx = Math.max(0, (nReal - 1) - visStartIdx);
+
     const datasets = activeDefs.map((d) => {
-        const dataArr = intradaySeriesState.series[d.key] || [];
+        const rawArr = intradaySeriesState.series[d.key] || [];
+        const paddedArr = currentCurveTimeframe === 'day'
+            ? [...rawArr, ...futureLabels.map(() => null)]
+            : rawArr;
+        const dataArr = paddedArr.slice(visStartIdx);
+
         const isPrimaryFocus = powerCurvesCount <= 2 && d.axis === 'yPower';
         const grad = ctx.createLinearGradient(0, 0, 0, chartHeight);
         grad.addColorStop(0, hexToRgba(d.color, isPrimaryFocus ? (isDark ? 0.34 : 0.26) : (isDark ? 0.14 : 0.10)));
@@ -4276,8 +4464,15 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             yAxisID: d.axis,
             borderWidth: (isFullscreen || isIntradayChartExpanded) ? 2.4 : (isPrimaryFocus ? 2.3 : 1.9),
             borderDash: d.axis === 'ySoc' ? [4, 3] : [],
-            pointRadius: 0,
+            // Highlight the live "Jetzt" endpoint in 'day' view with a crisp dot
+            pointRadius: currentCurveTimeframe === 'day'
+                ? (ctxPt) => (ctxPt.dataIndex === liveLocalIdx ? 3.2 : 0)
+                : 0,
+            pointBackgroundColor: d.color,
+            pointBorderColor: isDark ? '#081116' : '#ffffff',
+            pointBorderWidth: 1.5,
             pointHoverRadius: 0,
+            spanGaps: false,
             tension: 0.28,
             fill: d.axis === 'yPower' && (powerCurvesCount <= 3 || d.key === 'pv_total')
         };
@@ -4286,10 +4481,12 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     let maxPowerW = 300;
     let minPowerW = 0;
     activeDefs.filter(d => d.axis === 'yPower').forEach(d => {
-        const arr = intradaySeriesState.series[d.key] || [];
+        const arr = (intradaySeriesState.series[d.key] || []).slice(visStartIdx);
         arr.forEach(v => {
-            if (v > maxPowerW) maxPowerW = v;
-            if (v < minPowerW) minPowerW = v;
+            if (v !== null && v !== undefined) {
+                if (v > maxPowerW) maxPowerW = v;
+                if (v < minPowerW) minPowerW = v;
+            }
         });
     });
 
@@ -4304,7 +4501,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
 
     // ZERO-FLICKER IN-PLACE UPDATE: If chart already exists on this exact canvas, mutate data and update('none')
     if (existingChart && existingChart.canvas === canvas) {
-        existingChart.data.labels = intradaySeriesState.labels;
+        existingChart.data.labels = visibleLabels;
         existingChart.data.datasets = datasets;
         if (existingChart.options) {
             existingChart.options.layout = {
@@ -4354,20 +4551,24 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         if (clientX === undefined) return;
         const relX = clientX - rect.left;
         const { left, right } = chart.chartArea;
-        const totalPts = (intradaySeriesState.labels || []).length;
-        if (totalPts <= 0 || right <= left) return;
+        const totalVisPts = (chart.data.labels || []).length;
+        if (totalVisPts <= 0 || right <= left) return;
         const ratio = Math.max(0, Math.min(1, (relX - left) / (right - left)));
-        const idx = Math.round(ratio * (totalPts - 1));
+        const rawLocalIdx = Math.round(ratio * (totalVisPts - 1));
+        const maxRealLocalIdx = currentCurveTimeframe === 'day'
+            ? Math.max(0, (intradayRealBucketsCount - 1) - intradayVisibleStartIdx)
+            : (totalVisPts - 1);
+        const clampedLocalIdx = Math.max(0, Math.min(rawLocalIdx, maxRealLocalIdx));
         isIntradayHovering = true;
-        activeCrosshairIndex = idx;
-        updateIntradayHoverReadout(idx, getAvailableCurveDefinitions());
+        activeCrosshairIndex = clampedLocalIdx;
+        updateIntradayHoverReadout(clampedLocalIdx, getAvailableCurveDefinitions());
         chart.draw();
     };
 
     const chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: intradaySeriesState.labels,
+            labels: visibleLabels,
             datasets
         },
         plugins: [intradayCrosshairPlugin],
@@ -4387,7 +4588,10 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             onHover: (event, elements, chart) => {
                 if (elements && elements.length > 0) {
                     isIntradayHovering = true;
-                    const idx = elements[0].index;
+                    const maxRealLocalIdx = currentCurveTimeframe === 'day'
+                        ? Math.max(0, (intradayRealBucketsCount - 1) - intradayVisibleStartIdx)
+                        : ((chart.data.labels || []).length - 1);
+                    const idx = Math.min(elements[0].index, maxRealLocalIdx);
                     activeCrosshairIndex = idx;
                     updateIntradayHoverReadout(idx, getAvailableCurveDefinitions());
                     chart.draw();
@@ -4450,11 +4654,12 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     }
 }
 
-function updateIntradayHoverReadout(index, defs) {
+function updateIntradayHoverReadout(localIndex, defs) {
     if (!defs) defs = getAvailableCurveDefinitions();
     const isDark = document.documentElement.classList.contains('dark');
 
-    const idx = Math.max(0, Math.min(index, (intradaySeriesState.labels.length || 1) - 1));
+    const globalIdx = Number(localIndex || 0) + (currentCurveTimeframe === 'day' ? (intradayVisibleStartIdx || 0) : 0);
+    const idx = Math.max(0, Math.min(globalIdx, (intradaySeriesState.labels.length || 1) - 1));
     const ts = intradaySeriesState.bucketTimes?.[idx] || Date.now();
     const dObj = new Date(ts);
     const timePart = dObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
@@ -7273,25 +7478,24 @@ function onImportPerformanceCsvFile(event) {
 
 function switchHaModalTab(tab = 'config') {
     const panelCfg = document.getElementById('ha-modal-panel-config');
+    const panelClimate = document.getElementById('ha-modal-panel-climate');
     const panelGuide = document.getElementById('ha-modal-panel-guide');
     const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
+    const btnClimate = document.getElementById('btn-ha-tab-climate');
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
     const scrollBody = document.getElementById('haModalScrollBody');
 
-    const activeCls = "px-3 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-center leading-tight";
-    const inactiveCls = "px-3 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center leading-tight";
+    const activeCls = "px-2.5 py-2 rounded-xl bg-teal-600 text-white text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-center leading-tight";
+    const inactiveCls = "px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center leading-tight";
 
-    if (tab === 'guide') {
-        if (panelCfg) panelCfg.classList.add('hidden');
-        if (panelGuide) panelGuide.classList.remove('hidden');
-        if (btnGuide) btnGuide.className = activeCls;
-        if (btnCfg) btnCfg.className = inactiveCls;
-    } else {
-        if (panelCfg) panelCfg.classList.remove('hidden');
-        if (panelGuide) panelGuide.classList.add('hidden');
-        if (btnCfg) btnCfg.className = activeCls;
-        if (btnGuide) btnGuide.className = inactiveCls;
-    }
+    if (panelCfg) panelCfg.classList.toggle('hidden', tab !== 'config');
+    if (panelClimate) panelClimate.classList.toggle('hidden', tab !== 'climate');
+    if (panelGuide) panelGuide.classList.toggle('hidden', tab !== 'guide');
+
+    if (btnCfg) btnCfg.className = tab === 'config' ? activeCls : inactiveCls;
+    if (btnClimate) btnClimate.className = tab === 'climate' ? activeCls : inactiveCls;
+    if (btnGuide) btnGuide.className = tab === 'guide' ? activeCls : inactiveCls;
+
     if (scrollBody) {
         scrollBody.scrollTop = 0;
     }
@@ -7470,6 +7674,11 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
 
     if (focusSection === 'guide') {
         switchHaModalTab('guide');
+        return;
+    }
+
+    if (focusSection === 'climate' || scrollTargetId === 'haWeatherSectionBox') {
+        switchHaModalTab('climate');
         return;
     }
 
@@ -8479,6 +8688,9 @@ function pickHaEntityFromModal(entityId) {
             updateHaCustomWeatherSensorField(haPickerState.index, 'name', cleanRoom);
         }
         renderHaWeatherSensorsEditor();
+    } else if (haPickerState.customType === 'weatherSensorHumidity' && haPickerState.index !== null) {
+        updateHaCustomWeatherSensorField(haPickerState.index, 'humidityEntity', entityId);
+        renderHaWeatherSensorsEditor();
     }
 
     closeHaEntityPicker();
@@ -8580,7 +8792,7 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
             : (haConfigState.pvEnergyExtraEntities || []),
         weatherEntity: typeof sanitizedCfg.weatherEntity === 'string' ? sanitizedCfg.weatherEntity : (haConfigState.weatherEntity || ''),
         outdoorTempEntity: typeof sanitizedCfg.outdoorTempEntity === 'string' ? sanitizedCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-        customWeatherSensors: Array.isArray(sanitizedCfg.customWeatherSensors)
+        customWeatherSensors: Array.isArray(sanitizedCfg.customWeatherSensors) && sanitizedCfg.customWeatherSensors.length > 0
             ? JSON.parse(JSON.stringify(sanitizedCfg.customWeatherSensors))
             : (haConfigState.customWeatherSensors || []),
         customStrings: Array.isArray(sanitizedCfg.customStrings) && sanitizedCfg.customStrings.length > 0
@@ -8657,7 +8869,7 @@ function applyFullHaConfigWithTokenFromBackup(fullCfg) {
             : (haConfigState.pvEnergyExtraEntities || []),
         weatherEntity: typeof fullCfg.weatherEntity === 'string' ? fullCfg.weatherEntity : (haConfigState.weatherEntity || ''),
         outdoorTempEntity: typeof fullCfg.outdoorTempEntity === 'string' ? fullCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-        customWeatherSensors: Array.isArray(fullCfg.customWeatherSensors)
+        customWeatherSensors: Array.isArray(fullCfg.customWeatherSensors) && fullCfg.customWeatherSensors.length > 0
             ? JSON.parse(JSON.stringify(fullCfg.customWeatherSensors))
             : (haConfigState.customWeatherSensors || []),
         customStrings: Array.isArray(fullCfg.customStrings) && fullCfg.customStrings.length > 0
@@ -8717,6 +8929,151 @@ let homeSensorMinMaxCache = {
     fetchedAtMs: 0,
     byEntity: {} // entity_id -> { min, max }
 };
+let homeLastValidClimateValues = {}; // entity_id -> { val: number, unit: string, ts: number }
+let chartClimateHistoryModal = null;
+
+function saveInstantBootSnapshot() {
+    try {
+        const snapshot = {
+            savedAtMs: Date.now(),
+            telemetry: {
+                pvPowerW: currentLiveTelemetry.pvPowerW || 0,
+                loadPowerW: currentLiveTelemetry.loadPowerW || 0,
+                gridPowerW: currentLiveTelemetry.gridPowerW || 0,
+                batteryPowerW: currentLiveTelemetry.batteryPowerW || 0,
+                batterySocPct: currentLiveTelemetry.batterySocPct,
+                pvEnergyTodayKwh: currentLiveTelemetry.pvEnergyTodayKwh || 0,
+                loadEnergyTodayKwh: currentLiveTelemetry.loadEnergyTodayKwh,
+                gridImportTodayKwh: currentLiveTelemetry.gridImportTodayKwh,
+                gridExportTodayKwh: currentLiveTelemetry.gridExportTodayKwh,
+                batteryChargeTodayKwh: currentLiveTelemetry.batteryChargeTodayKwh,
+                batteryDischargeTodayKwh: currentLiveTelemetry.batteryDischargeTodayKwh,
+                customStringsTelemetry: currentLiveTelemetry.customStringsTelemetry || [],
+                consumersTelemetry: currentLiveTelemetry.consumersTelemetry || [],
+                connectionOk: Boolean(currentLiveTelemetry.connectionOk)
+            },
+            weatherCache: homeWeatherCache,
+            minMaxCache: homeSensorMinMaxCache,
+            lastValidClimate: homeLastValidClimateValues
+        };
+        localStorage.setItem('pvpro_instant_boot_snapshot', JSON.stringify(snapshot));
+    } catch (e) {}
+}
+
+function restoreInstantBootSnapshot() {
+    try {
+        const rawClim = localStorage.getItem('pvpro_climate_last_valid');
+        if (rawClim) {
+            const parsedClim = JSON.parse(rawClim);
+            if (parsedClim && typeof parsedClim === 'object') {
+                homeLastValidClimateValues = parsedClim;
+            }
+        }
+    } catch (e) {}
+
+    try {
+        const raw = localStorage.getItem('pvpro_instant_boot_snapshot');
+        if (!raw) return;
+        const snap = JSON.parse(raw);
+        if (!snap || typeof snap !== 'object') return;
+
+        if (snap.lastValidClimate && typeof snap.lastValidClimate === 'object') {
+            homeLastValidClimateValues = { ...snap.lastValidClimate, ...homeLastValidClimateValues };
+        }
+        if (snap.weatherCache && typeof snap.weatherCache === 'object' && Array.isArray(snap.weatherCache.days)) {
+            homeWeatherCache = { ...homeWeatherCache, ...snap.weatherCache };
+        }
+        if (snap.minMaxCache && typeof snap.minMaxCache === 'object' && snap.minMaxCache.byEntity) {
+            const todayKey = new Date().toISOString().slice(0, 10);
+            if (snap.minMaxCache.dayKey === todayKey) {
+                homeSensorMinMaxCache = { ...homeSensorMinMaxCache, ...snap.minMaxCache };
+            }
+        }
+        if (snap.telemetry && typeof snap.telemetry === 'object') {
+            currentLiveTelemetry = {
+                ...currentLiveTelemetry,
+                ...snap.telemetry,
+                lastError: null
+            };
+        }
+    } catch (e) {}
+}
+
+function recordValidClimateReading(entityId, val, unit = '°C') {
+    if (!entityId || !Number.isFinite(val)) return;
+    homeLastValidClimateValues[entityId] = {
+        val: Number(val),
+        unit: String(unit || '°C'),
+        ts: Date.now()
+    };
+    try {
+        localStorage.setItem('pvpro_climate_last_valid', JSON.stringify(homeLastValidClimateValues));
+    } catch (e) {}
+}
+
+function getClimateReadingWithFallback(entityId, defaultUnit = '°C') {
+    if (!entityId) return { val: NaN, unit: defaultUnit, isCached: false };
+    const stObj = homeHaStatesCache.get(entityId);
+    const liveUnit = stObj?.attributes?.unit_of_measurement || defaultUnit;
+    const rawVal = parseFloat(String(stObj?.state ?? '').replace(',', '.'));
+    if (Number.isFinite(rawVal)) {
+        recordValidClimateReading(entityId, rawVal, liveUnit);
+        return { val: rawVal, unit: liveUnit, isCached: false };
+    }
+    const cached = homeLastValidClimateValues[entityId];
+    if (cached && Number.isFinite(Number(cached.val))) {
+        return { val: Number(cached.val), unit: cached.unit || defaultUnit, isCached: true };
+    }
+    return { val: NaN, unit: liveUnit, isCached: false };
+}
+
+function resolveRoomHumidityEntity(ws) {
+    if (!ws) return '';
+    if (ws.humidityEntity && String(ws.humidityEntity).trim()) {
+        return String(ws.humidityEntity).trim();
+    }
+    const tempEntId = String(ws.entityId || '').trim();
+    if (!tempEntId) return '';
+
+    // 1. Direct entity_id pattern match (e.g. sensor.wohnzimmer_temperatur -> sensor.wohnzimmer_luftfeuchtigkeit or _humidity)
+    const baseStem = tempEntId
+        .replace(/^sensor\./i, '')
+        .replace(/_?(temperatur|temperature|temp)$/i, '');
+
+    if (baseStem && baseStem !== tempEntId.replace(/^sensor\./i, '')) {
+        const candidates = [
+            `sensor.${baseStem}_luftfeuchtigkeit`,
+            `sensor.${baseStem}_humidity`,
+            `sensor.${baseStem}_feuchte`,
+            `sensor.${baseStem}_feuchtigkeit`
+        ];
+        for (const cand of candidates) {
+            if (homeHaStatesCache.has(cand) || homeLastValidClimateValues[cand]) {
+                return cand;
+            }
+        }
+    }
+
+    // 2. Friendly name / room name match across discovered % humidity sensors in homeHaStatesCache
+    const roomName = String(ws.name || '')
+        .replace(/\s+(Temperatur|Temperature|Klima|Sensor).*$/i, '')
+        .trim()
+        .toLowerCase();
+
+    if (roomName && roomName.length >= 3) {
+        for (const [entId, sObj] of homeHaStatesCache.entries()) {
+            if (!entId.startsWith('sensor.')) continue;
+            const u = String(sObj?.attributes?.unit_of_measurement || '').trim();
+            const devClass = String(sObj?.attributes?.device_class || '').toLowerCase();
+            if (u !== '%' && devClass !== 'humidity') continue;
+            const fn = String(sObj?.attributes?.friendly_name || entId).toLowerCase();
+            if (fn.includes(roomName) && /(luftfeucht|feucht|humidity|klima|hygro)/i.test(fn)) {
+                return entId;
+            }
+        }
+    }
+    return '';
+}
 
 function getWeatherSvgIcon(codeOrState, sizeClass = 'w-8 h-8') {
     const s = String(codeOrState ?? '').toLowerCase();
@@ -8817,20 +9174,41 @@ function updateHomeEnergyOverview(baseline) {
     if (!baseline) baseline = getPlannedSystemBaseline();
     const t = currentLiveTelemetry || {};
 
-    const maxPvRefW = Math.max(1500, (baseline.totalKwp || 10) * 1000);
-    const pvBarPct = Math.min(100, Math.max(t.pvPowerW > 0 ? 4 : 0, Math.round((t.pvPowerW / maxPvRefW) * 100)));
-    setElText('home_pv_power', formatPowerDe(t.pvPowerW, t.pvPowerW < 1000));
-    setElText('home_pv_sub', t.pvPowerW > 15 ? 'PV-Erzeugung aktiv' : 'Keine PV-Erzeugung');
-    const pvBar = document.getElementById('home_pv_bar');
-    if (pvBar) pvBar.style.width = `${pvBarPct}%`;
+    const pvW = Math.max(0, Number(t.pvPowerW || 0));
+    const loadW = Math.max(0, Number(t.loadPowerW || 0));
+    const gridW = Number(t.gridPowerW || 0); // >0 Bezug, <0 Einspeisung
+    const batW = Number(t.batteryPowerW || 0); // >0 Lädt, <0 Entlädt
 
-    const loadBarPct = Math.min(100, Math.max(6, Math.round((t.loadPowerW / 5000) * 100)));
-    setElText('home_load_power', formatPowerDe(t.loadPowerW));
-    setElText('home_load_sub', 'Aktueller Hausverbrauch');
-    const loadBar = document.getElementById('home_load_bar');
-    if (loadBar) loadBar.style.width = `${loadBarPct}%`;
+    // 1. Live Autarky Percentage & Flow Summary Headline
+    const gridImportW = Math.max(0, gridW);
+    const liveAutarkyPct = loadW > 10
+        ? Math.max(0, Math.min(100, Math.round(((loadW - gridImportW) / loadW) * 100)))
+        : (pvW > 10 ? 100 : 0);
 
-    const batTitle = haConfigState.batteryName || baseline.detectedBatteryName || 'BYD HVS+';
+    setElText('home_autarky_badge', `${liveAutarkyPct} % Autark`);
+
+    let summaryText = 'Live-Energiebilanz im Haus';
+    if (pvW > loadW + 40) {
+        if (batW > 30) summaryText = `PV-Überschuss lädt Speicher (${formatPowerDe(batW, true)})`;
+        else if (gridW < -30) summaryText = `PV-Überschuss speist ins Netz (${formatPowerDe(Math.abs(gridW), true)})`;
+        else summaryText = 'PV deckt den gesamten Hausverbrauch';
+    } else if (pvW > 20) {
+        summaryText = `PV liefert ${formatPowerDe(pvW, true)} direkt ins Haus`;
+    } else if (batW < -20) {
+        summaryText = `Speicher versorgt das Haus (${formatPowerDe(Math.abs(batW), true)})`;
+    } else if (gridW > 20) {
+        summaryText = `Netzbezug aktiv (${formatPowerDe(gridW, true)})`;
+    }
+    setElText('home_energy_flow_summary', summaryText);
+
+    // 2. 4-Column Compact Horizontal Strip Values
+    setElText('home_pv_power', formatPowerDe(pvW, pvW < 1000));
+    setElText('home_pv_sub', pvW > 15 ? 'Erzeugung' : '0 W (Ruhe)');
+
+    setElText('home_load_power', formatPowerDe(loadW, loadW < 1000));
+    setElText('home_load_sub', 'Hauslast AC');
+
+    const batTitle = haConfigState.batteryName || baseline.detectedBatteryName || 'Speicher';
     setElText('home_bat_title', batTitle);
     const socNum = t.batterySocPct !== null && t.batterySocPct !== undefined ? Number(t.batterySocPct) : 0;
     const socFormatted = t.batterySocPct !== null && t.batterySocPct !== undefined
@@ -8838,17 +9216,28 @@ function updateHomeEnergyOverview(baseline) {
         : '0 %';
     setElText('home_bat_soc', socFormatted);
 
-    let batSub = 'Ruhe / Standby';
-    if (t.batteryPowerW > 15) batSub = `Lädt mit ${formatPowerDe(t.batteryPowerW, true)}`;
-    else if (t.batteryPowerW < -15) batSub = `Entlädt mit ${formatPowerDe(Math.abs(t.batteryPowerW), true)}`;
+    let batSub = 'Standby';
+    if (batW > 15) batSub = `+${formatPowerDe(batW, true)}`;
+    else if (batW < -15) batSub = `-${formatPowerDe(Math.abs(batW), true)}`;
     setElText('home_bat_sub', batSub);
-    const batBar = document.getElementById('home_bat_bar');
-    if (batBar) batBar.style.width = `${Math.min(100, Math.max(4, socNum))}%`;
 
-    const absGridW = Math.abs(t.gridPowerW || 0);
-    const gridBarPct = Math.min(100, Math.max(absGridW > 10 ? 5 : 0, Math.round((absGridW / 5000) * 100)));
-    setElText('home_grid_power', formatPowerDe(absGridW));
-    setElText('home_grid_sub', t.gridPowerW < -15 ? 'Einspeisung ins Netz' : 'Bezug aus dem Netz');
+    const absGridW = Math.abs(gridW);
+    setElText('home_grid_power', formatPowerDe(absGridW, absGridW < 1000));
+    setElText('home_grid_sub', gridW < -15 ? 'Einspeisung' : 'Netzbezug');
+
+    // 3. Multi-segment Horizontal Energy Distribution Bar
+    const totalActivityW = Math.max(100, pvW + loadW + Math.abs(batW) + absGridW);
+    const pvBarPct = Math.max(pvW > 10 ? 8 : 0, Math.round((pvW / totalActivityW) * 100));
+    const loadBarPct = Math.max(loadW > 10 ? 12 : 4, Math.round((loadW / totalActivityW) * 100));
+    const batBarPct = Math.max(Math.abs(batW) > 10 ? 8 : 4, Math.round((Math.abs(batW) / totalActivityW) * 100));
+    const gridBarPct = Math.max(0, 100 - pvBarPct - loadBarPct - batBarPct);
+
+    const pvBar = document.getElementById('home_pv_bar');
+    if (pvBar) pvBar.style.width = `${pvBarPct}%`;
+    const loadBar = document.getElementById('home_load_bar');
+    if (loadBar) loadBar.style.width = `${loadBarPct}%`;
+    const batBar = document.getElementById('home_bat_bar');
+    if (batBar) batBar.style.width = `${batBarPct}%`;
     const gridBar = document.getElementById('home_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
 }
@@ -8857,14 +9246,26 @@ function updateHomeStatesFromHaArray(statesArray) {
     if (!Array.isArray(statesArray)) return;
     homeHaStatesCache.clear();
     statesArray.forEach(s => {
-        if (s && s.entity_id) homeHaStatesCache.set(s.entity_id, s);
+        if (s && s.entity_id) {
+            homeHaStatesCache.set(s.entity_id, s);
+            const u = String(s.attributes?.unit_of_measurement || '').trim();
+            if (u === '°C' || u === '%') {
+                const num = parseFloat(String(s.state ?? '').replace(',', '.'));
+                if (Number.isFinite(num)) {
+                    recordValidClimateReading(s.entity_id, num, u);
+                }
+            }
+        }
     });
+
+    let configChanged = false;
 
     // Auto-discover weather.* entity if user has not explicitly set one
     if (!haConfigState.weatherEntity) {
         const foundWeather = statesArray.find(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('weather.'));
         if (foundWeather) {
             haConfigState.weatherEntity = foundWeather.entity_id;
+            configChanged = true;
         }
     }
 
@@ -8885,14 +9286,35 @@ function updateHomeStatesFromHaArray(statesArray) {
                 const icon = /esszimmer/i.test(rawName) ? 'table_restaurant'
                     : (/schlaf/i.test(rawName) ? 'bed'
                     : (/(aussen|außen|garten|terrasse)/i.test(rawName) ? 'thermostat' : 'weekend'));
-                return {
+                const wsItem = {
                     id: `ws_auto_${idx}`,
                     name: rawName || `Raum ${idx + 1}`,
                     entityId: s.entity_id,
+                    humidityEntity: '',
                     icon
                 };
+                wsItem.humidityEntity = resolveRoomHumidityEntity(wsItem);
+                return wsItem;
             });
+            configChanged = true;
         }
+    } else {
+        // Auto-populate humidityEntity if empty and a matching room humidity sensor exists
+        haConfigState.customWeatherSensors.forEach(ws => {
+            if (ws && !ws.humidityEntity) {
+                const matchedHum = resolveRoomHumidityEntity(ws);
+                if (matchedHum) {
+                    ws.humidityEntity = matchedHum;
+                    configChanged = true;
+                }
+            }
+        });
+    }
+
+    if (configChanged) {
+        try {
+            localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+        } catch (e) {}
     }
 
     renderHomeWeatherWidget();
@@ -8902,11 +9324,15 @@ function updateHomeStatesFromHaArray(statesArray) {
 
 async function syncHomeRoomSensorsMinMaxFromHistory() {
     if (!haConfigState.baseUrl || !haConfigState.accessToken) return;
-    const sensorIds = (haConfigState.customWeatherSensors || [])
-        .map(x => String(x?.entityId || '').trim())
-        .filter(Boolean);
+    const sensorIds = [];
+    (haConfigState.customWeatherSensors || []).forEach(x => {
+        if (x?.entityId) sensorIds.push(String(x.entityId).trim());
+        const humId = resolveRoomHumidityEntity(x);
+        if (humId) sensorIds.push(humId);
+    });
     if (haConfigState.outdoorTempEntity) sensorIds.push(haConfigState.outdoorTempEntity.trim());
-    if (sensorIds.length === 0) return;
+    const validIds = [...new Set(sensorIds.filter(Boolean))];
+    if (validIds.length === 0) return;
 
     const todayKey = new Date().toISOString().slice(0, 10);
     if (homeSensorMinMaxCache.dayKey === todayKey && (Date.now() - homeSensorMinMaxCache.fetchedAtMs) < 120000) {
@@ -8916,7 +9342,7 @@ async function syncHomeRoomSensorsMinMaxFromHistory() {
     try {
         const now = new Date();
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString();
-        const endpoint = `/api/history/period/${encodeURIComponent(startOfDay)}?filter_entity_id=${encodeURIComponent([...new Set(sensorIds)].join(','))}&minimal_response&no_attributes`;
+        const endpoint = `/api/history/period/${encodeURIComponent(startOfDay)}?filter_entity_id=${encodeURIComponent(validIds.join(','))}&minimal_response&no_attributes`;
         const res = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, endpoint);
         if (res && res.ok && Array.isArray(res.data)) {
             res.data.forEach(arr => {
@@ -8925,21 +9351,29 @@ async function syncHomeRoomSensorsMinMaxFromHistory() {
                 if (!entId) return;
                 let minV = Infinity;
                 let maxV = -Infinity;
+                let lastValidNum = NaN;
                 arr.forEach(pt => {
                     const num = parseFloat(String(pt.state).replace(',', '.'));
                     if (Number.isFinite(num)) {
                         if (num < minV) minV = num;
                         if (num > maxV) maxV = num;
+                        lastValidNum = num;
                     }
                 });
                 if (Number.isFinite(minV) && Number.isFinite(maxV)) {
                     homeSensorMinMaxCache.byEntity[entId] = { min: minV, max: maxV };
+                }
+                // If live sensor state was temporarily unavailable, seed from latest valid history point!
+                if (Number.isFinite(lastValidNum) && !homeLastValidClimateValues[entId]) {
+                    const defaultUnit = /humidity|feucht/i.test(entId) ? '%' : '°C';
+                    recordValidClimateReading(entId, lastValidNum, defaultUnit);
                 }
             });
             homeSensorMinMaxCache.dayKey = todayKey;
             homeSensorMinMaxCache.fetchedAtMs = Date.now();
             renderHomeWeatherWidget();
             renderHomeCustomWeatherSensors();
+            saveInstantBootSnapshot();
         }
     } catch (e) {}
 }
@@ -8987,6 +9421,7 @@ async function fetchOpenMeteoForecastForHome(force = false) {
                 days
             };
             renderHomeWeatherWidget();
+            saveInstantBootSnapshot();
         }
     } catch (e) {
         renderHomeWeatherWidget();
@@ -9021,11 +9456,10 @@ function renderHomeWeatherWidget() {
         }
     }
 
-    if (haConfigState.outdoorTempEntity && homeHaStatesCache.has(haConfigState.outdoorTempEntity)) {
-        const oState = homeHaStatesCache.get(haConfigState.outdoorTempEntity);
-        const oNum = parseFloat(String(oState?.state || '').replace(',', '.'));
-        if (Number.isFinite(oNum)) {
-            curTemp = oNum;
+    if (haConfigState.outdoorTempEntity) {
+        const outReading = getClimateReadingWithFallback(haConfigState.outdoorTempEntity, '°C');
+        if (Number.isFinite(outReading.val)) {
+            curTemp = outReading.val;
             const mm = homeSensorMinMaxCache.byEntity[haConfigState.outdoorTempEntity];
             if (mm) {
                 todayMin = mm.min;
@@ -9072,15 +9506,15 @@ function renderHomeCustomWeatherSensors() {
     const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
     if (list.length === 0) {
         grid.innerHTML = `
-            <div onclick="openHaConfigModal('connection', 'haWeatherSectionBox')" role="button" tabindex="0"
-                class="col-span-2 dash-main-card rounded-[24px] p-4 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+            <div onclick="openHaConfigModal('climate')" role="button" tabindex="0"
+                class="col-span-2 dash-sub-tile rounded-[20px] p-4 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
                 <div class="flex items-center gap-3 min-w-0">
                     <div class="w-10 h-10 rounded-2xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
                         <span class="material-symbols-rounded text-xl">device_thermostat</span>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white truncate">Eigene Raum- &amp; Wettersensoren einbinden</p>
-                        <p class="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">z. B. Wohnzimmer, Esszimmer, Außentemperatur aus Home Assistant</p>
+                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white truncate">Eigene Raum- &amp; Klimasensoren einbinden</p>
+                        <p class="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">z. B. Wohnzimmer, Esszimmer (°C &amp; % Luftfeuchte) aus Home Assistant</p>
                     </div>
                 </div>
                 <span class="material-symbols-rounded text-slate-400 shrink-0">add_circle</span>
@@ -9090,39 +9524,300 @@ function renderHomeCustomWeatherSensors() {
 
     grid.innerHTML = list.map((ws, idx) => {
         const entId = String(ws.entityId || '').trim();
-        const stObj = entId ? homeHaStatesCache.get(entId) : null;
-        const unit = stObj?.attributes?.unit_of_measurement || '°C';
-        const rawVal = parseFloat(String(stObj?.state ?? '').replace(',', '.'));
+        const tempReading = getClimateReadingWithFallback(entId, '°C');
+        const unit = tempReading.unit || '°C';
+        const rawVal = tempReading.val;
         const valText = Number.isFinite(rawVal)
             ? `${rawVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`
             : '—';
 
+        // Resolve optional / auto-matched humidity sensor for this room
+        const humEntId = resolveRoomHumidityEntity(ws);
+        const humReading = humEntId ? getClimateReadingWithFallback(humEntId, '%') : { val: NaN, unit: '%' };
+        const hasHumidity = Number.isFinite(humReading.val);
+        const humBadgeHtml = hasHumidity
+            ? `<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg bg-sky-500/10 dark:bg-sky-400/15 text-sky-700 dark:text-sky-300 text-[12.5px] font-semibold tabular-nums shrink-0" title="Relative Luftfeuchtigkeit (${escapeHtml(humEntId)})">
+                <span class="material-symbols-rounded text-[14px]">water_drop</span>
+                <span>${Math.round(humReading.val)} %</span>
+               </span>`
+            : '';
+
         const mm = entId ? homeSensorMinMaxCache.byEntity[entId] : null;
-        let subText = entId || 'Sensor wählen';
+        let subText = entId ? 'Tippen für 24h-Kurve' : 'Sensor in Einstellungen wählen';
         if (mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)) {
             const minVal = Number.isFinite(rawVal) ? Math.min(mm.min, rawVal) : mm.min;
             const maxVal = Number.isFinite(rawVal) ? Math.max(mm.max, rawVal) : mm.max;
             const degSuffix = unit === '°C' ? '°' : ` ${unit}`;
             subText = `Min ${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix} · Max ${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}`;
-        } else if (Number.isFinite(rawVal)) {
-            subText = `Live · Home Assistant`;
         }
 
         const iconName = ws.icon || (/esszimmer/i.test(ws.name) ? 'table_restaurant' : 'weekend');
 
         return `
-        <div onclick="openHaConfigModal('connection', 'haWeatherSectionBox')" role="button" tabindex="0"
-            class="dash-main-card rounded-[24px] p-4 flex flex-col justify-between min-h-[126px] cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+        <div onclick="openClimateHistoryModal(${idx})" role="button" tabindex="0" title="Tippen für 24h Temperatur- &amp; Feuchte-Verlauf (${escapeHtml(ws.name || `Raum ${idx + 1}`)})"
+            class="dash-sub-tile rounded-[20px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[120px] cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.99] transition-all group">
             <div>
-                <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200">
-                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px] shrink-0">${escapeHtml(iconName)}</span>
-                    <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
+                <div class="flex items-center justify-between gap-1.5">
+                    <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200 min-w-0">
+                        <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px] shrink-0">${escapeHtml(iconName)}</span>
+                        <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
+                    </div>
+                    <span class="material-symbols-rounded text-[15px] text-slate-400 group-hover:text-teal-500 transition-colors shrink-0">show_chart</span>
                 </div>
-                <p class="text-[26px] sm:text-[28px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none mt-3.5">${escapeHtml(valText)}</p>
+                <div class="mt-3 flex items-baseline justify-between gap-2 flex-wrap">
+                    <p class="text-[24px] sm:text-[26px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none">${escapeHtml(valText)}</p>
+                    ${humBadgeHtml}
+                </div>
             </div>
-            <p class="text-[13px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-3">${escapeHtml(subText)}</p>
+            <p class="text-[12.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-2.5">${escapeHtml(subText)}</p>
         </div>`;
     }).join('');
+}
+
+// ============================================================================
+// 9B. 24-STUNDEN KLIMA- & TEMPERATUR-VERLAUFSKURVE POPUP MODAL
+// ============================================================================
+
+async function openClimateHistoryModal(sensorIndex) {
+    const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
+    const ws = list[sensorIndex];
+    if (!ws) return;
+
+    const modal = document.getElementById('modal-climate-curve');
+    if (!modal) return;
+
+    const tempEntId = String(ws.entityId || '').trim();
+    const humEntId = resolveRoomHumidityEntity(ws);
+    const roomTitle = ws.name || `Raum ${sensorIndex + 1}`;
+    const iconName = ws.icon || (/esszimmer/i.test(roomTitle) ? 'table_restaurant' : 'weekend');
+
+    setElText('climateModalTitle', roomTitle);
+    setElText('climateModalIcon', iconName);
+    setElText('climateModalSubtitle', '24-Stunden Verlauf · Temperatur & Luftfeuchtigkeit');
+
+    const tempNow = getClimateReadingWithFallback(tempEntId, '°C');
+    const humNow = humEntId ? getClimateReadingWithFallback(humEntId, '%') : { val: NaN, unit: '%' };
+    const mm = tempEntId ? homeSensorMinMaxCache.byEntity[tempEntId] : null;
+
+    const fmt1 = (n) => Number.isFinite(n) ? n.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—';
+    setElText('climateModalTempNow', Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)} ${tempNow.unit}` : '—');
+    setElText('climateModalHumNow', Number.isFinite(humNow.val) ? `${Math.round(humNow.val)} %` : '—');
+    setElText('climateModalTempMinMax', mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)
+        ? `${fmt1(mm.min)}° / ${fmt1(mm.max)}°`
+        : (Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)}°` : '—'));
+
+    modal.classList.remove('hidden');
+
+    const loadingEl = document.getElementById('climateModalLoadingOverlay');
+    if (loadingEl) loadingEl.classList.remove('hidden');
+
+    const filterIds = [tempEntId, humEntId].filter(Boolean);
+    let tempPoints = [];
+    let humPoints = [];
+
+    if (haConfigState.baseUrl && haConfigState.accessToken && filterIds.length > 0) {
+        try {
+            const start24h = new Date(Date.now() - 24 * 3600000).toISOString();
+            const endpoint = `/api/history/period/${encodeURIComponent(start24h)}?filter_entity_id=${encodeURIComponent(filterIds.join(','))}&minimal_response&no_attributes`;
+            const res = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, endpoint);
+            if (res && res.ok && Array.isArray(res.data)) {
+                res.data.forEach(seriesArr => {
+                    if (!Array.isArray(seriesArr) || seriesArr.length === 0) return;
+                    const eid = seriesArr[0]?.entity_id;
+                    const parsedPts = [];
+                    seriesArr.forEach(pt => {
+                        const val = parseFloat(String(pt.state ?? '').replace(',', '.'));
+                        const ts = new Date(pt.last_changed || pt.last_updated || Date.now()).getTime();
+                        if (Number.isFinite(val) && Number.isFinite(ts)) {
+                            parsedPts.push({ ts, val });
+                        }
+                    });
+                    if (eid === tempEntId) tempPoints = parsedPts;
+                    else if (eid === humEntId) humPoints = parsedPts;
+                });
+            }
+        } catch (e) {}
+    }
+
+    if (loadingEl) loadingEl.classList.add('hidden');
+
+    // Compute 24h Min/Max directly from 24h curve if available
+    if (tempPoints.length > 0) {
+        let min24 = Infinity;
+        let max24 = -Infinity;
+        tempPoints.forEach(p => {
+            if (p.val < min24) min24 = p.val;
+            if (p.val > max24) max24 = p.val;
+        });
+        if (Number.isFinite(min24) && Number.isFinite(max24)) {
+            setElText('climateModalTempMinMax', `${fmt1(min24)}° / ${fmt1(max24)}°`);
+        }
+    }
+
+    renderClimateHistoryChartCanvas(tempPoints, humPoints, tempNow.val, humNow.val);
+}
+
+function closeClimateHistoryModal() {
+    const modal = document.getElementById('modal-climate-curve');
+    if (modal) modal.classList.add('hidden');
+}
+
+function renderClimateHistoryChartCanvas(tempPoints, humPoints, fallbackTemp, fallbackHum) {
+    const canvas = document.getElementById('climateHistoryChartCanvas');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    if (chartClimateHistoryModal) {
+        try { chartClimateHistoryModal.destroy(); } catch (e) {}
+        chartClimateHistoryModal = null;
+    }
+
+    const isDark = document.documentElement.classList.contains('dark');
+    const ctx = canvas.getContext('2d');
+
+    // Build 15-minute buckets over the last 24 hours (96 buckets)
+    const nowMs = Date.now();
+    const startMs = nowMs - 24 * 3600000;
+    const stepMs = 15 * 60000;
+    const bucketCount = 96;
+
+    const labels = [];
+    const tempSeries = [];
+    const humSeries = [];
+
+    const sampleSeriesAtBuckets = (pts, fallbackVal) => {
+        if (!Array.isArray(pts) || pts.length === 0) {
+            return Array.from({ length: bucketCount }, () => (Number.isFinite(fallbackVal) ? fallbackVal : null));
+        }
+        const sorted = [...pts].sort((a, b) => a.ts - b.ts);
+        let ptr = 0;
+        let lastKnown = sorted[0].val;
+        const out = [];
+        for (let i = 0; i < bucketCount; i++) {
+            const bEnd = startMs + (i + 1) * stepMs;
+            let sum = 0;
+            let cnt = 0;
+            while (ptr < sorted.length && sorted[ptr].ts <= bEnd) {
+                lastKnown = sorted[ptr].val;
+                sum += sorted[ptr].val;
+                cnt++;
+                ptr++;
+            }
+            out.push(cnt > 0 ? +(sum / cnt).toFixed(2) : +(lastKnown).toFixed(2));
+        }
+        return out;
+    };
+
+    for (let i = 0; i < bucketCount; i++) {
+        const tMs = startMs + (i + 1) * stepMs;
+        const d = new Date(tMs);
+        labels.push(d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+    }
+
+    const tArr = sampleSeriesAtBuckets(tempPoints, fallbackTemp);
+    const hArr = (humPoints.length > 0 || Number.isFinite(fallbackHum))
+        ? sampleSeriesAtBuckets(humPoints, fallbackHum)
+        : [];
+
+    tempSeries.push(...tArr);
+    humSeries.push(...hArr);
+
+    const tempGrad = ctx.createLinearGradient(0, 0, 0, 240);
+    tempGrad.addColorStop(0, isDark ? 'rgba(20, 184, 166, 0.34)' : 'rgba(13, 148, 136, 0.25)');
+    tempGrad.addColorStop(1, 'rgba(20, 184, 166, 0.0)');
+
+    const datasets = [
+        {
+            label: 'Temperatur (°C)',
+            data: tempSeries,
+            borderColor: '#14b8a6',
+            backgroundColor: tempGrad,
+            yAxisID: 'yTemp',
+            borderWidth: 2.5,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.35,
+            fill: true
+        }
+    ];
+
+    const hasHum = humSeries.some(v => v !== null && Number.isFinite(v));
+    if (hasHum) {
+        datasets.push({
+            label: 'Luftfeuchte (%)',
+            data: humSeries,
+            borderColor: '#0ea5e9',
+            backgroundColor: 'transparent',
+            yAxisID: 'yHum',
+            borderWidth: 2,
+            borderDash: [4, 3],
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.35,
+            fill: false
+        });
+    }
+
+    chartClimateHistoryModal = new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: isDark ? 'rgba(15, 23, 42, 0.94)' : 'rgba(255, 255, 255, 0.96)',
+                    titleColor: isDark ? '#f8fafc' : '#0f172a',
+                    bodyColor: isDark ? '#cbd5e1' : '#334155',
+                    borderColor: isDark ? 'rgba(45, 212, 191, 0.3)' : 'rgba(203, 213, 225, 0.9)',
+                    borderWidth: 1,
+                    padding: 10,
+                    callbacks: {
+                        label: (ctxItem) => {
+                            const val = ctxItem.parsed.y;
+                            if (val === null || val === undefined) return '';
+                            const unit = ctxItem.dataset.yAxisID === 'yHum' ? ' %' : ' °C';
+                            return `${ctxItem.dataset.label}: ${Number(val).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${unit}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { color: isDark ? 'rgba(148, 163, 184, 0.06)' : 'rgba(100, 116, 139, 0.10)', drawBorder: false },
+                    ticks: {
+                        color: isDark ? '#94a3b8' : '#64748b',
+                        maxTicksLimit: 7,
+                        font: { family: 'JetBrains Mono, monospace', size: 10 }
+                    }
+                },
+                yTemp: {
+                    type: 'linear',
+                    position: 'left',
+                    grid: { color: isDark ? 'rgba(148, 163, 184, 0.09)' : 'rgba(100, 116, 139, 0.12)', drawBorder: false },
+                    ticks: {
+                        color: isDark ? '#5eead4' : '#0f766e',
+                        font: { family: 'JetBrains Mono, monospace', size: 10 },
+                        callback: (v) => `${Number(v).toLocaleString('de-DE', { maximumFractionDigits: 1 })} °C`
+                    }
+                },
+                yHum: {
+                    type: 'linear',
+                    position: 'right',
+                    display: hasHum,
+                    suggestedMin: 25,
+                    suggestedMax: 75,
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        color: isDark ? '#38bdf8' : '#0284c7',
+                        font: { family: 'JetBrains Mono, monospace', size: 10 },
+                        callback: (v) => `${Math.round(v)} %`
+                    }
+                }
+            }
+        }
+    });
 }
 
 function renderHaWeatherSensorsEditor() {
@@ -9131,32 +9826,45 @@ function renderHaWeatherSensorsEditor() {
 
     const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
     if (list.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-400 py-1.5">Noch keine eigenen Raum-/Wettersensoren hinterlegt. Klicke oben rechts auf „+ Raum-/Wettersensor hinzufügen“.</p>`;
+        container.innerHTML = `<p class="text-xs text-slate-400 py-1.5">Noch keine eigenen Raum-/Klimasensoren hinterlegt. Klicke oben rechts auf „+ Raum-/Klimasensor hinzufügen“.</p>`;
         return;
     }
 
     container.innerHTML = list.map((ws, idx) => {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(ws.name || '') : (ws.name || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(ws.entityId || '') : (ws.entityId || '');
+        const resolvedHum = ws.humidityEntity || resolveRoomHumidityEntity(ws) || '';
+        const safeHumEnt = typeof escapeHtml === 'function' ? escapeHtml(resolvedHum) : resolvedHum;
         return `
-        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
-            <div class="sm:col-span-5">
+        <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div class="flex items-center justify-between gap-2">
                 <input type="text" value="${safeName}" oninput="updateHaCustomWeatherSensorField(${idx}, 'name', this.value)"
                     placeholder="Raum / Name (z. B. Wohnzimmer)"
-                    class="w-full text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-            </div>
-            <div class="sm:col-span-7 flex items-center gap-1.5">
-                <input type="text" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomWeatherSensorField(${idx}, 'entityId', this.value)"
-                    placeholder="sensor.wohnzimmer_temperatur"
-                    class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                <button type="button" onclick="openHaEntityPicker({ customType: 'weatherSensor', index: ${idx}, unitFilter: 'all', title: 'Raum- / Wettersensor ${idx + 1} wählen' })"
-                    class="w-8 h-8 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor aus Liste wählen">
-                    <span class="material-symbols-rounded text-base">list_alt</span>
-                </button>
+                    class="flex-1 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
                 <button type="button" onclick="removeHaCustomWeatherSensor(${idx})"
-                    class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center shrink-0 cursor-pointer" title="Entfernen">
+                    class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center shrink-0 cursor-pointer" title="Raum entfernen">
                     <span class="material-symbols-rounded text-base">delete</span>
                 </button>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div class="flex items-center gap-1.5">
+                    <input type="text" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomWeatherSensorField(${idx}, 'entityId', this.value)"
+                        placeholder="Temperatur (°C): sensor.wohnzimmer_temp"
+                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="openHaEntityPicker({ customType: 'weatherSensor', index: ${idx}, unitFilter: 'all', title: 'Temperatur-Sensor (${safeName || ('Raum ' + (idx + 1))}) wählen' })"
+                        class="w-8 h-8 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0 cursor-pointer" title="Temperatur-Sensor aus Liste wählen">
+                        <span class="material-symbols-rounded text-base">device_thermostat</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <input type="text" list="haEntitiesDatalist" value="${safeHumEnt}" oninput="updateHaCustomWeatherSensorField(${idx}, 'humidityEntity', this.value)"
+                        placeholder="Luftfeuchte (% rF, optional): sensor.wohnzimmer_humidity"
+                        class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    <button type="button" onclick="openHaEntityPicker({ customType: 'weatherSensorHumidity', index: ${idx}, unitFilter: 'all', title: 'Luftfeuchtigkeit-Sensor (${safeName || ('Raum ' + (idx + 1))}) wählen' })"
+                        class="w-8 h-8 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0 cursor-pointer" title="Luftfeuchte-Sensor aus Liste wählen">
+                        <span class="material-symbols-rounded text-base">water_drop</span>
+                    </button>
+                </div>
             </div>
         </div>`;
     }).join('');
@@ -9170,6 +9878,7 @@ function addHaCustomWeatherSensor() {
         id: 'ws_' + Date.now(),
         name: nextNum === 1 ? 'Wohnzimmer' : (nextNum === 2 ? 'Esszimmer' : `Raum / Sensor ${nextNum}`),
         entityId: '',
+        humidityEntity: '',
         icon: nextNum === 2 ? 'table_restaurant' : 'weekend'
     });
     renderHaWeatherSensorsEditor();
@@ -9208,11 +9917,11 @@ window.refreshHomeWeatherAndSensors = refreshHomeWeatherAndSensors;
 window.addHaCustomWeatherSensor = addHaCustomWeatherSensor;
 window.updateHaCustomWeatherSensorField = updateHaCustomWeatherSensorField;
 window.removeHaCustomWeatherSensor = removeHaCustomWeatherSensor;
+window.openClimateHistoryModal = openClimateHistoryModal;
+window.closeClimateHistoryModal = closeClimateHistoryModal;
 
-// Auto-initialize once DOM is ready
+// Auto-initialize immediately once DOM is ready (0ms delay for instant start!)
 document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        initTelemetryAndAnalysis();
-        renderHomeTab();
-    }, 80);
+    initTelemetryAndAnalysis();
+    renderHomeTab();
 });

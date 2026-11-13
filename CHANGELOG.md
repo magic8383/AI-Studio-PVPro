@@ -4,6 +4,47 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.0] – 2026-11-13
+
+### ✨ Kompakte Horizontale Energie-Leiste auf der Startseite, Raumklima-Sektion mit Luftfeuchte (`% rF`), Wert-Gedächtnis & 24h-Verlaufs-Popup, Eigener „Klima & Wetter“-Tab, Akzent-Fortschrittsbalken bei Verbrauchern, Tagesdiagramm ab Aktivität (`+1h` Vorschau & Verschiebbar) & Blitzstart (`0 ms` Snapshot)
+
+#### 1. Startseite (`Ebene 0`): Kompakte Horizontale Energie-Leiste mit Autarkie-Badge & Eingerahmte Sektion „Raumklima & Temperaturen“ (`index.html`, `telemetry.js`)
+* **Klare optische Trennung zwischen `Start` und `Live`:**
+  - Auf der Startseite wurden die duplizierten 2x2-Energiekacheln durch eine kompakte **4-Spalten-Horizontal-Energieleiste** (`☀️ PV` | `🏠 Haus` | `🔋 Speicher` | `🔌 Netz`) mit Live-Statuszeile, **Live-Autarkie-Badge** (`XX % Autark`) und mehrfarbigem Energieverteilungs-Balken ersetzt. So erkennt man sofort auf den ersten Blick, ob man sich auf der Startseite oder im detaillierten Live-Dashboard befindet.
+* **Eigener Abschnitt „Raumklima & Temperaturen“:**
+  - Die Raumtemperatur-Kacheln schweben nicht mehr lose am unteren Rand, sondern sitzen analog zu den oberen Bereichen in einer sauber betitelten Sektion **„Raumklima & Temperaturen“** (inklusive Direkt-Button `Sensoren` zum Klima-Tab) innerhalb einer einheitlichen `.dash-main-card`.
+
+#### 2. Raumklima-Kacheln: Luftfeuchtigkeit (`% rF`), Persistentes Wert-Gedächtnis & 24h-Kurven-Popup (`index.html`, `telemetry.js`)
+* **Zweiter Messwert für Luftfeuchtigkeit (`💧 XX %`):**
+  - Jede Raumkachel zeigt neben der Temperatur (`°C`) nun auch die **relative Luftfeuchtigkeit (`% rF`)** als kompaktes Wassertropfen-Badge an – entweder über einen explizit zugeordneten Feuchte-Sensor oder automatisch erkannt aus demselben Raum in Home Assistant.
+* **Kein Verschwinden der Temperaturwerte mehr:**
+  - Behebung der Ursache, durch die Raumkacheln zeitweise ihren Wert verloren (`—`): (1) Leere `customWeatherSensors: []`-Arrays vom Server oder aus älteren Projekt-Backups überschreiben keine vorhandenen/erkannten Raumsensoren mehr. (2) Jeder gültige Messwert (`°C`, `%`, `Min`, `Max`) wird im persistenten Klima-Gedächtnis (`pvpro_climate_last_valid`) gepuffert, sodass kurze `unavailable`-Momente eines Funk-Thermostats niemals die Anzeige leeren.
+* **24-Stunden Klima-Verlaufskurve als Popup statt Einstellungs-Dialog:**
+  - Ein Tipp auf eine Raumkachel auf der Startseite öffnet nicht mehr die Sensor-Einstellungen, sondern das neue **24-Stunden Klima-Verlaufs-Popup (`#modal-climate-curve`)** mit einer geschmeidigen Dual-Achsen-Kurve für Temperatur (`°C`) und Luftfeuchtigkeit (`% rF`) sowie `Aktuell`- und `24h Min / Max`-Kennzahlen.
+
+#### 3. Eigener Tab „2. Klima & Wetter“ in den Sensor-Einstellungen (`index.html`, `telemetry.js`)
+* **Übersichtliche 3-Tab-Struktur im Home-Assistant-Dialog:**
+  - Damit die Sensor-Einstellungen schlank und übersichtlich bleiben, erhielt der Dialog oben eine **3-Tab-Navigation**: **`1. Energie & PV`** | **`2. Klima & Wetter`** | **`3. Proxy-Hilfe`**.
+  - Im neuen Tab **„2. Klima & Wetter“** werden die Wetter-Entität (`weather.*`), der Außentemperatur-Sensor sowie beliebig viele Raum-Klimasensoren (jeweils mit `Temperatur °C` und optionaler `Luftfeuchte % rF`) verwaltet.
+
+#### 4. Akzentabhängige Fortschrittsbalken bei Aktiven Verbrauchern (`app.js`, `telemetry.js`)
+* **Dynamische Übernahme der gewählten Akzentfarbe:**
+  - Die horizontalen `kWh heute`-Fortschrittsbalken in den Zeilen unter **„Aktive Verbraucher“** im `Live`-Tab nutzen nun die dynamischen Design-Studio-Klassen `.consumer-progress-fill-active` und `.consumer-progress-fill-idle` und färben sich 1:1 passend zur gewählten Akzentfarbe (Smaragd, Himmelblau, Kobalt, Violett, Bernstein, Rose oder Schiefer).
+
+#### 5. Tagesdiagramm (`Tag`): `+1 Stunde` Zukunfts-Puffer, Automatischer Start ab Aktivität & Verschiebe-Steuerung (`index.html`, `telemetry.js`)
+* **Immer `+1 Stunde` Vorschau rechts & Live-Endpunkt-Markierung:**
+  - In der Ansicht `Tag` reicht die Zeitachse ab sofort immer **1 Stunde in die Zukunft** (+12 Fünf-Minuten-Intervalle) und markiert den aktuellen Zeitpunkt (`Jetzt`) mit einem klaren Punkt auf der Kurve sowie einer feinen vertikalen Linie.
+* **Kein leerer Nachtbereich links & Verschiebbar (`◀` | `Aktiv +1h` | `▶`):**
+  - Im Standardmodus **`Aktiv +1h`** blendet das Tagesdiagramm den ereignislosen Nachtbereich (`00:00` bis Sonnenaufgang) automatisch aus und startet 30 Minuten vor dem ersten relevanten Leistungsanstieg, sodass die PV-Kurven sofort groß und detailliert den gesamten Bildschirm füllen.
+  - Über die kompakten Steuertasten **`◀`**, **`Aktiv +1h` / `0–24h +1h`** und **`▶`** in der Diagramm-Kopfzeile lässt sich das Zeitfenster stundenweise verschieben oder jederzeit auf den vollen Tag (`00:00` bis `+1h`) umschalten.
+
+#### 6. Blitzschneller App-Start (`0 ms` Boot-Snapshot & Fast-First `/api/states` Render) (`telemetry.js`)
+* **Sofortige Startseiten-Werte ohne Wartezeit:**
+  - Beim Öffnen der App stellt `restoreInstantBootSnapshot()` die zuletzt bekannten Live-Leistungen, Wetterdaten und Raumtemperaturen in **0 ms synchron aus `localStorage`** wieder her, noch bevor irgendeine Netzwerk-Anfrage startet.
+  - Parallel wird `/api/states` sofort beim App-Start abgerufen und **vor** der 24h/30d-Historien-Synchronisation (`syncEnergyCounterBaselinesFromHaHistory`) geparst und gerendert. Dadurch stehen die Live-Werte auf der Startseite bereits nach ~150 ms bereit, während die historische Kurven- und Zähler-Kalibrierung im Hintergrund nachlädt.
+
+---
+
 ## [Version 10.9] – 2026-11-13
 
 ### ✨ Neue Startseite („Ebene 0“) mit Wetter- & 5-Tage-Prognose-Widget + HA-Raumsensoren, Zurück-Wischen-Schutz, Schriftart-Auswahl (`Plus Jakarta Sans` / `Outfit` / `Manrope`), Dezenter Hintergrund, Inline-Status-Symbole (`✓` / `∫` / `!`) & Überlappungsfreier Balkendiagramm-Header

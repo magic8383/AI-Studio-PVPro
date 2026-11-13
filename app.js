@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.9';
+const APP_VERSION = '11.0';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -6882,6 +6882,18 @@ function applyThemeSettingsObj(themeObj) {
         html.dark body .dash-tile-pv {
             border-color: rgba(${tintRgb}, 0.38) !important;
             background: linear-gradient(155deg, rgba(${tintRgb}, 0.22) 0%, rgba(15, 23, 42, 0.85) 100%) !important;
+        }
+        html body .consumer-progress-fill-active {
+            background: linear-gradient(90deg, rgba(${tintRgb}, 0.22) 0%, rgba(${orb2Rgb}, 0.12) 68%, rgba(${tintRgb}, 0.02) 100%) !important;
+        }
+        html.dark body .consumer-progress-fill-active {
+            background: linear-gradient(90deg, rgba(${tintRgb}, 0.28) 0%, rgba(${orb2Rgb}, 0.16) 68%, rgba(${tintRgb}, 0.03) 100%) !important;
+        }
+        html body .consumer-progress-fill-idle {
+            background: linear-gradient(90deg, rgba(${tintRgb}, 0.13) 0%, rgba(148, 163, 184, 0.08) 72%, transparent 100%) !important;
+        }
+        html.dark body .consumer-progress-fill-idle {
+            background: linear-gradient(90deg, rgba(${tintRgb}, 0.17) 0%, rgba(51, 65, 85, 0.22) 72%, transparent 100%) !important;
         }
     `;
 

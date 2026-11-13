@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 10.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 10.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=10.9">
+    <link rel="manifest" href="manifest.json?v=11.0">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=10.9">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=10.9">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=10.9">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=10.9">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.0">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.0">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.0">
     <script>
         // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
         (function () {
@@ -28,7 +28,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v10.9') {
+                            if (key !== 'pvpro-cache-v11.0') {
                                 caches.delete(key);
                             }
                         });
@@ -628,10 +628,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=10.9" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.0" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 10.9</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.0</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1542,93 +1542,105 @@
                 </div>
             </div>
 
-            <!-- 3. Section Header: Jetzt im Überblick -->
+            <!-- 3. Section Header: Energie · Kurzüberblick (Optisch eigenständige Horizontale Energie-Leiste statt 2x2 Live-Kopie) -->
             <div class="flex items-center justify-between px-1 pt-1">
                 <div class="flex items-center gap-2">
-                    <span class="material-symbols-rounded text-slate-800 dark:text-slate-200 text-[20px]">analytics</span>
-                    <h2 class="text-[18px] font-bold text-slate-900 dark:text-white tracking-tight">Jetzt im Überblick</h2>
+                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px]">bolt</span>
+                    <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900 dark:text-white tracking-tight">Energie · Kurzüberblick</h2>
                 </div>
                 <button type="button" onclick="switchTab('live')" class="text-xs font-semibold text-teal-700 dark:text-teal-300 hover:underline flex items-center gap-0.5 cursor-pointer">
-                    <span>Zum Live-Fluss</span>
+                    <span>Live-Details</span>
                     <span class="material-symbols-rounded text-sm">chevron_right</span>
                 </button>
             </div>
 
-            <!-- 4. Card: Energie · alles im Blick (Ruhige 2x2 Übersichtskacheln wie im Referenz-Screenshot) -->
-            <div class="dash-main-card rounded-[28px] p-5 sm:p-6 transition-all">
-                <div class="flex items-center justify-between gap-2 mb-4">
-                    <h3 class="text-[18px] sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">Energie · alles im Blick</h3>
+            <!-- 4. Card: Kompakte Horizontale Energie-Leiste mit Live-Autarkie-Badge & Mehrsegment-Flussbalken -->
+            <div onclick="switchTab('live')" role="button" tabindex="0" class="dash-main-card rounded-[26px] p-4 sm:p-5 transition-all cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.995]">
+                <!-- Top Row: Live Status Summary + Autarky Badge -->
+                <div class="flex items-center justify-between gap-2 mb-3.5">
+                    <div class="min-w-0">
+                        <p id="home_energy_flow_summary" class="text-[13.5px] font-semibold text-slate-800 dark:text-slate-100 truncate">
+                            Echtzeit-Energiebilanz · Tippen für Live-Cockpit
+                        </p>
+                    </div>
+                    <span id="home_autarky_badge" class="px-2.5 py-1 rounded-full bg-teal-500/14 text-teal-800 dark:text-teal-200 border border-teal-500/25 text-[12px] font-bold tabular-nums shrink-0">
+                        100 % Autark
+                    </span>
                 </div>
 
-                <div class="grid grid-cols-2 gap-3 sm:gap-3.5">
-                    <!-- Kachel 1: PV gesamt · DC -->
-                    <div onclick="switchTab('live')" role="button" tabindex="0" class="dash-tile-pv rounded-[22px] p-4 flex flex-col justify-between min-h-[138px] transition-all cursor-pointer hover:ring-2 hover:ring-teal-400/45 active:scale-[0.99]">
-                        <div>
-                            <div class="flex items-center gap-2 text-[13.5px] font-medium text-slate-800 dark:text-slate-100">
-                                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[19px] fill-1 shrink-0">solar_power</span>
-                                <span class="truncate">PV gesamt · DC</span>
-                            </div>
-                            <p id="home_pv_power" class="text-[26px] sm:text-[28px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none mt-3.5">0 W</p>
-                            <p id="home_pv_sub" class="text-[13px] font-normal text-slate-600 dark:text-slate-300 leading-snug mt-2.5">Keine PV-Erzeugung</p>
+                <!-- 4-Column Compact Horizontal Strip (PV | Haus | Akku | Netz) -->
+                <div class="grid grid-cols-4 gap-2 sm:gap-2.5">
+                    <!-- Pill 1: PV -->
+                    <div class="rounded-[18px] p-2.5 sm:p-3 bg-teal-500/[0.08] dark:bg-teal-500/[0.14] border border-teal-500/20 flex flex-col justify-between min-w-0">
+                        <div class="flex items-center gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                            <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[16px] fill-1 shrink-0">solar_power</span>
+                            <span class="truncate">PV</span>
                         </div>
-                        <div class="w-full h-1 rounded-full bg-slate-300/65 dark:bg-slate-700/70 overflow-hidden mt-3">
-                            <div id="home_pv_bar" class="h-full rounded-full bg-teal-500 transition-all duration-500" style="width: 0%"></div>
-                        </div>
+                        <p id="home_pv_power" class="text-[16px] sm:text-[19px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">0 W</p>
+                        <p id="home_pv_sub" class="text-[11.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">0,0 kWh</p>
                     </div>
 
-                    <!-- Kachel 2: Hausverbrauch · AC -->
-                    <div onclick="switchTab('live')" role="button" tabindex="0" class="dash-tile-load rounded-[22px] p-4 flex flex-col justify-between min-h-[138px] transition-all cursor-pointer hover:ring-2 hover:ring-amber-400/45 active:scale-[0.99]">
-                        <div>
-                            <div class="flex items-center gap-2 text-[13.5px] font-medium text-slate-800 dark:text-slate-100">
-                                <span class="material-symbols-rounded text-amber-500 dark:text-amber-400 text-[19px] fill-1 shrink-0">home</span>
-                                <span class="truncate">Hausverbrauch · AC</span>
-                            </div>
-                            <p id="home_load_power" class="text-[26px] sm:text-[28px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none mt-3.5">0 W</p>
-                            <p id="home_load_sub" class="text-[13px] font-normal text-slate-600 dark:text-slate-300 leading-snug mt-2.5">Aktueller Hausverbrauch</p>
+                    <!-- Pill 2: Haus -->
+                    <div class="rounded-[18px] p-2.5 sm:p-3 bg-amber-500/[0.08] dark:bg-amber-500/[0.14] border border-amber-500/20 flex flex-col justify-between min-w-0">
+                        <div class="flex items-center gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                            <span class="material-symbols-rounded text-amber-500 dark:text-amber-400 text-[16px] fill-1 shrink-0">home</span>
+                            <span class="truncate">Haus</span>
                         </div>
-                        <div class="w-full h-1 rounded-full bg-slate-300/65 dark:bg-slate-700/70 overflow-hidden mt-3">
-                            <div id="home_load_bar" class="h-full rounded-full bg-amber-500 transition-all duration-500" style="width: 0%"></div>
-                        </div>
+                        <p id="home_load_power" class="text-[16px] sm:text-[19px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">0 W</p>
+                        <p id="home_load_sub" class="text-[11.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">0,0 kWh</p>
                     </div>
 
-                    <!-- Kachel 3: Batterie -->
-                    <div onclick="switchTab('live')" role="button" tabindex="0" class="dash-tile-bat rounded-[22px] p-4 flex flex-col justify-between min-h-[138px] transition-all cursor-pointer hover:ring-2 hover:ring-purple-400/45 active:scale-[0.99]">
-                        <div>
-                            <div class="flex items-center gap-2 text-[13.5px] font-medium text-slate-800 dark:text-slate-100">
-                                <span class="material-symbols-rounded text-purple-600 dark:text-purple-400 text-[19px] shrink-0">battery_5_bar</span>
-                                <span id="home_bat_title" class="truncate">BYD HVS+</span>
-                            </div>
-                            <p id="home_bat_soc" class="text-[26px] sm:text-[28px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none mt-3.5">0 %</p>
-                            <p id="home_bat_sub" class="text-[13px] font-normal text-slate-600 dark:text-slate-300 leading-snug mt-2.5">Ruhe / Standby</p>
+                    <!-- Pill 3: Akku -->
+                    <div class="rounded-[18px] p-2.5 sm:p-3 bg-purple-500/[0.08] dark:bg-purple-500/[0.14] border border-purple-500/20 flex flex-col justify-between min-w-0">
+                        <div class="flex items-center gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                            <span class="material-symbols-rounded text-purple-600 dark:text-purple-400 text-[16px] shrink-0">battery_5_bar</span>
+                            <span id="home_bat_title" class="truncate">Akku</span>
                         </div>
-                        <div class="w-full h-1 rounded-full bg-slate-300/65 dark:bg-slate-700/70 overflow-hidden mt-3">
-                            <div id="home_bat_bar" class="h-full rounded-full bg-purple-500 transition-all duration-500" style="width: 0%"></div>
-                        </div>
+                        <p id="home_bat_soc" class="text-[16px] sm:text-[19px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">0 %</p>
+                        <p id="home_bat_sub" class="text-[11.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">Standby</p>
                     </div>
 
-                    <!-- Kachel 4: Netz · Bezug / Einspeisung -->
-                    <div onclick="switchTab('live')" role="button" tabindex="0" class="dash-tile-grid rounded-[22px] p-4 flex flex-col justify-between min-h-[138px] transition-all cursor-pointer hover:ring-2 hover:ring-blue-400/45 active:scale-[0.99]">
-                        <div>
-                            <div class="flex items-center gap-2 text-[13.5px] font-medium text-slate-800 dark:text-slate-100">
-                                <span class="material-symbols-rounded text-blue-600 dark:text-blue-400 text-[19px] shrink-0">cell_tower</span>
-                                <span class="leading-tight">Netz · Bezug / Einspeisung</span>
-                            </div>
-                            <p id="home_grid_power" class="text-[26px] sm:text-[28px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none mt-2.5">0 W</p>
-                            <p id="home_grid_sub" class="text-[13px] font-normal text-slate-600 dark:text-slate-300 leading-snug mt-2.5">Bezug aus dem Netz</p>
+                    <!-- Pill 4: Netz -->
+                    <div class="rounded-[18px] p-2.5 sm:p-3 bg-blue-500/[0.08] dark:bg-blue-500/[0.14] border border-blue-500/20 flex flex-col justify-between min-w-0">
+                        <div class="flex items-center gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                            <span class="material-symbols-rounded text-blue-600 dark:text-blue-400 text-[16px] shrink-0">cell_tower</span>
+                            <span class="truncate">Netz</span>
                         </div>
-                        <div class="w-full h-1 rounded-full bg-slate-300/65 dark:bg-slate-700/70 overflow-hidden mt-3">
-                            <div id="home_grid_bar" class="h-full rounded-full bg-blue-500 transition-all duration-500" style="width: 0%"></div>
-                        </div>
+                        <p id="home_grid_power" class="text-[16px] sm:text-[19px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">0 W</p>
+                        <p id="home_grid_sub" class="text-[11.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">Bezug</p>
                     </div>
                 </div>
 
-                <p class="text-[12.5px] text-slate-500 dark:text-slate-400 mt-4">PV DC · Haus AC · Batterie · Netz</p>
+                <!-- Multi-Segment Horizontal Live Proportion Bar -->
+                <div class="w-full h-2 rounded-full bg-slate-200/75 dark:bg-slate-800/80 overflow-hidden flex gap-0.5 mt-3.5">
+                    <div id="home_pv_bar" class="h-full bg-teal-500 transition-all duration-500" style="width: 25%"></div>
+                    <div id="home_load_bar" class="h-full bg-amber-500 transition-all duration-500" style="width: 25%"></div>
+                    <div id="home_bat_bar" class="h-full bg-purple-500 transition-all duration-500" style="width: 25%"></div>
+                    <div id="home_grid_bar" class="h-full bg-blue-500 transition-all duration-500" style="width: 25%"></div>
+                </div>
             </div>
 
-            <!-- 5. Manuell einbindbare Home Assistant Wetter- & Raum-Sensoren (z. B. Wohnzimmer, Esszimmer, Außensensor) -->
-            <div id="homeCustomWeatherSection" class="space-y-3">
-                <div id="homeCustomWeatherGrid" class="grid grid-cols-2 gap-3 sm:gap-3.5">
-                    <!-- Dynamically populated by renderHomeCustomWeatherSensors() -->
+            <!-- 5. Eingefasster Abschnitt: Raumklima & Temperaturen (°C + 💧 Luftfeuchtigkeit + 24h-Kurven-Popup bei Klick) -->
+            <div id="homeCustomWeatherSection" class="space-y-2.5">
+                <div class="flex items-center justify-between px-1 pt-1">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px]">device_thermostat</span>
+                        <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900 dark:text-white tracking-tight">Raumklima &amp; Temperaturen</h2>
+                    </div>
+                    <button type="button" onclick="openHaConfigModal('climate')" class="text-xs font-semibold text-teal-700 dark:text-teal-300 hover:underline flex items-center gap-1 cursor-pointer" title="Temperatur- und Luftfeuchtigkeits-Sensoren verwalten">
+                        <span class="material-symbols-rounded text-sm">tune</span>
+                        <span>Sensoren</span>
+                    </button>
+                </div>
+
+                <div class="dash-main-card rounded-[28px] p-4 sm:p-5 transition-all">
+                    <div id="homeCustomWeatherGrid" class="grid grid-cols-2 gap-3 sm:gap-3.5">
+                        <!-- Dynamically populated by renderHomeCustomWeatherSensors() -->
+                    </div>
+                    <p class="text-[12px] text-slate-500 dark:text-slate-400 mt-3.5 flex items-center justify-between gap-2">
+                        <span>Tipp auf einen Raum öffnet den 24h-Temperatur- &amp; Feuchteverlauf</span>
+                        <span class="tabular-nums">°C · % rF</span>
+                    </p>
                 </div>
             </div>
         </div>
@@ -1876,15 +1888,29 @@
                             </div>
                         </div>
 
-                        <!-- Precision Crosshair Readout Ribbon -->
-                        <div class="px-3 sm:px-4 py-1 bg-slate-50/90 dark:bg-[#091217]/80 border-b border-slate-200/50 dark:border-white/5 flex items-center justify-between gap-2">
-                            <p id="dash_curve_hover_readout" class="text-xs text-slate-700 dark:text-slate-200 tabular-nums overflow-x-auto hide-scroll whitespace-nowrap">
+                        <!-- Precision Crosshair Readout Ribbon + Smart Day-Zoom & Pan Controls -->
+                        <div class="px-2.5 sm:px-4 py-1 bg-slate-50/90 dark:bg-[#091217]/80 border-b border-slate-200/50 dark:border-white/5 flex items-center justify-between gap-1.5">
+                            <p id="dash_curve_hover_readout" class="text-xs text-slate-700 dark:text-slate-200 tabular-nums overflow-x-auto hide-scroll whitespace-nowrap flex-1 min-w-0">
                                 <!-- Gefüllt durch updateIntradayHoverReadout() -->
                             </p>
-                            <button type="button" onclick="openIntradayFullscreenModal(true)" class="text-xs font-medium text-teal-600 dark:text-teal-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer" title="Direkt im 90°-Querformat-Vollbild öffnen">
-                                <span class="material-symbols-rounded text-xs">screen_rotation</span>
-                                <span>90°</span>
-                            </button>
+                            <div class="flex items-center gap-1 shrink-0">
+                                <!-- Smart Day Window Controls (Shown when Tag is active: Pan Left | Auto-Zoom +1h / 0-24h | Pan Right) -->
+                                <div id="intradayDayWindowControls" class="inline-flex items-center rounded-lg bg-slate-200/80 dark:bg-white/10 p-0.5 text-[11px] font-semibold">
+                                    <button type="button" onclick="panIntradayDayWindow(-12)" class="w-5 h-5 rounded-md hover:bg-white dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer" title="Ausschnitt 1 Stunde nach links schieben">
+                                        <span class="material-symbols-rounded text-sm">chevron_left</span>
+                                    </button>
+                                    <button type="button" id="btnIntradayDayZoomMode" onclick="toggleIntradayDayZoomMode()" class="px-1.5 py-0.5 rounded-md bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-300 shadow-2xs transition-all cursor-pointer whitespace-nowrap" title="Umschalten zwischen automatischem Zoom ab Aktivität (+1h rechts) und vollem 24h-Tag ab 00:00 Uhr">
+                                        Aktiv +1h
+                                    </button>
+                                    <button type="button" onclick="panIntradayDayWindow(12)" class="w-5 h-5 rounded-md hover:bg-white dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 flex items-center justify-center cursor-pointer" title="Ausschnitt 1 Stunde nach rechts schieben">
+                                        <span class="material-symbols-rounded text-sm">chevron_right</span>
+                                    </button>
+                                </div>
+                                <button type="button" onclick="openIntradayFullscreenModal(true)" class="text-xs font-medium text-teal-600 dark:text-teal-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer ml-0.5" title="Direkt im 90°-Querformat-Vollbild öffnen">
+                                    <span class="material-symbols-rounded text-xs">screen_rotation</span>
+                                    <span>90°</span>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Technical Chart Stage (Tap = In-Place Full-Bleed ohne Achsenskalen; Ziehen = Fadenkreuz-Messung) -->
@@ -3179,15 +3205,19 @@
                 </button>
             </div>
 
-            <!-- 2-Tab Umschalter: 1. Sensoren & Setup | 2. Anleitung & Hilfe (Kein Rechts-Überlauf auf Smartphones!) -->
-            <div class="px-4 sm:px-5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/80 grid grid-cols-2 gap-2">
-                <button type="button" id="btn-ha-tab-config" onclick="switchHaModalTab('config')" class="px-3 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer truncate shadow-xs">
+            <!-- 3-Tab Umschalter: 1. Energie & PV | 2. Klima & Wetter | 3. Proxy-Hilfe -->
+            <div class="px-3 sm:px-5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/80 grid grid-cols-3 gap-1.5 sm:gap-2">
+                <button type="button" id="btn-ha-tab-config" onclick="switchHaModalTab('config')" class="px-2.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate shadow-xs">
                     <span class="material-symbols-rounded text-base shrink-0">tune</span>
-                    <span class="truncate">1. Sensoren &amp; Setup</span>
+                    <span class="truncate">1. Energie &amp; PV</span>
                 </button>
-                <button type="button" id="btn-ha-tab-guide" onclick="switchHaModalTab('guide')" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer truncate">
+                <button type="button" id="btn-ha-tab-climate" onclick="switchHaModalTab('climate')" class="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate">
+                    <span class="material-symbols-rounded text-base text-sky-500 shrink-0">device_thermostat</span>
+                    <span class="truncate">2. Klima &amp; Wetter</span>
+                </button>
+                <button type="button" id="btn-ha-tab-guide" onclick="switchHaModalTab('guide')" class="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate">
                     <span class="material-symbols-rounded text-base text-amber-500 shrink-0">menu_book</span>
-                    <span class="truncate">2. Proxy-Anleitung</span>
+                    <span class="truncate">3. Proxy-Hilfe</span>
                 </button>
             </div>
 
@@ -3674,50 +3704,6 @@
                         </div>
                     </div>
 
-                    <!-- 4b. Wetter & Raum-Sensoren für die Startseite (Ebene 0) -->
-                    <div id="haWeatherSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                            <div>
-                                <h4 class="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                                    <span class="material-symbols-rounded text-sky-500 text-base">partly_cloudy_day</span>
-                                    <span>4b. Wetter &amp; Raum-Sensoren (Startseite · Ebene 0)</span>
-                                </h4>
-                                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Verbinde optional deine Home-Assistant Wetter-Entität (<code class="font-mono">weather.*</code>), einen Außentemperatur-Sensor sowie Raum-/Klimasensoren (z. B. Wohnzimmer, Esszimmer). Die 5-Tage-Prognose wird automatisch ergänzt.
-                                </p>
-                            </div>
-                            <button type="button" onclick="addHaCustomWeatherSensor()" class="px-2.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer shrink-0 self-start sm:self-auto">
-                                <span class="material-symbols-rounded text-sm">add</span>
-                                <span>Raum-/Wettersensor hinzufügen</span>
-                            </button>
-                        </div>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Home Assistant Wetter-Entität (optional)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" id="ha_ent_weather_main" list="haEntitySuggestionsList" placeholder="z. B. weather.forecast_home" class="flex-1 min-w-0 font-mono text-xs px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900">
-                                    <button type="button" onclick="openHaEntityPicker('ha_ent_weather_main', 'Wetter-Entität (weather.*)', 'all')" class="w-8 h-8 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Aus Home Assistant wählen">
-                                        <span class="material-symbols-rounded text-base">list_alt</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Außentemperatur-Sensor (optional, überschreibt °C)</label>
-                                <div class="flex items-center gap-1.5">
-                                    <input type="text" id="ha_ent_outdoor_temp" list="haEntitySuggestionsList" placeholder="z. B. sensor.aussentemperatur" class="flex-1 min-w-0 font-mono text-xs px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900">
-                                    <button type="button" onclick="openHaEntityPicker('ha_ent_outdoor_temp', 'Außentemperatur-Sensor (°C)', 'all')" class="w-8 h-8 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Aus Home Assistant wählen">
-                                        <span class="material-symbols-rounded text-base">list_alt</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div id="haWeatherSensorsMappingContainer" class="space-y-2">
-                            <!-- Dynamisch gefüllt durch renderHaWeatherSensorsEditor() -->
-                        </div>
-                    </div>
-
                     <!-- 5. Optionaler Webhook-Push Assistent -->
                     <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
                         <div class="flex items-center justify-between">
@@ -3733,6 +3719,54 @@
                             Alternativ kann dein Home Assistant die Live-Werte auch aktiv von innen nach außen an diese App pushen:
                         </p>
                         <textarea id="haWebhookYamlCode" readonly rows="6" class="w-full font-mono text-[11px] p-2.5 rounded-xl bg-slate-900 text-emerald-300 border border-slate-700 outline-none"></textarea>
+                    </div>
+                </div>
+
+                <!-- ========================================================= -->
+                <!-- TAB-PANEL C: 2. KLIMA, WETTER & RAUMTEMPERATUREN (STARTSEITE) -->
+                <!-- ========================================================= -->
+                <div id="ha-modal-panel-climate" class="hidden space-y-4">
+                    <div id="haWeatherSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                                <h4 class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                    <span class="material-symbols-rounded text-sky-500 text-lg">partly_cloudy_day</span>
+                                    <span>Wetter-Prognose &amp; Raumklima-Sensoren (Startseite · Ebene 0)</span>
+                                </h4>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                    Hinterlege für jeden Raum den <strong>Temperatur-Sensor (°C)</strong> und optional den <strong>Luftfeuchtigkeits-Sensor (% rF)</strong>. Ist die Luftfeuchtigkeit leer, wird sie automatisch vom selben Raum/Gerät erkannt.
+                                </p>
+                            </div>
+                            <button type="button" onclick="addHaCustomWeatherSensor()" class="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 self-start sm:self-auto shadow-xs">
+                                <span class="material-symbols-rounded text-base">add</span>
+                                <span>Raum hinzufügen</span>
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Home Assistant Wetter-Entität (optional)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" id="ha_ent_weather_main" list="haEntitySuggestionsList" placeholder="z. B. weather.forecast_home" class="flex-1 min-w-0 font-mono text-xs px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+                                    <button type="button" onclick="openHaEntityPicker('ha_ent_weather_main', 'Wetter-Entität (weather.*)', 'all')" class="w-8 h-8 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Aus Home Assistant wählen">
+                                        <span class="material-symbols-rounded text-base">list_alt</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">Außentemperatur-Sensor (optional, überschreibt °C oben)</label>
+                                <div class="flex items-center gap-1.5">
+                                    <input type="text" id="ha_ent_outdoor_temp" list="haEntitySuggestionsList" placeholder="z. B. sensor.garten_temperatur" class="flex-1 min-w-0 font-mono text-xs px-2.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+                                    <button type="button" onclick="openHaEntityPicker('ha_ent_outdoor_temp', 'Außentemperatur-Sensor (°C)', 'all')" class="w-8 h-8 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Aus Home Assistant wählen">
+                                        <span class="material-symbols-rounded text-base">list_alt</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div id="haWeatherSensorsMappingContainer" class="space-y-2.5">
+                            <!-- Dynamisch gefüllt durch renderHaWeatherSensorsEditor() -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -3929,16 +3963,79 @@
         </div>
     </div>
 
+    <!-- ========================================================================= -->
+    <!-- MODAL: 24H RAUMKLIMA- & TEMPERATUR-VERLAUFSKURVE POPUP (STARTSEITE)       -->
+    <!-- ========================================================================= -->
+    <div id="modal-climate-curve" class="fixed inset-0 z-[135] flex items-center justify-center p-2.5 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeClimateHistoryModal()">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- Header -->
+            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/30 flex items-center justify-center shrink-0">
+                        <span id="climateModalIcon" class="material-symbols-rounded text-xl">device_thermostat</span>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 id="climateModalTitle" class="text-base sm:text-lg font-bold text-slate-900 dark:text-white leading-tight truncate">Wohnzimmer</h3>
+                        <p id="climateModalSubtitle" class="text-xs text-slate-500 dark:text-slate-400 truncate">24-Stunden Temperatur- &amp; Feuchteverlauf</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onclick="closeClimateHistoryModal(); openHaConfigModal('climate');" class="px-2.5 py-1.5 rounded-xl bg-slate-200/75 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer" title="Sensoren für diesen Raum anpassen">
+                        <span class="material-symbols-rounded text-sm">tune</span>
+                        <span class="hidden xs:inline">Sensor</span>
+                    </button>
+                    <button type="button" onclick="closeClimateHistoryModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer">
+                        <span class="material-symbols-rounded text-lg">close</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Body: KPI Strip + Smooth 24h Curve -->
+            <div class="p-4 sm:p-5 space-y-4 overflow-y-auto">
+                <!-- 4 Compact Summary Boxes (Aktuell | Luftfeuchtigkeit | Minimum | Maximum) -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div class="rounded-2xl p-3 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
+                        <span class="text-[11.5px] text-slate-500 dark:text-slate-400">Aktuell</span>
+                        <p id="climateModalCurrentTemp" class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tabular-nums mt-0.5">--,- °C</p>
+                    </div>
+                    <div class="rounded-2xl p-3 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
+                        <span class="text-[11.5px] text-slate-500 dark:text-slate-400">Luftfeuchte</span>
+                        <p id="climateModalCurrentHum" class="text-lg sm:text-xl font-bold text-sky-600 dark:text-sky-400 tabular-nums mt-0.5">— %</p>
+                    </div>
+                    <div class="rounded-2xl p-3 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
+                        <span class="text-[11.5px] text-slate-500 dark:text-slate-400">Min (24h)</span>
+                        <p id="climateModalMinTemp" class="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-200 tabular-nums mt-0.5">--,- °C</p>
+                    </div>
+                    <div class="rounded-2xl p-3 bg-slate-50 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
+                        <span class="text-[11.5px] text-slate-500 dark:text-slate-400">Max (24h)</span>
+                        <p id="climateModalMaxTemp" class="text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-200 tabular-nums mt-0.5">--,- °C</p>
+                    </div>
+                </div>
+
+                <!-- Chart Container -->
+                <div class="rounded-2xl p-3 bg-slate-50/80 dark:bg-slate-950/70 border border-slate-200/80 dark:border-slate-800">
+                    <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
+                        <span id="climateModalChartStatus" class="font-medium">Verlauf der letzten 24 Stunden</span>
+                        <span id="climateModalHoverReadout" class="font-mono tabular-nums text-slate-800 dark:text-slate-200 font-semibold"></span>
+                    </div>
+                    <div class="relative h-56 sm:h-64 w-full">
+                        <canvas id="climateHistoryChartCanvas"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V10.9 (Startseite Ebene 0 mit Wetter-Widget & HA-Raumsensoren, Schriftarten-Auswahl, dezenter Hintergrund & Inline-Diagnosesymbole) -->
-    <script src="qrcode.client.js?v=10.9"></script>
-    <script src="database.js?v=10.9"></script>
-    <script src="content.js?v=10.9"></script>
-    <script src="app.js?v=10.9"></script>
-    <script src="wiring.js?v=10.9"></script>
-    <script src="dossier.js?v=10.9"></script>
-    <script src="telemetry.js?v=10.9"></script>
+    <!-- MODULARE ARCHITEKTUR V11.0 (Horizontale Energie-Leiste auf Startseite, Raumklima mit Luftfeuchtigkeit & 24h-Kurven-Popup, Klima-Tab, Smart-Zoom +1h & 0ms Blitzstart) -->
+    <script src="qrcode.client.js?v=11.0"></script>
+    <script src="database.js?v=11.0"></script>
+    <script src="content.js?v=11.0"></script>
+    <script src="app.js?v=11.0"></script>
+    <script src="wiring.js?v=11.0"></script>
+    <script src="dossier.js?v=11.0"></script>
+    <script src="telemetry.js?v=11.0"></script>
 </body>
 </html>

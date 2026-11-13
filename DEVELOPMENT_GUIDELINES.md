@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.9 (Neue Ebene-0-Startseite mit Wetter- & 5-Tage-Prognose-Widget sowie frei einbindbaren HA-Raum-/Wettersensoren, Zurück-Wischen-Schutz auf Ebene 0, Schriftart-Auswahl `Plus Jakarta Sans` / `Outfit` / `Manrope` im Design-Studio, dezenter Pastell-Hintergrund, Inline-Status-Symbole `✓`/`∫`/`!` hinter `kWh` ohne Zusatzzeile & überlappungsfreier Balkendiagramm-Header mit einheitlichem Kachel-Design)  
+**Aktuelle Version:** 11.0 (Kompakte horizontale Energie-Leiste mit Autarkie-Badge auf der Startseite statt 2x2-Duplikat, eigener „Raumklima & Temperaturen“-Abschnitt mit Luftfeuchtigkeit `% rF`, persistentem Wert-Gedächtnis & 24h-Kurven-Popup, eigener „2. Klima & Wetter“-Tab in den Sensor-Einstellungen, akzentabhängige Fortschrittsbalken bei aktiven Verbrauchern, Tagesdiagramm ab Aktivitätsbeginn + 1 Stunde Zukunfts-Puffer & Verschiebe-Steuerung sowie 0-ms-Sofort-Start per Boot-Snapshot & Fast-First `/api/states`-Render)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
