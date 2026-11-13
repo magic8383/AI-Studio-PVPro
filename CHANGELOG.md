@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.8] – 2026-11-12
+
+### ✨ Feines Referenz-Design mit Klarer Typografie & Größeren Mini-Schriften, Korrektur der Doppelten Hauslast (`10,63 kWh` statt `21,69 kWh`) & Randloses Top-Docked Balkendiagramm mit 1-Balken-/Smart-Stack-Logik
+
+#### 1. Korrektur der Doppelten Hauslast (`10,63 kWh` vs. `21,69 kWh`) im Tagesverlauf (`telemetry.js`)
+* **Schutz gegen Mikro-Dips bei der REST-Historien-Differenzbildung (`fetchHaHistoryInBrowser`):**
+  - Bisher wurde bei einem minimalen Rückgang eines Zählerwerts (`cur.val < prev.val`, z. B. durch Nachkomma-Rundung oder Reconnect) in `fetchHaHistoryInBrowser` pauschal ein Zähler-Reset auf `0` angenommen und der volle Zählerstand (`+cur.val`) ein zweites Mal addiert (`10,84 kWh` -> `21,69 kWh`).
+  - Ab sofort wird ein Reset auf `0` nur noch dann angenommen, wenn der Zählerstand tatsächlich nahe `0` (`< 0,5 kWh`) von einem vorherigen Wert `> 2,0 kWh` gefallen ist; zudem wird `spanDiff` bevorzugt, wenn `posDeltaSum` unplausibel über der Start-Ende-Differenz liegt.
+* **Single Source of Truth für `house_load` in `getAvailableCurveDefinitions()`:**
+  - Genau wie bei `grid_power` und `grid_feedin` nutzt nun auch `house_load` (`Hauslast · AC`) in der Ansicht `Tag` vorrangig den kalibrierten Tageswert aus `getUnifiedEnergyLedger().today.houseTotal` (`todayLoadKwh > 0 ? todayLoadKwh : intKwh.house_load`), sodass Live-Dashboard und Tagesverlauf exakt denselben Wert (`10,63 kWh heute`) zeigen.
+
+#### 2. Feines, Klares Referenz-Design & Größere Mini-Schriften (`index.html`, `telemetry.js`, `app.js`)
+* **Proportionale Sans-Serif-Zahlen (`tabular-nums`) statt klobiger Monospace-Schrift:**
+  - Die Statuskacheln (`PV gesamt · DC`, `Hausverbrauch · AC`, `BYD HVS+`, `Netz · Bezug / Einspeisung`), die aktiven Verbraucher und die Diagramm-Kacheln nutzen nun durchgehend die klare `Plus Jakarta Sans` mit `font-variant-numeric: tabular-nums` und fein abgestimmten Schriftgewichten (`font-medium` / `font-bold` statt `font-black`).
+* **Ruhige, helle Verbraucher-Karten im Referenz-Stil:**
+  - Die Zeilen unter **„Aktive Verbraucher“** erscheinen als ruhige, helle Glaskarten (`rounded-[18px]`) ohne ablenkenden pulsierenden Punkt links, mit klarem Gerätenamen (`14px`), gut lesbarer `kWh heute`-Subline (`12.5px`) und rechtsbündiger Watt-Angabe (`70 W`).
+* **Deutlich größere Mini-Schriften & sofort wirksame Schriftgrößen-Skalierung:**
+  - Alle Kleinschriften (`.text-[9px]`, `.text-[10px]`, `.text-[11px]`, `.text-xs`) wurden auf ein klares Mindestmaß (`11.5px–13.25px`) angehoben.
+  - Das **Design-Studio** ist auf **1. Farbmodus (Hell / Dunkel)**, **2. Schriftgröße** (`Kompakt`, `Standard`, `Groß`, `Extra Groß`) und **3. Akzentfarbe** fokussiert und hängt sein Stylesheet ans Ende von `document.body` (`html body ... !important`), sodass jede Änderung sofort sichtbar greift.
+
+#### 3. Randloses, Bis zur Statusleiste Angedocktes Balkendiagramm mit 1-Balken- & Smart-Stack-Logik (`index.html`, `telemetry.js`, `app.js`)
+* **Volle Bildschirmbreite & Auto-Collapse-Header beim Scrollen:**
+  - Sowohl das Balkendiagramm als auch das Live-Verlaufsdiagramm reichen auf Ebene 2 über die volle Bildschirmbreite (`-mx-3 sm:-mx-5`), besitzen nur noch **1 kompakte Steuerzeile** und rücken beim Scrollen automatisch bis ganz oben an die Statusleiste (`header-scroll-collapsed`).
+* **Immer 1 klarer Balken je Zeitintervall + sinnvolle Aufteilungs-Stapel:**
+  - Schluss mit 93 unlesbaren Einzelbalken bei 31 Tagen: Jedes Zeitintervall zeigt genau **1 breiten Balken**.
+  - Bei **Hausverbrauch** zeigt der Balken auf Wunsch die sinnvolle 3-Wege-Aufteilung (**Direkt-PV** + **Aus Speicher** + **Aus Stromnetz**), bei **PV-Erzeugung** die Verwendung (**Direktverbrauch** + **Batterie-Ladung** + **Netzeinspeisung**) und bei **PV-Strings** die gestapelten Einzelstrings.
+
+---
+
 ## [Version 10.7] – 2026-11-12
 
 ### 🚀 Smartes Analyse-Balkendiagramm-Cockpit (Sticky Top, Full-Bleed Zoom, Anker-SOLIX Kategorien, Sofortige Tageswerte), Global Wirksames Design-Studio & HA-Dialog Overflow-Fix

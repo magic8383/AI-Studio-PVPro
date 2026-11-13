@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.7';
+const APP_VERSION = '10.8';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -2599,7 +2599,25 @@ document.addEventListener('touchend', e => {
     }
 }, {passive:true});
 
+function ensureMainScrollHeaderCollapseBinding() {
+    const mainEl = document.getElementById('mainScrollContainer');
+    const headerEl = document.getElementById('app-header');
+    if (!mainEl || !headerEl || mainEl._headerScrollBound) return;
+    mainEl._headerScrollBound = true;
+    mainEl.addEventListener('scroll', () => {
+        const st = mainEl.scrollTop || 0;
+        if (st > 18) {
+            headerEl.classList.add('header-scroll-collapsed');
+        } else if (st <= 8) {
+            headerEl.classList.remove('header-scroll-collapsed');
+        }
+    }, { passive: true });
+}
+
 function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Zurück zur Übersicht') {
+    ensureMainScrollHeaderCollapseBinding();
+    const headerEl = document.getElementById('app-header');
+    const row2El = document.getElementById('headerRow2');
     const titleEl = document.getElementById('headerViewTitle');
     const subEl = document.getElementById('headerViewSubtitle');
     const iconEl = document.getElementById('headerSectionIcon');
@@ -2608,6 +2626,7 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
     const backBtn = document.getElementById('btnHeaderBack');
     const backBtnLbl = document.getElementById('headerBackBtnLabel') || document.getElementById('btnHeaderBackLabel');
 
+    if (headerEl) headerEl.classList.remove('header-scroll-collapsed');
     if (titleEl) titleEl.innerText = title;
     if (subEl) subEl.innerText = subtitle;
     if (iconEl) iconEl.innerText = iconName || 'cell_tower';
@@ -2619,9 +2638,10 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
             backBtn.classList.add('inline-flex');
         }
         if (backBtnLbl) backBtnLbl.innerText = backLabel;
+        if (row2El) row2El.classList.add('hidden');
         if (badgeEl) {
             badgeEl.innerText = 'Ebene 2 · Detail';
-            badgeEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0';
+            badgeEl.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30 shrink-0';
         }
     } else {
         if (brandBadge) brandBadge.classList.remove('hidden');
@@ -2629,9 +2649,10 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
             backBtn.classList.add('hidden');
             backBtn.classList.remove('inline-flex');
         }
+        if (row2El) row2El.classList.remove('hidden');
         if (badgeEl) {
             badgeEl.innerText = 'Ebene 1 · Übersicht';
-            badgeEl.className = 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25 shrink-0';
+            badgeEl.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-500/12 text-teal-800 dark:text-teal-300 border border-teal-500/25 shrink-0';
         }
     }
 }
@@ -3061,9 +3082,9 @@ function switchTab(tabId) {
         }
     }
 
-    // Schwebende untere 4-Icon Pill-Navigation aktualisieren
-    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-teal-500/15 dark:bg-teal-500/25 border-2 border-teal-600 dark:border-teal-400 text-teal-700 dark:text-teal-300 transition-all cursor-pointer";
-    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all cursor-pointer";
+    // Schwebende untere 4-Icon Pill-Navigation aktualisieren (Ruhiges Referenz-Design)
+    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-[18px] bg-teal-500/15 dark:bg-teal-400/20 border border-teal-600/50 dark:border-teal-400/60 text-teal-800 dark:text-teal-200 transition-all cursor-pointer";
+    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-[18px] bg-transparent border border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer";
 
     const bLive = document.getElementById('bnav-live');
     const bAnalyse = document.getElementById('bnav-analyse');
@@ -6684,35 +6705,29 @@ function applyThemeSettingsObj(themeObj) {
     const t = { ...DEFAULT_THEME, ...(themeObj || {}) };
     const html = document.documentElement;
 
-    // 1. Style World ('liquid-glass' | 'vibrant-pop' | 'neo-modern')
-    const styleWorld = t.style || 'liquid-glass';
-    html.setAttribute('data-design-style', styleWorld);
-
-    // 2. UI Density ('compact' | 'normal' | 'spacious')
-    const densityMode = t.density || 'normal';
-    html.setAttribute('data-ui-density', densityMode);
-
-    // 3. Font Family
-    const fontName = t.fontFamily || 'Plus Jakarta Sans';
+    // Preserve classic Liquid-Glass standard theme (Hell mit Türkis / Dunkel mit Türkis)
+    html.setAttribute('data-design-style', 'liquid-glass');
+    html.setAttribute('data-ui-density', 'normal');
+    const fontName = 'Plus Jakarta Sans';
     html.style.setProperty('--font-sans', `"${fontName}"`);
 
-    // 4. Font Scale
+    // Font Scale (Stronger, clearly visible scaling especially on mini-fonts!)
     const scaleMap = {
-        compact: '14.5px',
+        compact: '15px',
         normal: '16px',
-        large: '17.6px',
-        xlarge: '19.2px'
+        large: '17.5px',
+        xlarge: '19px'
     };
     const scaleFactorMap = {
-        compact: 0.91,
+        compact: 0.94,
         normal: 1.0,
-        large: 1.10,
-        xlarge: 1.20
+        large: 1.12,
+        xlarge: 1.24
     };
     html.style.fontSize = scaleMap[t.fontScale] || '16px';
     const sf = scaleFactorMap[t.fontScale] || 1.0;
 
-    // 5. Color Preset & Ambient Tints
+    // Color Preset & Ambient Tints
     const presetCfg = THEME_COLOR_PRESETS[t.preset];
     let primaryHex = t.primary || '#0d9488';
     let accentHex = t.accent || '#10b981';
@@ -6751,97 +6766,80 @@ function applyThemeSettingsObj(themeObj) {
     const lightTextHex = adjustColorBrightness(primaryHex, 28);
     const darkTextHex = adjustColorBrightness(primaryHex, -18);
 
-    // 6. Inject Dynamic Global Stylesheet so hardcoded Tailwind teal-* classes, font sizes, density, and theme worlds respond 100% live!
+    // Append style tag to document.body (so it always comes AFTER Tailwind CDN's head style tag) with high specificity!
     let dynStyle = document.getElementById('dynamic-design-studio-styles');
     if (!dynStyle) {
         dynStyle = document.createElement('style');
         dynStyle.id = 'dynamic-design-studio-styles';
+    }
+    if (document.body && dynStyle.parentNode !== document.body) {
+        document.body.appendChild(dynStyle);
+    } else if (!document.body && dynStyle.parentNode !== document.head) {
         document.head.appendChild(dynStyle);
     }
 
     const px = (basePx) => `${+(basePx * sf).toFixed(2)}px`;
 
     dynStyle.textContent = `
-        /* Global Typography & Font Family Enforcement */
-        body, button, input, select, textarea {
-            font-family: "${fontName}", -apple-system, BlinkMacSystemFont, sans-serif !important;
-        }
-        /* Proportional Font-Scale Overrides including Tailwind fixed-px utility classes */
-        .text-\\[9px\\] { font-size: ${px(9)} !important; }
-        .text-\\[9\\.5px\\] { font-size: ${px(9.5)} !important; }
-        .text-\\[10px\\] { font-size: ${px(10)} !important; }
-        .text-\\[11px\\] { font-size: ${px(11)} !important; }
-        .text-xs { font-size: ${px(12)} !important; }
-        .text-sm { font-size: ${px(14)} !important; }
-        .text-base { font-size: ${px(16)} !important; }
-        .text-lg { font-size: ${px(18)} !important; }
-        .text-xl { font-size: ${px(20)} !important; }
+        /* High-Specificity Mini-Font & Text Scaling (Lifts mini-fonts to clear, readable sizes & scales immediately) */
+        html body .text-\\[9px\\],
+        html body .text-\\[9\\.5px\\] { font-size: ${px(11.5)} !important; line-height: 1.35 !important; }
+        html body .text-\\[10px\\] { font-size: ${px(12)} !important; line-height: 1.35 !important; }
+        html body .text-\\[11px\\] { font-size: ${px(12.5)} !important; line-height: 1.38 !important; }
+        html body .text-\\[11\\.5px\\] { font-size: ${px(12.75)} !important; line-height: 1.38 !important; }
+        html body .text-xs,
+        html body .text-\\[12px\\] { font-size: ${px(13)} !important; line-height: 1.4 !important; }
+        html body .text-\\[12\\.5px\\] { font-size: ${px(13.25)} !important; line-height: 1.4 !important; }
+        html body .text-\\[13px\\] { font-size: ${px(13.5)} !important; line-height: 1.4 !important; }
+        html body .text-\\[13\\.5px\\],
+        html body .text-sm,
+        html body .text-\\[14px\\] { font-size: ${px(14.25)} !important; line-height: 1.42 !important; }
+        html body .text-base,
+        html body .text-\\[15px\\],
+        html body .text-\\[16px\\] { font-size: ${px(16)} !important; }
+        html body .text-lg { font-size: ${px(18)} !important; }
+        html body .text-xl { font-size: ${px(20)} !important; }
 
-        /* Global Accent & Primary Color Overrides (replaces hardcoded Teal everywhere) */
-        .bg-teal-600, .bg-teal-500, .bg-primary {
+        /* Global Accent & Primary Color Overrides */
+        html body .bg-teal-600, html body .bg-teal-500, html body .bg-primary {
             background-color: ${primaryHex} !important;
         }
-        .hover\\:bg-teal-500:hover, .hover\\:bg-teal-600:hover, .hover\\:bg-primary-hover:hover {
+        html body .hover\\:bg-teal-500:hover, html body .hover\\:bg-teal-600:hover, html body .hover\\:bg-primary-hover:hover {
             background-color: ${hoverHex} !important;
         }
-        .text-teal-500, .text-teal-600, .text-primary {
+        html body .text-teal-500, html body .text-teal-600, html body .text-primary {
             color: ${primaryHex} !important;
         }
-        .text-teal-700, .text-teal-800, .text-teal-900 {
+        html body .text-teal-700, html body .text-teal-800, html body .text-teal-900 {
             color: ${darkTextHex} !important;
         }
-        html.dark .dark\\:text-teal-200,
-        html.dark .dark\\:text-teal-300,
-        html.dark .dark\\:text-teal-400 {
+        html.dark body .dark\\:text-teal-200,
+        html.dark body .dark\\:text-teal-300,
+        html.dark body .dark\\:text-teal-400 {
             color: ${lightTextHex} !important;
         }
-        .border-teal-500, .border-teal-600, .border-primary {
+        html body .border-teal-500, html body .border-teal-600, html body .border-primary {
             border-color: ${primaryHex} !important;
         }
-        .border-teal-500\\/20, .border-teal-500\\/25, .border-teal-500\\/30, .border-teal-500\\/35 {
+        html body .border-teal-500\\/20, html body .border-teal-500\\/25, html body .border-teal-500\\/30, html body .border-teal-500\\/35 {
             border-color: rgba(${tintRgb}, 0.34) !important;
         }
-        .border-teal-500\\/40, .border-teal-500\\/50, .border-teal-500\\/60, .border-teal-400\\/60 {
+        html body .border-teal-500\\/40, html body .border-teal-500\\/50, html body .border-teal-500\\/60, html body .border-teal-600\\/50, html body .border-teal-400\\/60 {
             border-color: rgba(${tintRgb}, 0.58) !important;
         }
-        .bg-teal-500\\/5, .bg-teal-500\\/10, .bg-teal-600\\/10, .bg-teal-600\\/12 {
-            background-color: rgba(${tintRgb}, 0.12) !important;
+        html body .bg-teal-500\\/5, html body .bg-teal-500\\/10, html body .bg-teal-600\\/10, html body .bg-teal-600\\/12, html body .bg-teal-500\\/12, html body .bg-teal-500\\/14 {
+            background-color: rgba(${tintRgb}, 0.14) !important;
         }
-        .bg-teal-500\\/15, .bg-teal-600\\/15, .bg-teal-500\\/20, .bg-teal-600\\/20 {
+        html body .bg-teal-500\\/15, html body .bg-teal-600\\/15, html body .bg-teal-500\\/20, html body .bg-teal-600\\/20 {
             background-color: rgba(${tintRgb}, 0.20) !important;
         }
-        .hover\\:bg-teal-500\\/15:hover, .hover\\:bg-teal-500\\/20:hover {
-            background-color: rgba(${tintRgb}, 0.24) !important;
-        }
-        .dash-tile-pv {
+        html body .dash-tile-pv {
             border-color: rgba(${tintRgb}, 0.42) !important;
-            background: linear-gradient(155deg, rgba(${tintRgb}, 0.22) 0%, rgba(255, 255, 255, 0.72) 100%) !important;
+            background: linear-gradient(155deg, rgba(${tintRgb}, 0.22) 0%, rgba(255, 255, 255, 0.78) 100%) !important;
         }
-        html.dark .dash-tile-pv {
+        html.dark body .dash-tile-pv {
             border-color: rgba(${tintRgb}, 0.45) !important;
-            background: linear-gradient(155deg, rgba(${tintRgb}, 0.25) 0%, rgba(15, 23, 42, 0.78) 100%) !important;
-        }
-
-        /* Distinct Theme Worlds */
-        html[data-design-style="vibrant-pop"] .bg-teal-600,
-        html[data-design-style="vibrant-pop"] .bnav-btn.bnav-active {
-            background: linear-gradient(135deg, ${primaryHex} 0%, ${accentHex} 100%) !important;
-            box-shadow: 0 8px 22px -4px rgba(${tintRgb}, 0.48) !important;
-        }
-        html[data-design-style="vibrant-pop"] #app-header,
-        html[data-design-style="vibrant-pop"] #floatingBottomNav > div {
-            border: 2px solid rgba(${tintRgb}, 0.50) !important;
-            box-shadow: 0 14px 36px -6px rgba(${tintRgb}, 0.28) !important;
-        }
-        html[data-design-style="neo-modern"] * {
-            backdrop-filter: none !important;
-            -webkit-backdrop-filter: none !important;
-        }
-        html[data-design-style="neo-modern"] #app-header,
-        html[data-design-style="neo-modern"] #floatingBottomNav > div {
-            background: ${t.dark ? '#0f172a' : '#ffffff'} !important;
-            border: 1.5px solid ${t.dark ? '#334155' : '#cbd5e1'} !important;
-            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08) !important;
+            background: linear-gradient(155deg, rgba(${tintRgb}, 0.25) 0%, rgba(15, 23, 42, 0.82) 100%) !important;
         }
     `;
 
@@ -6934,7 +6932,7 @@ function resetDesignStudioSettings() {
     localStorage.setItem('pvpro_theme', JSON.stringify(DEFAULT_THEME));
     applyThemeSettingsObj(DEFAULT_THEME);
     renderDesignStudioModalContent();
-    showToastNotification('🎨 Design & Darstellung auf Liquid-Glass-Standard zurückgesetzt!', 'info');
+    showToastNotification('🎨 Design & Schriftgröße auf Standard (Hell mit Türkis) zurückgesetzt!', 'info');
 }
 
 function renderDesignStudioModalContent() {
@@ -6942,106 +6940,64 @@ function renderDesignStudioModalContent() {
     if (!body) return;
     const t = getThemeSettings();
 
-    const styleOptions = [
-        {
-            id: 'liquid-glass',
-            title: 'Liquid Glass 2.0 (Geschärft)',
-            desc: 'Edle Tiefen-Refraktion, heller Glanzrand (Specular Rim) & sanfter Ambient-Glow',
-            icon: 'blur_on'
-        },
-        {
-            id: 'vibrant-pop',
-            title: 'Vibrant Pop-Glass (Neu)',
-            desc: 'Poppig-leuchtendes Color-Glass mit farbintensiven Kanten & dynamischer Sättigung',
-            icon: 'auto_awesome'
-        },
-        {
-            id: 'neo-modern',
-            title: 'Neo-Modern Clean (Neu)',
-            desc: 'Simpel, kristallklar & maximal kontraststark ohne Hintergrund-Unschärfe',
-            icon: 'grid_view'
-        }
-    ];
-
-    const fontOptions = [
-        { id: 'Plus Jakarta Sans', label: 'Plus Jakarta Sans', sub: 'Standard · Ausgewogen & Modern' },
-        { id: 'Outfit', label: 'Outfit', sub: 'Geometrisch & Poppig' },
-        { id: 'DM Sans', label: 'DM Sans', sub: 'Klar & Technisch' },
-        { id: 'Manrope', label: 'Manrope', sub: 'Präzise Zahlen & Hohe Lesbarkeit' }
-    ];
-
     const scaleOptions = [
-        { id: 'compact', label: 'Kompakt (93%)' },
-        { id: 'normal', label: 'Standard (100%)' },
-        { id: 'large', label: 'Groß (107%)' },
-        { id: 'xlarge', label: 'Extra Groß (114%)' }
-    ];
-
-    const densityOptions = [
-        { id: 'compact', label: 'Eng & Kompakt', desc: 'Mehr Kacheln auf einen Blick' },
-        { id: 'normal', label: 'Ausgewogen (Standard)', desc: 'Ideale Touch-Ergonomie' },
-        { id: 'spacious', label: 'Luftig & Großzügig', desc: 'Mehr Raum auf großen Displays' }
+        { id: 'compact', label: 'Kompakt (94%)', sub: 'Dezente Darstellung' },
+        { id: 'normal', label: 'Standard (100%)', sub: 'Klare Referenz-Größe' },
+        { id: 'large', label: 'Groß (112%)', sub: 'Deutlich größere Mini-Schriften' },
+        { id: 'xlarge', label: 'Extra Groß (124%)', sub: 'Maximale Lesbarkeit' }
     ];
 
     body.innerHTML = `
         <!-- 1. Hell / Dunkel Modus -->
         <div class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
             <div>
-                <h4 class="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-amber-500">${t.dark ? 'dark_mode' : 'light_mode'}</span>
+                <h4 class="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span class="material-symbols-rounded text-lg text-amber-500">${t.dark ? 'dark_mode' : 'light_mode'}</span>
                     <span>1. Farbmodus (Hell / Dunkel)</span>
                 </h4>
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Aktuell aktiv: <strong>${t.dark ? 'Dark Mode (Tiefes Nachtglas)' : 'Light Mode (Helles Tageslicht-Glas)'}</strong>
+                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Aktuell aktiv: <strong>${t.dark ? 'Dunkel (Nachtglas)' : 'Hell mit Türkis (Standard-Referenz)'}</strong>
                 </p>
             </div>
-            <div class="inline-flex rounded-xl p-1 bg-slate-200/80 dark:bg-slate-800 text-xs font-bold shrink-0">
-                <button type="button" onclick="setDesignStudioSetting({ dark: false })" class="px-3 py-1.5 rounded-lg transition-all cursor-pointer ${!t.dark ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 dark:text-slate-300'}">
+            <div class="inline-flex rounded-xl p-1 bg-slate-200/80 dark:bg-slate-800 text-xs font-semibold shrink-0">
+                <button type="button" onclick="setDesignStudioSetting({ dark: false })" class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer ${!t.dark ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 dark:text-slate-300'}">
                     ☀️ Hell
                 </button>
-                <button type="button" onclick="setDesignStudioSetting({ dark: true })" class="px-3 py-1.5 rounded-lg transition-all cursor-pointer ${t.dark ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'}">
+                <button type="button" onclick="setDesignStudioSetting({ dark: true })" class="px-3.5 py-1.5 rounded-lg transition-all cursor-pointer ${t.dark ? 'bg-teal-600 text-white shadow-xs' : 'text-slate-600 dark:text-slate-300'}">
                     🌙 Dunkel
                 </button>
             </div>
         </div>
 
-        <!-- 2. Theme-Stilwelt (Liquid Glass 2.0 vs. Vibrant Pop-Glass vs. Neo-Modern Clean) -->
-        <div class="space-y-2">
-            <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                <span class="material-symbols-rounded text-base text-teal-500">style</span>
-                <span>2. Theme-Stilwelt</span>
+        <!-- 2. Schriftgröße (Skaliert gezielt auch alle kleinen & Mini-Schriften) -->
+        <div class="space-y-2.5">
+            <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-lg text-teal-600 dark:text-teal-400">format_size</span>
+                <span>2. Schriftgröße (inkl. Vergrößerung kleiner Schriften)</span>
             </h4>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                ${styleOptions.map(st => {
-                    const active = t.style === st.id;
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                ${scaleOptions.map(sc => {
+                    const active = t.fontScale === sc.id;
                     return `
-                    <button type="button" onclick="setDesignStudioSetting({ style: '${st.id}' })"
-                        class="p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                    <button type="button" onclick="setDesignStudioSetting({ fontScale: '${sc.id}' })"
+                        class="p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                             active
-                                ? 'border-2 border-primary bg-teal-500/10 dark:bg-teal-500/15 shadow-xs'
-                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-teal-500/40'
+                                ? 'border-2 border-teal-600 dark:border-teal-400 bg-teal-500/12 text-slate-900 dark:text-white shadow-2xs'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-teal-500/40'
                         }">
-                        <div class="flex items-center justify-between gap-2">
-                            <span class="material-symbols-rounded text-xl text-primary">${st.icon}</span>
-                            ${active ? `<span class="px-2 py-0.5 rounded-full bg-primary text-white text-[9.5px] font-black uppercase">Aktiv</span>` : ''}
-                        </div>
-                        <div>
-                            <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white leading-snug">${st.title}</p>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">${st.desc}</p>
-                        </div>
+                        <p class="text-sm font-semibold">${sc.label}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${sc.sub}</p>
                     </button>`;
                 }).join('')}
             </div>
         </div>
 
-        <!-- 3. Akzent- & Hintergrund-Farbwelt (Hell & Dunkel synchron) -->
+        <!-- 3. Akzentfarbe & Glas-Tönung -->
         <div class="space-y-2.5">
-            <div class="flex items-center justify-between gap-2">
-                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-teal-500">color_lens</span>
-                    <span>3. Akzentfarbe &amp; Glas-Tönung (anstelle von Standard-Türkis frei wählbar)</span>
-                </h4>
-            </div>
+            <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-lg text-teal-600 dark:text-teal-400">palette</span>
+                <span>3. Akzentfarbe (Standard: Türkis / Solar-Teal)</span>
+            </h4>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 ${Object.entries(THEME_COLOR_PRESETS).map(([key, cfg]) => {
                     const isSel = t.preset === key;
@@ -7049,97 +7005,27 @@ function renderDesignStudioModalContent() {
                     <button type="button" onclick="setDesignStudioSetting({ preset: '${key}' })"
                         class="p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-2.5 ${
                             isSel
-                                ? 'border-2 border-slate-900 dark:border-white bg-slate-100 dark:bg-white/10 font-bold shadow-2xs'
+                                ? 'border-2 border-slate-900 dark:border-white bg-slate-100 dark:bg-white/10 font-semibold shadow-2xs'
                                 : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-slate-400'
                         }">
                         <span class="w-6 h-6 rounded-full shrink-0 border border-white/60 shadow-xs" style="background: linear-gradient(135deg, ${cfg.primary} 0%, ${cfg.accent} 100%)"></span>
-                        <span class="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight">${cfg.label}</span>
+                        <span class="text-xs font-medium text-slate-800 dark:text-slate-100 leading-tight">${cfg.label}</span>
                     </button>`;
                 }).join('')}
             </div>
 
-            <!-- Freie Farbwahl (Custom Hex Pickers) -->
+            <!-- Freie Farbwahl -->
             <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <span class="font-bold text-slate-600 dark:text-slate-300">Eigene Wunschfarbe mischen:</span>
+                <span class="font-medium text-slate-600 dark:text-slate-300">Eigene Wunschfarbe wählen:</span>
                 <div class="flex items-center gap-4">
-                    <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+                    <label class="flex items-center gap-2 cursor-pointer font-medium text-slate-700 dark:text-slate-200">
                         <span>Hauptakzent:</span>
                         <input type="color" value="${t.primary}" onchange="updateThemeColors(this.value, null)" class="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent">
                     </label>
-                    <label class="flex items-center gap-2 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
+                    <label class="flex items-center gap-2 cursor-pointer font-medium text-slate-700 dark:text-slate-200">
                         <span>Zweitakzent:</span>
                         <input type="color" value="${t.accent}" onchange="updateThemeColors(null, this.value)" class="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent">
                     </label>
-                </div>
-            </div>
-        </div>
-
-        <!-- 4. Schriftart (Typografie) -->
-        <div class="space-y-2">
-            <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                <span class="material-symbols-rounded text-base text-teal-500">font_download</span>
-                <span>4. Schriftart (Typografie)</span>
-            </h4>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                ${fontOptions.map(f => {
-                    const active = t.fontFamily === f.id;
-                    return `
-                    <button type="button" onclick="setDesignStudioSetting({ fontFamily: '${f.id}' })"
-                        style="font-family: '${f.id}', sans-serif"
-                        class="p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                            active
-                                ? 'border-2 border-primary bg-teal-500/10 dark:bg-teal-500/15'
-                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-teal-500/40'
-                        }">
-                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">${f.label}</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">${f.sub}</p>
-                    </button>`;
-                }).join('')}
-            </div>
-        </div>
-
-        <!-- 5. Schriftgröße & UI-Kompaktheit -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div class="space-y-2">
-                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-teal-500">format_size</span>
-                    <span>5. Schriftgröße</span>
-                </h4>
-                <div class="grid grid-cols-2 gap-2">
-                    ${scaleOptions.map(sc => {
-                        const active = t.fontScale === sc.id;
-                        return `
-                        <button type="button" onclick="setDesignStudioSetting({ fontScale: '${sc.id}' })"
-                            class="px-3 py-2.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                                active
-                                    ? 'border-2 border-primary bg-teal-500/15 text-slate-900 dark:text-white'
-                                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-300'
-                            }">
-                            ${sc.label}
-                        </button>`;
-                    }).join('')}
-                </div>
-            </div>
-
-            <div class="space-y-2">
-                <h4 class="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                    <span class="material-symbols-rounded text-base text-teal-500">density_medium</span>
-                    <span>6. Kompaktheit &amp; Abstände</span>
-                </h4>
-                <div class="grid grid-cols-1 gap-1.5">
-                    ${densityOptions.map(dn => {
-                        const active = t.density === dn.id;
-                        return `
-                        <button type="button" onclick="setDesignStudioSetting({ density: '${dn.id}' })"
-                            class="px-3 py-2 rounded-xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
-                                active
-                                    ? 'border-2 border-primary bg-teal-500/15 text-slate-900 dark:text-white'
-                                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-600 dark:text-slate-300'
-                            }">
-                            <span class="text-xs font-bold">${dn.label}</span>
-                            <span class="text-[10px] text-slate-500 dark:text-slate-400">${dn.desc}</span>
-                        </button>`;
-                    }).join('')}
                 </div>
             </div>
         </div>

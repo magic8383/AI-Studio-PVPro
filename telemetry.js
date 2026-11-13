@@ -2243,7 +2243,11 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         for (let i = 1; i < ePts.length; i++) {
                             const prev = ePts[i - 1];
                             const cur = ePts[i];
-                            const diff = cur.val >= prev.val ? (cur.val - prev.val) : cur.val;
+                            // Only treat cur < prev as a counter reset to 0 if cur dropped near 0 (< 0.5 kWh) from > 2.0 kWh.
+                            // Tiny floating-point/reconnect dips must NOT add cur.val a second time (which doubled 10.8 kWh to 21.69 kWh)!
+                            const diff = cur.val >= prev.val
+                                ? (cur.val - prev.val)
+                                : ((cur.val < 0.5 && prev.val > 2.0) ? cur.val : 0);
                             if (diff > 0) {
                                 posDeltaSum += diff;
                                 const dtH = Math.max(0.0833, (cur.ts - prev.ts) / 3600000);
@@ -2260,7 +2264,7 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         const spanDiff = (liveVal !== null && liveVal >= firstHistVal)
                             ? (liveVal - firstHistVal)
                             : Math.max(0, lastHistVal - firstHistVal);
-                        const bestRestKwh = +Math.max(0, posDeltaSum, spanDiff).toFixed(3);
+                        const bestRestKwh = +(spanDiff > 0 && posDeltaSum > spanDiff * 1.12 ? spanDiff : Math.max(0, posDeltaSum, spanDiff)).toFixed(3);
                         restKwhByEntity.set(entId, bestRestKwh);
                         if (derivedPts.length > 0 && !ltsDerivedPowerFromKwhByEntity.has(entId)) {
                             ltsDerivedPowerFromKwhByEntity.set(entId, derivedPts);
@@ -3353,7 +3357,7 @@ function renderLiveCockpitUI(baseline) {
     setElText('dash_pv_power', formatPowerDe(t.pvPowerW, t.pvPowerW < 1000));
     const pvTodayVal = td.pvTotal;
     const pvLine1 = `${formatKwhDe(pvTodayVal, 2)} heute`;
-    const pvLine2 = t.pvPowerW > 15 ? 'Erzeugung aktiv' : 'Standby · DC';
+    const pvLine2 = t.pvPowerW > 15 ? 'PV-Erzeugung aktiv' : 'Keine PV-Erzeugung';
     setElText('dash_pv_status', pvLine1);
     setElText('dash_pv_sub2', pvLine2);
     setElText('dash_pv_sub', `${pvLine1} · ${pvLine2}`);
@@ -3364,7 +3368,7 @@ function renderLiveCockpitUI(baseline) {
     setElText('dash_load_power', formatPowerDe(t.loadPowerW));
     const loadTodayVal = td.houseTotal;
     const loadLine1 = `${formatKwhDe(loadTodayVal, 2)} heute`;
-    const loadLine2 = 'Hausverbrauch · AC';
+    const loadLine2 = 'Aktueller Hausverbrauch';
     setElText('dash_load_status', loadLine1);
     setElText('dash_load_sub2', loadLine2);
     setElText('dash_load_sub', `${loadLine1} · ${loadLine2}`);
@@ -3379,7 +3383,7 @@ function renderLiveCockpitUI(baseline) {
         : '—';
     setElText('dash_bat_soc', socFormatted);
 
-    let batLine1 = '0 W · Standby';
+    let batLine1 = 'Ruhe / Standby';
     if (t.batteryPowerW > 15) batLine1 = `+${formatPowerDe(t.batteryPowerW, true)} · Lädt`;
     else if (t.batteryPowerW < -15) batLine1 = `−${formatPowerDe(Math.abs(t.batteryPowerW), true)} · Entlädt`;
     const batChgToday = td.batChg;
@@ -3398,13 +3402,15 @@ function renderLiveCockpitUI(baseline) {
     const gridExpToday = td.gridExp;
 
     let gridLine1 = `${formatKwhDe(gridImpToday, 2)} Bezug`;
-    let gridLine2 = `↑ ${formatKwhDe(gridExpToday, 2)} Einsp.`;
+    let gridLine2 = 'Bezug aus dem Netz';
     if (t.gridPowerW < -15) {
-        gridLine1 = `${formatKwhDe(gridExpToday, 2)} Einsp.`;
-        gridLine2 = `↓ ${formatKwhDe(gridImpToday, 2)} Bezug`;
+        gridLine1 = `${formatKwhDe(gridExpToday, 2)} Einspeisung`;
+        gridLine2 = 'Einspeisung ins Netz';
     } else if (t.gridPowerW > 15) {
         gridLine1 = `${formatKwhDe(gridImpToday, 2)} Bezug`;
-        gridLine2 = `Netzbezug aktiv`;
+        gridLine2 = 'Bezug aus dem Netz';
+    } else if (gridExpToday > 0.05) {
+        gridLine2 = `↑ ${formatKwhDe(gridExpToday, 2)} Einspeisung`;
     }
     setElText('dash_grid_status', gridLine1);
     setElText('dash_grid_sub2', gridLine2);
@@ -3427,7 +3433,7 @@ function renderLiveCockpitUI(baseline) {
         }
     }
 
-    // 3. Render Interactive "Aktive Verbraucher" List (Full-Row Background Progress Bars + Live/kWh Priority Sort Toggle)
+    // 3. Render Interactive "Aktive Verbraucher" List (Calm Reference White/Glass Cards with Clear Sans-Serif Typography)
     const sortLblEl = document.getElementById('lblConsumerSortMode');
     if (sortLblEl) {
         sortLblEl.innerText = consumerSortMode === 'kwh_first' ? 'Prio: Heute kWh' : 'Prio: Live → kWh';
@@ -3452,9 +3458,6 @@ function renderLiveCockpitUI(baseline) {
             };
         });
 
-        // Sort according to consumerSortMode:
-        // 'live_first': Prio 1 = Active (powerW > 5) sorted by W desc; Prio 2 = Inactive sorted by today's kWh desc (so consumers with daily kWh float up!)
-        // 'kwh_first': Prio 1 = Today's kWh desc; Prio 2 = Live W desc
         consumers.sort((a, b) => {
             if (consumerSortMode === 'kwh_first') {
                 if (Math.abs(b.consKwh - a.consKwh) > 0.005) return b.consKwh - a.consKwh;
@@ -3471,16 +3474,15 @@ function renderLiveCockpitUI(baseline) {
 
         if (consumers.length === 0) {
             consContainer.innerHTML = `
-                <div class="rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 px-4 py-3.5 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                <div class="rounded-[18px] border border-dashed border-slate-300 dark:border-slate-700 px-4 py-3.5 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
                     <span>Noch keine Einzelverbraucher-Sensoren hinterlegt.</span>
-                    <button onclick="openHaConfigModal('consumers')" class="text-teal-600 dark:text-teal-400 font-bold hover:underline cursor-pointer">+ Anlegen</button>
+                    <button onclick="openHaConfigModal('consumers')" class="text-teal-600 dark:text-teal-400 font-semibold hover:underline cursor-pointer">+ Anlegen</button>
                 </div>`;
         } else {
             const TOP_LIMIT = 5;
             const visibleConsumers = showAllDashboardConsumers ? consumers : consumers.slice(0, TOP_LIMIT);
             const hiddenCount = Math.max(0, consumers.length - TOP_LIMIT);
             const maxConsKwhToday = Math.max(0.05, ...consumers.map(x => x.consKwh || 0));
-            const totalConsKwhToday = consumers.reduce((acc, x) => acc + (x.consKwh || 0), 0);
 
             const rowsHtml = visibleConsumers.map(c => {
                 const safeName = typeof escapeHtml === 'function' ? escapeHtml(c.name) : c.name;
@@ -3488,73 +3490,59 @@ function renderLiveCockpitUI(baseline) {
                 const consKwh = c.consKwh || 0;
                 const isActive = c.isActive;
                 const liveSharePct = (isActive && t.loadPowerW > 20) ? Math.min(100, Math.round((c.powerW / t.loadPowerW) * 100)) : 0;
-                const kwhSharePct = (consKwh > 0.01 && totalConsKwhToday > 0.02) ? Math.min(100, Math.round((consKwh / totalConsKwhToday) * 100)) : 0;
 
-                // Full-row horizontal progress bar width (representing today's kWh consumption)
+                // Subtle background progress bar width representing daily kWh consumption
                 let barWidthPct = 0;
                 if (consKwh > 0.002) {
-                    barWidthPct = Math.min(100, Math.max(6, Math.round((consKwh / maxConsKwhToday) * 100)));
+                    barWidthPct = Math.min(100, Math.max(5, Math.round((consKwh / maxConsKwhToday) * 100)));
                 } else if (isActive) {
-                    barWidthPct = Math.min(30, Math.max(8, Math.round((c.powerW / Math.max(600, t.loadPowerW || 1000)) * 35)));
+                    barWidthPct = Math.min(28, Math.max(6, Math.round((c.powerW / Math.max(600, t.loadPowerW || 1000)) * 32)));
                 }
 
-                // Small daily consumption label (always visible on mobile & desktop)
-                const kwhText = `${formatKwhDe(consKwh, 2)} heute`;
-                const extraBadge = isActive && liveSharePct > 0
-                    ? ` · ${liveSharePct}% Hauslast`
-                    : (kwhSharePct > 0 ? ` · ${kwhSharePct}%` : '');
+                const kwhText = consKwh > 0.001
+                    ? `${formatKwhDe(consKwh, 2)} heute${isActive && liveSharePct > 0 ? ` · ${liveSharePct}% Hauslast` : ''}`
+                    : (isActive && liveSharePct > 0 ? `${liveSharePct}% der aktuellen Hauslast` : '');
 
                 const safeIdJs = String(c.id || '').replace(/'/g, "\\'");
 
-                // Pastel active styling vs. muted grey inactive styling
+                // Calm white/glass card design matching reference screenshot (no pulsing dot, clean sans-serif)
                 const cardClasses = isActive
-                    ? 'border-teal-500/50 dark:border-teal-400/45 bg-teal-50/45 dark:bg-[#11262c]/90 hover:border-teal-500/80 shadow-xs'
-                    : 'border-slate-200/85 dark:border-slate-800/90 bg-white/80 dark:bg-[#131f24]/80 hover:border-slate-300 dark:hover:border-slate-700';
+                    ? 'border-slate-200/90 dark:border-slate-700/80 bg-white/92 dark:bg-slate-900/85 hover:border-teal-500/50 shadow-2xs'
+                    : 'border-slate-200/75 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/55 hover:border-slate-300 dark:hover:border-slate-700';
 
                 const fillBarClasses = isActive
-                    ? 'bg-gradient-to-r from-teal-400/30 via-emerald-400/22 to-teal-400/10 dark:from-teal-400/28 dark:via-emerald-500/20 dark:to-teal-500/5'
-                    : 'bg-slate-200/85 dark:bg-slate-700/45';
-
-                const iconHtml = isActive
-                    ? `<span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0 shadow-2xs"></span>`
-                    : `<span class="material-symbols-rounded text-sm text-slate-400 dark:text-slate-500 group-hover:text-teal-500 transition-colors shrink-0">show_chart</span>`;
+                    ? 'bg-gradient-to-r from-teal-500/[0.11] via-emerald-500/[0.07] to-transparent dark:from-teal-400/[0.16] dark:via-emerald-400/[0.10] dark:to-transparent'
+                    : 'bg-slate-200/55 dark:bg-slate-800/45';
 
                 const nameClasses = isActive
-                    ? 'text-slate-900 dark:text-white font-bold'
-                    : 'text-slate-700 dark:text-slate-200 font-semibold';
-
-                const subTextClasses = isActive
-                    ? 'text-teal-800/85 dark:text-teal-200/85 font-semibold'
-                    : 'text-slate-500 dark:text-slate-400 font-medium';
+                    ? 'text-slate-900 dark:text-white font-medium'
+                    : 'text-slate-600 dark:text-slate-300 font-normal';
 
                 const powerClasses = isActive
-                    ? 'text-teal-800 dark:text-teal-200 font-black'
-                    : 'text-slate-500 dark:text-slate-400 font-bold';
+                    ? 'text-slate-900 dark:text-white font-bold'
+                    : 'text-slate-500 dark:text-slate-400 font-semibold';
 
                 return `
                 <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
                     role="button" tabindex="0" title="Tippen für Verlaufskurve (${safeName})"
-                    class="relative overflow-hidden rounded-2xl border ${cardClasses} px-3.5 py-2.5 flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
-                    <!-- Full-Row Horizontal Background Progress Bar (indicates daily kWh consumption) -->
+                    class="relative overflow-hidden rounded-[18px] border ${cardClasses} px-4 py-3 flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
+                    <!-- Subtle Full-Row Horizontal Background Progress Bar (indicates daily kWh consumption) -->
                     <div aria-hidden="true" class="absolute inset-y-0 left-0 pointer-events-none transition-all duration-700 ease-out rounded-r-xl ${fillBarClasses}" style="width: ${barWidthPct}%"></div>
 
-                    <!-- Foreground Content -->
-                    <div class="relative z-10 flex items-center gap-2.5 min-w-0 pr-2">
-                        ${iconHtml}
-                        <div class="min-w-0">
-                            <div class="text-xs sm:text-sm ${nameClasses} group-hover:text-teal-600 dark:group-hover:text-teal-300 truncate leading-tight">${safeName}</div>
-                            <div class="text-[10px] sm:text-[11px] font-mono tabular-nums ${subTextClasses} truncate leading-tight mt-0.5">${kwhText}${extraBadge}</div>
-                        </div>
+                    <!-- Foreground Content (Calm, Finely Detailed Reference Style) -->
+                    <div class="relative z-10 min-w-0 pr-3">
+                        <div class="text-[14px] ${nameClasses} group-hover:text-teal-700 dark:group-hover:text-teal-300 truncate leading-snug">${safeName}</div>
+                        ${kwhText ? `<div class="text-[12.5px] font-normal text-slate-500 dark:text-slate-400 tabular-nums truncate leading-snug mt-0.5">${kwhText}</div>` : ''}
                     </div>
-                    <div class="relative z-10 flex items-baseline gap-1.5 shrink-0 font-mono tabular-nums pl-2">
-                        <span class="text-sm sm:text-base ${powerClasses}">${valStr}</span>
+                    <div class="relative z-10 flex items-baseline gap-1 shrink-0 tabular-nums pl-2">
+                        <span class="text-[14px] sm:text-[15px] ${powerClasses}">${valStr}</span>
                     </div>
                 </div>`;
             }).join('');
 
             const expandBtnHtml = consumers.length > TOP_LIMIT ? `
                 <button type="button" onclick="toggleShowAllDashboardConsumers()"
-                    class="w-full mt-1.5 py-2 px-3 rounded-xl bg-slate-100/80 hover:bg-slate-200/80 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/60 text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer">
+                    class="w-full mt-1.5 py-2.5 px-3 rounded-[18px] bg-white/80 hover:bg-white dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/85 dark:border-slate-700/60 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer">
                     <span class="material-symbols-rounded text-base text-teal-600 dark:text-teal-400">${showAllDashboardConsumers ? 'expand_less' : 'expand_more'}</span>
                     <span>${showAllDashboardConsumers ? 'Auf Top 5 Verbraucher reduzieren' : `Alle ${consumers.length} Verbraucher anzeigen (+${hiddenCount} weitere)`}</span>
                 </button>` : '';
@@ -3835,11 +3823,11 @@ function getAvailableCurveDefinitions() {
         diagText: pvDiag.text
     });
 
-    // 3. Hausverbrauch · AC
+    // 3. Hausverbrauch · AC (Single Source of Truth: always prioritize ledger.today.houseTotal on 'day' just like grid_power & grid_feedin!)
     const todayLoadKwh = ledger?.today?.houseTotal ?? t.loadEnergyTodayKwh ?? dayIntCache.house_load ?? 0;
     const monthLoadKwh = ledger?.month?.houseTotal ?? t.loadEnergyMonthKwh ?? 0;
     const loadKwh = isDay
-        ? (intKwh.house_load && intKwh.house_load > 0 ? intKwh.house_load : todayLoadKwh)
+        ? (todayLoadKwh > 0 ? todayLoadKwh : (intKwh.house_load ?? 0))
         : (isMonth
             ? ((intKwh.house_load && intKwh.house_load > 0) ? Math.max(intKwh.house_load, todayLoadKwh) : Math.max(monthLoadKwh, todayLoadKwh))
             : Math.max(intKwh.house_load ?? 0, todayLoadKwh));
@@ -4130,32 +4118,32 @@ function renderIntradayCurveSection(baseline) {
             return `
             <div onclick="toggleIntradayCurve('${safeKeyJs}')"
                 style="${cardStyle}"
-                class="rounded-xl px-2.5 py-2 cursor-pointer select-none transition-all duration-150 hover:opacity-100 group">
+                class="rounded-2xl px-3 py-2.5 cursor-pointer select-none transition-all duration-150 hover:opacity-100 group">
                 <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
                         <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${isActive ? d.color : '#94a3b8'}"></span>
-                        <p class="text-[11px] ${isActive ? 'font-bold text-slate-900 dark:text-slate-100' : 'font-semibold text-slate-600 dark:text-slate-400'} truncate">${safeName}</p>
+                        <p class="text-[12.5px] ${isActive ? 'font-medium text-slate-900 dark:text-slate-100' : 'font-normal text-slate-600 dark:text-slate-400'} truncate">${safeName}</p>
                     </div>
                     <button type="button"
                         onclick="focusSingleIntradayCurve('${safeKeyJs}', event)"
                         title="${isSoloFocused ? 'Alle Kurven einblenden' : 'Nur diese Kurve fokussieren (Solo)'}"
-                        class="w-5 h-5 rounded-md flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                        class="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
                             isSoloFocused
-                                ? 'bg-teal-600 text-white dark:bg-teal-400 dark:text-slate-950 font-black'
+                                ? 'bg-teal-600 text-white dark:bg-teal-400 dark:text-slate-950 font-semibold'
                                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10'
                         }">
-                        <span class="material-symbols-rounded text-[13px]">center_focus_strong</span>
+                        <span class="material-symbols-rounded text-[14px]">center_focus_strong</span>
                     </button>
                 </div>
-                <div class="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums">
-                    <p class="text-sm sm:text-base font-black ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
-                    <span class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${isActive ? 'bg-teal-500/15 text-teal-700 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}">${isActive ? 'AN' : 'AUS'}</span>
+                <div class="mt-1.5 flex items-baseline justify-between gap-1 tabular-nums">
+                    <p class="text-[16px] sm:text-[17px] font-bold ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
+                    <span class="text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${isActive ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}">${isActive ? 'AN' : 'AUS'}</span>
                 </div>
-                <div class="mt-1 space-y-0.5 font-mono tabular-nums">
-                    <p class="text-[11px] font-bold ${isActive ? 'text-slate-800 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-tight">${d.subLine1 || d.subDisplay}</p>
-                    <p class="text-[10px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-tight">${d.subLine2 || ''}</p>
+                <div class="mt-1 space-y-0.5 tabular-nums">
+                    <p class="text-[12.5px] font-medium ${isActive ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-snug">${d.subLine1 || d.subDisplay}</p>
+                    <p class="text-[12px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-snug">${d.subLine2 || ''}</p>
                     ${d.diagText ? `
-                    <p class="text-[9.5px] font-bold truncate pt-0.5 ${
+                    <p class="text-[11.5px] font-medium truncate pt-0.5 ${
                         d.diagTone === 'warning'
                             ? 'text-amber-600 dark:text-amber-400'
                             : (d.diagTone === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500')
