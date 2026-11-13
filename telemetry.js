@@ -45,6 +45,9 @@ let haConfigState = {
         batteryDischargeMonth: 'sensor.battery_discharge_monthly'
     },
     pvEnergyExtraEntities: [],
+    weatherEntity: '',
+    outdoorTempEntity: '',
+    customWeatherSensors: [],
     customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
     customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS))
 };
@@ -198,6 +201,9 @@ async function initTelemetryAndAnalysis() {
                 ...parsed,
                 entities: { ...haConfigState.entities, ...(parsed.entities || {}) },
                 pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
+                weatherEntity: typeof parsed.weatherEntity === 'string' ? parsed.weatherEntity : (haConfigState.weatherEntity || ''),
+                outdoorTempEntity: typeof parsed.outdoorTempEntity === 'string' ? parsed.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
+                customWeatherSensors: Array.isArray(parsed.customWeatherSensors) ? parsed.customWeatherSensors : (haConfigState.customWeatherSensors || []),
                 customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : haConfigState.customConsumers
             };
@@ -224,6 +230,9 @@ async function initTelemetryAndAnalysis() {
                 ...haRes.data.config,
                 entities: { ...haConfigState.entities, ...(haRes.data.config.entities || {}) },
                 pvEnergyExtraEntities: Array.isArray(haRes.data.config.pvEnergyExtraEntities) ? haRes.data.config.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
+                weatherEntity: typeof haRes.data.config.weatherEntity === 'string' ? haRes.data.config.weatherEntity : (haConfigState.weatherEntity || ''),
+                outdoorTempEntity: typeof haRes.data.config.outdoorTempEntity === 'string' ? haRes.data.config.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
+                customWeatherSensors: Array.isArray(haRes.data.config.customWeatherSensors) ? haRes.data.config.customWeatherSensors : (haConfigState.customWeatherSensors || []),
                 customStrings: Array.isArray(haRes.data.config.customStrings) && haRes.data.config.customStrings.length > 0 ? haRes.data.config.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(haRes.data.config.customConsumers) ? haRes.data.config.customConsumers : haConfigState.customConsumers
             };
@@ -2688,6 +2697,7 @@ async function refreshLiveTelemetryNow() {
         if (haConfigState.autoSyncMonthly && parsed.pvEnergyMonthKwh !== null && parsed.pvEnergyMonthKwh !== undefined && parsed.pvEnergyMonthKwh > 0) {
             syncCurrentMonthFromLiveTelemetry(false);
         }
+        try { updateHomeStatesFromHaArray(directRes.data); } catch (e) {}
         renderLiveCockpitUI(baseline);
         renderIntradayCurveSection(baseline);
         return;
@@ -3418,6 +3428,9 @@ function renderLiveCockpitUI(baseline) {
     const gridBar = document.getElementById('dash_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
 
+    // 2A. Synchronize Ebene 0 (Startseite / Home) Energy Overview Card
+    try { updateHomeEnergyOverview(baseline); } catch (e) {}
+
     // 2B. Token-Missing Banner when a shared/GitHub project was loaded with sensor entities but no local token
     const tokenBannerEl = document.getElementById('liveMissingTokenBanner');
     if (tokenBannerEl) {
@@ -3700,7 +3713,7 @@ function getChannelEnergyDiagnosticBadge(energyEntities, explicitKwhUsed, calcWa
     if (ids.length === 0) {
         return {
             tone: 'watt',
-            text: '∫ aus Live-W berechnet'
+            text: '∫ Aus Live-W integriert'
         };
     }
 
@@ -3708,9 +3721,15 @@ function getChannelEnergyDiagnosticBadge(energyEntities, explicitKwhUsed, calcWa
     for (const id of ids) {
         const d = getSensorDiagnostic(id);
         if (d && (d.status === 'unavailable' || d.status === 'wrong_unit')) {
+            if (calcWattKwh > 0.01) {
+                return {
+                    tone: 'watt',
+                    text: d.status === 'wrong_unit' ? '∫ Einheit ≠ kWh → aus W integriert' : '∫ kWh-Sensor inaktiv → aus W integriert'
+                };
+            }
             return {
-                tone: 'warning',
-                text: d.status === 'wrong_unit' ? '⚠ Einheit ≠ kWh → aus W' : '⚠ kWh inaktiv → aus W'
+                tone: 'error',
+                text: d.status === 'wrong_unit' ? '! Einheit ≠ kWh & keine W-Kurve' : '! Sensor inaktiv / nicht erreichbar'
             };
         }
     }
@@ -3718,8 +3737,8 @@ function getChannelEnergyDiagnosticBadge(energyEntities, explicitKwhUsed, calcWa
     // 2. Check if configured kWh sensor delivered 0 while Watt integral is positive (>0.08 kWh)
     if ((!explicitKwhUsed || explicitKwhUsed <= 0.001) && calcWattKwh > 0.08) {
         return {
-            tone: 'warning',
-            text: '⚠ kWh=0 → aus W berechnet'
+            tone: 'watt',
+            text: '∫ kWh=0 → aus W integriert'
         };
     }
 
@@ -3730,15 +3749,27 @@ function getChannelEnergyDiagnosticBadge(energyEntities, explicitKwhUsed, calcWa
             const sp = Number(d.jumpKwh).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
             return {
                 tone: 'ok',
-                text: `✓ kWh aktiv (inkl. +${sp} kWh Übertrag)`
+                text: `✓ Hardware kWh-Zähler aktiv (inkl. +${sp} kWh Übertrag)`
             };
         }
     }
 
     return {
         tone: 'ok',
-        text: '✓ kWh-Zähler aktiv'
+        text: '✓ Hardware kWh-Zähler aktiv'
     };
+}
+
+function renderInlineDiagSymbol(diagTone, diagText) {
+    if (!diagTone) return '';
+    const safeTip = typeof escapeHtml === 'function' ? escapeHtml(diagText || '') : (diagText || '');
+    if (diagTone === 'ok') {
+        return `<span class="inline-flex items-center justify-center ml-1 text-[12.5px] font-extrabold text-emerald-600 dark:text-emerald-400 shrink-0" title="${safeTip}">✓</span>`;
+    }
+    if (diagTone === 'error') {
+        return `<span class="inline-flex items-center justify-center ml-1 text-[12.5px] font-extrabold text-rose-500 dark:text-rose-400 shrink-0" title="${safeTip}">!</span>`;
+    }
+    return `<span class="inline-flex items-center justify-center ml-1 text-[12.5px] font-extrabold text-amber-500 dark:text-amber-400 shrink-0" title="${safeTip}">∫</span>`;
 }
 
 function getAvailableCurveDefinitions() {
@@ -4140,15 +4171,10 @@ function renderIntradayCurveSection(baseline) {
                     <span class="text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${isActive ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}">${isActive ? 'AN' : 'AUS'}</span>
                 </div>
                 <div class="mt-1 space-y-0.5 tabular-nums">
-                    <p class="text-[12.5px] font-medium ${isActive ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-snug">${d.subLine1 || d.subDisplay}</p>
-                    <p class="text-[12px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-snug">${d.subLine2 || ''}</p>
-                    ${d.diagText ? `
-                    <p class="text-[11.5px] font-medium truncate pt-0.5 ${
-                        d.diagTone === 'warning'
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : (d.diagTone === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400 dark:text-slate-500')
-                    }" title="${typeof escapeHtml === 'function' ? escapeHtml(d.diagText) : d.diagText}">${d.diagText}</p>
-                    ` : ''}
+                    <p class="text-[12.5px] font-medium ${isActive ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-snug flex items-center gap-0.5 truncate">
+                        <span class="truncate">${d.subLine1 || d.subDisplay}</span>${renderInlineDiagSymbol(d.diagTone, d.diagText)}
+                    </p>
+                    <p class="text-[12px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-snug truncate">${d.subLine2 || ''}</p>
                 </div>
             </div>`;
         }).join('');
@@ -6008,9 +6034,11 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         `;
     }
 
-    // 2. Render 3-Column Channel Selector Tiles (1 Tap = selects this channel cleanly, no multi-bar mess!)
+    // 2. Render 3-Column Channel Selector Tiles (Unified Design with Live Intraday Tiles + Inline ✓ / ∫ / ! Symbol)
+    const isDark = document.documentElement.classList.contains('dark');
     const gridEl = document.getElementById('analysisExplorerChannelsGrid');
     if (gridEl) {
+        const entCfg = haConfigState.entities || {};
         gridEl.innerHTML = catalog.map(ch => {
             const isSelected = ch.id === selId;
             const arr = seriesById[ch.id] || [];
@@ -6021,28 +6049,48 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             const valFmt = fmtNum(displayVal, displayVal < 10 && displayVal > 0 ? 2 : 1);
             const maxFmt = fmtNum(maxVal, maxVal < 10 && maxVal > 0 ? 2 : 1);
 
+            let chDiag = null;
+            if (ch.id === 'houseTotal') chDiag = getChannelEnergyDiagnosticBadge(entCfg.loadEnergyMonth, total, total);
+            else if (ch.id === 'pvTotal') chDiag = getChannelEnergyDiagnosticBadge(getConfiguredPvEnergyEntities(haConfigState), total, total);
+            else if (ch.id === 'gridImp') chDiag = getChannelEnergyDiagnosticBadge(entCfg.gridImportMonth, total, total);
+            else if (ch.id === 'gridExp') chDiag = getChannelEnergyDiagnosticBadge(entCfg.gridExportMonth, total, total);
+            else if (ch.id === 'batChg') chDiag = getChannelEnergyDiagnosticBadge(entCfg.batteryChargeMonth, total, total);
+            else if (ch.id === 'batDis') chDiag = getChannelEnergyDiagnosticBadge(entCfg.batteryDischargeMonth, total, total);
+            else if (ch.group === 'string') chDiag = getChannelEnergyDiagnosticBadge(ch.energyEntity, total, total);
+
+            let cardStyle = '';
+            if (isDark) {
+                cardStyle = isSelected
+                    ? `border-left: 3.5px solid ${ch.color}; border-top: 1px solid ${hexToRgba(ch.color, 0.45)}; border-right: 1px solid rgba(148,163,184,0.18); border-bottom: 1px solid rgba(148,163,184,0.18); background: linear-gradient(135deg, ${hexToRgba(ch.color, 0.22)} 0%, rgba(15, 28, 35, 0.94) 100%);`
+                    : `border-left: 3.5px solid rgba(100,116,139,0.45); border-top: 1px solid rgba(148,163,184,0.16); border-right: 1px solid rgba(148,163,184,0.16); border-bottom: 1px solid rgba(148,163,184,0.16); background: rgba(15, 25, 32, 0.65); opacity: 0.72;`;
+            } else {
+                cardStyle = isSelected
+                    ? `border-left: 3.5px solid ${ch.color}; border-top: 1px solid ${hexToRgba(ch.color, 0.45)}; border-right: 1px solid ${hexToRgba(ch.color, 0.30)}; border-bottom: 1px solid ${hexToRgba(ch.color, 0.30)}; background: linear-gradient(135deg, ${hexToRgba(ch.color, 0.14)} 0%, rgba(255, 255, 255, 0.97) 65%); box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);`
+                    : `border-left: 3.5px solid #cbd5e1; border-top: 1px solid rgba(203, 213, 225, 0.85); border-right: 1px solid rgba(203, 213, 225, 0.85); border-bottom: 1px solid rgba(203, 213, 225, 0.85); background: rgba(255, 255, 255, 0.88); opacity: 0.80;`;
+            }
+
             return `
             <div onclick="toggleAnalyseBarChannel('${ch.id}')" role="button" tabindex="0"
-                class="p-3 rounded-[20px] border transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
-                    isSelected
-                        ? 'bg-teal-500/14 dark:bg-teal-500/20 border-2 border-teal-600 dark:border-teal-400 shadow-xs'
-                        : 'bg-white/85 dark:bg-slate-900/65 border-slate-200/85 dark:border-white/10 hover:border-teal-500/40'
-                }">
+                style="${cardStyle}"
+                class="rounded-2xl px-3 py-2.5 cursor-pointer select-none transition-all duration-150 hover:opacity-100">
                 <div class="flex items-center justify-between gap-1.5">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${ch.color}"></span>
-                        <span class="text-[13px] font-medium text-slate-800 dark:text-slate-100 truncate leading-snug">${escapeHtml(ch.shortLabel || ch.label)}</span>
+                    <div class="flex items-center gap-1.5 min-w-0">
+                        <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${isSelected ? ch.color : '#94a3b8'}"></span>
+                        <span class="text-[12.5px] ${isSelected ? 'font-medium text-slate-900 dark:text-slate-100' : 'font-normal text-slate-600 dark:text-slate-400'} truncate leading-snug">${escapeHtml(ch.shortLabel || ch.label)}</span>
                     </div>
-                    ${ch.hasSmartStack ? `<span class="text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-teal-500/15 text-teal-800 dark:text-teal-200 shrink-0">Stapel</span>` : ''}
+                    ${ch.hasSmartStack
+                        ? `<span class="text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-200' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0">Stapel</span>`
+                        : `<span class="text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0">${isSelected ? 'AN' : 'AUS'}</span>`
+                    }
                 </div>
-                <div class="flex items-baseline justify-between gap-1 pt-0.5">
-                    <span class="text-[16px] font-bold tabular-nums text-slate-900 dark:text-white">
-                        ${valFmt} <span class="text-xs font-medium text-slate-600 dark:text-slate-300">${ch.unit}</span>
-                    </span>
-                    <span class="text-xs text-slate-500 dark:text-slate-400 tabular-nums truncate" title="Spitzenwert im Zeitraum">
-                        Peak ${maxFmt}
+                <div class="mt-1.5 flex items-baseline justify-between gap-1 tabular-nums">
+                    <span class="text-[16px] sm:text-[17px] font-bold ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight flex items-center gap-0.5">
+                        <span>${valFmt} ${ch.unit}</span>${chDiag ? renderInlineDiagSymbol(chDiag.tone, chDiag.text) : ''}
                     </span>
                 </div>
+                <p class="mt-0.5 text-[12px] ${isSelected ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} tabular-nums truncate" title="Spitzenwert im Zeitraum">
+                    Peak ${maxFmt} ${ch.unit}
+                </p>
             </div>`;
         }).join('');
     }
@@ -6050,8 +6098,6 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
     // 3. Build Datasets: ALWAYS 1 BAR PER TIME BUCKET (either 1 solid bar or 1 meaningful stacked bar!)
     const canvas = document.getElementById('analysisExplorerBarChart');
     if (!canvas || typeof Chart === 'undefined') return;
-
-    const isDark = document.documentElement.classList.contains('dark');
     let datasets = [];
     let isStackedBar = false;
     let badgeText = '1 Balken / Intervall';
@@ -7366,7 +7412,7 @@ function renderHaUnifiedSensorMatrix() {
     }).join('');
 }
 
-function openHaConfigModal(focusSection = null) {
+function openHaConfigModal(focusSection = null, scrollTargetId = null) {
     const modal = document.getElementById('modal-ha-config');
     if (!modal) return;
 
@@ -7396,9 +7442,12 @@ function openHaConfigModal(focusSection = null) {
     setElVal('ha_ent_grid_exp_month', ent.gridExportMonth || '');
     setElVal('ha_ent_bat_chg_month', ent.batteryChargeMonth || '');
     setElVal('ha_ent_bat_dis_month', ent.batteryDischargeMonth || '');
+    setElVal('ha_ent_weather_main', haConfigState.weatherEntity || '');
+    setElVal('ha_ent_outdoor_temp', haConfigState.outdoorTempEntity || '');
 
     renderHaCustomStringsEditor();
     renderHaCustomConsumersEditor();
+    renderHaWeatherSensorsEditor();
     renderHaPvEnergyExtraList();
     renderHaUnifiedSensorMatrix();
     updateHaWebhookYamlSnippet();
@@ -7426,7 +7475,11 @@ function openHaConfigModal(focusSection = null) {
 
     switchHaModalTab('config');
 
-    if (focusSection === 'consumers') {
+    if (scrollTargetId) {
+        setTimeout(() => {
+            document.getElementById(scrollTargetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+    } else if (focusSection === 'consumers') {
         setTimeout(() => {
             document.getElementById('haConsumersSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
@@ -7746,6 +7799,9 @@ function readHaModalIntoState() {
         batteryDischargeMonth: (document.getElementById('ha_ent_bat_dis_month')?.value || '').trim()
     };
 
+    haConfigState.weatherEntity = (document.getElementById('ha_ent_weather_main')?.value || haConfigState.weatherEntity || '').trim();
+    haConfigState.outdoorTempEntity = (document.getElementById('ha_ent_outdoor_temp')?.value || haConfigState.outdoorTempEntity || '').trim();
+
     if (Array.isArray(haConfigState.pvEnergyExtraEntities)) {
         haConfigState.pvEnergyExtraEntities = haConfigState.pvEnergyExtraEntities.map((val, idx) => {
             const inp = document.getElementById(`ha_ent_pv_extra_${idx}`);
@@ -7878,13 +7934,17 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
             if (!s || typeof s.entity_id !== 'string') return false;
             return (
                 s.entity_id.startsWith('sensor.') ||
+                s.entity_id.startsWith('weather.') ||
                 s.entity_id.startsWith('number.') ||
                 s.entity_id.startsWith('input_number.') ||
                 s.entity_id.startsWith('counter.')
             );
         })
         .map(s => {
-            const unit = String(s.attributes?.unit_of_measurement || '').trim();
+            const isWeather = s.entity_id.startsWith('weather.');
+            const unit = isWeather
+                ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
+                : String(s.attributes?.unit_of_measurement || '').trim();
             const unitLower = unit.toLowerCase();
             const devClass = String(s.attributes?.device_class || '').toLowerCase();
             const groupInfo = classifyHaEntityGroup(s, tplDeviceMap);
@@ -7904,8 +7964,8 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
                 state: s.state,
                 unit,
                 unitCategory,
-                category: groupInfo.category, // 'device' | 'helper'
-                groupName: groupInfo.groupName,
+                category: isWeather ? 'device' : groupInfo.category, // 'device' | 'helper'
+                groupName: isWeather ? 'Wetter & Klima' : groupInfo.groupName,
                 areaName: groupInfo.areaName || ''
             };
         })
@@ -8409,6 +8469,16 @@ function pickHaEntityFromModal(entityId) {
     } else if (haPickerState.customType === 'pvEnergyExtra' && haPickerState.index !== null) {
         updateHaPvEnergyExtraField(haPickerState.index, entityId);
         renderHaPvEnergyExtraList();
+    } else if (haPickerState.customType === 'weatherSensor' && haPickerState.index !== null) {
+        updateHaCustomWeatherSensorField(haPickerState.index, 'entityId', entityId);
+        const curName = haConfigState.customWeatherSensors?.[haPickerState.index]?.name || '';
+        const cleanRoom = sensorObj
+            ? String(sensorObj.name || '').replace(/\s+(Temperatur|Temperature|Luftfeuchtigkeit|Humidity|Klima|Sensor).*$/i, '').trim()
+            : '';
+        if (cleanRoom && (!curName || /^Raum \/ Sensor \d+/i.test(curName))) {
+            updateHaCustomWeatherSensorField(haPickerState.index, 'name', cleanRoom);
+        }
+        renderHaWeatherSensorsEditor();
     }
 
     closeHaEntityPicker();
@@ -8432,6 +8502,7 @@ async function saveHaConfigFromModal() {
 
     closeHaConfigModal();
     startLiveTelemetryLoop();
+    try { refreshHomeWeatherAndSensors(true); } catch (e) {}
     if (typeof showToastNotification === 'function') {
         showToastNotification('Dashboard-Sensoren & Home Assistant Konfiguration gespeichert!', 'success');
     }
@@ -8507,6 +8578,11 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
         pvEnergyExtraEntities: Array.isArray(sanitizedCfg.pvEnergyExtraEntities)
             ? JSON.parse(JSON.stringify(sanitizedCfg.pvEnergyExtraEntities))
             : (haConfigState.pvEnergyExtraEntities || []),
+        weatherEntity: typeof sanitizedCfg.weatherEntity === 'string' ? sanitizedCfg.weatherEntity : (haConfigState.weatherEntity || ''),
+        outdoorTempEntity: typeof sanitizedCfg.outdoorTempEntity === 'string' ? sanitizedCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
+        customWeatherSensors: Array.isArray(sanitizedCfg.customWeatherSensors)
+            ? JSON.parse(JSON.stringify(sanitizedCfg.customWeatherSensors))
+            : (haConfigState.customWeatherSensors || []),
         customStrings: Array.isArray(sanitizedCfg.customStrings) && sanitizedCfg.customStrings.length > 0
             ? JSON.parse(JSON.stringify(sanitizedCfg.customStrings))
             : haConfigState.customStrings,
@@ -8520,6 +8596,7 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
     } catch (e) {}
     energyCounterBaselines.lastHistorySyncMs = 0;
     refreshIntradayHistoryAndLive();
+    try { refreshHomeWeatherAndSensors(true); } catch (e) {}
 }
 
 function getPerformanceRecordsForProject() {
@@ -8578,6 +8655,11 @@ function applyFullHaConfigWithTokenFromBackup(fullCfg) {
         pvEnergyExtraEntities: Array.isArray(fullCfg.pvEnergyExtraEntities)
             ? JSON.parse(JSON.stringify(fullCfg.pvEnergyExtraEntities))
             : (haConfigState.pvEnergyExtraEntities || []),
+        weatherEntity: typeof fullCfg.weatherEntity === 'string' ? fullCfg.weatherEntity : (haConfigState.weatherEntity || ''),
+        outdoorTempEntity: typeof fullCfg.outdoorTempEntity === 'string' ? fullCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
+        customWeatherSensors: Array.isArray(fullCfg.customWeatherSensors)
+            ? JSON.parse(JSON.stringify(fullCfg.customWeatherSensors))
+            : (haConfigState.customWeatherSensors || []),
         customStrings: Array.isArray(fullCfg.customStrings) && fullCfg.customStrings.length > 0
             ? JSON.parse(JSON.stringify(fullCfg.customStrings))
             : haConfigState.customStrings,
@@ -8599,6 +8681,7 @@ function applyFullHaConfigWithTokenFromBackup(fullCfg) {
     energyCounterBaselines.lastHistorySyncMs = 0;
     startLiveTelemetryLoop();
     refreshIntradayHistoryAndLive();
+    try { refreshHomeWeatherAndSensors(true); } catch (e) {}
 }
 
 window.toggleShowAllDashboardConsumers = toggleShowAllDashboardConsumers;
@@ -8611,9 +8694,525 @@ window.applyPerformanceRecordsFromProject = applyPerformanceRecordsFromProject;
 window.getEnergyBaselinesForProject = getEnergyBaselinesForProject;
 window.applyEnergyBaselinesFromProject = applyEnergyBaselinesFromProject;
 
+// ============================================================================
+// 9. EBENE 0 STARTSEITE (HOME DASHBOARD): WETTER-WIDGET, 5-TAGE-FORECAST & RAUM-SENSOREN
+// ============================================================================
+
+let homeWeatherCache = {
+    fetchedAtMs: 0,
+    lat: null,
+    lon: null,
+    currentTemp: null,
+    currentCode: 3,
+    conditionLabel: 'Bewölkt',
+    locationLabel: 'Home',
+    todayMin: null,
+    todayMax: null,
+    days: [] // [{ dayShort, code, maxTemp, minTemp, sunHours }]
+};
+
+let homeHaStatesCache = new Map(); // entity_id -> state object
+let homeSensorMinMaxCache = {
+    dayKey: '',
+    fetchedAtMs: 0,
+    byEntity: {} // entity_id -> { min, max }
+};
+
+function getWeatherSvgIcon(codeOrState, sizeClass = 'w-8 h-8') {
+    const s = String(codeOrState ?? '').toLowerCase();
+    // Map WMO weather code or HA weather state to crisp vector SVGs matching the reference screenshot
+    let type = 'cloudy';
+    if (s === '0' || s === '1' || s === 'sunny' || s === 'clear' || s === 'clear-night') {
+        type = 'sunny';
+    } else if (s === '2' || s === 'partlycloudy' || s === 'windy-variant') {
+        type = 'partly';
+    } else if (['51', '53', '55', '61', '63', '65', '80', '81', '82', 'rainy', 'pouring', 'lightning-rainy'].includes(s)) {
+        type = 'rain';
+    } else if (['71', '73', '75', '77', '85', '86', 'snowy', 'snowy-rainy', 'hail'].includes(s)) {
+        type = 'snow';
+    } else {
+        type = 'cloudy';
+    }
+
+    if (type === 'sunny') {
+        return `<svg class="${sizeClass}" viewBox="0 0 40 40" fill="none">
+            <circle cx="20" cy="20" r="10.5" fill="#facc15"/>
+        </svg>`;
+    }
+    if (type === 'partly') {
+        return `<svg class="${sizeClass}" viewBox="0 0 44 40" fill="none">
+            <circle cx="26" cy="14" r="7.5" fill="#facc15"/>
+            <path d="M13 31h17a6.5 6.5 0 0 0 0-13 8.8 8.8 0 0 0-16.9-2.4A6 6 0 0 0 13 31z" fill="#cbd5e1"/>
+        </svg>`;
+    }
+    if (type === 'rain') {
+        return `<svg class="${sizeClass}" viewBox="0 0 44 42" fill="none">
+            <path d="M13 28h17a6.5 6.5 0 0 0 0-13 8.8 8.8 0 0 0-16.9-2.4A6 6 0 0 0 13 28z" fill="#cbd5e1"/>
+            <line x1="16" y1="32" x2="14.5" y2="36.5" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+            <line x1="22" y1="33" x2="20.5" y2="37.5" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+            <line x1="28" y1="32" x2="26.5" y2="36.5" stroke="#38bdf8" stroke-width="2.2" stroke-linecap="round"/>
+        </svg>`;
+    }
+    if (type === 'snow') {
+        return `<svg class="${sizeClass}" viewBox="0 0 44 42" fill="none">
+            <path d="M13 28h17a6.5 6.5 0 0 0 0-13 8.8 8.8 0 0 0-16.9-2.4A6 6 0 0 0 13 28z" fill="#cbd5e1"/>
+            <circle cx="16" cy="34" r="1.8" fill="#38bdf8"/>
+            <circle cx="22" cy="36" r="1.8" fill="#38bdf8"/>
+            <circle cx="28" cy="34" r="1.8" fill="#38bdf8"/>
+        </svg>`;
+    }
+    return `<svg class="${sizeClass}" viewBox="0 0 44 40" fill="none">
+        <path d="M13 30h18a6.8 6.8 0 0 0 0-13.5 9.2 9.2 0 0 0-17.6-2.5A6.2 6.2 0 0 0 13 30z" fill="#cbd5e1"/>
+    </svg>`;
+}
+
+function mapWeatherConditionLabelDe(codeOrState) {
+    const s = String(codeOrState ?? '').toLowerCase();
+    const map = {
+        '0': 'Sonnig',
+        '1': 'Überwiegend klar',
+        '2': 'Teilweise bewölkt',
+        '3': 'Bewölkt',
+        '45': 'Nebel',
+        '48': 'Nebel',
+        '51': 'Leichter Nieselregen',
+        '53': 'Nieselregen',
+        '55': 'Starker Nieselregen',
+        '61': 'Leichter Regen',
+        '63': 'Regen',
+        '65': 'Starker Regen',
+        '71': 'Leichter Schneefall',
+        '73': 'Schneefall',
+        '75': 'Starker Schneefall',
+        '80': 'Regenschauer',
+        '81': 'Regenschauer',
+        '82': 'Kräftige Schauer',
+        '95': 'Gewitter',
+        'sunny': 'Sonnig',
+        'clear-night': 'Klar',
+        'partlycloudy': 'Teilweise bewölkt',
+        'cloudy': 'Bewölkt',
+        'rainy': 'Regnerisch',
+        'pouring': 'Starkregen',
+        'snowy': 'Schneefall',
+        'fog': 'Neblig',
+        'windy': 'Windig',
+        'lightning': 'Gewitter',
+        'lightning-rainy': 'Gewitterregen'
+    };
+    return map[s] || 'Bewölkt';
+}
+
+function updateHomeGreetingHeader() {
+    const hr = new Date().getHours();
+    let greeting = 'Guten Tag';
+    if (hr >= 5 && hr < 11) greeting = 'Guten Morgen';
+    else if (hr >= 11 && hr < 18) greeting = 'Guten Tag';
+    else greeting = 'Guten Abend';
+
+    setElText('homeGreetingTitle', greeting);
+}
+
+function updateHomeEnergyOverview(baseline) {
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    const t = currentLiveTelemetry || {};
+
+    const maxPvRefW = Math.max(1500, (baseline.totalKwp || 10) * 1000);
+    const pvBarPct = Math.min(100, Math.max(t.pvPowerW > 0 ? 4 : 0, Math.round((t.pvPowerW / maxPvRefW) * 100)));
+    setElText('home_pv_power', formatPowerDe(t.pvPowerW, t.pvPowerW < 1000));
+    setElText('home_pv_sub', t.pvPowerW > 15 ? 'PV-Erzeugung aktiv' : 'Keine PV-Erzeugung');
+    const pvBar = document.getElementById('home_pv_bar');
+    if (pvBar) pvBar.style.width = `${pvBarPct}%`;
+
+    const loadBarPct = Math.min(100, Math.max(6, Math.round((t.loadPowerW / 5000) * 100)));
+    setElText('home_load_power', formatPowerDe(t.loadPowerW));
+    setElText('home_load_sub', 'Aktueller Hausverbrauch');
+    const loadBar = document.getElementById('home_load_bar');
+    if (loadBar) loadBar.style.width = `${loadBarPct}%`;
+
+    const batTitle = haConfigState.batteryName || baseline.detectedBatteryName || 'BYD HVS+';
+    setElText('home_bat_title', batTitle);
+    const socNum = t.batterySocPct !== null && t.batterySocPct !== undefined ? Number(t.batterySocPct) : 0;
+    const socFormatted = t.batterySocPct !== null && t.batterySocPct !== undefined
+        ? `${socNum.toLocaleString('de-DE', { minimumFractionDigits: socNum % 1 !== 0 ? 1 : 0, maximumFractionDigits: 1 })} %`
+        : '0 %';
+    setElText('home_bat_soc', socFormatted);
+
+    let batSub = 'Ruhe / Standby';
+    if (t.batteryPowerW > 15) batSub = `Lädt mit ${formatPowerDe(t.batteryPowerW, true)}`;
+    else if (t.batteryPowerW < -15) batSub = `Entlädt mit ${formatPowerDe(Math.abs(t.batteryPowerW), true)}`;
+    setElText('home_bat_sub', batSub);
+    const batBar = document.getElementById('home_bat_bar');
+    if (batBar) batBar.style.width = `${Math.min(100, Math.max(4, socNum))}%`;
+
+    const absGridW = Math.abs(t.gridPowerW || 0);
+    const gridBarPct = Math.min(100, Math.max(absGridW > 10 ? 5 : 0, Math.round((absGridW / 5000) * 100)));
+    setElText('home_grid_power', formatPowerDe(absGridW));
+    setElText('home_grid_sub', t.gridPowerW < -15 ? 'Einspeisung ins Netz' : 'Bezug aus dem Netz');
+    const gridBar = document.getElementById('home_grid_bar');
+    if (gridBar) gridBar.style.width = `${gridBarPct}%`;
+}
+
+function updateHomeStatesFromHaArray(statesArray) {
+    if (!Array.isArray(statesArray)) return;
+    homeHaStatesCache.clear();
+    statesArray.forEach(s => {
+        if (s && s.entity_id) homeHaStatesCache.set(s.entity_id, s);
+    });
+
+    // Auto-discover weather.* entity if user has not explicitly set one
+    if (!haConfigState.weatherEntity) {
+        const foundWeather = statesArray.find(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('weather.'));
+        if (foundWeather) {
+            haConfigState.weatherEntity = foundWeather.entity_id;
+        }
+    }
+
+    // Auto-seed default room temperature sensors (e.g. Wohnzimmer, Esszimmer) if user has none configured yet
+    if (!Array.isArray(haConfigState.customWeatherSensors) || haConfigState.customWeatherSensors.length === 0) {
+        const roomCandidates = statesArray.filter(s => {
+            if (!s || !s.entity_id || !s.entity_id.startsWith('sensor.')) return false;
+            const u = String(s.attributes?.unit_of_measurement || '').trim();
+            if (u !== '°C') return false;
+            const fn = String(s.attributes?.friendly_name || s.entity_id);
+            return /(wohnzimmer|esszimmer|schlafzimmer|k[uü]che|bad|b[uü]ro|kinderzimmer|aussen|außen|garten|terrasse)/i.test(fn);
+        });
+        if (roomCandidates.length > 0) {
+            haConfigState.customWeatherSensors = roomCandidates.slice(0, 4).map((s, idx) => {
+                const rawName = String(s.attributes?.friendly_name || s.entity_id)
+                    .replace(/\s+(Temperatur|Temperature|Klima|Sensor).*$/i, '')
+                    .trim();
+                const icon = /esszimmer/i.test(rawName) ? 'table_restaurant'
+                    : (/schlaf/i.test(rawName) ? 'bed'
+                    : (/(aussen|außen|garten|terrasse)/i.test(rawName) ? 'thermostat' : 'weekend'));
+                return {
+                    id: `ws_auto_${idx}`,
+                    name: rawName || `Raum ${idx + 1}`,
+                    entityId: s.entity_id,
+                    icon
+                };
+            });
+        }
+    }
+
+    renderHomeWeatherWidget();
+    renderHomeCustomWeatherSensors();
+    syncHomeRoomSensorsMinMaxFromHistory();
+}
+
+async function syncHomeRoomSensorsMinMaxFromHistory() {
+    if (!haConfigState.baseUrl || !haConfigState.accessToken) return;
+    const sensorIds = (haConfigState.customWeatherSensors || [])
+        .map(x => String(x?.entityId || '').trim())
+        .filter(Boolean);
+    if (haConfigState.outdoorTempEntity) sensorIds.push(haConfigState.outdoorTempEntity.trim());
+    if (sensorIds.length === 0) return;
+
+    const todayKey = new Date().toISOString().slice(0, 10);
+    if (homeSensorMinMaxCache.dayKey === todayKey && (Date.now() - homeSensorMinMaxCache.fetchedAtMs) < 120000) {
+        return;
+    }
+
+    try {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).toISOString();
+        const endpoint = `/api/history/period/${encodeURIComponent(startOfDay)}?filter_entity_id=${encodeURIComponent([...new Set(sensorIds)].join(','))}&minimal_response&no_attributes`;
+        const res = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, endpoint);
+        if (res && res.ok && Array.isArray(res.data)) {
+            res.data.forEach(arr => {
+                if (!Array.isArray(arr) || arr.length === 0) return;
+                const entId = arr[0]?.entity_id;
+                if (!entId) return;
+                let minV = Infinity;
+                let maxV = -Infinity;
+                arr.forEach(pt => {
+                    const num = parseFloat(String(pt.state).replace(',', '.'));
+                    if (Number.isFinite(num)) {
+                        if (num < minV) minV = num;
+                        if (num > maxV) maxV = num;
+                    }
+                });
+                if (Number.isFinite(minV) && Number.isFinite(maxV)) {
+                    homeSensorMinMaxCache.byEntity[entId] = { min: minV, max: maxV };
+                }
+            });
+            homeSensorMinMaxCache.dayKey = todayKey;
+            homeSensorMinMaxCache.fetchedAtMs = Date.now();
+            renderHomeWeatherWidget();
+            renderHomeCustomWeatherSensors();
+        }
+    } catch (e) {}
+}
+
+async function fetchOpenMeteoForecastForHome(force = false) {
+    const loc = (typeof LocationData !== 'undefined' && LocationData) ? LocationData : { lat: 48.06, lon: 8.46, name: 'Home' };
+    const lat = Number(loc.lat) || 48.06;
+    const lon = Number(loc.lon) || 8.46;
+
+    if (!force && homeWeatherCache.fetchedAtMs > 0 && (Date.now() - homeWeatherCache.fetchedAtMs) < 900000 && homeWeatherCache.lat === lat && homeWeatherCache.lon === lon) {
+        renderHomeWeatherWidget();
+        return;
+    }
+
+    try {
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,sunshine_duration&timezone=auto&forecast_days=5`;
+        const resp = await fetch(url);
+        if (resp.ok) {
+            const data = await resp.json();
+            const dayNames = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+            const daily = data.daily || {};
+            const times = daily.time || [];
+            const days = times.slice(0, 5).map((dateStr, idx) => {
+                const dt = new Date(dateStr + 'T12:00:00');
+                const sunSec = Number(daily.sunshine_duration?.[idx] || 0);
+                return {
+                    dayShort: dayNames[dt.getDay()] || dateStr.slice(5),
+                    code: daily.weather_code?.[idx] ?? 3,
+                    maxTemp: daily.temperature_2m_max?.[idx] ?? null,
+                    minTemp: daily.temperature_2m_min?.[idx] ?? null,
+                    sunHours: +(sunSec / 3600).toFixed(1)
+                };
+            });
+
+            homeWeatherCache = {
+                fetchedAtMs: Date.now(),
+                lat,
+                lon,
+                currentTemp: data.current?.temperature_2m ?? (days[0]?.maxTemp ?? null),
+                currentCode: data.current?.weather_code ?? (days[0]?.code ?? 3),
+                conditionLabel: mapWeatherConditionLabelDe(data.current?.weather_code ?? 3),
+                locationLabel: 'Home',
+                todayMin: days[0]?.minTemp ?? null,
+                todayMax: days[0]?.maxTemp ?? null,
+                days
+            };
+            renderHomeWeatherWidget();
+        }
+    } catch (e) {
+        renderHomeWeatherWidget();
+    }
+}
+
+function renderHomeWeatherWidget() {
+    const fmtDeg = (v) => (v !== null && v !== undefined && Number.isFinite(Number(v)))
+        ? Number(v).toLocaleString('de-DE', { minimumFractionDigits: Number(v) % 1 !== 0 ? 1 : 0, maximumFractionDigits: 1 })
+        : '--,-';
+
+    let condCodeOrState = homeWeatherCache.currentCode;
+    let condLabel = homeWeatherCache.conditionLabel || 'Bewölkt';
+    let locLabel = 'Home';
+    let curTemp = homeWeatherCache.currentTemp;
+    let todayMin = homeWeatherCache.todayMin;
+    let todayMax = homeWeatherCache.todayMax;
+
+    // Override with live Home Assistant weather.* entity or outdoor temperature sensor if available
+    if (haConfigState.weatherEntity && homeHaStatesCache.has(haConfigState.weatherEntity)) {
+        const wState = homeHaStatesCache.get(haConfigState.weatherEntity);
+        if (wState && wState.state && wState.state !== 'unavailable' && wState.state !== 'unknown') {
+            condCodeOrState = wState.state;
+            condLabel = mapWeatherConditionLabelDe(wState.state);
+        }
+        if (wState?.attributes?.temperature !== undefined) {
+            const haT = parseFloat(wState.attributes.temperature);
+            if (Number.isFinite(haT)) curTemp = haT;
+        }
+        if (wState?.attributes?.friendly_name) {
+            locLabel = String(wState.attributes.friendly_name).replace(/^Forecast\s+/i, '').trim() || 'Home';
+        }
+    }
+
+    if (haConfigState.outdoorTempEntity && homeHaStatesCache.has(haConfigState.outdoorTempEntity)) {
+        const oState = homeHaStatesCache.get(haConfigState.outdoorTempEntity);
+        const oNum = parseFloat(String(oState?.state || '').replace(',', '.'));
+        if (Number.isFinite(oNum)) {
+            curTemp = oNum;
+            const mm = homeSensorMinMaxCache.byEntity[haConfigState.outdoorTempEntity];
+            if (mm) {
+                todayMin = mm.min;
+                todayMax = mm.max;
+            }
+        }
+    }
+
+    if (curTemp !== null && todayMin !== null && todayMax !== null) {
+        todayMin = Math.min(Number(todayMin), Number(curTemp));
+        todayMax = Math.max(Number(todayMax), Number(curTemp));
+    }
+
+    const iconWrap = document.getElementById('homeWeatherMainIconWrap');
+    if (iconWrap) iconWrap.innerHTML = getWeatherSvgIcon(condCodeOrState, 'w-12 h-12');
+    setElText('homeWeatherConditionText', condLabel);
+    setElText('homeWeatherLocationText', locLabel);
+    setElText('homeWeatherCurrentTemp', `${fmtDeg(curTemp)} °C`);
+    setElText('homeWeatherMinMaxText', `${fmtDeg(todayMin)} °C / ${fmtDeg(todayMax)} °C`);
+
+    const forecastGrid = document.getElementById('homeWeatherForecastGrid');
+    if (forecastGrid) {
+        const days = (homeWeatherCache.days && homeWeatherCache.days.length > 0)
+            ? homeWeatherCache.days
+            : ['Do', 'Fr', 'Sa', 'So', 'Mo'].map(d => ({ dayShort: d, code: 2, maxTemp: null, minTemp: null }));
+
+        forecastGrid.innerHTML = days.map(d => `
+            <div class="flex flex-col items-center">
+                <span class="text-[13.5px] font-medium text-slate-600 dark:text-slate-300">${escapeHtml(d.dayShort)}</span>
+                <div class="my-2 flex items-center justify-center">
+                    ${getWeatherSvgIcon(d.code, 'w-8 h-8')}
+                </div>
+                <span class="text-[15.5px] font-medium text-slate-900 dark:text-white tabular-nums">${fmtDeg(d.maxTemp)}°</span>
+                <span class="text-[13.5px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">${fmtDeg(d.minTemp)}°</span>
+            </div>
+        `).join('');
+    }
+}
+
+function renderHomeCustomWeatherSensors() {
+    const grid = document.getElementById('homeCustomWeatherGrid');
+    if (!grid) return;
+
+    const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
+    if (list.length === 0) {
+        grid.innerHTML = `
+            <div onclick="openHaConfigModal('connection', 'haWeatherSectionBox')" role="button" tabindex="0"
+                class="col-span-2 dash-main-card rounded-[24px] p-4 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl">device_thermostat</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white truncate">Eigene Raum- &amp; Wettersensoren einbinden</p>
+                        <p class="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">z. B. Wohnzimmer, Esszimmer, Außentemperatur aus Home Assistant</p>
+                    </div>
+                </div>
+                <span class="material-symbols-rounded text-slate-400 shrink-0">add_circle</span>
+            </div>`;
+        return;
+    }
+
+    grid.innerHTML = list.map((ws, idx) => {
+        const entId = String(ws.entityId || '').trim();
+        const stObj = entId ? homeHaStatesCache.get(entId) : null;
+        const unit = stObj?.attributes?.unit_of_measurement || '°C';
+        const rawVal = parseFloat(String(stObj?.state ?? '').replace(',', '.'));
+        const valText = Number.isFinite(rawVal)
+            ? `${rawVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`
+            : '—';
+
+        const mm = entId ? homeSensorMinMaxCache.byEntity[entId] : null;
+        let subText = entId || 'Sensor wählen';
+        if (mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)) {
+            const minVal = Number.isFinite(rawVal) ? Math.min(mm.min, rawVal) : mm.min;
+            const maxVal = Number.isFinite(rawVal) ? Math.max(mm.max, rawVal) : mm.max;
+            const degSuffix = unit === '°C' ? '°' : ` ${unit}`;
+            subText = `Min ${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix} · Max ${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}`;
+        } else if (Number.isFinite(rawVal)) {
+            subText = `Live · Home Assistant`;
+        }
+
+        const iconName = ws.icon || (/esszimmer/i.test(ws.name) ? 'table_restaurant' : 'weekend');
+
+        return `
+        <div onclick="openHaConfigModal('connection', 'haWeatherSectionBox')" role="button" tabindex="0"
+            class="dash-main-card rounded-[24px] p-4 flex flex-col justify-between min-h-[126px] cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+            <div>
+                <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200">
+                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px] shrink-0">${escapeHtml(iconName)}</span>
+                    <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
+                </div>
+                <p class="text-[26px] sm:text-[28px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none mt-3.5">${escapeHtml(valText)}</p>
+            </div>
+            <p class="text-[13px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-3">${escapeHtml(subText)}</p>
+        </div>`;
+    }).join('');
+}
+
+function renderHaWeatherSensorsEditor() {
+    const container = document.getElementById('haWeatherSensorsMappingContainer');
+    if (!container) return;
+
+    const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
+    if (list.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400 py-1.5">Noch keine eigenen Raum-/Wettersensoren hinterlegt. Klicke oben rechts auf „+ Raum-/Wettersensor hinzufügen“.</p>`;
+        return;
+    }
+
+    container.innerHTML = list.map((ws, idx) => {
+        const safeName = typeof escapeHtml === 'function' ? escapeHtml(ws.name || '') : (ws.name || '');
+        const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(ws.entityId || '') : (ws.entityId || '');
+        return `
+        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+            <div class="sm:col-span-5">
+                <input type="text" value="${safeName}" oninput="updateHaCustomWeatherSensorField(${idx}, 'name', this.value)"
+                    placeholder="Raum / Name (z. B. Wohnzimmer)"
+                    class="w-full text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+            </div>
+            <div class="sm:col-span-7 flex items-center gap-1.5">
+                <input type="text" list="haEntitiesDatalist" value="${safeEnt}" oninput="updateHaCustomWeatherSensorField(${idx}, 'entityId', this.value)"
+                    placeholder="sensor.wohnzimmer_temperatur"
+                    class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <button type="button" onclick="openHaEntityPicker({ customType: 'weatherSensor', index: ${idx}, unitFilter: 'all', title: 'Raum- / Wettersensor ${idx + 1} wählen' })"
+                    class="w-8 h-8 rounded-lg bg-sky-600/15 hover:bg-sky-600/25 border border-sky-500/35 text-sky-700 dark:text-sky-300 flex items-center justify-center shrink-0 cursor-pointer" title="Sensor aus Liste wählen">
+                    <span class="material-symbols-rounded text-base">list_alt</span>
+                </button>
+                <button type="button" onclick="removeHaCustomWeatherSensor(${idx})"
+                    class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center shrink-0 cursor-pointer" title="Entfernen">
+                    <span class="material-symbols-rounded text-base">delete</span>
+                </button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addHaCustomWeatherSensor() {
+    readHaModalIntoState();
+    if (!Array.isArray(haConfigState.customWeatherSensors)) haConfigState.customWeatherSensors = [];
+    const nextNum = haConfigState.customWeatherSensors.length + 1;
+    haConfigState.customWeatherSensors.push({
+        id: 'ws_' + Date.now(),
+        name: nextNum === 1 ? 'Wohnzimmer' : (nextNum === 2 ? 'Esszimmer' : `Raum / Sensor ${nextNum}`),
+        entityId: '',
+        icon: nextNum === 2 ? 'table_restaurant' : 'weekend'
+    });
+    renderHaWeatherSensorsEditor();
+}
+
+function updateHaCustomWeatherSensorField(idx, field, val) {
+    if (!Array.isArray(haConfigState.customWeatherSensors) || !haConfigState.customWeatherSensors[idx]) return;
+    haConfigState.customWeatherSensors[idx][field] = val;
+}
+
+function removeHaCustomWeatherSensor(idx) {
+    if (!Array.isArray(haConfigState.customWeatherSensors)) return;
+    haConfigState.customWeatherSensors.splice(idx, 1);
+    renderHaWeatherSensorsEditor();
+}
+
+function refreshHomeWeatherAndSensors(force = false) {
+    updateHomeGreetingHeader();
+    updateHomeEnergyOverview();
+    fetchOpenMeteoForecastForHome(force);
+    renderHomeCustomWeatherSensors();
+    if (force) {
+        refreshLiveTelemetryNow();
+    }
+}
+
+function renderHomeTab() {
+    updateHomeGreetingHeader();
+    updateHomeEnergyOverview();
+    fetchOpenMeteoForecastForHome(false);
+    renderHomeCustomWeatherSensors();
+}
+
+window.renderHomeTab = renderHomeTab;
+window.refreshHomeWeatherAndSensors = refreshHomeWeatherAndSensors;
+window.addHaCustomWeatherSensor = addHaCustomWeatherSensor;
+window.updateHaCustomWeatherSensorField = updateHaCustomWeatherSensorField;
+window.removeHaCustomWeatherSensor = removeHaCustomWeatherSensor;
+
 // Auto-initialize once DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => {
         initTelemetryAndAnalysis();
-    }, 120);
+        renderHomeTab();
+    }, 80);
 });

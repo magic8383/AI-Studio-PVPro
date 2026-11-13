@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 10.9] – 2026-11-13
+
+### ✨ Neue Startseite („Ebene 0“) mit Wetter- & 5-Tage-Prognose-Widget + HA-Raumsensoren, Zurück-Wischen-Schutz, Schriftart-Auswahl (`Plus Jakarta Sans` / `Outfit` / `Manrope`), Dezenter Hintergrund, Inline-Status-Symbole (`✓` / `∫` / `!`) & Überlappungsfreier Balkendiagramm-Header
+
+#### 1. Neue Startseite als „Ebene 0“ mit Wetter-Widget, HA-Raumsensoren & Zurück-Wischen-Schutz (`index.html`, `app.js`, `telemetry.js`)
+* **Eigenes Home-Icon (`🏠 Start`) ganz links in der unteren Navigation:**
+  - Die App verfügt nun über ein eigenes **Willkommens-Dashboard (`Ebene 0`)** mit tageszeitabhängiger Begrüßung (*„Guten Morgen / Tag / Abend · Dein Zuhause · alles im Blick“*).
+  - **Zurück-Wischen-Schutz:** Ein Zurück-Wischen auf dem Smartphone aus den Hauptbereichen (`Live`, `Analyse`, `Planung` = `Ebene 1`) schließt nicht mehr versehentlich die App, sondern führt zuerst sanft zurück auf die **Startseite (`Ebene 0`)**. Erst von dort beendet ein weiteres Zurück-Wischen die App.
+* **Ultramodernes Wetter- & 5-Tage-Prognose-Widget + manuelle Home-Assistant-Sensoren:**
+  - Auf der Startseite zeigt das neue **Wetter-Widget** den aktuellen Wetterzustand, die Außentemperatur, das Tages-Hoch/Tief sowie eine **5-Tage-Vorhersage** mit klaren Vektor-Wetter-Icons (Sonne, Wolken, Regen, Gewitter, Schnee).
+  - Bezieht seine Daten wahlweise direkt aus einer **Home-Assistant-Wetter-Entität** (`weather.*` + optionaler Außentemperatur-Sensor in Sektion `4b`) oder automatisch über **Open-Meteo** für den hinterlegten Anlagen-Standort.
+  - Darunter lassen sich im 2-Spalten-Raster beliebig viele **eigene Home-Assistant-Raum- & Wettersensoren** (z. B. *Wohnzimmer*, *Esszimmer*, *Außenfühler*) mit automatischer Berechnung von **Tages-Min / Tages-Max** aus der HA-Historie einbinden.
+  - Die kompakte 2x2-Übersicht **„Energie · alles im Blick“** zeigt die 4 Hauptbereiche ohne Detail-Überfrachtung und führt per Tipp gezielt in den Live-Tab.
+
+#### 2. Schriftart-Auswahl (`Plus Jakarta Sans`, `Outfit`, `Manrope`) & Dezenterer Pastell-Hintergrund (`index.html`, `app.js`)
+* **Schriftart-Umschalter im Design-Studio:**
+  - Im **Design-Studio** (`Menü -> Design & Darstellung`) kann unter **„2. Schriftart (Klarheit & Lesbarkeit)“** live zwischen **Plus Jakarta Sans** (*Ausgewogen & Präzise*), **Outfit** (*Modern & Geometrisch*) und **Manrope** (*Technisch & Kristallklar*) gewechselt werden.
+* **Dezenterer, ruhigerer Hintergrund-Verlauf:**
+  - Der bisher sehr präsente türkise Pastellverlauf wurde deutlich zurückgenommen (`#eef6f5` -> `#f6faf9` -> `#f8fafc`, halbierte Glow-Deckkraft) und die Hauptkarten (`.dash-main-card`) auf `rgba(255, 255, 255, 0.94)` aufgehellt, sodass Diagramme, Balken und Schriften ruhiger und kontrastreicher wirken.
+
+#### 3. Kompakte Inline-Symbole (`✓`, `∫`, `!`) statt `kWh aktiv`-Zeile & Einheitliches Balkendiagramm-Design (`index.html`, `telemetry.js`)
+* **Entfernung der Zeile `kWh aktiv` auf allen Kacheln:**
+  - Die dritte Textzeile (`✓ kWh aktiv` / `∫ aus W-Kurve`) unter den Kanal-Kacheln wurde komplett entfernt. Stattdessen steht direkt hinter dem `kWh`-Wert nur noch ein dezentes Inline-Symbol: grüner Haken (`✓`) bei aktivem Hardware-Zähler, gelbes Integralzeichen (`∫`) bei Kurven-Integration oder rotes Ausrufezeichen (`!`) bei inaktivem Sensor.
+* **Überlappungsfreie 2-Zeilen-Kopfzeile & einheitliche Kacheln im Balkendiagramm:**
+  - Die Kopfzeile des Balkendiagramms (`#barExplorerStickyCard`) ist nun sauber zweizeilig aufgebaut (Zeile 1: `[←] [Tag|Woche|Monat|Jahr] | [Aufteilung] [↻]`, Zeile 2: `[◀ Zeitraum ▶] | Live-Readout`), sodass sich Zeitraum-Wähler und Datums-Pfeile auf schmalen Displays nicht mehr überlappen.
+  - Die Kanal-Auswahlkacheln unter dem Balkendiagramm folgen nun exakt derselben Designrichtlinie wie die Kacheln im Live-Tab (farbige `3.5px`-Akzentkante links, klare weiße Oberfläche, einheitliche Typografie und Inline-Status-Symbol `✓`/`∫`/`!`).
+
+---
+
 ## [Version 10.8] – 2026-11-12
 
 ### ✨ Feines Referenz-Design mit Klarer Typografie & Größeren Mini-Schriften, Korrektur der Doppelten Hauslast (`10,63 kWh` statt `21,69 kWh`) & Randloses Top-Docked Balkendiagramm mit 1-Balken-/Smart-Stack-Logik

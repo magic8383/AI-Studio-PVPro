@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 10.8 (Feines Referenz-Design mit klarer Sans-Serif-Typografie, größeren & klareren Mini-Schriften, Korrektur der doppelten Hauslast im Tagesverlauf sowie direkt oben angedocktes Vollbreiten-Balkendiagramm mit 1-Balken-/Stapel-Logik)  
+**Aktuelle Version:** 10.9 (Neue Ebene-0-Startseite mit Wetter- & 5-Tage-Prognose-Widget sowie frei einbindbaren HA-Raum-/Wettersensoren, Zurück-Wischen-Schutz auf Ebene 0, Schriftart-Auswahl `Plus Jakarta Sans` / `Outfit` / `Manrope` im Design-Studio, dezenter Pastell-Hintergrund, Inline-Status-Symbole `✓`/`∫`/`!` hinter `kWh` ohne Zusatzzeile & überlappungsfreier Balkendiagramm-Header mit einheitlichem Kachel-Design)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

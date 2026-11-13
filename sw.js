@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pvpro-cache-v10.8';
+const CACHE_NAME = 'pvpro-cache-v10.9';
 const STATIC_ASSETS = [
     './',
     './index.html',
@@ -17,7 +17,7 @@ const STATIC_ASSETS = [
     './favicon-32.png',
     'https://cdn.tailwindcss.com',
     'https://cdn.jsdelivr.net/npm/chart.js',
-    'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap'
+    'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap'
 ];
 
 // Validate that a response is a genuine app asset and NOT an Nginx warmup.html / error fallback page

@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '10.8';
+const APP_VERSION = '10.9';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -2566,12 +2566,12 @@ async function loadConfigurationByCode(code) {
 }
 
 // ==========================================
-// 2. UNIFIED 2-LEVEL MOBILE-FIRST NAVIGATION & DRILL-DOWN (V8.5)
+// 2. UNIFIED 3-LEVEL MOBILE-FIRST NAVIGATION & DRILL-DOWN (V10.9: EBENE 0 START -> EBENE 1 HUB -> EBENE 2 DETAIL)
 // ==========================================
-const tabOrder = ['live', 'analyse', 'planung-hub'];
+const tabOrder = ['home', 'live', 'analyse', 'planung-hub'];
 const planningTabs = ['system', 'verkabelung', 'verbrauch', 'invest', 'finance', 'uebersicht', 'auswertung', 'database', 'faq'];
-let currentNavSection = 'live'; // 'live' | 'analyse' | 'planung'
-let currentNavLevel = 1; // 1 = Hub (Ebene 1), 2 = Detail (Ebene 2)
+let currentNavSection = 'home'; // 'home' | 'live' | 'analyse' | 'planung'
+let currentNavLevel = 0; // 0 = Startseite (Ebene 0), 1 = Hub (Ebene 1), 2 = Detail (Ebene 2)
 let touchStartX = 0, touchStartY = 0;
 
 document.addEventListener('touchstart', e => { 
@@ -2588,7 +2588,7 @@ document.addEventListener('touchend', e => {
     let diffX = touchEndX - touchStartX;
     let diffY = touchEndY - touchStartY;
     
-    if (Math.abs(diffX) > 65 && Math.abs(diffX) > Math.abs(diffY) * 1.9 && currentNavLevel === 1) {
+    if (Math.abs(diffX) > 65 && Math.abs(diffX) > Math.abs(diffY) * 1.9 && currentNavLevel <= 1) {
         let current = document.querySelector('.tab-content.active');
         if(!current) return;
         let cIdx = tabOrder.indexOf(current.id.replace('tab-', ''));
@@ -2651,14 +2651,14 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
         }
         if (row2El) row2El.classList.remove('hidden');
         if (badgeEl) {
-            badgeEl.innerText = 'Ebene 1 · Übersicht';
+            badgeEl.innerText = level === 0 ? 'Ebene 0 · Start' : 'Ebene 1 · Übersicht';
             badgeEl.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-teal-500/12 text-teal-800 dark:text-teal-300 border border-teal-500/25 shrink-0';
         }
     }
 }
 
 // ==========================================
-// 2.1 SMARTPHONE SWIPE-BACK (HISTORY API) & 6-STEP PLANNING WIZARD (V9.1)
+// 2.1 SMARTPHONE SWIPE-BACK (HISTORY API: EBENE 2 -> EBENE 1 -> EBENE 0 START) & 6-STEP PLANNING WIZARD
 // ==========================================
 let _suppressHistoryPush = false;
 let currentPlanningWizardStep = 1;
@@ -2698,6 +2698,14 @@ if (typeof window !== 'undefined') {
             _suppressHistoryPush = true;
             navigateBackToHub(true);
             _suppressHistoryPush = false;
+            return;
+        }
+        // 3. Falls wir auf Ebene 1 (Live, Analyse, Planung) sind -> sanft zurück auf Ebene 0 (Startseite / Home), statt die App zu schließen!
+        if (currentNavLevel === 1) {
+            _suppressHistoryPush = true;
+            switchTab('home', true);
+            _suppressHistoryPush = false;
+            return;
         }
     });
 }
@@ -2769,12 +2777,14 @@ function goToPlanningWizardStep(stepNum) {
         saveBtn.classList.add('flex');
     }
 
-    // Untere 4-Icon Pill-Navigation + äußere Vor/Zurück-Flügel aktivieren
-    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-teal-500/15 dark:bg-teal-500/25 border-2 border-teal-600 dark:border-teal-400 text-teal-700 dark:text-teal-300 transition-all cursor-pointer";
-    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center w-16 h-12 rounded-2xl bg-transparent border-2 border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 transition-all cursor-pointer";
+    // Untere 5-Icon Pill-Navigation + äußere Vor/Zurück-Flügel aktivieren
+    const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-[18px] bg-teal-500/15 dark:bg-teal-400/20 border border-teal-600/50 dark:border-teal-400/60 text-teal-800 dark:text-teal-200 transition-all cursor-pointer";
+    const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-[18px] bg-transparent border border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer";
+    const bHome = document.getElementById('bnav-home');
     const bLive = document.getElementById('bnav-live');
     const bAnalyse = document.getElementById('bnav-analyse');
     const bSystem = document.getElementById('bnav-system');
+    if (bHome) bHome.className = inactivePillClass;
     if (bLive) bLive.className = inactivePillClass;
     if (bAnalyse) bAnalyse.className = inactivePillClass;
     if (bSystem) bSystem.className = activePillClass;
@@ -2986,7 +2996,7 @@ function updatePlanungHubCards() {
     if (amortEl) amortEl.innerText = `${amortY.toFixed(1)} J.`;
 }
 
-function switchTab(tabId) {
+function switchTab(tabId, fromPopState = false) {
     // Falls ein Planungs-Einzeltab direkt aufgerufen wird (außer faq), in den entsprechenden Wizard-Schritt leiten
     const wizardStepMap = {
         database: 1,
@@ -3014,9 +3024,24 @@ function switchTab(tabId) {
 
     updatePlanningWizardUI(null);
 
-    if (tabId === 'live') {
+    if (tabId === 'home') {
+        currentNavSection = 'home';
+        currentNavLevel = 0;
+        try {
+            if (!fromPopState && (!history.state || history.state.pvproSection !== 'home')) {
+                history.replaceState({ pvproSection: 'home', pvproLevel: 0, pvproDetail: '' }, '');
+            }
+        } catch (e) {}
+        updateTwoRowHeader(
+            'Start',
+            'Ebene 0 · Dein Zuhause · Wetter & Energie im Überblick',
+            'home',
+            0
+        );
+    } else if (tabId === 'live') {
         currentNavSection = 'live';
         currentNavLevel = 1;
+        if (!fromPopState) pushAppNavHistoryState('live', 1);
         const wideCockpit = typeof window.isWideCockpitViewport === 'function' && window.isWideCockpitViewport();
         document.getElementById('live-hub-view')?.classList.remove('hidden');
         if (wideCockpit) {
@@ -3038,6 +3063,7 @@ function switchTab(tabId) {
     } else if (tabId === 'analyse') {
         currentNavSection = 'analyse';
         currentNavLevel = 1;
+        if (!fromPopState) pushAppNavHistoryState('analyse', 1);
         document.getElementById('analyse-hub-view')?.classList.remove('hidden');
         document.getElementById('analyse-detail-view')?.classList.add('hidden');
         updateTwoRowHeader(
@@ -3049,6 +3075,7 @@ function switchTab(tabId) {
     } else if (isPlanningHub) {
         currentNavSection = 'planung';
         currentNavLevel = 1;
+        if (!fromPopState) pushAppNavHistoryState('planung-hub', 1);
         updatePlanungHubCards();
         updateTwoRowHeader(
             'Planung',
@@ -3059,7 +3086,7 @@ function switchTab(tabId) {
     } else if (isPlanningDetail) {
         currentNavSection = 'planung';
         currentNavLevel = 2;
-        pushAppNavHistoryState('planung', 2, tabId);
+        if (!fromPopState) pushAppNavHistoryState('planung', 2, tabId);
         const tabTitles = {
             faq: 'Handbuch'
         };
@@ -3082,14 +3109,16 @@ function switchTab(tabId) {
         }
     }
 
-    // Schwebende untere 4-Icon Pill-Navigation aktualisieren (Ruhiges Referenz-Design)
+    // Schwebende untere 5-Icon Pill-Navigation aktualisieren (Mit Home links auf Ebene 0)
     const activePillClass = "bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-[18px] bg-teal-500/15 dark:bg-teal-400/20 border border-teal-600/50 dark:border-teal-400/60 text-teal-800 dark:text-teal-200 transition-all cursor-pointer";
     const inactivePillClass = "bnav-pill-btn flex flex-col items-center justify-center h-12 rounded-[18px] bg-transparent border border-transparent text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-white/10 transition-all cursor-pointer";
 
+    const bHome = document.getElementById('bnav-home');
     const bLive = document.getElementById('bnav-live');
     const bAnalyse = document.getElementById('bnav-analyse');
     const bSystem = document.getElementById('bnav-system');
 
+    if (bHome) bHome.className = (tabId === 'home') ? activePillClass : inactivePillClass;
     if (bLive) bLive.className = (tabId === 'live') ? activePillClass : inactivePillClass;
     if (bAnalyse) bAnalyse.className = (tabId === 'analyse') ? activePillClass : inactivePillClass;
     if (bSystem) bSystem.className = (isPlanningHub || isPlanningDetail) ? activePillClass : inactivePillClass;
@@ -3097,11 +3126,13 @@ function switchTab(tabId) {
     // Nach Auswahl Bottom Sheet schließen (falls offen)
     closeMoreSheet();
 
-    if (tabId === 'live') {
+    if (tabId === 'home') {
+        if (typeof renderHomeTab === 'function') renderHomeTab();
+        if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
+    } else if (tabId === 'live') {
         if (typeof renderLiveTab === 'function') renderLiveTab();
         if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
-    }
-    if (tabId === 'analyse') {
+    } else if (tabId === 'analyse') {
         if (typeof renderAnalyseTab === 'function') renderAnalyseTab();
     }
 }
@@ -6615,7 +6646,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '13, 148, 136',
         orb1Rgb: '45, 212, 191',
         orb2Rgb: '56, 189, 248',
-        bgLight: ['#d5efe9', '#eaf6f3', '#f4faf8'],
+        bgLight: ['#eef6f5', '#f6faf9', '#f8fafc'],
         bgDark: ['#071014', '#0b181e', '#071116']
     },
     emerald: {
@@ -6625,7 +6656,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '5, 150, 105',
         orb1Rgb: '52, 211, 153',
         orb2Rgb: '16, 185, 129',
-        bgLight: ['#d6f3e5', '#ebf9f2', '#f4fbf7'],
+        bgLight: ['#eff8f3', '#f6fbf9', '#f9fcfb'],
         bgDark: ['#06120e', '#0a1c15', '#06110d']
     },
     'cyber-sky': {
@@ -6635,7 +6666,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '2, 132, 199',
         orb1Rgb: '56, 189, 248',
         orb2Rgb: '34, 211, 238',
-        bgLight: ['#d8eefb', '#ebf6fd', '#f5fafe'],
+        bgLight: ['#eff6fc', '#f6fafd', '#f9fcfe'],
         bgDark: ['#060f18', '#0a1826', '#07111b']
     },
     indigo: {
@@ -6645,7 +6676,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '79, 70, 229',
         orb1Rgb: '129, 140, 248',
         orb2Rgb: '56, 189, 248',
-        bgLight: ['#e2e5fc', '#eff1fe', '#f7f8ff'],
+        bgLight: ['#f1f2fc', '#f7f8fe', '#fafbff'],
         bgDark: ['#090b1a', '#10142b', '#090b18']
     },
     amber: {
@@ -6655,7 +6686,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '217, 119, 6',
         orb1Rgb: '251, 191, 36',
         orb2Rgb: '45, 212, 191',
-        bgLight: ['#faecd4', '#fdf5e8', '#fefaf4'],
+        bgLight: ['#fbf5ea', '#fdfaf3', '#fefcf9'],
         bgDark: ['#140e06', '#1e160a', '#120d06']
     },
     coral: {
@@ -6665,7 +6696,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '225, 29, 72',
         orb1Rgb: '251, 113, 133',
         orb2Rgb: '251, 191, 36',
-        bgLight: ['#fbe0e6', '#fdf0f3', '#fef7f8'],
+        bgLight: ['#fcf0f3', '#fef7f9', '#fffbfc'],
         bgDark: ['#16080d', '#220d14', '#13070b']
     },
     lime: {
@@ -6675,7 +6706,7 @@ const THEME_COLOR_PRESETS = {
         glassTintRgb: '101, 163, 13',
         orb1Rgb: '163, 230, 53',
         orb2Rgb: '45, 212, 191',
-        bgLight: ['#e4f4cf', '#f1f9e6', '#f8fcf2'],
+        bgLight: ['#f3f9ea', '#f8fcf3', '#fbfdf8'],
         bgDark: ['#0b1306', '#121e0a', '#091005']
     }
 };
@@ -6705,10 +6736,12 @@ function applyThemeSettingsObj(themeObj) {
     const t = { ...DEFAULT_THEME, ...(themeObj || {}) };
     const html = document.documentElement;
 
-    // Preserve classic Liquid-Glass standard theme (Hell mit Türkis / Dunkel mit Türkis)
+    // Preserve classic Liquid-Glass standard theme with calm, understated pastel background
     html.setAttribute('data-design-style', 'liquid-glass');
     html.setAttribute('data-ui-density', 'normal');
-    const fontName = 'Plus Jakarta Sans';
+    const fontName = ['Plus Jakarta Sans', 'Outfit', 'Manrope'].includes(t.fontFamily)
+        ? t.fontFamily
+        : 'Plus Jakarta Sans';
     html.style.setProperty('--font-sans', `"${fontName}"`);
 
     // Font Scale (Stronger, clearly visible scaling especially on mini-fonts!)
@@ -6754,8 +6787,8 @@ function applyThemeSettingsObj(themeObj) {
         html.style.setProperty('--glass-tint-rgb', tintRgb);
         html.style.setProperty('--orb-1-rgb', orb1Rgb);
         html.style.setProperty('--orb-2-rgb', orb2Rgb);
-        html.style.setProperty('--bg-light-start', `rgba(${tintRgb}, 0.22)`);
-        html.style.setProperty('--bg-light-mid', `rgba(${tintRgb}, 0.10)`);
+        html.style.setProperty('--bg-light-start', `rgba(${tintRgb}, 0.08)`);
+        html.style.setProperty('--bg-light-mid', `rgba(${tintRgb}, 0.04)`);
         html.style.setProperty('--bg-light-end', '#f8fafc');
         html.style.setProperty('--bg-dark-start', '#060c14');
         html.style.setProperty('--bg-dark-mid', '#0b1522');
@@ -6781,6 +6814,15 @@ function applyThemeSettingsObj(themeObj) {
     const px = (basePx) => `${+(basePx * sf).toFixed(2)}px`;
 
     dynStyle.textContent = `
+        /* Global Font Family Override (Plus Jakarta Sans / Outfit / Manrope) */
+        html body,
+        html body button,
+        html body input,
+        html body select,
+        html body textarea {
+            font-family: "${fontName}", -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+        }
+
         /* High-Specificity Mini-Font & Text Scaling (Lifts mini-fonts to clear, readable sizes & scales immediately) */
         html body .text-\\[9px\\],
         html body .text-\\[9\\.5px\\] { font-size: ${px(11.5)} !important; line-height: 1.35 !important; }
@@ -6822,24 +6864,24 @@ function applyThemeSettingsObj(themeObj) {
             border-color: ${primaryHex} !important;
         }
         html body .border-teal-500\\/20, html body .border-teal-500\\/25, html body .border-teal-500\\/30, html body .border-teal-500\\/35 {
-            border-color: rgba(${tintRgb}, 0.34) !important;
+            border-color: rgba(${tintRgb}, 0.28) !important;
         }
         html body .border-teal-500\\/40, html body .border-teal-500\\/50, html body .border-teal-500\\/60, html body .border-teal-600\\/50, html body .border-teal-400\\/60 {
-            border-color: rgba(${tintRgb}, 0.58) !important;
+            border-color: rgba(${tintRgb}, 0.50) !important;
         }
         html body .bg-teal-500\\/5, html body .bg-teal-500\\/10, html body .bg-teal-600\\/10, html body .bg-teal-600\\/12, html body .bg-teal-500\\/12, html body .bg-teal-500\\/14 {
-            background-color: rgba(${tintRgb}, 0.14) !important;
+            background-color: rgba(${tintRgb}, 0.12) !important;
         }
         html body .bg-teal-500\\/15, html body .bg-teal-600\\/15, html body .bg-teal-500\\/20, html body .bg-teal-600\\/20 {
-            background-color: rgba(${tintRgb}, 0.20) !important;
+            background-color: rgba(${tintRgb}, 0.16) !important;
         }
         html body .dash-tile-pv {
-            border-color: rgba(${tintRgb}, 0.42) !important;
-            background: linear-gradient(155deg, rgba(${tintRgb}, 0.22) 0%, rgba(255, 255, 255, 0.78) 100%) !important;
+            border-color: rgba(${tintRgb}, 0.28) !important;
+            background: linear-gradient(155deg, rgba(${tintRgb}, 0.11) 0%, rgba(255, 255, 255, 0.88) 100%) !important;
         }
         html.dark body .dash-tile-pv {
-            border-color: rgba(${tintRgb}, 0.45) !important;
-            background: linear-gradient(155deg, rgba(${tintRgb}, 0.25) 0%, rgba(15, 23, 42, 0.82) 100%) !important;
+            border-color: rgba(${tintRgb}, 0.38) !important;
+            background: linear-gradient(155deg, rgba(${tintRgb}, 0.22) 0%, rgba(15, 23, 42, 0.85) 100%) !important;
         }
     `;
 
@@ -6932,7 +6974,7 @@ function resetDesignStudioSettings() {
     localStorage.setItem('pvpro_theme', JSON.stringify(DEFAULT_THEME));
     applyThemeSettingsObj(DEFAULT_THEME);
     renderDesignStudioModalContent();
-    showToastNotification('🎨 Design & Schriftgröße auf Standard (Hell mit Türkis) zurückgesetzt!', 'info');
+    showToastNotification('🎨 Design, Schriftart & Schriftgröße auf Standard zurückgesetzt!', 'info');
 }
 
 function renderDesignStudioModalContent() {
@@ -6940,12 +6982,20 @@ function renderDesignStudioModalContent() {
     if (!body) return;
     const t = getThemeSettings();
 
+    const fontOptions = [
+        { id: 'Plus Jakarta Sans', label: 'Plus Jakarta Sans', sub: 'Fein & harmonisch (Standard)', sample: '19,8 °C · 255 W · 10,63 kWh' },
+        { id: 'Outfit', label: 'Outfit', sub: 'Modern & geometrisch klar', sample: '19,8 °C · 255 W · 10,63 kWh' },
+        { id: 'Manrope', label: 'Manrope', sub: 'Maximale Ziffern-Schärfe', sample: '19,8 °C · 255 W · 10,63 kWh' }
+    ];
+
     const scaleOptions = [
         { id: 'compact', label: 'Kompakt (94%)', sub: 'Dezente Darstellung' },
         { id: 'normal', label: 'Standard (100%)', sub: 'Klare Referenz-Größe' },
         { id: 'large', label: 'Groß (112%)', sub: 'Deutlich größere Mini-Schriften' },
         { id: 'xlarge', label: 'Extra Groß (124%)', sub: 'Maximale Lesbarkeit' }
     ];
+
+    const currentFont = ['Plus Jakarta Sans', 'Outfit', 'Manrope'].includes(t.fontFamily) ? t.fontFamily : 'Plus Jakarta Sans';
 
     body.innerHTML = `
         <!-- 1. Hell / Dunkel Modus -->
@@ -6956,7 +7006,7 @@ function renderDesignStudioModalContent() {
                     <span>1. Farbmodus (Hell / Dunkel)</span>
                 </h4>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Aktuell aktiv: <strong>${t.dark ? 'Dunkel (Nachtglas)' : 'Hell mit Türkis (Standard-Referenz)'}</strong>
+                    Aktuell aktiv: <strong>${t.dark ? 'Dunkel (Nachtglas)' : 'Hell mit ruhigem Pastell-Hintergrund'}</strong>
                 </p>
             </div>
             <div class="inline-flex rounded-xl p-1 bg-slate-200/80 dark:bg-slate-800 text-xs font-semibold shrink-0">
@@ -6969,11 +7019,39 @@ function renderDesignStudioModalContent() {
             </div>
         </div>
 
-        <!-- 2. Schriftgröße (Skaliert gezielt auch alle kleinen & Mini-Schriften) -->
+        <!-- 2. Schriftart-Auswahl (Plus Jakarta Sans, Outfit, Manrope) -->
+        <div class="space-y-2.5">
+            <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-lg text-teal-600 dark:text-teal-400">font_download</span>
+                <span>2. Schriftart (Für höchste Klarheit &amp; Lesbarkeit)</span>
+            </h4>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                ${fontOptions.map(fn => {
+                    const active = currentFont === fn.id;
+                    return `
+                    <button type="button" onclick="setDesignStudioSetting({ fontFamily: '${fn.id}' })"
+                        style="font-family: '${fn.id}', sans-serif !important;"
+                        class="p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                            active
+                                ? 'border-2 border-teal-600 dark:border-teal-400 bg-teal-500/12 text-slate-900 dark:text-white shadow-2xs'
+                                : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-teal-500/40'
+                        }">
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="text-sm font-bold">${fn.label}</p>
+                            ${active ? '<span class="text-xs font-bold text-teal-600 dark:text-teal-400">✓ Aktiv</span>' : ''}
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${fn.sub}</p>
+                        <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 tabular-nums mt-2 pt-1.5 border-t border-slate-200/70 dark:border-white/10">${fn.sample}</p>
+                    </button>`;
+                }).join('')}
+            </div>
+        </div>
+
+        <!-- 3. Schriftgröße (Skaliert gezielt auch alle kleinen & Mini-Schriften) -->
         <div class="space-y-2.5">
             <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                 <span class="material-symbols-rounded text-lg text-teal-600 dark:text-teal-400">format_size</span>
-                <span>2. Schriftgröße (inkl. Vergrößerung kleiner Schriften)</span>
+                <span>3. Schriftgröße (inkl. Vergrößerung kleiner Schriften)</span>
             </h4>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 ${scaleOptions.map(sc => {
@@ -6992,11 +7070,11 @@ function renderDesignStudioModalContent() {
             </div>
         </div>
 
-        <!-- 3. Akzentfarbe & Glas-Tönung -->
+        <!-- 4. Akzentfarbe & Glas-Tönung -->
         <div class="space-y-2.5">
             <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                 <span class="material-symbols-rounded text-lg text-teal-600 dark:text-teal-400">palette</span>
-                <span>3. Akzentfarbe (Standard: Türkis / Solar-Teal)</span>
+                <span>4. Akzentfarbe (Standard: Türkis / Solar-Teal)</span>
             </h4>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 ${Object.entries(THEME_COLOR_PRESETS).map(([key, cfg]) => {
