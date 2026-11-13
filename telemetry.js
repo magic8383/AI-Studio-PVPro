@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.0)
-// Zentrale Single Source of Truth (1:1 Echte HA-Sensorwerte ohne Filter-Eingriffe,
-// Transparente Ursachen-Diagnose & Gesamtpaket-Sync)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.2)
+// Zentrale Single Source of Truth (IndexedDB Persistent Device Storage,
+// Stale-While-Revalidate Chart-Cache, Klare AC/DC-Kennzeichnung & 24h-Klima-Kurven)
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -66,7 +66,7 @@ let intradayHistoryTimer = null;
 
 // Baseline cache for computing Today & Month deltas from total_increasing kWh counters without HA helpers
 let energyCounterBaselines = {
-    schemaVersion: '10.3',
+    schemaVersion: '11.1',
     dayKey: '',
     monthKey: '',
     dayStartByEntity: {},
@@ -150,8 +150,260 @@ const MONTH_LABELS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'A
 const MONTH_LABELS_LONG = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
 
 // ============================================================================
-// 1. INITIALIZATION & PERSISTENCE (SERVER + LOCALSTORAGE)
+// 1. INITIALIZATION & PERSISTENCE (INDEXEDDB + SERVER + LOCALSTORAGE)
 // ============================================================================
+
+const PVProPersistentDB = (function () {
+    const DB_NAME = 'pvpro_persistent_db';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'app_store';
+    let dbPromise = null;
+
+    function openDb() {
+        if (dbPromise) return dbPromise;
+        if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+        dbPromise = new Promise((resolve) => {
+            try {
+                const req = indexedDB.open(DB_NAME, DB_VERSION);
+                req.onupgradeneeded = (ev) => {
+                    const db = ev.target.result;
+                    if (!db.objectStoreNames.contains(STORE_NAME)) {
+                        db.createObjectStore(STORE_NAME);
+                    }
+                };
+                req.onsuccess = (ev) => resolve(ev.target.result);
+                req.onerror = () => resolve(null);
+                req.onblocked = () => resolve(null);
+            } catch (e) {
+                resolve(null);
+            }
+        });
+        return dbPromise;
+    }
+
+    async function get(key) {
+        const db = await openDb();
+        if (!db) return null;
+        return new Promise((resolve) => {
+            try {
+                const tx = db.transaction(STORE_NAME, 'readonly');
+                const store = tx.objectStore(STORE_NAME);
+                const req = store.get(key);
+                req.onsuccess = () => resolve(req.result !== undefined ? req.result : null);
+                req.onerror = () => resolve(null);
+            } catch (e) {
+                resolve(null);
+            }
+        });
+    }
+
+    async function set(key, value) {
+        const db = await openDb();
+        if (!db) return false;
+        return new Promise((resolve) => {
+            try {
+                const tx = db.transaction(STORE_NAME, 'readwrite');
+                const store = tx.objectStore(STORE_NAME);
+                const req = store.put(value, key);
+                req.onsuccess = () => resolve(true);
+                req.onerror = () => resolve(false);
+            } catch (e) {
+                resolve(false);
+            }
+        });
+    }
+
+    async function ensurePersistentStorage() {
+        try {
+            if (typeof navigator !== 'undefined' && navigator.storage && typeof navigator.storage.persist === 'function') {
+                const persisted = await navigator.storage.persist();
+                if (typeof window !== 'undefined') {
+                    window.pvproStoragePersisted = Boolean(persisted);
+                }
+                return Boolean(persisted);
+            }
+        } catch (e) {}
+        return false;
+    }
+
+    return { get, set, ensurePersistentStorage };
+})();
+
+if (typeof window !== 'undefined') {
+    window.PVProPersistentDB = PVProPersistentDB;
+}
+
+let climateHistoryCacheByRoom = {}; // roomKey -> { savedAtMs, tempPoints, humPoints }
+
+function persistIntradayHistoryCacheToIdb() {
+    try {
+        PVProPersistentDB.set('intraday_history_cache', {
+            savedAtMs: Date.now(),
+            dayKey: getTodayAndMonthKeys().dayKey,
+            cache: intradayHistoryCache
+        });
+    } catch (e) {}
+}
+
+function persistBarExplorerCacheToIdb() {
+    try {
+        if (typeof analyseBarExplorerState !== 'undefined' && analyseBarExplorerState.cacheByPeriodKey) {
+            PVProPersistentDB.set('bar_explorer_cache', {
+                savedAtMs: Date.now(),
+                cacheByPeriodKey: analyseBarExplorerState.cacheByPeriodKey
+            });
+        }
+    } catch (e) {}
+}
+
+async function hydrateFromPersistentIndexedDB() {
+    try {
+        PVProPersistentDB.ensurePersistentStorage();
+        const [
+            idbHaCfg,
+            idbBaselines,
+            idbRecords,
+            idbBootSnap,
+            idbIntraday,
+            idbBarExplorer,
+            idbClimateCurves
+        ] = await Promise.all([
+            PVProPersistentDB.get('ha_config_backup'),
+            PVProPersistentDB.get('energy_counter_baselines'),
+            PVProPersistentDB.get('performance_records_backup'),
+            PVProPersistentDB.get('boot_snapshot'),
+            PVProPersistentDB.get('intraday_history_cache'),
+            PVProPersistentDB.get('bar_explorer_cache'),
+            PVProPersistentDB.get('climate_history_cache')
+        ]);
+
+        let needsUiRefresh = false;
+
+        // 1. Self-heal haConfigState if localStorage was evicted by Android OS
+        if (idbHaCfg && typeof idbHaCfg === 'object') {
+            const hadTokenBefore = Boolean(haConfigState.accessToken);
+            if (!hadTokenBefore && idbHaCfg.accessToken) {
+                haConfigState = {
+                    ...haConfigState,
+                    ...idbHaCfg,
+                    entities: { ...haConfigState.entities, ...(idbHaCfg.entities || {}) },
+                    customWeatherSensors: Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0
+                        ? idbHaCfg.customWeatherSensors
+                        : (haConfigState.customWeatherSensors || []),
+                    customStrings: Array.isArray(idbHaCfg.customStrings) && idbHaCfg.customStrings.length > 0
+                        ? idbHaCfg.customStrings
+                        : haConfigState.customStrings,
+                    customConsumers: Array.isArray(idbHaCfg.customConsumers)
+                        ? idbHaCfg.customConsumers
+                        : haConfigState.customConsumers
+                };
+                try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
+                needsUiRefresh = true;
+                startLiveTelemetryLoop();
+            } else if ((!Array.isArray(haConfigState.customWeatherSensors) || haConfigState.customWeatherSensors.length === 0) && Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0) {
+                haConfigState.customWeatherSensors = idbHaCfg.customWeatherSensors;
+                try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
+                needsUiRefresh = true;
+            }
+        } else if (haConfigState.accessToken) {
+            PVProPersistentDB.set('ha_config_backup', haConfigState);
+        }
+
+        // 2. Self-heal energyCounterBaselines from IndexedDB if localStorage had empty baselines
+        const keys = getTodayAndMonthKeys();
+        if (idbBaselines && typeof idbBaselines === 'object' && idbBaselines.schemaVersion === '11.1') {
+            const hasLocalDay = Object.keys(energyCounterBaselines.dayStartByEntity || {}).length > 0;
+            const hasLocalMonth = Object.keys(energyCounterBaselines.monthStartByEntity || {}).length > 0;
+            if (!hasLocalDay && idbBaselines.dayKey === keys.dayKey && idbBaselines.dayStartByEntity) {
+                energyCounterBaselines.dayStartByEntity = { ...idbBaselines.dayStartByEntity };
+                needsUiRefresh = true;
+            }
+            if (!hasLocalMonth && idbBaselines.monthKey === keys.monthKey && idbBaselines.monthStartByEntity) {
+                energyCounterBaselines.monthStartByEntity = { ...idbBaselines.monthStartByEntity };
+                energyCounterBaselines.ltsMonthChangeByEntity = { ...(idbBaselines.ltsMonthChangeByEntity || {}) };
+                needsUiRefresh = true;
+            }
+            if (needsUiRefresh) {
+                healMonthBaselinesAgainstDayBaselines();
+                try { localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines)); } catch (e) {}
+            }
+        }
+
+        // 3. Self-heal performanceRecordsByProject from IndexedDB
+        if (idbRecords && typeof idbRecords === 'object' && Object.keys(idbRecords).length > 0) {
+            if (Object.keys(performanceRecordsByProject).length === 0) {
+                performanceRecordsByProject = idbRecords;
+                try { localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject)); } catch (e) {}
+                needsUiRefresh = true;
+            }
+        }
+
+        // 4. Self-heal boot_snapshot if currentLiveTelemetry has not yet received live data
+        if (idbBootSnap && typeof idbBootSnap === 'object') {
+            if (idbBootSnap.lastValidClimate && typeof idbBootSnap.lastValidClimate === 'object') {
+                homeLastValidClimateValues = { ...idbBootSnap.lastValidClimate, ...homeLastValidClimateValues };
+            }
+            if (!currentLiveTelemetry.updatedAt && idbBootSnap.telemetry) {
+                currentLiveTelemetry = {
+                    ...currentLiveTelemetry,
+                    ...idbBootSnap.telemetry,
+                    lastError: null
+                };
+                needsUiRefresh = true;
+            }
+            if ((!homeWeatherCache.days || homeWeatherCache.days.length === 0) && idbBootSnap.weatherCache && Array.isArray(idbBootSnap.weatherCache.days)) {
+                homeWeatherCache = { ...homeWeatherCache, ...idbBootSnap.weatherCache };
+                needsUiRefresh = true;
+            }
+        }
+
+        // 5. Hydrate intradayHistoryCache (day, week, month) for instant <20ms chart rendering
+        if (idbIntraday && idbIntraday.cache && typeof idbIntraday.cache === 'object') {
+            const isSameDay = idbIntraday.dayKey === keys.dayKey;
+            ['day', 'week', 'month'].forEach(tf => {
+                if (tf === 'day' && !isSameDay) return;
+                const ds = idbIntraday.cache[tf];
+                if (!intradayHistoryCache[tf] && ds && Array.isArray(ds.bucketTimes) && ds.bucketTimes.length > 0) {
+                    intradayHistoryCache[tf] = ds;
+                    if (currentCurveTimeframe === tf && (!intradaySeriesState.bucketTimes || intradaySeriesState.bucketTimes.length === 0)) {
+                        intradaySeriesState = {
+                            startOfDayIso: ds.startOfDayIso,
+                            nowIso: ds.nowIso,
+                            labels: ds.labels,
+                            bucketTimes: ds.bucketTimes,
+                            series: ds.series,
+                            integratedKwh: ds.integratedKwh,
+                            peakValues: ds.peakValues
+                        };
+                        needsUiRefresh = true;
+                    }
+                }
+            });
+        }
+
+        // 6. Hydrate Bar Explorer cache for instant bar chart rendering
+        if (idbBarExplorer && idbBarExplorer.cacheByPeriodKey && typeof idbBarExplorer.cacheByPeriodKey === 'object') {
+            if (typeof analyseBarExplorerState !== 'undefined') {
+                analyseBarExplorerState.cacheByPeriodKey = {
+                    ...idbBarExplorer.cacheByPeriodKey,
+                    ...(analyseBarExplorerState.cacheByPeriodKey || {})
+                };
+            }
+        }
+
+        // 7. Hydrate 24h Room Climate curve cache
+        if (idbClimateCurves && typeof idbClimateCurves === 'object') {
+            climateHistoryCacheByRoom = { ...idbClimateCurves, ...climateHistoryCacheByRoom };
+        }
+
+        if (needsUiRefresh) {
+            try {
+                renderHomeTab();
+                renderLiveCockpitUI();
+            } catch (e) {}
+        }
+    } catch (e) {}
+}
 
 function getActiveAnalysisProjectId() {
     if (typeof getActiveProjectId === 'function') {
@@ -233,6 +485,9 @@ async function initTelemetryAndAnalysis() {
         renderHomeTab();
         renderLiveCockpitUI();
     } catch (e) {}
+
+    // 1B-2. Hydrate persistent IndexedDB storage (self-heals evicted localStorage & preloads 24h/7d/30d/Bar-Explorer caches in <20ms)
+    hydrateFromPersistentIndexedDB();
 
     // 1C. Fire immediate live states poll right away (without waiting for /api/ha/config or 24h history)
     if (haConfigState.baseUrl && haConfigState.accessToken) {
@@ -359,6 +614,7 @@ async function savePerformanceRecordsLocalAndServer() {
 
     try {
         localStorage.setItem('pvpro_performance_records', JSON.stringify(performanceRecordsByProject));
+        PVProPersistentDB.set('performance_records_backup', performanceRecordsByProject);
     } catch (e) {}
 
     try {
@@ -645,9 +901,9 @@ function loadEnergyCounterBaselines() {
         const raw = localStorage.getItem('pvpro_energy_counter_baselines');
         if (raw) {
             const parsed = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && (parsed.schemaVersion === '10.4' || parsed.schemaVersion === '10.3')) {
+            if (parsed && typeof parsed === 'object' && parsed.schemaVersion === '11.1') {
                 energyCounterBaselines = {
-                    schemaVersion: '10.4',
+                    schemaVersion: '11.1',
                     dayKey: keys.dayKey,
                     monthKey: keys.monthKey,
                     dayStartByEntity: parsed.dayKey === keys.dayKey ? (parsed.dayStartByEntity || {}) : {},
@@ -663,7 +919,7 @@ function loadEnergyCounterBaselines() {
         }
     } catch (e) {}
     energyCounterBaselines = {
-        schemaVersion: '10.4',
+        schemaVersion: '11.1',
         dayKey: keys.dayKey,
         monthKey: keys.monthKey,
         dayStartByEntity: {},
@@ -677,8 +933,9 @@ function loadEnergyCounterBaselines() {
 
 function saveEnergyCounterBaselines() {
     try {
-        energyCounterBaselines.schemaVersion = '10.4';
+        energyCounterBaselines.schemaVersion = '11.1';
         localStorage.setItem('pvpro_energy_counter_baselines', JSON.stringify(energyCounterBaselines));
+        PVProPersistentDB.set('energy_counter_baselines', energyCounterBaselines);
     } catch (e) {}
 }
 
@@ -1363,24 +1620,29 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
             }
             if (typeof b.change === 'number' && !isNaN(b.change)) {
                 const dKwh = Math.max(0, b.change * scale);
-                byMonth[mIdx].changeSum += dKwh;
-                byMonth[mIdx].hasChange = true;
-                if ((prevBucketState === null || prevBucketState <= 1.0) && dKwh >= 25) {
+                // Guard against initial cumulative counter offset jump (0 -> lifetime meter reading e.g. 610 kWh)
+                const isInitialOffsetJump = (prevBucketState === null || prevBucketState <= 1.0)
+                    && dKwh >= 45
+                    && (rawStVal === null || Math.abs(dKwh - rawStVal) <= Math.max(5.0, rawStVal * 0.15));
+                if (!isInitialOffsetJump && dKwh < 220) {
+                    byMonth[mIdx].changeSum += dKwh;
+                    byMonth[mIdx].hasChange = true;
+                } else if (isInitialOffsetJump) {
                     const dateStr = bDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
                     setSensorDiagnostic(entId, {
                         status: 'ok',
                         jumpKwh: +dKwh.toFixed(1),
-                        jumpInfo: `Hinweis: Anstieg +${dKwh.toFixed(1).replace('.', ',')} kWh am ${dateStr} (Start/Übertrag) im Zähler enthalten`
+                        jumpInfo: `Start-Zählerstand ${dKwh.toFixed(1).replace('.', ',')} kWh am ${dateStr} als Basis kalibriert`
                     });
                 }
-            } else if (rawStVal !== null && prevBucketState !== null) {
-                const stepDiff = rawStVal >= prevBucketState ? (rawStVal - prevBucketState) : rawStVal;
-                if (stepDiff >= 0) {
+            } else if (rawStVal !== null && prevBucketState !== null && prevBucketState > 0.5) {
+                const stepDiff = rawStVal >= prevBucketState ? (rawStVal - prevBucketState) : 0;
+                if (stepDiff >= 0 && stepDiff < 220) {
                     byMonth[mIdx].changeSum += stepDiff;
                     byMonth[mIdx].hasChange = true;
                 }
             }
-            if (rawStVal !== null && !isNaN(rawStVal)) {
+            if (rawStVal !== null && !isNaN(rawStVal) && rawStVal > 0.1) {
                 if (byMonth[mIdx].firstState === null) byMonth[mIdx].firstState = rawStVal;
                 byMonth[mIdx].lastState = rawStVal;
                 prevBucketState = rawStVal;
@@ -1389,7 +1651,7 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         monthlyAggByEntity[entId] = byMonth;
     });
 
-    // 1. Update current month's exact LTS change & reconstruct 1st-of-month baseline (1:1 unfiltered)
+    // 1. Update current month's exact LTS change & reconstruct 1st-of-month baseline
     if (targetYear === curYear) {
         if (!energyCounterBaselines.ltsMonthChangeByEntity) {
             energyCounterBaselines.ltsMonthChangeByEntity = {};
@@ -1398,11 +1660,17 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
             const mInfo = monthlyAggByEntity[entId]?.[curMonth];
             if (!mInfo) return;
             const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
-            const spanFromState = (mInfo.firstState !== null && (curLiveReading !== null || mInfo.lastState !== null))
-                ? Math.max(0, (curLiveReading ?? mInfo.lastState) - mInfo.firstState)
+            const effEndReading = (curLiveReading !== null && (mInfo.lastState === null || curLiveReading >= mInfo.lastState))
+                ? curLiveReading
+                : mInfo.lastState;
+            const spanFromState = (mInfo.firstState !== null && mInfo.firstState > 0.1 && effEndReading !== null && effEndReading >= mInfo.firstState)
+                ? Math.max(0, effEndReading - mInfo.firstState)
                 : 0;
             if (!mInfo.hasChange && spanFromState <= 0) return;
-            const monthChangeKwh = +Math.max(0, mInfo.changeSum, spanFromState).toFixed(3);
+            // Prefer spanFromState when changeSum is inflated by a counter reset/jump, otherwise take consistent changeSum/span
+            const monthChangeKwh = (spanFromState > 0 && mInfo.changeSum > spanFromState * 1.15 + 8)
+                ? +spanFromState.toFixed(3)
+                : +Math.max(0, mInfo.changeSum, spanFromState).toFixed(3);
             energyCounterBaselines.ltsMonthChangeByEntity[entId] = monthChangeKwh;
 
             if (curLiveReading !== null && curLiveReading >= monthChangeKwh) {
@@ -2154,7 +2422,7 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         }
                     }
 
-                    // 2) Energy counter statistics (change / state / sum / max / mean) — 1:1 unfiltered!
+                    // 2) Energy counter statistics (change / state / sum / max / mean) — with protection against 0->Total initialization jumps
                     if (energyEntitySet.has(entId)) {
                         const rawBucketNum = typeof b.sum === 'number'
                             ? b.sum
@@ -2165,36 +2433,30 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         if (effEndMs >= startTime.getTime()) {
                             if (typeof b.change === 'number' && !isNaN(b.change)) {
                                 const dKwh = Math.max(0, b.change * eScale);
-                                kwhChangeSum += dKwh;
-                                hasKwhChange = true;
-                                const derivedW = (dKwh * 1000) / dtHours;
-                                derivedPowerPts.push({ startMs: bStartMs, endMs: effEndMs, midMs, val: derivedW, maxVal: derivedW });
-                                if ((prevStValKwh === null || prevStValKwh <= 1.0) && dKwh >= 25) {
-                                    const bDate = new Date(bStartMs);
-                                    const dateStr = !isNaN(bDate.getTime())
-                                        ? bDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
-                                        : '';
-                                    setSensorDiagnostic(entId, {
-                                        status: 'ok',
-                                        jumpKwh: +dKwh.toFixed(1),
-                                        jumpInfo: `Hinweis: Anstieg +${dKwh.toFixed(1).replace('.', ',')} kWh${dateStr ? ' am ' + dateStr : ''} (Start/Übertrag) im Zähler enthalten`
-                                    });
+                                const isInitJump = (prevStValKwh === null || prevStValKwh <= 1.0)
+                                    && dKwh >= 35
+                                    && (stVal === null || Math.abs(dKwh - stVal) <= Math.max(5.0, stVal * 0.15));
+                                if (!isInitJump && dKwh < 180) {
+                                    kwhChangeSum += dKwh;
+                                    hasKwhChange = true;
+                                    const derivedW = (dKwh * 1000) / dtHours;
+                                    derivedPowerPts.push({ startMs: bStartMs, endMs: effEndMs, midMs, val: derivedW, maxVal: derivedW });
                                 }
-                            } else if (stVal !== null && prevStValKwh !== null) {
-                                const stepDiff = stVal >= prevStValKwh ? (stVal - prevStValKwh) : stVal;
-                                if (stepDiff >= 0) {
+                            } else if (stVal !== null && prevStValKwh !== null && prevStValKwh > 0.5) {
+                                const stepDiff = stVal >= prevStValKwh ? (stVal - prevStValKwh) : 0;
+                                if (stepDiff >= 0 && stepDiff < 180) {
                                     kwhChangeSum += stepDiff;
                                     hasKwhChange = true;
                                     const derivedW = (stepDiff * 1000) / dtHours;
                                     derivedPowerPts.push({ startMs: bStartMs, endMs: effEndMs, midMs, val: derivedW, maxVal: derivedW });
                                 }
                             }
-                            if (stVal !== null && !isNaN(stVal)) {
+                            if (stVal !== null && !isNaN(stVal) && stVal > 0.1) {
                                 if (firstStateKwh === null) firstStateKwh = stVal;
                                 lastStateKwh = stVal;
                             }
                         }
-                        if (stVal !== null && !isNaN(stVal) && stVal > 0) {
+                        if (stVal !== null && !isNaN(stVal) && stVal > 0.1) {
                             prevStValKwh = stVal;
                         }
                     }
@@ -2209,12 +2471,15 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                 const effEndStateKwh = (liveValKwh !== null && !isNaN(liveValKwh) && (lastStateKwh === null || liveValKwh >= lastStateKwh))
                     ? liveValKwh
                     : lastStateKwh;
-                const stateSpanKwh = (firstStateKwh !== null && effEndStateKwh !== null && effEndStateKwh >= firstStateKwh)
+                const stateSpanKwh = (firstStateKwh !== null && firstStateKwh > 0.1 && effEndStateKwh !== null && effEndStateKwh >= firstStateKwh)
                     ? Math.max(0, effEndStateKwh - firstStateKwh)
                     : 0;
 
                 if (hasKwhChange || stateSpanKwh > 0) {
-                    ltsKwhByEntity.set(entId, +Math.max(0, kwhChangeSum, stateSpanKwh).toFixed(3));
+                    const bestLtsKwh = (stateSpanKwh > 0 && kwhChangeSum > stateSpanKwh * 1.15 + 8)
+                        ? +stateSpanKwh.toFixed(3)
+                        : +Math.max(0, kwhChangeSum, stateSpanKwh).toFixed(3);
+                    ltsKwhByEntity.set(entId, bestLtsKwh);
                 }
 
                 if (derivedPowerPts.length > 0) {
@@ -3041,6 +3306,7 @@ function prewarmOtherTimeframesInBackground() {
                 const ds = await fetchTimeframeDataset(tf, null);
                 if (ds) {
                     intradayHistoryCache[tf] = ds;
+                    persistIntradayHistoryCacheToIdb();
                     if (tf === 'month' || tf === 'day') {
                         const analyseTab = document.getElementById('tab-analyse');
                         if (analyseTab && analyseTab.classList.contains('active') && typeof renderAnalysisSection === 'function') {
@@ -3203,17 +3469,27 @@ function getUnifiedEnergyLedger(baseline = null) {
     let batDisMonth = +Math.max(...batDisMonthCandidates).toFixed(2);
     let batLossMonth = +Math.max(0, batChgMonth - batDisMonth).toFixed(2);
 
+    let gridImpMonth = +Math.max(...gridImpMonthCandidates).toFixed(2);
+    const rawLoadMonth = Math.max(...loadMonthCandidates);
     const rawExpMonth = Math.max(...gridExpMonthCandidates);
     let gridExpMonth = +Math.min(Math.max(0, pvMonth - batChgMonth), Math.max(gridExpToday, rawExpMonth)).toFixed(2);
-    let pvDirectMonth = +Math.max(pvDirectToday, pvMonth - batChgMonth - gridExpMonth).toFixed(2);
+
+    // Reconcile PV Direct consumption using both PV-side balance (PV - BatChg - GridExp)
+    // and Load-side balance (Measured House Load - GridImp - BatDis) so multi-inverter setups never compress direct PV to ~2 kWh
+    const directFromPvSide = Math.max(0, pvMonth - batChgMonth - gridExpMonth);
+    const directFromLoadSide = rawLoadMonth > 0
+        ? Math.min(Math.max(0, pvMonth - batChgMonth), Math.max(0, rawLoadMonth - gridImpMonth - batDisMonth))
+        : 0;
+    let pvDirectMonth = +Math.max(pvDirectToday, directFromPvSide, directFromLoadSide).toFixed(2);
 
     // Ensure strict energy conservation on PV side: PV = Direkt + Akku-Ladung + Einspeisung
     if (pvDirectMonth + batChgMonth + gridExpMonth > pvMonth) {
-        pvMonth = +(pvDirectMonth + batChgMonth + gridExpMonth).toFixed(2);
+        gridExpMonth = +Math.max(0, pvMonth - batChgMonth - pvDirectMonth).toFixed(2);
+        if (pvDirectMonth + batChgMonth + gridExpMonth > pvMonth) {
+            pvMonth = +(pvDirectMonth + batChgMonth + gridExpMonth).toFixed(2);
+        }
     }
 
-    let gridImpMonth = +Math.max(...gridImpMonthCandidates).toFixed(2);
-    const rawLoadMonth = Math.max(...loadMonthCandidates);
     let houseTotalMonth = +Math.max(houseTotalToday, pvDirectMonth + batDisMonth + gridImpMonth, rawLoadMonth).toFixed(2);
 
     const hasAnyRealData = (pvMonth > 0 || gridImpMonth > 0 || batChgMonth > 0 || batDisMonth > 0);
@@ -3299,6 +3575,7 @@ async function fetchAndRenderIntradayHistory(forceRefresh = false) {
 
     if (freshDataset) {
         intradayHistoryCache[targetTf] = freshDataset;
+        persistIntradayHistoryCacheToIdb();
         if (currentCurveTimeframe === targetTf) {
             intradaySeriesState = {
                 startOfDayIso: freshDataset.startOfDayIso,
@@ -4923,6 +5200,8 @@ function computeAggregatedPerformanceMetrics(baseline) {
         let bDis = hasReal ? Math.max(0, parseFloat(mObj.batteryDischargedKwh) || 0) : 0;
 
         // Auto-feed or heal the running calendar month from the Unified Energy Ledger (Single Source of Truth)
+        let ledgerDirectOverride = null;
+        let ledgerHouseOverride = null;
         if (isCurrentRunningMonth && !isBeforeTrackingStart && ledger.month.hasLiveData) {
             if (!hasReal || mObj.source === 'ha') {
                 hasReal = true;
@@ -4932,6 +5211,8 @@ function computeAggregatedPerformanceMetrics(baseline) {
                 impKwh = ledger.month.gridImp;
                 bChg = ledger.month.batChg;
                 bDis = ledger.month.batDis;
+                ledgerDirectOverride = ledger.month.pvDirect;
+                ledgerHouseOverride = ledger.month.houseTotal;
             } else {
                 // Manual override in Logbuch is respected (with today's live telemetry as physical floor)
                 realPv = Math.max(realPv || 0, ledger.today.pvTotal);
@@ -4945,9 +5226,13 @@ function computeAggregatedPerformanceMetrics(baseline) {
         // For the running calendar month, compare against pro-rata target up to today unless manually closed
         const effectiveSollKwh = isCurrentRunningMonth ? Math.max(0.1, proRataSollKwh) : sollKwh;
 
-        const directKwh = hasReal ? Math.max(0, (realPv || 0) - expKwh - bChg) : 0;
-        const totalSelfUsedKwh = hasReal ? Math.max(0, (realPv || 0) - expKwh) : 0;
-        const houseConsKwh = hasReal ? (directKwh + bDis + impKwh) : 0;
+        const directKwh = hasReal
+            ? (ledgerDirectOverride !== null ? ledgerDirectOverride : Math.max(0, (realPv || 0) - expKwh - bChg))
+            : 0;
+        const totalSelfUsedKwh = hasReal ? Math.max(directKwh + bChg, (realPv || 0) - expKwh) : 0;
+        const houseConsKwh = hasReal
+            ? (ledgerHouseOverride !== null ? ledgerHouseOverride : (directKwh + bDis + impKwh))
+            : 0;
 
         const selfSavedEur = (directKwh + bDis) * baseline.gridPriceEur;
         const feedInRevEur = expKwh * baseline.eegRateEur;
@@ -5500,7 +5785,7 @@ function reloadAnalyseBarExplorerData() {
 function getAnalyseBarExplorerChannelCatalog() {
     const channels = [
         { id: 'houseTotal', label: 'Hausverbrauch (Aufteilung)', shortLabel: 'Hausverbrauch', unit: 'kWh', color: '#f59e0b', group: 'core', category: 'bilanz', icon: 'home', hasSmartStack: true },
-        { id: 'pvTotal', label: 'PV-Erzeugung (Aufteilung)', shortLabel: 'PV-Erzeugung', unit: 'kWh', color: '#14b8a6', group: 'core', category: 'solar', icon: 'wb_sunny', hasSmartStack: true },
+        { id: 'pvTotal', label: 'PV-Erzeugung · AC (Aufteilung)', shortLabel: 'PV-Erzeugung (AC)', unit: 'kWh', color: '#14b8a6', group: 'core', category: 'solar', icon: 'wb_sunny', hasSmartStack: true },
         { id: 'gridImp', label: 'Netzbezug (Import)', shortLabel: 'Netzbezug', unit: 'kWh', color: '#3b82f6', group: 'core', category: 'netz', icon: 'download' },
         { id: 'gridExp', label: 'Netzeinspeisung (Export)', shortLabel: 'Einspeisung', unit: 'kWh', color: '#06b6d4', group: 'core', category: 'netz', icon: 'upload' },
         { id: 'batChg', label: 'Batterie Ladung', shortLabel: 'Akku Ladung', unit: 'kWh', color: '#a855f7', group: 'core', category: 'haus_bat', icon: 'battery_charging_full' },
@@ -5533,8 +5818,8 @@ function getAnalyseBarExplorerChannelCatalog() {
     if (validStrings.length > 1) {
         channels.splice(2, 0, {
             id: 'pvStrings',
-            label: 'PV-Strings (Gestapelt)',
-            shortLabel: 'Alle Strings',
+            label: 'Alle Strings · DC (Gestapelt)',
+            shortLabel: 'Alle Strings (DC)',
             unit: 'kWh',
             color: '#0d9488',
             group: 'core',
@@ -5623,14 +5908,20 @@ function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1, prevSta
 
     if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
         const dKwh = Math.max(0, statRow.change * eScale);
+        const isInitJump = (prevStateKwh === null || prevStateKwh <= 1.0)
+            && dKwh >= 35
+            && (curStateKwh === null || Math.abs(dKwh - curStateKwh) <= Math.max(5.0, curStateKwh * 0.15));
+        if (isInitJump || dKwh >= 220) {
+            return { deltaKwh: 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
+        }
         return { deltaKwh: dKwh, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
     }
 
-    if (curStateKwh !== null && prevStateKwh !== null) {
+    if (curStateKwh !== null && prevStateKwh !== null && prevStateKwh > 0.5) {
         const stepDiff = curStateKwh >= prevStateKwh
             ? (curStateKwh - prevStateKwh)
             : ((curStateKwh < 0.5 && prevStateKwh > 2.0) ? curStateKwh : 0);
-        return { deltaKwh: Math.max(0, stepDiff), currentStateKwh: curStateKwh };
+        return { deltaKwh: stepDiff < 220 ? Math.max(0, stepDiff) : 0, currentStateKwh: curStateKwh };
     }
 
     return { deltaKwh: 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
@@ -6141,7 +6432,23 @@ async function renderAnalyseBarExplorer(baseline = null, metrics = null, forceRe
     setElText('barExplorerPeriodLabel', win.label);
 
     if (!forceReload && analyseBarExplorerState.cacheByPeriodKey[win.key]) {
-        drawAnalyseBarExplorerView(analyseBarExplorerState.cacheByPeriodKey[win.key], baseline, metrics);
+        const cachedBarData = analyseBarExplorerState.cacheByPeriodKey[win.key];
+        drawAnalyseBarExplorerView(cachedBarData, baseline, metrics);
+        // Stale-While-Revalidate: if cached data from IndexedDB is older than 60s, refresh quietly in background
+        const ageMs = Date.now() - (cachedBarData.fetchedAtMs || 0);
+        if (ageMs > 60000 && haConfigState.accessToken) {
+            fetchAnalyseBarExplorerPeriodData(win, baseline, metrics).then(freshData => {
+                if (freshData) {
+                    freshData.fetchedAtMs = Date.now();
+                    analyseBarExplorerState.cacheByPeriodKey[win.key] = freshData;
+                    persistBarExplorerCacheToIdb();
+                    const curWin = getAnalyseBarExplorerPeriodWindow();
+                    if (curWin.key === win.key) {
+                        drawAnalyseBarExplorerView(freshData, baseline, metrics);
+                    }
+                }
+            }).catch(() => {});
+        }
         return;
     }
 
@@ -6151,7 +6458,9 @@ async function renderAnalyseBarExplorer(baseline = null, metrics = null, forceRe
     }
 
     const data = await fetchAnalyseBarExplorerPeriodData(win, baseline, metrics);
+    if (data) data.fetchedAtMs = Date.now();
     analyseBarExplorerState.cacheByPeriodKey[win.key] = data;
+    persistBarExplorerCacheToIdb();
     drawAnalyseBarExplorerView(data, baseline, metrics);
 }
 
@@ -8702,6 +9011,7 @@ function pickHaEntityFromModal(entityId) {
 async function saveHaConfigFromModal() {
     readHaModalIntoState();
     localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+    PVProPersistentDB.set('ha_config_backup', haConfigState);
     energyCounterBaselines.lastHistorySyncMs = 0;
 
     try {
@@ -8957,6 +9267,7 @@ function saveInstantBootSnapshot() {
             lastValidClimate: homeLastValidClimateValues
         };
         localStorage.setItem('pvpro_instant_boot_snapshot', JSON.stringify(snapshot));
+        PVProPersistentDB.set('boot_snapshot', snapshot);
     } catch (e) {}
 }
 
@@ -9499,6 +9810,21 @@ function renderHomeWeatherWidget() {
     }
 }
 
+function getRoomClimateIcon(ws) {
+    if (ws && ws.icon && ws.icon !== 'auto') return ws.icon;
+    const n = String(ws?.name || '').toLowerCase();
+    if (/esszimmer|esstisch/.test(n)) return 'table_restaurant';
+    if (/schlaf/.test(n)) return 'bed';
+    if (/k[uü]che/.test(n)) return 'kitchen';
+    if (/bad|dusche|wc/.test(n)) return 'bathtub';
+    if (/b[uü]ro|arbeit/.test(n)) return 'computer';
+    if (/kind/.test(n)) return 'child_care';
+    if (/keller|technik|hwr|garage/.test(n)) return 'foundation';
+    if (/aussen|außen|garten|terrasse|balkon/.test(n)) return 'thermostat';
+    if (/wohn/.test(n)) return 'weekend';
+    return 'device_thermostat';
+}
+
 function renderHomeCustomWeatherSensors() {
     const grid = document.getElementById('homeCustomWeatherGrid');
     if (!grid) return;
@@ -9536,40 +9862,53 @@ function renderHomeCustomWeatherSensors() {
         const humReading = humEntId ? getClimateReadingWithFallback(humEntId, '%') : { val: NaN, unit: '%' };
         const hasHumidity = Number.isFinite(humReading.val);
         const humBadgeHtml = hasHumidity
-            ? `<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-lg bg-sky-500/10 dark:bg-sky-400/15 text-sky-700 dark:text-sky-300 text-[12.5px] font-semibold tabular-nums shrink-0" title="Relative Luftfeuchtigkeit (${escapeHtml(humEntId)})">
-                <span class="material-symbols-rounded text-[14px]">water_drop</span>
-                <span>${Math.round(humReading.val)} %</span>
-               </span>`
+            ? `<div class="pl-2.5 border-l border-slate-200/80 dark:border-white/10 flex items-center shrink-0">
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-500/10 dark:bg-sky-400/15 border border-sky-500/20 text-sky-700 dark:text-sky-300 text-[12.5px] font-semibold tabular-nums" title="Relative Luftfeuchtigkeit (${escapeHtml(humEntId)})">
+                    <span class="material-symbols-rounded text-[13.5px]">water_drop</span>
+                    <span>${Math.round(humReading.val)} %</span>
+                </span>
+               </div>`
             : '';
 
         const mm = entId ? homeSensorMinMaxCache.byEntity[entId] : null;
-        let subText = entId ? 'Tippen für 24h-Kurve' : 'Sensor in Einstellungen wählen';
+        let subHtml = `<span class="text-slate-400 dark:text-slate-500">${entId ? 'Tippen für 24h-Kurve' : 'Sensor in Einstellungen wählen'}</span>`;
         if (mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)) {
             const minVal = Number.isFinite(rawVal) ? Math.min(mm.min, rawVal) : mm.min;
             const maxVal = Number.isFinite(rawVal) ? Math.max(mm.max, rawVal) : mm.max;
             const degSuffix = unit === '°C' ? '°' : ` ${unit}`;
-            subText = `Min ${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix} · Max ${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}`;
+            subHtml = `
+                <span class="inline-flex items-center gap-1">
+                    <span class="text-slate-400 dark:text-slate-500">Min</span>
+                    <span class="font-medium text-slate-700 dark:text-slate-300">${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}</span>
+                </span>
+                <span class="text-slate-300 dark:text-slate-600">·</span>
+                <span class="inline-flex items-center gap-1">
+                    <span class="text-slate-400 dark:text-slate-500">Max</span>
+                    <span class="font-medium text-slate-700 dark:text-slate-300">${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}</span>
+                </span>`;
         }
 
-        const iconName = ws.icon || (/esszimmer/i.test(ws.name) ? 'table_restaurant' : 'weekend');
+        const iconName = getRoomClimateIcon(ws);
 
         return `
         <div onclick="openClimateHistoryModal(${idx})" role="button" tabindex="0" title="Tippen für 24h Temperatur- &amp; Feuchte-Verlauf (${escapeHtml(ws.name || `Raum ${idx + 1}`)})"
-            class="dash-sub-tile rounded-[20px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[120px] cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.99] transition-all group">
+            class="dash-sub-tile rounded-[20px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[124px] cursor-pointer hover:ring-2 hover:ring-primary/40 active:scale-[0.99] transition-all group">
             <div>
                 <div class="flex items-center justify-between gap-1.5">
                     <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200 min-w-0">
-                        <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px] shrink-0">${escapeHtml(iconName)}</span>
+                        <span class="material-symbols-rounded text-primary text-[19px] shrink-0">${escapeHtml(iconName)}</span>
                         <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
                     </div>
-                    <span class="material-symbols-rounded text-[15px] text-slate-400 group-hover:text-teal-500 transition-colors shrink-0">show_chart</span>
+                    <span class="material-symbols-rounded text-[15px] text-slate-400 group-hover:text-primary transition-colors shrink-0">show_chart</span>
                 </div>
-                <div class="mt-3 flex items-baseline justify-between gap-2 flex-wrap">
-                    <p class="text-[24px] sm:text-[26px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none">${escapeHtml(valText)}</p>
+                <div class="mt-3 flex items-center justify-between gap-2">
+                    <p class="text-[23px] sm:text-[25px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none">${escapeHtml(valText)}</p>
                     ${humBadgeHtml}
                 </div>
             </div>
-            <p class="text-[12.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-2.5">${escapeHtml(subText)}</p>
+            <div class="pt-2 mt-2.5 border-t border-slate-200/70 dark:border-white/10 flex items-center justify-between gap-1.5 text-[12px] tabular-nums truncate">
+                <div class="flex items-center gap-1.5 truncate">${subHtml}</div>
+            </div>
         </div>`;
     }).join('');
 }
@@ -9589,7 +9928,7 @@ async function openClimateHistoryModal(sensorIndex) {
     const tempEntId = String(ws.entityId || '').trim();
     const humEntId = resolveRoomHumidityEntity(ws);
     const roomTitle = ws.name || `Raum ${sensorIndex + 1}`;
-    const iconName = ws.icon || (/esszimmer/i.test(roomTitle) ? 'table_restaurant' : 'weekend');
+    const iconName = getRoomClimateIcon(ws);
 
     setElText('climateModalTitle', roomTitle);
     setElText('climateModalIcon', iconName);
@@ -9599,21 +9938,33 @@ async function openClimateHistoryModal(sensorIndex) {
     const humNow = humEntId ? getClimateReadingWithFallback(humEntId, '%') : { val: NaN, unit: '%' };
     const mm = tempEntId ? homeSensorMinMaxCache.byEntity[tempEntId] : null;
 
-    const fmt1 = (n) => Number.isFinite(n) ? n.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—';
-    setElText('climateModalTempNow', Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)} ${tempNow.unit}` : '—');
-    setElText('climateModalHumNow', Number.isFinite(humNow.val) ? `${Math.round(humNow.val)} %` : '—');
-    setElText('climateModalTempMinMax', mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)
-        ? `${fmt1(mm.min)}° / ${fmt1(mm.max)}°`
-        : (Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)}°` : '—'));
+    const fmt1 = (n) => Number.isFinite(n) ? n.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '--,-';
+    const unitStr = tempNow.unit || '°C';
+
+    // Populate the 4 exact KPI box IDs in #modal-climate-curve immediately from cache
+    setElText('climateModalCurrentTemp', Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)} ${unitStr}` : `--,- ${unitStr}`);
+    setElText('climateModalCurrentHum', Number.isFinite(humNow.val) ? `${Math.round(humNow.val)} %` : '— %');
+    setElText('climateModalMinTemp', mm && Number.isFinite(mm.min)
+        ? `${fmt1(mm.min)} ${unitStr}`
+        : (Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)} ${unitStr}` : `--,- ${unitStr}`));
+    setElText('climateModalMaxTemp', mm && Number.isFinite(mm.max)
+        ? `${fmt1(mm.max)} ${unitStr}`
+        : (Number.isFinite(tempNow.val) ? `${fmt1(tempNow.val)} ${unitStr}` : `--,- ${unitStr}`));
 
     modal.classList.remove('hidden');
 
-    const loadingEl = document.getElementById('climateModalLoadingOverlay');
-    if (loadingEl) loadingEl.classList.remove('hidden');
-
     const filterIds = [tempEntId, humEntId].filter(Boolean);
+    const roomCacheKey = `${tempEntId}__${humEntId || ''}`;
     let tempPoints = [];
     let humPoints = [];
+
+    // Immediately render cached 24h curve from IndexedDB if available while fresh data loads
+    const cachedRoomCurve = climateHistoryCacheByRoom[roomCacheKey];
+    if (cachedRoomCurve && Array.isArray(cachedRoomCurve.tempPoints) && cachedRoomCurve.tempPoints.length > 0) {
+        tempPoints = cachedRoomCurve.tempPoints;
+        humPoints = Array.isArray(cachedRoomCurve.humPoints) ? cachedRoomCurve.humPoints : [];
+        renderClimateHistoryChartCanvas(tempPoints, humPoints, tempNow.val, humNow.val);
+    }
 
     if (haConfigState.baseUrl && haConfigState.accessToken && filterIds.length > 0) {
         try {
@@ -9621,6 +9972,8 @@ async function openClimateHistoryModal(sensorIndex) {
             const endpoint = `/api/history/period/${encodeURIComponent(start24h)}?filter_entity_id=${encodeURIComponent(filterIds.join(','))}&minimal_response&no_attributes`;
             const res = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, endpoint);
             if (res && res.ok && Array.isArray(res.data)) {
+                let freshTempPts = [];
+                let freshHumPts = [];
                 res.data.forEach(seriesArr => {
                     if (!Array.isArray(seriesArr) || seriesArr.length === 0) return;
                     const eid = seriesArr[0]?.entity_id;
@@ -9632,16 +9985,27 @@ async function openClimateHistoryModal(sensorIndex) {
                             parsedPts.push({ ts, val });
                         }
                     });
-                    if (eid === tempEntId) tempPoints = parsedPts;
-                    else if (eid === humEntId) humPoints = parsedPts;
+                    if (eid === tempEntId) freshTempPts = parsedPts;
+                    else if (eid === humEntId) freshHumPts = parsedPts;
                 });
+                if (freshTempPts.length > 0 || freshHumPts.length > 0) {
+                    tempPoints = freshTempPts.length > 0 ? freshTempPts : tempPoints;
+                    humPoints = freshHumPts.length > 0 ? freshHumPts : humPoints;
+                    climateHistoryCacheByRoom[roomCacheKey] = {
+                        savedAtMs: Date.now(),
+                        tempPoints,
+                        humPoints
+                    };
+                    PVProPersistentDB.set('climate_history_cache', climateHistoryCacheByRoom);
+                }
             }
         } catch (e) {}
     }
 
-    if (loadingEl) loadingEl.classList.add('hidden');
+    // Update all 4 KPI boxes directly from the fetched 24h curve so they are NEVER empty when the chart has data!
+    let effTempNow = tempNow.val;
+    let effHumNow = humNow.val;
 
-    // Compute 24h Min/Max directly from 24h curve if available
     if (tempPoints.length > 0) {
         let min24 = Infinity;
         let max24 = -Infinity;
@@ -9649,12 +10013,36 @@ async function openClimateHistoryModal(sensorIndex) {
             if (p.val < min24) min24 = p.val;
             if (p.val > max24) max24 = p.val;
         });
+        const latestTempPt = tempPoints[tempPoints.length - 1].val;
+        if (!Number.isFinite(effTempNow) && Number.isFinite(latestTempPt)) {
+            effTempNow = latestTempPt;
+            if (tempEntId) recordValidClimateReading(tempEntId, latestTempPt, unitStr);
+        }
+        if (Number.isFinite(effTempNow)) {
+            min24 = Math.min(min24, effTempNow);
+            max24 = Math.max(max24, effTempNow);
+            setElText('climateModalCurrentTemp', `${fmt1(effTempNow)} ${unitStr}`);
+        }
         if (Number.isFinite(min24) && Number.isFinite(max24)) {
-            setElText('climateModalTempMinMax', `${fmt1(min24)}° / ${fmt1(max24)}°`);
+            if (tempEntId) homeSensorMinMaxCache.byEntity[tempEntId] = { min: min24, max: max24 };
+            setElText('climateModalMinTemp', `${fmt1(min24)} ${unitStr}`);
+            setElText('climateModalMaxTemp', `${fmt1(max24)} ${unitStr}`);
         }
     }
 
-    renderClimateHistoryChartCanvas(tempPoints, humPoints, tempNow.val, humNow.val);
+    if (humPoints.length > 0) {
+        const latestHumPt = humPoints[humPoints.length - 1].val;
+        if (!Number.isFinite(effHumNow) && Number.isFinite(latestHumPt)) {
+            effHumNow = latestHumPt;
+            if (humEntId) recordValidClimateReading(humEntId, latestHumPt, '%');
+        }
+        if (Number.isFinite(effHumNow)) {
+            setElText('climateModalCurrentHum', `${Math.round(effHumNow)} %`);
+        }
+    }
+
+    renderHomeCustomWeatherSensors();
+    renderClimateHistoryChartCanvas(tempPoints, humPoints, effTempNow, effHumNow);
 }
 
 function closeClimateHistoryModal() {
@@ -9826,25 +10214,57 @@ function renderHaWeatherSensorsEditor() {
 
     const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
     if (list.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-400 py-1.5">Noch keine eigenen Raum-/Klimasensoren hinterlegt. Klicke oben rechts auf „+ Raum-/Klimasensor hinzufügen“.</p>`;
+        container.innerHTML = `<p class="text-xs text-slate-400 py-1.5">Noch keine eigenen Raum-/Klimasensoren hinterlegt. Klicke oben rechts auf „+ Raum hinzufügen“.</p>`;
         return;
     }
+
+    const iconOptions = [
+        { val: 'auto', label: 'Symbol: Automatisch (aus Raumname)' },
+        { val: 'weekend', label: 'Sofa (Wohnzimmer)' },
+        { val: 'table_restaurant', label: 'Esstisch (Esszimmer)' },
+        { val: 'bed', label: 'Bett (Schlafzimmer)' },
+        { val: 'kitchen', label: 'Küche' },
+        { val: 'bathtub', label: 'Bad / Dusche' },
+        { val: 'computer', label: 'Büro / Arbeitszimmer' },
+        { val: 'child_care', label: 'Kinderzimmer' },
+        { val: 'foundation', label: 'Keller / Technik' },
+        { val: 'thermostat', label: 'Außen / Garten' },
+        { val: 'device_thermostat', label: 'Thermometer (Standard)' }
+    ];
 
     container.innerHTML = list.map((ws, idx) => {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(ws.name || '') : (ws.name || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(ws.entityId || '') : (ws.entityId || '');
         const resolvedHum = ws.humidityEntity || resolveRoomHumidityEntity(ws) || '';
         const safeHumEnt = typeof escapeHtml === 'function' ? escapeHtml(resolvedHum) : resolvedHum;
+        const curIcon = ws.icon || 'auto';
+        const previewIcon = getRoomClimateIcon(ws);
+
+        const iconSelectHtml = iconOptions.map(opt =>
+            `<option value="${opt.val}" ${curIcon === opt.val ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
         return `
         <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
-            <div class="flex items-center justify-between gap-2">
-                <input type="text" value="${safeName}" oninput="updateHaCustomWeatherSensorField(${idx}, 'name', this.value)"
-                    placeholder="Raum / Name (z. B. Wohnzimmer)"
-                    class="flex-1 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                <button type="button" onclick="removeHaCustomWeatherSensor(${idx})"
-                    class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center shrink-0 cursor-pointer" title="Raum entfernen">
-                    <span class="material-symbols-rounded text-base">delete</span>
-                </button>
+            <div class="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-[180px]">
+                    <span class="w-8 h-8 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-lg">${escapeHtml(previewIcon)}</span>
+                    </span>
+                    <input type="text" value="${safeName}" oninput="updateHaCustomWeatherSensorField(${idx}, 'name', this.value)"
+                        placeholder="Raum / Name (z. B. Wohnzimmer)"
+                        class="flex-1 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+                <div class="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+                    <select onchange="updateHaCustomWeatherSensorField(${idx}, 'icon', this.value); renderHaWeatherSensorsEditor();"
+                        class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500 cursor-pointer">
+                        ${iconSelectHtml}
+                    </select>
+                    <button type="button" onclick="removeHaCustomWeatherSensor(${idx})"
+                        class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center shrink-0 cursor-pointer" title="Raum entfernen">
+                        <span class="material-symbols-rounded text-base">delete</span>
+                    </button>
+                </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <div class="flex items-center gap-1.5">

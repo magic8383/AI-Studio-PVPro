@@ -4,6 +4,64 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.2] – 2026-11-13
+
+### ✨ Service-Worker MIME-Type Guard gegen `text/html`-Fehler, Fester Handy-Speicher via IndexedDB (`PVProPersistentDB`) + `navigator.storage.persist()` & Sofort-Hydrierung aller Diagramme (`< 20 ms`)
+
+#### 1. Service-Worker MIME-Type Guard & Zentrale Registrierung (`index.html`, `app.js`, `server.js`, `sw.js`)
+* **Beseitigung des Fehlers `The script has an unsupported MIME type ('text/html')`:**
+  - Die bisher doppelte Service-Worker-Registrierung (`index.html` + `app.js`) wurde in einer zentralen Funktion `window.registerAndVerifyServiceWorker()` zusammengeführt.
+  - Vor jedem `navigator.serviceWorker.register('./sw.js')` und `reg.update()` prüft die App per `fetch('./sw.js?v=11.2', { cache: 'no-store' })`, ob der Server tatsächlich `Content-Type: application/javascript` liefert. Antwortet ein vorgeschalteter Cloud-Proxy oder Warmup-Screen vorübergehend mit `text/html`, wird die Registrierung sauber übersprungen und ein eventuell veralteter Service Worker abgemeldet, sodass kein Laufzeitfehler entsteht.
+  - Zusätzlich wurden alle `reg.update()`-Aufrufe mit `.catch(() => {})` abgesichert und die Server-Route `/sw.js` um `X-Content-Type-Options: nosniff` sowie `Service-Worker-Allowed: /` ergänzt.
+
+#### 2. Fester Handy-Speicher: `navigator.storage.persist()` & Lokale Datenbank `PVProPersistentDB` (`index.html`, `telemetry.js`)
+* **Schutz vor automatischer Android-/Browser-Speicherbereinigung:**
+  - Beim Start fordert die App automatisch `navigator.storage.persist()` beim Betriebssystem an. Dadurch stuft Android/Chrome den Speicher der installierten Web-App (PWA) als geschützten, dauerhaften Anwendungsspeicher ein.
+* **Echte lokale Datenbank (`PVProPersistentDB` auf IndexedDB-Basis):**
+  - Alle wichtigen Zustände und großen Zeitreihen werden nun zusätzlich in der lokalen IndexedDB (`pvpro_persistent_db`) gespeichert:
+    1. `ha_config_backup`: Komplette Home-Assistant-Konfiguration inkl. Sensoren und Token (automatische Selbstheilung, falls `localStorage` vom System geleert wurde).
+    2. `energy_counter_baselines` & `performance_records_backup`: Tages-/Monats-Startwerte der Zähler und das 12-Monats-Logbuch.
+    3. `boot_snapshot`: Letzte Live-Leistungen, Wetter-Widget und Raumklima-Werte.
+    4. `intraday_history_cache`: Komplette `Tag`-, `Woche`- und `Monat`-Kurven für das Live-Verlaufsdiagramm.
+    5. `bar_explorer_cache`: Gespeicherte Zeiträume (`Tag`, `Woche`, `Monat`, `Jahr`) des Analyse-Balken-Explorers.
+    6. `climate_history_cache`: 24-Stunden-Temperatur- und Luftfeuchtigkeits-Kurven der Raumsensoren.
+* **Sofortiges Diagramm-Rendering (`< 20 ms`) mit Stale-While-Revalidate:**
+  - Beim Öffnen von `Tagesverlauf`, `Balken-Explorer` oder eines `24h-Raumklima-Popups` werden die lokal in `IndexedDB` gespeicherten Kurven sofort ohne Lade-Wartezeit dargestellt und anschließend im Hintergrund geräuschlos mit neuen Home-Assistant-Daten aktualisiert.
+
+---
+
+## [Version 11.1] – 2026-11-13
+
+### ✨ Klare AC/DC-Kennzeichnung im Balken-Explorer & Blickdichte Sticky-Karte, Optisch Abgegrenzte Raumklima-Werte + Icon-Wähler & Reparierte 24h-Popup-Werte, Theme-Konformes Einstellungsmenü, Bereinigter HA-Footer & Korrekte Monatsbilanz in „Autarkie & Speicher“
+
+#### 1. Balken-Explorer: Klare AC/DC-Kennzeichnung (`PV-Erzeugung (AC)` vs. `Alle Strings (DC)`) & Blickdichte Sticky-Kopfzeile (`index.html`, `telemetry.js`)
+* **Eindeutige Kennzeichnung von AC- und DC-Seite ohne Logik-Eingriff:**
+  - `PV-Erzeugung (AC)` (bzw. `PV-Erzeugung · AC (Aufteilung)`) kennzeichnet nun klar den nutzbaren Wechselrichter-Ertrag nach Umwandlungsverlusten, während `Alle Strings (DC)` (bzw. `Alle Strings · DC (Gestapelt)`) die ungedrosselte DC-Rohsumme direkt von den Solarmodulen vor dem Wechselrichter ausweist. Dadurch ist die physikalische Differenz (ca. 3–5 % Wechselrichter-Umwandlung, z. B. `14,9 kWh AC` vs. `15,5 kWh DC`) sofort ersichtlich.
+* **Kein Durchscheinen beim Scrollen unter dem Balkendiagramm (`#barExplorerStickyCard`):**
+  - Die Sticky-Diagrammkarte im Balken-Explorer besitzt nun einen vollständig blickdichten Hintergrund (`bg-white dark:bg-[#0b151a]`), sodass die darunter durchscrollenden KPI- und Kanal-Kacheln nicht mehr hinter den Diagrammbalken durchscheinen.
+
+#### 2. Raumklima-Kacheln & 24h-Klima-Verlaufs-Popup (`index.html`, `telemetry.js`)
+* **Reparierte Kopf-Kennzahlen im 24h-Klima-Popup (`#modal-climate-curve`):**
+  - Behebung einer ID-Abweichung (`climateModalCurrentTemp`, `climateModalCurrentHum`, `climateModalMinTemp`, `climateModalMaxTemp`), durch die in den 4 oberen Statistik-Boxen des Popups `--,- °C` und `— %` standen, obwohl die 24h-Kurve darunter bereits geladen war. Zusätzlich werden `Aktuell`, `Luftfeuchte`, `Min (24h)` und `Max (24h)` nun direkt aus den echten Datenpunkten der 24h-Historienkurve berechnet und aktualisiert.
+* **Klare optische Abgrenzung auf den Raumklima-Kacheln:**
+  - Haupttemperatur (`°C`) und Luftfeuchtigkeits-Pill (`💧 %`) sind durch eine feine vertikale Trennlinie (`border-slate-200/80`) klar voneinander abgegrenzt; die `Min / Max`-Werte sitzen in einer eigenen, durch eine horizontale Linie abgetrennten Fußzeile.
+* **Herkunft & Manuelle Auswahl der Raumklima-Symbole:**
+  - Neben der automatischen Raumnamen-Erkennung (*Wohnzimmer* -> Sofa, *Esszimmer* -> Besteck, *Schlafzimmer* -> Bett, *Bad* -> Dusche usw.) lässt sich im Tab **„2. Klima & Wetter“** der Sensor-Einstellungen für jeden Raum über ein Auswahlfeld gezielt ein passendes Symbol festlegen.
+
+#### 3. Entfernung des Doppelten Reverse-Proxy-Links & Theme-Konformes Einstellungsmenü (`index.html`)
+* **Kein doppelter `Reverse-Proxy Anleitung`-Button mehr:**
+  - Da die Reverse-Proxy-Anleitung bereits einen eigenen Tab (**„3. Proxy-Hilfe“**) oben im Home-Assistant-Dialog besitzt, wurde der doppelte Link-Button unten links in der Fußzeile von `#modal-ha-config` entfernt.
+* **Einstellungsmenü (`#m3MoreSheet`) im aktiven Design-Studio-Thema:**
+  - Die bisherigen bunten Einzelblöcke (`amber`, `indigo`, `emerald`) im „Mehr / Einstellungen“-Menü wurden durch ruhige `.dash-main-card`- und `.dash-sub-tile`-Glaskarten ersetzt, die automatisch die im Design-Studio gewählte Akzentfarbe (`text-primary`, `bg-primary/10`), Schriftart und Hell/Dunkel-Darstellung übernehmen.
+
+#### 4. Korrektur von „Autarkie & Speicher“ (`Rest-Netzbezug` & `PV-Direktverbrauch`) (`telemetry.js`)
+* **Schutz gegen initiale Zähler-Offset-Sprünge (`0 -> Gesamtzählerstand`):**
+  - Meldet die Home-Assistant-Langzeitstatistik im ersten Monats-Bucket einmalig den gesamten historischen Zählerstand als `change` (z. B. `0 -> 610+ kWh`), wird dieser Initial-Offset nun als Start-Kalibrierung erkannt und nicht mehr zum laufenden Monatsverbrauch (`Rest-Netzbezug: 652 kWh`) addiert (`schemaVersion: '11.1'`).
+* **Physikalischer Abgleich des `PV-Direktverbrauchs`:**
+  - In `getUnifiedEnergyLedger` und `computeAggregatedPerformanceMetrics` wird der monatliche `PV-Direktverbrauch` nun sowohl über die Erzeugungsbilanz (`PV - Einspeisung - Batterieladung`) als auch über die Verbrauchsbilanz (`Hauslast - Netzbezug - Batterieentladung`) abgeglichen, sodass bei DC-gekoppelten Hybrid-Systemen (Fronius GEN24 + BYD HVS+) kein künstlich auf `2 kWh` gedrückter Direktverbrauch mehr entsteht.
+
+---
+
 ## [Version 11.0] – 2026-11-13
 
 ### ✨ Kompakte Horizontale Energie-Leiste auf der Startseite, Raumklima-Sektion mit Luftfeuchte (`% rF`), Wert-Gedächtnis & 24h-Verlaufs-Popup, Eigener „Klima & Wetter“-Tab, Akzent-Fortschrittsbalken bei Verbrauchern, Tagesdiagramm ab Aktivität (`+1h` Vorschau & Verschiebbar) & Blitzstart (`0 ms` Snapshot)

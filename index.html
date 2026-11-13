@@ -3,24 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 11.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 11.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=11.0">
+    <link rel="manifest" href="manifest.json?v=11.2">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.0">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.0">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.0">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.0">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.2">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.2">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.2">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.2">
     <script>
-        // Self-heal any older Service Worker caches that may have cached an Nginx warmup fallback page
-        (function () {
+        // V11.2: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
+        window.registerAndVerifyServiceWorker = async function () {
+            try {
+                if (navigator.storage && typeof navigator.storage.persist === 'function') {
+                    navigator.storage.persist().then(function (persisted) {
+                        window.pvproStoragePersisted = Boolean(persisted);
+                    }).catch(function () {});
+                }
+            } catch (e) {}
+
             try {
                 sessionStorage.removeItem('warmup_start_time');
                 sessionStorage.removeItem('warmup_last_reload_time');
@@ -28,19 +37,41 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v11.0') {
+                            if (key !== 'pvpro-cache-v11.2') {
                                 caches.delete(key);
                             }
                         });
-                    });
-                }
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(function (reg) {
-                        reg.update();
                     }).catch(function () {});
                 }
+                if (!('serviceWorker' in navigator)) return;
+
+                var swUrl = './sw.js?v=11.2';
+                var probeRes = await fetch(swUrl, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(function () { return null; });
+                var contentType = probeRes && probeRes.headers ? String(probeRes.headers.get('content-type') || '').toLowerCase() : '';
+                var isJavaScriptMime = Boolean(probeRes && probeRes.ok && (contentType.includes('javascript') || contentType.includes('ecmascript')));
+
+                if (!isJavaScriptMime) {
+                    // Proxy or warmup screen returned text/html or non-JS: unregister any stale SW so browser background update never throws MIME error
+                    var regs = await navigator.serviceWorker.getRegistrations().catch(function () { return []; });
+                    for (var i = 0; i < regs.length; i++) {
+                        try { await regs[i].unregister(); } catch (uErr) {}
+                    }
+                    return;
+                }
+
+                var reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).catch(function () { return null; });
+                if (reg && typeof reg.update === 'function') {
+                    reg.update().catch(function () {});
+                }
             } catch (e) {}
-        })();
+        };
+        if (document.readyState === 'complete') {
+            window.registerAndVerifyServiceWorker();
+        } else {
+            window.addEventListener('load', function () {
+                window.registerAndVerifyServiceWorker();
+            }, { once: true });
+        }
     </script>
 
     <!-- Fonts & Icons: Plus Jakarta Sans, Outfit, DM Sans, Manrope & Material Symbols Rounded -->
@@ -628,10 +659,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=11.0" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.2" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.0</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.2</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2184,9 +2215,9 @@
             <div id="analyse-detail-view" class="hidden space-y-3">
                 <!-- SUB-PANEL 0: SMARTES BALKEN-COCKPIT (STICKY TOP 0 + RANDLOSE VOLLBREITE + EINZELBALKEN / SINNVOLLE STAPEL) -->
                 <div id="analysis-panel-balken-explorer" class="hidden space-y-3">
-                    <!-- TOP: STICKY FULL-WIDTH BAR CHART CARD (Geht bis an den Bildschirmrand & dockt beim Scrollen ganz oben an der Statusleiste an!) -->
-                    <div id="barExplorerStickyCard" class="sticky top-0 z-30 -mx-3 sm:-mx-5 px-0 bg-white/96 dark:bg-slate-950/96 backdrop-blur-xl border-b border-slate-200/80 dark:border-teal-500/25 shadow-sm transition-all duration-200">
-                        <div id="barExplorerChartCardInner" class="w-full overflow-hidden">
+                    <!-- TOP: STICKY FULL-WIDTH BAR CHART CARD (Blickdichtes Surface-Finish ohne Durchscheinen beim Scrollen!) -->
+                    <div id="barExplorerStickyCard" class="sticky top-0 z-30 -mx-3 sm:-mx-5 px-0 bg-white dark:bg-[#0b151a] backdrop-blur-xl border-b border-slate-200/90 dark:border-teal-500/25 shadow-md transition-all duration-200">
+                        <div id="barExplorerChartCardInner" class="w-full overflow-hidden bg-white dark:bg-[#0b151a]">
                             <!-- ZEILE 1: [←] [Tag | Woche | Monat | Jahr] links | [Aufteilung] [↻] rechts (Kein Überlappen mehr!) -->
                             <div class="px-2.5 sm:px-4 py-1.5 flex items-center justify-between gap-2 border-b border-slate-200/60 dark:border-white/10">
                                 <!-- Left: Back + Timeframe Switcher (Tag | Woche | Monat | Jahr) -->
@@ -2223,7 +2254,7 @@
                             </div>
 
                             <!-- ZEILE 2: [◀ Zeitraum ▶] links | Präzisions-Readout & Modus rechts -->
-                            <div class="px-2.5 sm:px-4 py-1 bg-slate-50/95 dark:bg-[#091217]/90 border-b border-slate-200/50 dark:border-white/5 flex items-center justify-between gap-2">
+                            <div class="px-2.5 sm:px-4 py-1 bg-slate-50 dark:bg-[#091217] border-b border-slate-200/50 dark:border-white/5 flex items-center justify-between gap-2">
                                 <div class="inline-flex items-center gap-0.5 rounded-xl px-1 py-0.5 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-white/10 text-xs font-semibold shrink-0 shadow-2xs">
                                     <button type="button" onclick="shiftAnalyseBarExplorerPeriod(-1)" class="w-6 h-6 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-center text-slate-700 dark:text-slate-200 cursor-pointer" title="Vorheriger Zeitraum">
                                         <span class="material-symbols-rounded text-sm">chevron_left</span>
@@ -2243,7 +2274,7 @@
                             <!-- Full-Width Edge-to-Edge Bar Chart Stage (Tap = Height Zoom) -->
                             <div id="barExplorerChartStageWrapper"
                                 onclick="onAnalyseBarStageClick(event)"
-                                class="px-0.5 sm:px-2 pt-1 pb-1 bg-white/60 dark:bg-[#081015]/80 cursor-pointer relative select-none"
+                                class="px-0.5 sm:px-2 pt-1 pb-1 bg-white dark:bg-[#081015] cursor-pointer relative select-none"
                                 title="Balken antippen für Messwerte · Doppelklick/Button für Höhen-Zoom">
                                 <div id="barExplorerCanvasContainer" class="relative h-56 sm:h-68 md:h-76 w-full transition-all duration-200">
                                     <canvas id="analysisExplorerBarChart"></canvas>
@@ -2260,11 +2291,11 @@
                         </button>
                         <button type="button" id="btnBarCat_solar" onclick="selectAnalyseBarCategory('solar')" class="px-3 py-1.5 rounded-xl bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0">
                             <span class="material-symbols-rounded text-sm text-teal-500">wb_sunny</span>
-                            <span>PV-Erzeugung (Aufteilung)</span>
+                            <span>PV-Erzeugung · AC (Aufteilung)</span>
                         </button>
                         <button type="button" id="btnBarCat_haus_bat" onclick="selectAnalyseBarCategory('haus_bat')" class="px-3 py-1.5 rounded-xl bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0">
                             <span class="material-symbols-rounded text-sm text-amber-500">solar_power</span>
-                            <span>PV-Strings gestapelt</span>
+                            <span>Alle Strings · DC (gestapelt)</span>
                         </button>
                         <button type="button" id="btnBarCat_netz" onclick="selectAnalyseBarCategory('netz')" class="px-3 py-1.5 rounded-xl bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0">
                             <span class="material-symbols-rounded text-sm text-blue-500">swap_vert</span>
@@ -2723,76 +2754,77 @@
         </div>
     </nav>
 
-    <!-- M3 More Bottom Sheet (V10.2: EXAKT 4 ZENTRALE PUNKTE, HARMONISCHES LIGHT & DARK THEME) -->
-    <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-40 transition-opacity"></div>
-    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 bg-white/95 dark:bg-[#0c1820]/95 backdrop-blur-2xl rounded-t-3xl border-t border-slate-200/90 dark:border-white/15 shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-16 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
-        <div class="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
-        <div class="flex justify-between items-center mb-3.5">
-            <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
-                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400">tune</span> Zentrale Steuerung &amp; Menü
-            </h3>
-            <button onclick="closeMoreSheet()" class="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 cursor-pointer">
-                <span class="material-symbols-rounded text-xl">close</span>
+    <!-- M3 More Bottom Sheet (V11.1: Ruhiges, einheitliches Design-Studio-Theme mit .dash-main-card & .dash-sub-tile) -->
+    <div id="m3SheetBackdrop" onclick="closeMoreSheet()" class="hidden fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-40 transition-opacity"></div>
+    <div id="m3MoreSheet" class="fixed bottom-0 left-0 right-0 dash-main-card rounded-t-[28px] shadow-2xl z-50 transform translate-y-full transition-transform duration-300 ease-out p-4 sm:p-6 pb-20 max-w-xl mx-auto max-h-[88vh] overflow-y-auto">
+        <div class="w-11 h-1 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto mb-3.5"></div>
+        <div class="flex justify-between items-center mb-3.5 px-0.5">
+            <div>
+                <h3 class="text-[16px] font-semibold text-slate-900 dark:text-white tracking-tight">Menü &amp; Einstellungen</h3>
+                <p class="text-[12.5px] text-slate-500 dark:text-slate-400">Darstellung, Sensoren, Datensicherung &amp; Handbuch</p>
+            </div>
+            <button onclick="closeMoreSheet()" class="w-8 h-8 rounded-full dash-sub-tile flex items-center justify-center text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer">
+                <span class="material-symbols-rounded text-lg">close</span>
             </button>
         </div>
 
         <div class="space-y-2.5">
             <!-- 1. Design- & Darstellungs-Studio (Themes, Akzentfarbe, Schriftart, Schriftgröße & Kompaktheit) -->
-            <div class="flex items-center justify-between gap-2 p-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 border border-slate-200/80 dark:border-white/10">
+            <div class="flex items-center justify-between gap-2 p-3.5 rounded-[20px] dash-sub-tile">
                 <button type="button" onclick="closeMoreSheet(); openDesignStudioModal();" class="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group">
-                    <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl text-amber-500 fill-1">palette</span>
+                    <div class="w-10 h-10 rounded-2xl bg-slate-200/75 dark:bg-white/10 text-primary flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[20px]">palette</span>
                     </div>
                     <div class="min-w-0 flex-1">
-                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white group-hover:text-primary transition-colors">1. Design- &amp; Darstellungs-Studio</p>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Themes (Liquid Glass / Pop / Neo), Akzentfarbe, Schrift &amp; Kompaktheit</p>
+                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors">Design- &amp; Darstellungs-Studio</p>
+                        <p class="text-[12px] text-slate-500 dark:text-slate-400 truncate">Theme, Akzentfarbe, Schriftart &amp; Größe</p>
                     </div>
                 </button>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onclick="closeMoreSheet(); openDesignStudioModal();" class="px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold transition-all cursor-pointer">
-                        Anpassen
+                    <button type="button" onclick="closeMoreSheet(); openDesignStudioModal();" class="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-all cursor-pointer shadow-2xs">
+                        Öffnen
                     </button>
-                    <button type="button" onclick="toggleDarkMode()" id="bnav-theme" class="w-9 h-9 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 flex items-center justify-center transition-all cursor-pointer" title="Hell- / Dunkel-Modus direkt umschalten">
+                    <button type="button" onclick="toggleDarkMode()" id="bnav-theme" class="w-9 h-9 rounded-xl bg-slate-200/75 hover:bg-slate-300/75 dark:bg-white/10 dark:hover:bg-white/15 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer" title="Hell- / Dunkel-Modus direkt umschalten">
                         <span id="bnavThemeIcon" class="material-symbols-rounded text-lg">dark_mode</span>
                     </button>
                 </div>
             </div>
 
             <!-- 2. Home Assistant & Sensoren -->
-            <button onclick="closeMoreSheet(); openHaConfigModal('connection');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-teal-500/10 dark:bg-teal-950/40 hover:bg-teal-500/15 dark:hover:bg-teal-900/50 border border-teal-500/30 dark:border-teal-500/30 text-left transition-all cursor-pointer">
+            <button onclick="closeMoreSheet(); openHaConfigModal('connection');" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-[20px] dash-sub-tile text-left transition-all cursor-pointer group">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-xl bg-teal-500/20 border border-teal-500/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl text-teal-600 dark:text-teal-400">settings_input_antenna</span>
+                    <div class="w-10 h-10 rounded-2xl bg-slate-200/75 dark:bg-white/10 text-primary flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[20px]">sensors</span>
                     </div>
                     <div class="min-w-0">
-                        <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">2. Home Assistant &amp; Sensoren</p>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Domain, eigener Token, Sensor-Picker &amp; Reverse-Proxy Hilfe</p>
+                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors">Home Assistant &amp; Sensoren</p>
+                        <p class="text-[12px] text-slate-500 dark:text-slate-400 truncate">Energie, Strings, Verbraucher &amp; Raumklima</p>
                     </div>
                 </div>
-                <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 shrink-0">chevron_right</span>
+                <span class="material-symbols-rounded text-slate-400 group-hover:text-primary transition-colors shrink-0">chevron_right</span>
             </button>
 
             <!-- 3. Speichern unter (NAS / Datei inkl. Token) & Gesamtpakete -->
-            <div class="p-3.5 rounded-2xl bg-indigo-500/10 dark:bg-indigo-950/40 border border-indigo-500/30 space-y-2.5">
-                <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 text-left transition-all cursor-pointer">
+            <div class="p-3.5 rounded-[20px] dash-sub-tile space-y-2.5">
+                <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 text-left transition-all cursor-pointer group">
                     <div class="flex items-center gap-3 min-w-0">
-                        <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center shrink-0">
-                            <span class="material-symbols-rounded text-xl text-indigo-600 dark:text-indigo-400">folder_special</span>
+                        <div class="w-10 h-10 rounded-2xl bg-slate-200/75 dark:bg-white/10 text-primary flex items-center justify-center shrink-0">
+                            <span class="material-symbols-rounded text-[20px]">folder_open</span>
                         </div>
                         <div class="min-w-0">
-                            <p class="text-xs sm:text-sm font-black text-slate-900 dark:text-white">3. Speichern unter… (NAS) &amp; Gesamtpakete</p>
-                            <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Wie bei Windows als Datei inkl. HA-Token aufs NAS legen &amp; überall öffnen</p>
+                            <p class="text-[14px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors">Projekte &amp; Datensicherung</p>
+                            <p class="text-[12px] text-slate-500 dark:text-slate-400 truncate">Komplettpaket inkl. HA-Token sichern &amp; laden</p>
                         </div>
                     </div>
-                    <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 shrink-0">chevron_right</span>
+                    <span class="material-symbols-rounded text-slate-400 group-hover:text-primary transition-colors shrink-0">chevron_right</span>
                 </button>
-                <div class="grid grid-cols-2 gap-2 pt-1">
-                    <button type="button" onclick="closeMoreSheet(); saveProjectFileAs();" class="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
+                <div class="grid grid-cols-2 gap-2 pt-0.5">
+                    <button type="button" onclick="closeMoreSheet(); saveProjectFileAs();" class="px-3 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs transition-all">
                         <span class="material-symbols-rounded text-base">save_as</span>
                         <span>Speichern unter…</span>
                     </button>
-                    <button type="button" onclick="closeMoreSheet(); openProjectFileFromDisk();" class="px-3 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer">
-                        <span class="material-symbols-rounded text-base text-indigo-500">upload_file</span>
+                    <button type="button" onclick="closeMoreSheet(); openProjectFileFromDisk();" class="px-3 py-2 rounded-xl bg-white/85 dark:bg-slate-800/85 hover:bg-white dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200/80 dark:border-white/10 text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-all">
+                        <span class="material-symbols-rounded text-base text-primary">upload_file</span>
                         <span>Datei öffnen…</span>
                     </button>
                 </div>
@@ -2800,18 +2832,22 @@
 
             <!-- 4. VDE-Projektdossier (PDF) & Handbuch -->
             <div class="grid grid-cols-2 gap-2.5">
-                <button onclick="closeMoreSheet(); openDossierModal();" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/40 hover:bg-emerald-500/15 dark:hover:bg-emerald-900/50 border border-emerald-500/30 dark:border-emerald-500/30 text-left transition-all cursor-pointer">
-                    <span class="material-symbols-rounded text-xl text-emerald-600 dark:text-emerald-400 shrink-0">picture_as_pdf</span>
+                <button onclick="closeMoreSheet(); openDossierModal();" class="flex items-center gap-2.5 p-3.5 rounded-[20px] dash-sub-tile text-left transition-all cursor-pointer group">
+                    <div class="w-9 h-9 rounded-xl bg-slate-200/75 dark:bg-white/10 text-primary flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[19px]">picture_as_pdf</span>
+                    </div>
                     <div class="min-w-0">
-                        <p class="text-xs font-black text-slate-900 dark:text-white truncate">4a. VDE-Dossier</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">PDF &amp; Schaltplan</p>
+                        <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">VDE-Dossier</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">PDF &amp; Schaltplan</p>
                     </div>
                 </button>
-                <button onclick="closeMoreSheet(); openPlanungDrillDown('faq');" class="flex items-center gap-2.5 p-3.5 rounded-2xl bg-slate-100/90 dark:bg-white/5 hover:bg-slate-200/80 dark:hover:bg-white/10 border border-slate-200/80 dark:border-white/10 text-left transition-all cursor-pointer">
-                    <span class="material-symbols-rounded text-xl text-sky-600 dark:text-sky-400 shrink-0">menu_book</span>
+                <button onclick="closeMoreSheet(); openPlanungDrillDown('faq');" class="flex items-center gap-2.5 p-3.5 rounded-[20px] dash-sub-tile text-left transition-all cursor-pointer group">
+                    <div class="w-9 h-9 rounded-xl bg-slate-200/75 dark:bg-white/10 text-primary flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[19px]">menu_book</span>
+                    </div>
                     <div class="min-w-0">
-                        <p class="text-xs font-black text-slate-900 dark:text-white truncate">4b. Handbuch</p>
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">Formeln &amp; v10.3</p>
+                        <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.2</p>
                     </div>
                 </button>
             </div>
@@ -3772,20 +3808,14 @@
             </div>
 
             <!-- Footer -->
-            <div class="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between gap-3">
-                <button type="button" onclick="switchHaModalTab('guide')" class="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 cursor-pointer">
-                    <span class="material-symbols-rounded text-sm">menu_book</span>
-                    <span>Reverse-Proxy Anleitung</span>
+            <div class="px-5 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-end gap-2.5">
+                <button onclick="closeHaConfigModal()" class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer">
+                    Abbrechen
                 </button>
-                <div class="flex items-center gap-2.5">
-                    <button onclick="closeHaConfigModal()" class="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer">
-                        Abbrechen
-                    </button>
-                    <button onclick="saveHaConfigFromModal()" class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
-                        <span class="material-symbols-rounded text-base">save</span>
-                        <span>Konfiguration speichern</span>
-                    </button>
-                </div>
+                <button onclick="saveHaConfigFromModal()" class="px-5 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5 cursor-pointer">
+                    <span class="material-symbols-rounded text-base">save</span>
+                    <span>Konfiguration speichern</span>
+                </button>
             </div>
         </div>
     </div>
@@ -4029,13 +4059,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V11.0 (Horizontale Energie-Leiste auf Startseite, Raumklima mit Luftfeuchtigkeit & 24h-Kurven-Popup, Klima-Tab, Smart-Zoom +1h & 0ms Blitzstart) -->
-    <script src="qrcode.client.js?v=11.0"></script>
-    <script src="database.js?v=11.0"></script>
-    <script src="content.js?v=11.0"></script>
-    <script src="app.js?v=11.0"></script>
-    <script src="wiring.js?v=11.0"></script>
-    <script src="dossier.js?v=11.0"></script>
-    <script src="telemetry.js?v=11.0"></script>
+    <!-- MODULARE ARCHITEKTUR V11.2 (Service-Worker MIME-Type Guard, Fester Handy-Speicher via IndexedDB + Persistent Storage & Delta-Cache) -->
+    <script src="qrcode.client.js?v=11.2"></script>
+    <script src="database.js?v=11.2"></script>
+    <script src="content.js?v=11.2"></script>
+    <script src="app.js?v=11.2"></script>
+    <script src="wiring.js?v=11.2"></script>
+    <script src="dossier.js?v=11.2"></script>
+    <script src="telemetry.js?v=11.2"></script>
 </body>
 </html>

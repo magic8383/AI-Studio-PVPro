@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '11.0';
+const APP_VERSION = '11.2';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -7153,15 +7153,10 @@ let deferredPrompt = null;
 
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
-            .then(reg => {
-                reg.update();
-                console.log('PVPro Service Worker registriert:', reg.scope);
-            })
-            .catch(err => {
-                console.warn('PVPro Service Worker Registrierung fehlgeschlagen:', err);
-            });
-    });
+        if (typeof window.registerAndVerifyServiceWorker === 'function') {
+            window.registerAndVerifyServiceWorker();
+        }
+    }, { once: true });
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {

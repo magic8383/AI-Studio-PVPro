@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.0 (Kompakte horizontale Energie-Leiste mit Autarkie-Badge auf der Startseite statt 2x2-Duplikat, eigener „Raumklima & Temperaturen“-Abschnitt mit Luftfeuchtigkeit `% rF`, persistentem Wert-Gedächtnis & 24h-Kurven-Popup, eigener „2. Klima & Wetter“-Tab in den Sensor-Einstellungen, akzentabhängige Fortschrittsbalken bei aktiven Verbrauchern, Tagesdiagramm ab Aktivitätsbeginn + 1 Stunde Zukunfts-Puffer & Verschiebe-Steuerung sowie 0-ms-Sofort-Start per Boot-Snapshot & Fast-First `/api/states`-Render)  
+**Aktuelle Version:** 11.2 (Service-Worker MIME-Type Guard gegen `text/html` Update-Fehler, feste lokale Handy-Datenbank `PVProPersistentDB` auf Basis von IndexedDB & `navigator.storage.persist()` gegen Android-Auto-Bereinigung sowie verzögerungsfreies `<20 ms` Stale-While-Revalidate-Laden aller Verlaufs-, Balken- und Raumklima-Diagramme)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
