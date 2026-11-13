@@ -5127,15 +5127,17 @@ function renderAnalysisSection(baseline) {
 
 // ============================================================================
 // 6A. INTERACTIVE BAR CHART EXPLORER ON ANALYSE LEVEL 2 (TAG | WOCHE | MONAT | JAHR)
+//     V10.8: 1 BAR PER BUCKET + MEANINGFUL SMART-STACKS FOR HAUSVERBRAUCH, PV & STRINGS
 // ============================================================================
 let analyseBarExplorerState = {
-    horizon: 'day', // 'day' | 'week' | 'month' | 'year' (starts with immediate live day view or preserves user choice)
-    periodOffset: 0,  // 0 = current day/week/month/year, -1 = previous, etc.
-    stacked: false,
+    horizon: 'day', // 'day' | 'week' | 'month' | 'year'
+    periodOffset: 0,
+    stacked: true, // When true, 'houseTotal' and 'pvTotal' show their meaningful 3-part stacked breakdown; when false, 1 solid bar
     isExpanded: false,
-    activeCategory: 'bilanz', // 'bilanz' | 'solar' | 'haus_bat' | 'netz' | 'finanz'
-    activeChannels: ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'],
-    soloChannel: null,
+    activeCategory: 'bilanz', // 'bilanz' (houseTotal stack) | 'solar' (pvTotal stack) | 'haus_bat' (pvStrings stack) | 'netz' | 'finanz'
+    selectedChannel: 'houseTotal', // Always renders 1 bar per bucket (either single channel or smart stack)
+    activeChannels: ['houseTotal'],
+    soloChannel: 'houseTotal',
     cacheByPeriodKey: {},
     isFetching: false,
     chartInstance: null
@@ -5147,15 +5149,14 @@ function openAnalyseBarExplorer(initialHorizon = null, presetChannels = null) {
         analyseBarExplorerState.periodOffset = 0;
     }
     if (Array.isArray(presetChannels) && presetChannels.length > 0) {
-        analyseBarExplorerState.activeChannels = [...presetChannels];
-        analyseBarExplorerState.soloChannel = null;
-        if (presetChannels.includes('savingsEur') || presetChannels.includes('autarkyPct')) {
-            analyseBarExplorerState.activeCategory = 'finanz';
-        } else if (presetChannels.length <= 2 && presetChannels.includes('pvTotal')) {
-            analyseBarExplorerState.activeCategory = 'solar';
-        } else {
-            analyseBarExplorerState.activeCategory = 'bilanz';
-        }
+        const firstCh = presetChannels[0];
+        analyseBarExplorerState.selectedChannel = firstCh;
+        analyseBarExplorerState.activeChannels = [firstCh];
+        analyseBarExplorerState.soloChannel = firstCh;
+        if (firstCh === 'pvTotal') analyseBarExplorerState.activeCategory = 'solar';
+        else if (firstCh === 'houseTotal') analyseBarExplorerState.activeCategory = 'bilanz';
+        else if (firstCh === 'gridImp' || firstCh === 'gridExp') analyseBarExplorerState.activeCategory = 'netz';
+        else if (firstCh === 'autarkyPct' || firstCh === 'savingsEur') analyseBarExplorerState.activeCategory = 'finanz';
     }
     if (typeof openAnalyseDrillDown === 'function') {
         openAnalyseDrillDown('balken-explorer');
@@ -5188,7 +5189,7 @@ function shiftAnalyseBarExplorerPeriod(delta) {
 function toggleAnalyseBarExplorerStacked() {
     analyseBarExplorerState.stacked = !analyseBarExplorerState.stacked;
     const lbl = document.getElementById('btnBarExpStackedLabel');
-    if (lbl) lbl.innerText = analyseBarExplorerState.stacked ? 'Gestapelt' : 'Nebeneinander';
+    if (lbl) lbl.innerText = analyseBarExplorerState.stacked ? 'Aufteilung' : 'Einzeln';
     renderAnalyseBarExplorer();
 }
 
@@ -5207,82 +5208,57 @@ function toggleAnalyseBarInlineExpand(ev) {
 
 function onAnalyseBarStageClick(ev) {
     if (ev && ev.target && ev.target.closest('button')) return;
-    toggleAnalyseBarInlineExpand(ev);
+    // Do not toggle expand on single bar tap so user can tap bars comfortably to inspect values
 }
 
 function applyAnalyseBarInlineExpandUi() {
     const exp = !!analyseBarExplorerState.isExpanded;
-    const card = document.getElementById('barExplorerStickyCard');
-    const stage = document.getElementById('barExplorerStageBox');
-    const icon = document.getElementById('iconBarInlineExpand');
-    const lbl = document.getElementById('lblBarInlineExpand');
-    const hint = document.getElementById('barExplorerZoomHint');
-
-    if (card) {
-        if (exp) {
-            card.className = "sticky top-0 z-20 -mx-3 sm:-mx-5 px-2 sm:px-3 py-2.5 rounded-none sm:rounded-2xl bg-white/96 dark:bg-slate-900/96 backdrop-blur-2xl border-y sm:border border-teal-500/40 shadow-xl transition-all duration-300";
-        } else {
-            card.className = "sticky top-0 z-20 p-3 sm:p-4 rounded-3xl bg-white/92 dark:bg-slate-900/92 backdrop-blur-xl border border-slate-200/90 dark:border-white/10 shadow-md transition-all duration-300";
-        }
-    }
-    if (stage) {
-        stage.className = exp
-            ? "relative w-full h-72 sm:h-96 cursor-pointer select-none transition-all duration-300"
-            : "relative w-full h-56 sm:h-72 cursor-pointer select-none transition-all duration-300";
-    }
-    if (icon) icon.innerText = exp ? 'close_fullscreen' : 'open_in_full';
-    if (lbl) lbl.innerText = exp ? 'Kompakt' : 'Randlos';
-    if (hint) {
-        hint.innerText = exp
-            ? 'Randloser Vollbild-Zoom aktiv (Y-Skala ausgeblendet für maximale Balkenbreite · Tippen zum Verkleinern)'
-            : 'Tipp: Direkt ins Diagramm tippen für randlosen Vollbild-Zoom';
+    const container = document.getElementById('barExplorerCanvasContainer');
+    if (container) {
+        container.className = exp
+            ? "relative h-72 sm:h-96 w-full transition-all duration-200"
+            : "relative h-56 sm:h-68 md:h-76 w-full transition-all duration-200";
     }
 }
 
 function selectAnalyseBarCategory(cat) {
     analyseBarExplorerState.activeCategory = cat;
-    analyseBarExplorerState.soloChannel = null;
     if (cat === 'bilanz') {
-        analyseBarExplorerState.activeChannels = ['pvTotal', 'houseTotal', 'gridImp', 'gridExp'];
+        analyseBarExplorerState.selectedChannel = 'houseTotal';
+        analyseBarExplorerState.stacked = true;
     } else if (cat === 'solar') {
-        const strIds = (haConfigState.customStrings || [])
-            .map((s, idx) => (s && (s.energyEntity || s.powerEntity)) ? `str_${idx}` : null)
-            .filter(Boolean);
-        analyseBarExplorerState.activeChannels = ['pvTotal', 'pvgisSoll', ...strIds];
+        analyseBarExplorerState.selectedChannel = 'pvTotal';
+        analyseBarExplorerState.stacked = true;
     } else if (cat === 'haus_bat') {
-        analyseBarExplorerState.activeChannels = ['houseTotal', 'batChg', 'batDis'];
+        analyseBarExplorerState.selectedChannel = 'pvStrings';
+        analyseBarExplorerState.stacked = true;
     } else if (cat === 'netz') {
-        analyseBarExplorerState.activeChannels = ['gridImp', 'gridExp'];
+        analyseBarExplorerState.selectedChannel = 'gridImp';
     } else if (cat === 'finanz') {
-        analyseBarExplorerState.activeChannels = ['autarkyPct', 'eigenPct', 'savingsEur'];
+        analyseBarExplorerState.selectedChannel = 'autarkyPct';
     }
+    analyseBarExplorerState.activeChannels = [analyseBarExplorerState.selectedChannel];
+    analyseBarExplorerState.soloChannel = analyseBarExplorerState.selectedChannel;
     renderAnalyseBarExplorer();
 }
 
 function toggleAnalyseBarChannel(channelId) {
-    analyseBarExplorerState.soloChannel = null;
-    const idx = analyseBarExplorerState.activeChannels.indexOf(channelId);
-    if (idx >= 0) {
-        if (analyseBarExplorerState.activeChannels.length > 1) {
-            analyseBarExplorerState.activeChannels.splice(idx, 1);
-        }
-    } else {
-        analyseBarExplorerState.activeChannels.push(channelId);
-    }
+    // 1 Tile = 1 clean bar (or smart stack for houseTotal / pvTotal / pvStrings) — never side-by-side multi-bar clutter!
+    analyseBarExplorerState.selectedChannel = channelId;
+    analyseBarExplorerState.activeChannels = [channelId];
+    analyseBarExplorerState.soloChannel = channelId;
+    if (channelId === 'houseTotal') analyseBarExplorerState.activeCategory = 'bilanz';
+    else if (channelId === 'pvTotal') analyseBarExplorerState.activeCategory = 'solar';
+    else if (channelId === 'pvStrings') analyseBarExplorerState.activeCategory = 'haus_bat';
+    else if (channelId === 'gridImp' || channelId === 'gridExp') analyseBarExplorerState.activeCategory = 'netz';
+    else if (channelId === 'autarkyPct' || channelId === 'eigenPct' || channelId === 'savingsEur') analyseBarExplorerState.activeCategory = 'finanz';
+    else analyseBarExplorerState.activeCategory = '';
     renderAnalyseBarExplorer();
 }
 
 function focusSingleAnalyseBarChannel(channelId, ev) {
     if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-    if (analyseBarExplorerState.soloChannel === channelId && analyseBarExplorerState.activeChannels.length === 1) {
-        analyseBarExplorerState.soloChannel = null;
-        selectAnalyseBarCategory(analyseBarExplorerState.activeCategory || 'bilanz');
-        return;
-    } else {
-        analyseBarExplorerState.soloChannel = channelId;
-        analyseBarExplorerState.activeChannels = [channelId];
-    }
-    renderAnalyseBarExplorer();
+    toggleAnalyseBarChannel(channelId);
 }
 
 function selectAnalyseBarPreset(preset) {
@@ -5290,14 +5266,11 @@ function selectAnalyseBarPreset(preset) {
         selectAnalyseBarCategory(preset);
         return;
     }
-    analyseBarExplorerState.soloChannel = null;
-    if (Array.isArray(preset)) {
-        analyseBarExplorerState.activeChannels = [...preset];
+    if (Array.isArray(preset) && preset.length > 0) {
+        toggleAnalyseBarChannel(preset[0]);
     } else if (preset === 'strings') {
-        selectAnalyseBarCategory('solar');
-        return;
+        selectAnalyseBarCategory('haus_bat');
     }
-    renderAnalyseBarExplorer();
 }
 
 function reloadAnalyseBarExplorerData() {
@@ -5306,26 +5279,25 @@ function reloadAnalyseBarExplorerData() {
 }
 
 function getAnalyseBarExplorerChannelCatalog() {
-    // Clean PV App catalog (Anker SOLIX / Energy Dashboard style):
-    // Core channels + PV-Strings only. Individual smart-home consumers (light switches, plugs) are intentionally excluded!
     const channels = [
-        { id: 'pvTotal', label: 'PV-Erzeugung Gesamt', shortLabel: 'PV-Erzeugung', unit: 'kWh', color: '#14b8a6', group: 'core', category: 'solar', icon: 'wb_sunny' },
-        { id: 'pvgisSoll', label: 'PVGIS-Prognose (Soll)', shortLabel: 'PVGIS-Soll', unit: 'kWh', color: '#38bdf8', group: 'core', category: 'solar', icon: 'cloud_queue' },
-        { id: 'houseTotal', label: 'Hausverbrauch Gesamt', shortLabel: 'Hausverbrauch', unit: 'kWh', color: '#f59e0b', group: 'core', category: 'haus_bat', icon: 'home' },
-        { id: 'batChg', label: 'Batterie Ladung', shortLabel: 'Akku Ladung', unit: 'kWh', color: '#a855f7', group: 'core', category: 'haus_bat', icon: 'battery_charging_full' },
-        { id: 'batDis', label: 'Batterie Entladung', shortLabel: 'Akku Entladung', unit: 'kWh', color: '#c084fc', group: 'core', category: 'haus_bat', icon: 'battery_5_bar' },
+        { id: 'houseTotal', label: 'Hausverbrauch (Aufteilung)', shortLabel: 'Hausverbrauch', unit: 'kWh', color: '#f59e0b', group: 'core', category: 'bilanz', icon: 'home', hasSmartStack: true },
+        { id: 'pvTotal', label: 'PV-Erzeugung (Aufteilung)', shortLabel: 'PV-Erzeugung', unit: 'kWh', color: '#14b8a6', group: 'core', category: 'solar', icon: 'wb_sunny', hasSmartStack: true },
         { id: 'gridImp', label: 'Netzbezug (Import)', shortLabel: 'Netzbezug', unit: 'kWh', color: '#3b82f6', group: 'core', category: 'netz', icon: 'download' },
         { id: 'gridExp', label: 'Netzeinspeisung (Export)', shortLabel: 'Einspeisung', unit: 'kWh', color: '#06b6d4', group: 'core', category: 'netz', icon: 'upload' },
+        { id: 'batChg', label: 'Batterie Ladung', shortLabel: 'Akku Ladung', unit: 'kWh', color: '#a855f7', group: 'core', category: 'haus_bat', icon: 'battery_charging_full' },
+        { id: 'batDis', label: 'Batterie Entladung', shortLabel: 'Akku Entladung', unit: 'kWh', color: '#c084fc', group: 'core', category: 'haus_bat', icon: 'battery_5_bar' },
+        { id: 'pvgisSoll', label: 'PVGIS-Prognose (Soll)', shortLabel: 'PVGIS-Soll', unit: 'kWh', color: '#38bdf8', group: 'core', category: 'solar', icon: 'cloud_queue' },
         { id: 'autarkyPct', label: 'Autarkiegrad (%)', shortLabel: 'Autarkie %', unit: '%', color: '#10b981', group: 'ratio', category: 'finanz', icon: 'shield', yAxisID: 'yPct' },
         { id: 'eigenPct', label: 'Eigenverbrauchsquote (%)', shortLabel: 'Eigenquote %', unit: '%', color: '#0ea5e9', group: 'ratio', category: 'finanz', icon: 'donut_large', yAxisID: 'yPct' },
         { id: 'savingsEur', label: 'Finanz-Ersparnis (€)', shortLabel: 'Ersparnis €', unit: '€', color: '#22c55e', group: 'finance', category: 'finanz', icon: 'savings' }
     ];
 
-    const stringPalette = ['#2dd4bf', '#34d399', '#60a5fa', '#fbbf24', '#818cf8', '#f472b6'];
+    const stringPalette = ['#14b8a6', '#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#84cc16'];
+    const validStrings = [];
     (haConfigState.customStrings || []).forEach((cs, idx) => {
         if (!cs || (!cs.energyEntity && !cs.powerEntity)) return;
         const name = cs.name || `PV-String ${idx + 1}`;
-        channels.push({
+        validStrings.push({
             id: `str_${idx}`,
             label: name,
             shortLabel: name,
@@ -5339,6 +5311,21 @@ function getAnalyseBarExplorerChannelCatalog() {
         });
     });
 
+    if (validStrings.length > 1) {
+        channels.splice(2, 0, {
+            id: 'pvStrings',
+            label: 'PV-Strings (Gestapelt)',
+            shortLabel: 'Alle Strings',
+            unit: 'kWh',
+            color: '#0d9488',
+            group: 'core',
+            category: 'haus_bat',
+            icon: 'solar_power',
+            hasSmartStack: true
+        });
+    }
+
+    channels.push(...validStrings);
     return channels;
 }
 
@@ -5421,7 +5408,9 @@ function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1, prevSta
     }
 
     if (curStateKwh !== null && prevStateKwh !== null) {
-        const stepDiff = curStateKwh >= prevStateKwh ? (curStateKwh - prevStateKwh) : curStateKwh;
+        const stepDiff = curStateKwh >= prevStateKwh
+            ? (curStateKwh - prevStateKwh)
+            : ((curStateKwh < 0.5 && prevStateKwh > 2.0) ? curStateKwh : 0);
         return { deltaKwh: Math.max(0, stepDiff), currentStateKwh: curStateKwh };
     }
 
@@ -5532,7 +5521,9 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
                         for (let i = 1; i < pts.length; i++) {
                             const prev = pts[i - 1];
                             const cur = pts[i];
-                            const diff = cur.kwh >= prev.kwh ? (cur.kwh - prev.kwh) : cur.kwh;
+                            const diff = cur.kwh >= prev.kwh
+                                ? (cur.kwh - prev.kwh)
+                                : ((cur.kwh < 0.5 && prev.kwh > 2.0) ? cur.kwh : 0);
                             if (diff > 0 && diff < 250) {
                                 const hIdx = new Date(cur.ts).getHours();
                                 if (hIdx >= 0 && hIdx < 24) {
@@ -5814,16 +5805,55 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         });
     }
 
-    // 8. Compute derived ratio & financial channels per bucket (Autarky %, Eigenverbrauch %, Financial Savings €)
+    // Compute smart-stack component series per bucket for 'houseTotal' and 'pvTotal' and 'pvStrings'
+    seriesById._houseDirectPv = new Array(win.bucketCount).fill(0);
+    seriesById._houseFromBat = new Array(win.bucketCount).fill(0);
+    seriesById._houseFromGrid = new Array(win.bucketCount).fill(0);
+
+    seriesById._pvDirectUsed = new Array(win.bucketCount).fill(0);
+    seriesById._pvToBat = new Array(win.bucketCount).fill(0);
+    seriesById._pvToGrid = new Array(win.bucketCount).fill(0);
+
+    if (!seriesById.pvStrings) {
+        seriesById.pvStrings = new Array(win.bucketCount).fill(0);
+    }
+
+    // 8. Compute derived ratio, financial & smart-stack breakdown channels per bucket
     const gridPrice = baseline.gridPriceEur || 0.32;
     const eegRate = baseline.eegRateEur || 0.08;
     for (let b = 0; b < win.bucketCount; b++) {
-        const pv = seriesById.pvTotal[b] || 0;
-        const imp = seriesById.gridImp[b] || 0;
-        const exp = seriesById.gridExp[b] || 0;
-        const bChg = seriesById.batChg[b] || 0;
-        const bDis = seriesById.batDis[b] || 0;
-        const house = seriesById.houseTotal[b] || Math.max(0, (pv - exp - bChg) + bDis + imp);
+        const pv = Math.max(0, seriesById.pvTotal[b] || 0);
+        const imp = Math.max(0, seriesById.gridImp[b] || 0);
+        const exp = Math.max(0, seriesById.gridExp[b] || 0);
+        const bChg = Math.max(0, seriesById.batChg[b] || 0);
+        const bDis = Math.max(0, seriesById.batDis[b] || 0);
+        const house = Math.max(0, seriesById.houseTotal[b] || Math.max(0, (pv - exp - bChg) + bDis + imp));
+
+        // Smart Stack 1: Hausverbrauch breakdown (Direkt-PV + Aus Speicher + Aus Stromnetz === house)
+        const fromGrid = Math.min(house, imp);
+        const remAfterGrid = Math.max(0, house - fromGrid);
+        const fromBat = Math.min(remAfterGrid, bDis);
+        const fromDirectPv = Math.max(0, remAfterGrid - fromBat);
+        seriesById._houseDirectPv[b] = +fromDirectPv.toFixed(2);
+        seriesById._houseFromBat[b] = +fromBat.toFixed(2);
+        seriesById._houseFromGrid[b] = +fromGrid.toFixed(2);
+
+        // Smart Stack 2: PV-Erzeugung breakdown (Direktverbrauch + In Speicher + Einspeisung === pv)
+        const toGrid = Math.min(pv, exp);
+        const remPvAfterGrid = Math.max(0, pv - toGrid);
+        const toBat = Math.min(remPvAfterGrid, bChg);
+        const directPv = Math.max(0, remPvAfterGrid - toBat);
+        seriesById._pvDirectUsed[b] = +directPv.toFixed(2);
+        seriesById._pvToBat[b] = +toBat.toFixed(2);
+        seriesById._pvToGrid[b] = +toGrid.toFixed(2);
+
+        // Smart Stack 3: Sum of PV strings
+        let strSumB = 0;
+        (haConfigState.customStrings || []).forEach((cs, idx) => {
+            const sArr = seriesById[`str_${idx}`];
+            if (sArr) strSumB += (sArr[b] || 0);
+        });
+        seriesById.pvStrings[b] = +(strSumB > 0 ? strSumB : pv).toFixed(2);
 
         const selfCovered = Math.max(0, house - imp);
         seriesById.autarkyPct[b] = house > 0.01 ? +Math.min(100, (selfCovered / house) * 100).toFixed(1) : 0;
@@ -5863,20 +5893,28 @@ async function renderAnalyseBarExplorer(baseline = null, metrics = null, forceRe
         const btn = document.getElementById(`btnBarExpHorizon_${h}`);
         if (!btn) return;
         if (analyseBarExplorerState.horizon === h) {
-            btn.className = "px-2.5 sm:px-3 py-1.5 rounded-xl bg-teal-600 text-white shadow-xs transition-all cursor-pointer";
+            btn.className = "px-2.5 sm:px-3 py-1 rounded-lg bg-teal-600 text-white shadow-2xs transition-all cursor-pointer whitespace-nowrap";
         } else {
-            btn.className = "px-2.5 sm:px-3 py-1.5 rounded-xl text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer";
+            btn.className = "px-2.5 sm:px-3 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-all cursor-pointer whitespace-nowrap";
         }
     });
 
-    // 2. Update Anker-Style Category Buttons
+    // 2. Update Quick Category Buttons
+    const selCh = analyseBarExplorerState.selectedChannel || 'houseTotal';
+    const catMap = {
+        bilanz: selCh === 'houseTotal',
+        solar: selCh === 'pvTotal',
+        haus_bat: selCh === 'pvStrings',
+        netz: selCh === 'gridImp' || selCh === 'gridExp',
+        finanz: selCh === 'autarkyPct' || selCh === 'eigenPct' || selCh === 'savingsEur'
+    };
     ['bilanz', 'solar', 'haus_bat', 'netz', 'finanz'].forEach(cat => {
         const cBtn = document.getElementById(`btnBarCat_${cat}`);
         if (!cBtn) return;
-        if (analyseBarExplorerState.activeCategory === cat && !analyseBarExplorerState.soloChannel) {
-            cBtn.className = "px-3 py-1.5 rounded-xl text-xs font-black bg-teal-600 text-white shadow-xs transition-all cursor-pointer flex items-center gap-1.5";
+        if (catMap[cat]) {
+            cBtn.className = "px-3 py-1.5 rounded-xl text-xs font-semibold bg-teal-600 text-white shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0";
         } else {
-            cBtn.className = "px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 hover:bg-teal-500/15 border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer flex items-center gap-1.5";
+            cBtn.className = "px-3 py-1.5 rounded-xl text-xs font-medium bg-white/85 dark:bg-slate-900/75 text-slate-700 dark:text-slate-200 hover:bg-teal-500/15 border border-slate-200/80 dark:border-white/10 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0";
         }
     });
 
@@ -5890,7 +5928,7 @@ async function renderAnalyseBarExplorer(baseline = null, metrics = null, forceRe
 
     const readoutEl = document.getElementById('barExplorerHoverReadout');
     if (readoutEl) {
-        readoutEl.innerHTML = `<span class="text-teal-600 dark:text-teal-300 font-bold">Lade Balkendiagramm-Daten für ${typeof escapeHtml === 'function' ? escapeHtml(win.label) : win.label}...</span>`;
+        readoutEl.innerHTML = `<span class="text-teal-600 dark:text-teal-300 font-medium">Lade Daten für ${typeof escapeHtml === 'function' ? escapeHtml(win.label) : win.label}...</span>`;
     }
 
     const data = await fetchAnalyseBarExplorerPeriodData(win, baseline, metrics);
@@ -5903,18 +5941,28 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
     const catalog = getAnalyseBarExplorerChannelCatalog();
     const { labels, seriesById, win } = data;
 
-    // Ensure at least one valid channel is active
+    // Ensure selectedChannel is valid
     const validIds = new Set(catalog.map(c => c.id));
-    analyseBarExplorerState.activeChannels = analyseBarExplorerState.activeChannels.filter(id => validIds.has(id));
-    if (analyseBarExplorerState.activeChannels.length === 0) {
-        analyseBarExplorerState.activeChannels = ['pvTotal', 'houseTotal'];
+    if (!analyseBarExplorerState.selectedChannel || !validIds.has(analyseBarExplorerState.selectedChannel)) {
+        analyseBarExplorerState.selectedChannel = 'houseTotal';
     }
-
-    const activeObjs = catalog.filter(c => analyseBarExplorerState.activeChannels.includes(c.id));
-    const primaryCh = activeObjs[0] || catalog[0];
+    const selId = analyseBarExplorerState.selectedChannel;
+    const primaryCh = catalog.find(c => c.id === selId) || catalog[0];
     const primaryArr = seriesById[primaryCh.id] || [];
 
-    // Compute Summary KPIs for primary active channel + overall PV/Autarky in period
+    // Update stacked toggle visibility/label (relevant for houseTotal and pvTotal)
+    const stackBtn = document.getElementById('btnBarExpStackedToggle');
+    const stackLbl = document.getElementById('btnBarExpStackedLabel');
+    if (stackBtn) {
+        if (selId === 'houseTotal' || selId === 'pvTotal') {
+            stackBtn.classList.remove('hidden');
+            if (stackLbl) stackLbl.innerText = analyseBarExplorerState.stacked ? 'Aufteilung' : 'Einzeln';
+        } else {
+            stackBtn.classList.add('hidden');
+        }
+    }
+
+    // Compute Summary KPIs for selected channel + overall PV/Autarky in period
     const sumVal = primaryArr.reduce((a, b) => a + (Number(b) || 0), 0);
     const nonZeroBuckets = primaryArr.filter(v => Number(v) > 0).length;
     const avgVal = primaryCh.unit === '%'
@@ -5941,43 +5989,42 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         const unitLabel = primaryCh.unit;
         const bucketUnitName = analyseBarExplorerState.horizon === 'day' ? 'Stunde' : (analyseBarExplorerState.horizon === 'year' ? 'Monat' : 'Tag');
         kpiBox.innerHTML = `
-            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
-                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</p>
-                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-slate-900 dark:text-white mt-0.5">
+            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</p>
+                <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
                     ${fmtNum(primaryCh.unit === '%' ? avgVal : sumVal, primaryCh.unit === 'kWh' && sumVal < 10 ? 2 : 1)} ${unitLabel}
                 </p>
-                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">${escapeHtml(win.label)}</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${escapeHtml(win.label)}</p>
             </div>
-            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
-                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
-                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-teal-600 dark:text-teal-300 mt-0.5">
+            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
+                <p class="text-lg sm:text-xl font-bold tabular-nums text-teal-700 dark:text-teal-300 mt-0.5">
                     ${fmtNum(avgVal, avgVal < 10 ? 2 : 1)} ${unitLabel}
                 </p>
-                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">${nonZeroBuckets} aktive Intervalle</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${nonZeroBuckets} aktive Intervalle</p>
             </div>
-            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
-                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
-                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
+                <p class="text-lg sm:text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
                     ${fmtNum(peakVal, peakVal < 10 ? 2 : 1)} ${unitLabel}
                 </p>
-                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">Zeit: ${escapeHtml(peakLabel)}</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">Zeit: ${escapeHtml(peakLabel)}</p>
             </div>
-            <div class="p-2.5 sm:p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-950/60 border border-slate-200/80 dark:border-white/10">
-                <p class="text-[10px] font-bold text-slate-500 dark:text-slate-400 truncate">Autarkie im Zeitraum</p>
-                <p class="text-base sm:text-lg font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
+            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Autarkie im Zeitraum</p>
+                <p class="text-lg sm:text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
                     ${fmtNum(autarkyPeriod, 1)} %
                 </p>
-                <p class="text-[9.5px] text-slate-500 dark:text-slate-400 font-mono truncate">PV: ${fmtNum(pvSumPeriod, 1)} · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">PV: ${fmtNum(pvSumPeriod, 1)} · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
             </div>
         `;
     }
 
-    // 2. Render 3-Column Channel Selector Tiles (Anker SOLIX / Live-Level-2 style)
+    // 2. Render 3-Column Channel Selector Tiles (1 Tap = selects this channel cleanly, no multi-bar mess!)
     const gridEl = document.getElementById('analysisExplorerChannelsGrid');
     if (gridEl) {
         gridEl.innerHTML = catalog.map(ch => {
-            const isActive = analyseBarExplorerState.activeChannels.includes(ch.id);
-            const isSolo = analyseBarExplorerState.soloChannel === ch.id;
+            const isSelected = ch.id === selId;
             const arr = seriesById[ch.id] || [];
             const total = arr.reduce((a, b) => a + (Number(b) || 0), 0);
             const nz = arr.filter(v => Number(v) > 0).length;
@@ -5988,31 +6035,23 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
 
             return `
             <div onclick="toggleAnalyseBarChannel('${ch.id}')" role="button" tabindex="0"
-                class="p-2.5 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
-                    isActive
-                        ? 'bg-teal-500/10 dark:bg-teal-500/15 border-teal-500/60 shadow-2xs'
-                        : 'bg-slate-50/70 dark:bg-slate-950/40 border-slate-200/80 dark:border-white/10 opacity-60 hover:opacity-100'
+                class="p-3 rounded-[20px] border transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                    isSelected
+                        ? 'bg-teal-500/14 dark:bg-teal-500/20 border-2 border-teal-600 dark:border-teal-400 shadow-xs'
+                        : 'bg-white/85 dark:bg-slate-900/65 border-slate-200/85 dark:border-white/10 hover:border-teal-500/40'
                 }">
-                <div class="flex items-start justify-between gap-1">
-                    <div class="flex items-center gap-1.5 min-w-0">
+                <div class="flex items-center justify-between gap-1.5">
+                    <div class="flex items-center gap-2 min-w-0">
                         <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${ch.color}"></span>
-                        <span class="text-[11px] sm:text-xs font-extrabold text-slate-900 dark:text-white truncate leading-tight">${escapeHtml(ch.shortLabel || ch.label)}</span>
+                        <span class="text-[13px] font-medium text-slate-800 dark:text-slate-100 truncate leading-snug">${escapeHtml(ch.shortLabel || ch.label)}</span>
                     </div>
-                    <button type="button" onclick="focusSingleAnalyseBarChannel('${ch.id}', event)"
-                        title="Nur diesen Kanal solo anzeigen"
-                        class="w-6 h-6 rounded-lg flex items-center justify-center text-[11px] font-black shrink-0 transition-colors cursor-pointer ${
-                            isSolo
-                                ? 'bg-teal-600 text-white'
-                                : 'bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300 hover:bg-teal-500/20'
-                        }">
-                        ◎
-                    </button>
+                    ${ch.hasSmartStack ? `<span class="text-[11px] font-medium px-1.5 py-0.5 rounded-md bg-teal-500/15 text-teal-800 dark:text-teal-200 shrink-0">Stapel</span>` : ''}
                 </div>
                 <div class="flex items-baseline justify-between gap-1 pt-0.5">
-                    <span class="text-xs sm:text-sm font-black font-mono tabular-nums text-teal-700 dark:text-teal-300">
-                        ${valFmt} <span class="text-[10px] font-bold">${ch.unit}</span>
+                    <span class="text-[16px] font-bold tabular-nums text-slate-900 dark:text-white">
+                        ${valFmt} <span class="text-xs font-medium text-slate-600 dark:text-slate-300">${ch.unit}</span>
                     </span>
-                    <span class="text-[9.5px] font-mono text-slate-400 dark:text-slate-500 truncate" title="Spitzenwert im Zeitraum">
+                    <span class="text-xs text-slate-500 dark:text-slate-400 tabular-nums truncate" title="Spitzenwert im Zeitraum">
                         Peak ${maxFmt}
                     </span>
                 </div>
@@ -6020,26 +6059,94 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         }).join('');
     }
 
-    // 3. Render Chart.js Bar Chart (Full-Bleed hides Y-axis numbers for max bar width)
+    // 3. Build Datasets: ALWAYS 1 BAR PER TIME BUCKET (either 1 solid bar or 1 meaningful stacked bar!)
     const canvas = document.getElementById('analysisExplorerBarChart');
     if (!canvas || typeof Chart === 'undefined') return;
 
     const isDark = document.documentElement.classList.contains('dark');
-    const isExp = !!analyseBarExplorerState.isExpanded;
-    const hasPctAxis = activeObjs.some(c => c.unit === '%');
-    const hasMainAxis = activeObjs.some(c => c.unit !== '%');
+    let datasets = [];
+    let isStackedBar = false;
+    let badgeText = '1 Balken / Intervall';
 
-    const datasets = activeObjs.map(ch => ({
-        label: `${ch.shortLabel || ch.label} (${ch.unit})`,
-        data: seriesById[ch.id] || [],
-        backgroundColor: ch.color + (isDark ? 'd9' : 'e6'),
-        hoverBackgroundColor: ch.color,
-        borderColor: ch.color,
-        borderWidth: 1,
-        borderRadius: isExp ? 5 : 4,
-        maxBarThickness: isExp ? 44 : 32,
-        yAxisID: ch.unit === '%' ? 'yPct' : 'y'
-    }));
+    if (selId === 'houseTotal' && analyseBarExplorerState.stacked) {
+        isStackedBar = true;
+        badgeText = 'Hauslast-Aufteilung (gestapelt)';
+        datasets = [
+            {
+                label: 'Direkt-PV (kWh)',
+                data: seriesById._houseDirectPv || [],
+                backgroundColor: '#10b981',
+                borderRadius: 2,
+                stack: 'single_bar'
+            },
+            {
+                label: 'Aus Speicher (kWh)',
+                data: seriesById._houseFromBat || [],
+                backgroundColor: '#a855f7',
+                borderRadius: 2,
+                stack: 'single_bar'
+            },
+            {
+                label: 'Aus Stromnetz (kWh)',
+                data: seriesById._houseFromGrid || [],
+                backgroundColor: '#3b82f6',
+                borderRadius: 3,
+                stack: 'single_bar'
+            }
+        ];
+    } else if (selId === 'pvTotal' && analyseBarExplorerState.stacked) {
+        isStackedBar = true;
+        badgeText = 'PV-Verwendung (gestapelt)';
+        datasets = [
+            {
+                label: 'Direktverbrauch (kWh)',
+                data: seriesById._pvDirectUsed || [],
+                backgroundColor: '#10b981',
+                borderRadius: 2,
+                stack: 'single_bar'
+            },
+            {
+                label: 'Batterie-Ladung (kWh)',
+                data: seriesById._pvToBat || [],
+                backgroundColor: '#a855f7',
+                borderRadius: 2,
+                stack: 'single_bar'
+            },
+            {
+                label: 'Netzeinspeisung (kWh)',
+                data: seriesById._pvToGrid || [],
+                backgroundColor: '#06b6d4',
+                borderRadius: 3,
+                stack: 'single_bar'
+            }
+        ];
+    } else if (selId === 'pvStrings') {
+        isStackedBar = true;
+        badgeText = 'PV-Strings (gestapelt)';
+        const strChannels = catalog.filter(c => c.group === 'string');
+        datasets = strChannels.map(sc => ({
+            label: `${sc.shortLabel || sc.label} (kWh)`,
+            data: seriesById[sc.id] || [],
+            backgroundColor: sc.color,
+            borderRadius: 2,
+            stack: 'single_bar'
+        }));
+    } else {
+        isStackedBar = false;
+        badgeText = primaryCh.shortLabel || primaryCh.label;
+        datasets = [
+            {
+                label: `${primaryCh.shortLabel || primaryCh.label} (${primaryCh.unit})`,
+                data: primaryArr,
+                backgroundColor: primaryCh.color,
+                hoverBackgroundColor: primaryCh.color,
+                borderRadius: 4,
+                stack: 'single_bar'
+            }
+        ];
+    }
+
+    setElText('barExplorerActiveCountBadge', badgeText);
 
     if (analyseBarExplorerState.chartInstance) {
         analyseBarExplorerState.chartInstance.destroy();
@@ -6048,8 +6155,11 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
 
     const readoutEl = document.getElementById('barExplorerHoverReadout');
     if (readoutEl) {
-        readoutEl.innerHTML = `<span class="font-bold text-teal-600 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${activeObjs.length} ${activeObjs.length === 1 ? 'Kanal' : 'Kanäle'} aktiv — Tippe auf Balken für exakte Werte`;
+        readoutEl.innerHTML = `<span class="font-semibold text-teal-700 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${escapeHtml(primaryCh.label)} — Tippe auf einen Balken für Details`;
     }
+
+    const isMobileScreen = typeof window !== 'undefined' && window.innerWidth < 640;
+    const hideYAxis = isMobileScreen || !!analyseBarExplorerState.isExpanded;
 
     analyseBarExplorerState.chartInstance = new Chart(canvas.getContext('2d'), {
         type: 'bar',
@@ -6058,28 +6168,33 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             responsive: true,
             maintainAspectRatio: false,
             layout: {
-                padding: isExp ? { left: 2, right: 2, top: 4, bottom: 0 } : { left: 0, right: 0, top: 2, bottom: 0 }
+                padding: { left: 2, right: 2, top: 4, bottom: 0 }
             },
             interaction: { mode: 'index', intersect: false },
             onHover: (event, elements) => {
                 if (!elements || elements.length === 0 || !readoutEl) return;
                 const idx = elements[0].index;
                 const bucketLbl = labels[idx] || '';
-                const parts = activeObjs.map(ch => {
-                    const v = (seriesById[ch.id] || [])[idx] || 0;
-                    return `<span style="color:${ch.color}" class="font-bold">${escapeHtml(ch.shortLabel || ch.label)}: ${fmtNum(v, v < 10 && v > 0 ? 2 : 1)} ${ch.unit}</span>`;
-                });
-                readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)}:</strong> ${parts.join(' · ')}`;
+                const totalBucketVal = primaryArr[idx] || 0;
+                if (isStackedBar && datasets.length > 1) {
+                    const parts = datasets.map(ds => {
+                        const v = (ds.data || [])[idx] || 0;
+                        return `<span style="color:${ds.backgroundColor}" class="font-medium">${escapeHtml(ds.label.replace(' (kWh)', ''))}: ${fmtNum(v, v < 10 && v > 0 ? 2 : 1)}</span>`;
+                    });
+                    readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)} (Gesamt ${fmtNum(totalBucketVal, totalBucketVal < 10 ? 2 : 1)} kWh):</strong> ${parts.join(' · ')}`;
+                } else {
+                    readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)}:</strong> <span style="color:${primaryCh.color}" class="font-semibold">${escapeHtml(primaryCh.shortLabel || primaryCh.label)}: ${fmtNum(totalBucketVal, totalBucketVal < 10 && totalBucketVal > 0 ? 2 : 1)} ${primaryCh.unit}</span>`;
+                }
             },
             plugins: {
                 legend: {
-                    display: true,
+                    display: isStackedBar && datasets.length > 1,
                     position: 'top',
                     labels: {
                         color: isDark ? '#cbd5e1' : '#334155',
                         boxWidth: 10,
                         usePointStyle: true,
-                        font: { size: 10, weight: 'bold' }
+                        font: { size: 11.5, weight: '500' }
                     }
                 },
                 tooltip: {
@@ -6092,37 +6207,26 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             },
             scales: {
                 x: {
-                    stacked: analyseBarExplorerState.stacked,
+                    stacked: true,
                     grid: { display: false },
                     ticks: {
                         color: isDark ? '#94a3b8' : '#64748b',
-                        font: { size: 9.5 },
+                        font: { size: 11 },
                         maxRotation: 0,
                         autoSkip: true,
                         maxTicksLimit: analyseBarExplorerState.horizon === 'day' ? 8 : (analyseBarExplorerState.horizon === 'month' ? 10 : 12)
                     }
                 },
                 y: {
-                    display: hasMainAxis && !isExp,
-                    stacked: analyseBarExplorerState.stacked,
+                    display: !hideYAxis,
+                    stacked: true,
                     beginAtZero: true,
+                    max: primaryCh.unit === '%' ? 100 : undefined,
                     grid: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' },
                     ticks: {
                         color: isDark ? '#94a3b8' : '#64748b',
-                        font: { size: 9.5 },
-                        callback: (v) => `${v} ${activeObjs.find(c => c.unit !== '%')?.unit || 'kWh'}`
-                    }
-                },
-                yPct: {
-                    display: hasPctAxis && !isExp,
-                    position: 'right',
-                    beginAtZero: true,
-                    max: 100,
-                    grid: { drawOnChartArea: !hasMainAxis },
-                    ticks: {
-                        color: '#10b981',
-                        font: { size: 9.5 },
-                        callback: (v) => `${v} %`
+                        font: { size: 11 },
+                        callback: (v) => `${v} ${primaryCh.unit}`
                     }
                 }
             }
