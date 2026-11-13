@@ -4,6 +4,25 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.4] – 2026-11-13
+
+### ✨ Echtzeit-Synchronisations-Indikator für die IndexedDB (`Daten synchron` / `Lädt...`) auf dem Dashboard & im Menü
+
+#### 1. Sichtbare Bestätigung der Daten-Verlässlichkeit auf Dashboard, Header & im Menü (`index.html`, `telemetry.js`, `app.js`)
+* **Kompakter Live-Indikator auf dem Dashboard & in der Kopfzeile (`#idbHeaderSyncBadge` & `#idbLiveSyncBadge`):**
+  - Direkt oben in der zweiten Kopfzeile (`#headerRow2`) sowie im Header der Karte **„Energie · jetzt“** auf dem Live-Dashboard zeigt ein dezentes Status-Badge jederzeit den aktuellen Zustand der lokalen Datenbank (`pvpro_persistent_db`) an:
+    - **`Lädt...` / `Speichert...`** (pulsierendes `sync`-Symbol in Amber), sobald beim App-Start aus der IndexedDB hydriert wird oder neue Verlaufs-/Live-Daten von Home Assistant geladen und in der IndexedDB gesichert werden.
+    - **`Daten synchron`** (grünes `database`-Symbol in Smaragdgrün), sobald alle abgerufenen Live-Zustände, Zähler-Baselines und Diagramm-Verläufe (`Tag`, `Woche`, `Monat`) fest in der IndexedDB persistiert sind.
+  - Ein Tipp auf das Badge löst sofort `triggerManualIdbSyncCheck()` aus und prüft alle gespeicherten Datenblöcke.
+* **Detaillierte IndexedDB-Statuskarte im Menü (`#idbMenuSyncCard` in `#m3MoreSheet`):**
+  - Ganz oben im **Menü** zeigt die neue Karte **„Geräte-Datenbank (IndexedDB)“**:
+    - Den aktuellen Synchronisationsstatus als Farb-Pill (`Daten synchron`, `Lädt...` oder `Bereit`),
+    - Die genaue Uhrzeit der letzten Synchronisation (`Sync HH:MM:SS`),
+    - Die Anzahl der aktiven Speicherblöcke (`X/7 Blöcke`: Konfiguration, Zähler-Baselines, Logbuch, Boot-Snapshot, 24h/7d/30d-Verlauf, Balken-Explorer, Raumklima-Historie) sowie den Android/Browser-Schutzstatus (`Geschützt` bei aktivem `navigator.storage.persist()`),
+    - Einen Direkt-Button **„Prüfen“**, der alle lokalen Datenblöcke in die IndexedDB synchronisiert, ihre Integrität verifiziert und das Ergebnis per Bestätigungs-Toast meldet.
+
+---
+
 ## [Version 11.3] – 2026-11-13
 
 ### ✨ Echter Sofort-Start ohne Lade-Blockade (Entfall des 13-Tage-Rohhistorie-Downloads beim Start) & Exakte 7-Tage-Werte für `Netzbezug` und `TV Wand`

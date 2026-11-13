@@ -3,29 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 11.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 11.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=11.3">
+    <link rel="manifest" href="manifest.json?v=11.4">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.3">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.3">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.3">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.3">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.4">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.4">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.4">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.4">
     <script>
-        // V11.3: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V11.4: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
                 if (navigator.storage && typeof navigator.storage.persist === 'function') {
                     navigator.storage.persist().then(function (persisted) {
                         window.pvproStoragePersisted = Boolean(persisted);
+                        if (typeof window.updateIdbSyncStatusUI === 'function') {
+                            window.updateIdbSyncStatusUI();
+                        }
                     }).catch(function () {});
                 }
             } catch (e) {}
@@ -37,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v11.3') {
+                            if (key !== 'pvpro-cache-v11.4') {
                                 caches.delete(key);
                             }
                         });
@@ -45,7 +48,7 @@
                 }
                 if (!('serviceWorker' in navigator)) return;
 
-                var swUrl = './sw.js?v=11.3';
+                var swUrl = './sw.js?v=11.4';
                 var probeRes = await fetch(swUrl, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(function () { return null; });
                 var contentType = probeRes && probeRes.headers ? String(probeRes.headers.get('content-type') || '').toLowerCase() : '';
                 var isJavaScriptMime = Boolean(probeRes && probeRes.ok && (contentType.includes('javascript') || contentType.includes('ecmascript')));
@@ -659,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=11.3" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.4" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.3</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.4</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -711,7 +714,7 @@
                 </div>
             </div>
 
-            <!-- ROW 2: Dedicated 1-Word Single-Line Section Title + Breadcrumb Subtitle (automatically hidden on Level 2 chart views) -->
+            <!-- ROW 2: Dedicated 1-Word Single-Line Section Title + Breadcrumb Subtitle + IndexedDB Sync Indicator -->
             <div id="headerRow2" class="flex items-baseline justify-between gap-2 pt-0.5">
                 <div class="min-w-0 flex-1">
                     <h1 id="headerViewTitle" class="text-lg sm:text-xl font-bold tracking-tight text-slate-900 dark:text-white leading-snug whitespace-nowrap truncate">
@@ -721,9 +724,16 @@
                         Ebene 1 · Echtzeit-Status &amp; Top-5 Verbraucher
                     </p>
                 </div>
-                <span id="headerLevelBadge" class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-teal-500/12 dark:bg-white/10 text-teal-800 dark:text-slate-300 border border-teal-500/20 shrink-0">
-                    Übersicht
-                </span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <!-- IndexedDB Synchronization Status Indicator (Dashboard Header) -->
+                    <button type="button" id="idbHeaderSyncBadge" onclick="openMoreSheet()" class="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 transition-all cursor-pointer shrink-0" title="Lokaler Gerätespeicher (IndexedDB): Tippen für Speicher-Details im Menü">
+                        <span id="idbHeaderSyncIcon" class="material-symbols-rounded text-[13px] leading-none">database</span>
+                        <span id="idbHeaderSyncText" class="tabular-nums whitespace-nowrap">Daten synchron</span>
+                    </button>
+                    <span id="headerLevelBadge" class="hidden sm:inline-flex text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-teal-500/12 dark:bg-white/10 text-teal-800 dark:text-slate-300 border border-teal-500/20 shrink-0">
+                        Übersicht
+                    </span>
+                </div>
             </div>
 
             <!-- Collapsible Theme & Design Panel -->
@@ -1705,11 +1715,15 @@
                 <!-- CARD 1: ENERGIE · JETZT (2x2 LIQUID GLASS GRID + AKTIVE VERBRAUCHER) -->
                 <div class="dash-main-card rounded-[28px] p-5 sm:p-6 transition-all">
                     <div class="flex items-center justify-between gap-2 mb-4">
-                        <div class="flex items-center gap-2 min-w-0">
+                        <div class="flex items-center gap-1.5 min-w-0 flex-wrap">
                             <h2 class="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight shrink-0">Energie · jetzt</h2>
                             <span id="liveConnectionStatusText" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/25 truncate">Home Assistant</span>
+                            <button type="button" id="idbLiveSyncBadge" onclick="openMoreSheet()" class="inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 transition-all cursor-pointer shrink-0" title="IndexedDB Synchronisationsstatus">
+                                <span id="idbLiveSyncIcon" class="material-symbols-rounded text-[12px] leading-none">database</span>
+                                <span id="idbLiveSyncText" class="tabular-nums whitespace-nowrap">Daten synchron</span>
+                            </button>
                         </div>
-                        <div class="flex items-center gap-1.5">
+                        <div class="flex items-center gap-1.5 shrink-0">
                             <button onclick="openHaConfigModal('guide')" class="px-2.5 py-1.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer" title="Schritt-für-Schritt Anleitung für Home Assistant & Reverse Proxy">
                                 <span class="material-symbols-rounded text-sm">help</span>
                                 <span class="hidden sm:inline">HA-Anleitung</span>
@@ -2769,6 +2783,26 @@
         </div>
 
         <div class="space-y-2.5">
+            <!-- 0. Lokaler Gerätespeicher (IndexedDB) Synchronisations-Status -->
+            <div id="idbMenuSyncCard" class="flex items-center justify-between gap-2.5 p-3.5 rounded-[20px] dash-sub-tile">
+                <div class="flex items-center gap-3 min-w-0 flex-1">
+                    <div id="idbMenuSyncIconWrap" class="w-10 h-10 rounded-2xl bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 flex items-center justify-center shrink-0">
+                        <span id="idbMenuSyncIcon" class="material-symbols-rounded text-[20px]">database</span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white truncate">Handy-Speicher (IndexedDB)</p>
+                            <span id="idbMenuSyncPill" class="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25 whitespace-nowrap">Daten synchron</span>
+                        </div>
+                        <p id="idbMenuSyncDetail" class="text-[11.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">Alle Kurven, Zähler &amp; Einstellungen lokal gesichert</p>
+                    </div>
+                </div>
+                <button type="button" onclick="triggerManualIdbSyncCheck()" class="px-2.5 py-1.5 rounded-xl bg-slate-200/75 hover:bg-slate-300/75 dark:bg-white/10 dark:hover:bg-white/15 text-slate-800 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0" title="Datenbank-Synchronisation jetzt prüfen &amp; aktualisieren">
+                    <span class="material-symbols-rounded text-sm text-primary">sync</span>
+                    <span>Prüfen</span>
+                </button>
+            </div>
+
             <!-- 1. Design- & Darstellungs-Studio (Themes, Akzentfarbe, Schriftart, Schriftgröße & Kompaktheit) -->
             <div class="flex items-center justify-between gap-2 p-3.5 rounded-[20px] dash-sub-tile">
                 <button type="button" onclick="closeMoreSheet(); openDesignStudioModal();" class="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group">
@@ -2847,7 +2881,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.3</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.4</p>
                     </div>
                 </button>
             </div>
@@ -4059,13 +4093,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V11.3 (Non-Blocking Baseline Sync, Netzbezug/TV-Wand 7-Tage-Fix & IndexedDB Persistent Storage) -->
-    <script src="qrcode.client.js?v=11.3"></script>
-    <script src="database.js?v=11.3"></script>
-    <script src="content.js?v=11.3"></script>
-    <script src="app.js?v=11.3"></script>
-    <script src="wiring.js?v=11.3"></script>
-    <script src="dossier.js?v=11.3"></script>
-    <script src="telemetry.js?v=11.3"></script>
+    <!-- MODULARE ARCHITEKTUR V11.4 (IndexedDB Sync-Status-Indikator, Non-Blocking Baseline Sync & Netzbezug/TV-Wand 7-Tage-Fix) -->
+    <script src="qrcode.client.js?v=11.4"></script>
+    <script src="database.js?v=11.4"></script>
+    <script src="content.js?v=11.4"></script>
+    <script src="app.js?v=11.4"></script>
+    <script src="wiring.js?v=11.4"></script>
+    <script src="dossier.js?v=11.4"></script>
+    <script src="telemetry.js?v=11.4"></script>
 </body>
 </html>

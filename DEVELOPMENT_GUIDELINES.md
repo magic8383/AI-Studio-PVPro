@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.3 (Echter Sofort-Start durch vorgezogene IndexedDB-Hydrierung vor dem Live-Loop, nicht-blockierende Hintergrund-Kalibrierung ohne 13-Tage-Rohhistorie-Download, Korrektur der `7 Tage`-Werte & Spitzenleistung bei `Netzbezug` (`652,32 kWh` / `6.510 W Max`) und `TV Wand` durch Bereinigung von Zähler-Offset-Sprüngen in `stateSpanKwh` sowie getrennte Vorzeichen-Spitzenwerte für bidirektionale Netzsensoren)  
+**Aktuelle Version:** 11.4 (Echtzeit-Synchronisations-Indikator für die IndexedDB auf dem Dashboard, im Header und im Menü mit Status-Anzeige `Daten synchron` / `Lädt...`, Zeitstempel des letzten Syncs, Anzahl aktiver Speicherblöcke, `Persistent Storage`-Schutzstatus und manuellem `Prüfen`-Button)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

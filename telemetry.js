@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.3)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.4)
 // Zentrale Single Source of Truth (IndexedDB Persistent Device Storage,
-// Non-Blocking Baseline Sync, Netzbezug/TV-Wand 7-Tage-Fix & 24h-Klima-Kurven)
+// Live Sync-Status-Indikator, Non-Blocking Baseline Sync & 24h-Klima-Kurven)
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -153,6 +153,127 @@ const MONTH_LABELS_LONG = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
 // 1. INITIALIZATION & PERSISTENCE (INDEXEDDB + SERVER + LOCALSTORAGE)
 // ============================================================================
 
+const idbSyncMeta = {
+    state: 'loading', // 'loading' | 'saving' | 'synced' | 'error'
+    lastSyncedAtMs: 0,
+    syncedStores: new Set(),
+    activeNetworkSyncs: 0,
+    customDetail: ''
+};
+
+function updateIdbSyncStatusUI() {
+    if (typeof document === 'undefined') return;
+    const st = idbSyncMeta.state;
+    const count = Math.max(1, idbSyncMeta.syncedStores.size);
+    const isPersisted = typeof window !== 'undefined' && Boolean(window.pvproStoragePersisted);
+    const timeStr = idbSyncMeta.lastSyncedAtMs > 0
+        ? new Date(idbSyncMeta.lastSyncedAtMs).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        : '';
+
+    let label = 'Daten synchron';
+    let icon = 'database';
+    let spinClass = '';
+    let pillTone = 'bg-emerald-500/12 dark:bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/25';
+    let iconWrapTone = 'bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25';
+    let detailText = timeStr
+        ? `Synchronisiert um ${timeStr} Uhr · ${count} Speicher-Blöcke aktiv${isPersisted ? ' · Geschützt' : ''}`
+        : `Alle Kurven, Zähler & Einstellungen lokal in IndexedDB gesichert`;
+
+    if (st === 'loading') {
+        label = 'Lädt...';
+        icon = 'sync';
+        spinClass = 'animate-spin';
+        pillTone = 'bg-sky-500/15 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border border-sky-500/30';
+        iconWrapTone = 'bg-sky-500/15 dark:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/30';
+        detailText = idbSyncMeta.customDetail || 'Synchronisiere Verlaufs- & Zählerdaten mit IndexedDB …';
+    } else if (st === 'saving') {
+        label = 'Speichert...';
+        icon = 'sync';
+        spinClass = 'animate-spin';
+        pillTone = 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-800 dark:text-teal-300 border border-teal-500/30';
+        iconWrapTone = 'bg-teal-500/15 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-500/30';
+        detailText = idbSyncMeta.customDetail || 'Schreibe aktuelle Kurven & Zählerstände in IndexedDB …';
+    } else if (st === 'error') {
+        label = 'Lokaler Cache';
+        icon = 'info';
+        spinClass = '';
+        pillTone = 'bg-amber-500/15 dark:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/30';
+        iconWrapTone = 'bg-amber-500/15 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30';
+        detailText = idbSyncMeta.customDetail || 'IndexedDB im eingeschränkten Browser-Modus';
+    }
+
+    // 1. Update Header Row 2 Badge (#idbHeaderSyncBadge)
+    const hdrBadge = document.getElementById('idbHeaderSyncBadge');
+    const hdrIcon = document.getElementById('idbHeaderSyncIcon');
+    const hdrText = document.getElementById('idbHeaderSyncText');
+    if (hdrBadge) {
+        hdrBadge.className = `inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${pillTone} transition-all cursor-pointer shrink-0`;
+        hdrBadge.title = `IndexedDB: ${label} (${detailText})`;
+    }
+    if (hdrIcon) {
+        hdrIcon.className = `material-symbols-rounded text-[13px] leading-none ${spinClass}`.trim();
+        hdrIcon.textContent = icon;
+    }
+    if (hdrText) {
+        hdrText.textContent = label;
+    }
+
+    // 2. Update Live Cockpit Card Badge (#idbLiveSyncBadge)
+    const liveBadge = document.getElementById('idbLiveSyncBadge');
+    const liveIcon = document.getElementById('idbLiveSyncIcon');
+    const liveText = document.getElementById('idbLiveSyncText');
+    if (liveBadge) {
+        liveBadge.className = `inline-flex items-center gap-1 text-[10.5px] font-semibold px-2 py-0.5 rounded-full ${pillTone} transition-all cursor-pointer shrink-0`;
+        liveBadge.title = `IndexedDB: ${label} (${detailText})`;
+    }
+    if (liveIcon) {
+        liveIcon.className = `material-symbols-rounded text-[12px] leading-none ${spinClass}`.trim();
+        liveIcon.textContent = icon;
+    }
+    if (liveText) {
+        liveText.textContent = label;
+    }
+
+    // 3. Update Menu Card (#idbMenuSyncCard)
+    const menuIconWrap = document.getElementById('idbMenuSyncIconWrap');
+    const menuIcon = document.getElementById('idbMenuSyncIcon');
+    const menuPill = document.getElementById('idbMenuSyncPill');
+    const menuDetail = document.getElementById('idbMenuSyncDetail');
+    if (menuIconWrap) {
+        menuIconWrap.className = `w-10 h-10 rounded-2xl ${iconWrapTone} flex items-center justify-center shrink-0 transition-all`;
+    }
+    if (menuIcon) {
+        menuIcon.className = `material-symbols-rounded text-[20px] ${spinClass}`.trim();
+        menuIcon.textContent = icon;
+    }
+    if (menuPill) {
+        menuPill.className = `text-[10.5px] font-bold px-2 py-0.5 rounded-full ${pillTone} whitespace-nowrap`;
+        menuPill.textContent = label;
+    }
+    if (menuDetail) {
+        menuDetail.textContent = detailText;
+    }
+}
+
+function setIdbSyncStatus(newState, customDetail = '') {
+    if (newState === 'loading') {
+        idbSyncMeta.activeNetworkSyncs++;
+        idbSyncMeta.state = 'loading';
+        if (customDetail) idbSyncMeta.customDetail = customDetail;
+    } else if (newState === 'synced') {
+        idbSyncMeta.activeNetworkSyncs = Math.max(0, idbSyncMeta.activeNetworkSyncs - 1);
+        idbSyncMeta.lastSyncedAtMs = Date.now();
+        if (idbSyncMeta.activeNetworkSyncs === 0) {
+            idbSyncMeta.state = 'synced';
+            idbSyncMeta.customDetail = '';
+        }
+    } else {
+        idbSyncMeta.state = newState;
+        idbSyncMeta.customDetail = customDetail || '';
+    }
+    updateIdbSyncStatusUI();
+}
+
 const PVProPersistentDB = (function () {
     const DB_NAME = 'pvpro_persistent_db';
     const DB_VERSION = 1;
@@ -161,7 +282,11 @@ const PVProPersistentDB = (function () {
 
     function openDb() {
         if (dbPromise) return dbPromise;
-        if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+        if (typeof indexedDB === 'undefined') {
+            idbSyncMeta.state = 'error';
+            updateIdbSyncStatusUI();
+            return Promise.resolve(null);
+        }
         dbPromise = new Promise((resolve) => {
             try {
                 const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -189,7 +314,12 @@ const PVProPersistentDB = (function () {
                 const tx = db.transaction(STORE_NAME, 'readonly');
                 const store = tx.objectStore(STORE_NAME);
                 const req = store.get(key);
-                req.onsuccess = () => resolve(req.result !== undefined ? req.result : null);
+                req.onsuccess = () => {
+                    if (req.result !== undefined && req.result !== null) {
+                        idbSyncMeta.syncedStores.add(key);
+                    }
+                    resolve(req.result !== undefined ? req.result : null);
+                };
                 req.onerror = () => resolve(null);
             } catch (e) {
                 resolve(null);
@@ -205,7 +335,16 @@ const PVProPersistentDB = (function () {
                 const tx = db.transaction(STORE_NAME, 'readwrite');
                 const store = tx.objectStore(STORE_NAME);
                 const req = store.put(value, key);
-                req.onsuccess = () => resolve(true);
+                req.onsuccess = () => {
+                    idbSyncMeta.syncedStores.add(key);
+                    idbSyncMeta.lastSyncedAtMs = Date.now();
+                    if (idbSyncMeta.activeNetworkSyncs === 0) {
+                        idbSyncMeta.state = 'synced';
+                        idbSyncMeta.customDetail = '';
+                    }
+                    updateIdbSyncStatusUI();
+                    resolve(true);
+                };
                 req.onerror = () => resolve(false);
             } catch (e) {
                 resolve(false);
@@ -220,6 +359,7 @@ const PVProPersistentDB = (function () {
                 if (typeof window !== 'undefined') {
                     window.pvproStoragePersisted = Boolean(persisted);
                 }
+                updateIdbSyncStatusUI();
                 return Boolean(persisted);
             }
         } catch (e) {}
@@ -231,6 +371,8 @@ const PVProPersistentDB = (function () {
 
 if (typeof window !== 'undefined') {
     window.PVProPersistentDB = PVProPersistentDB;
+    window.updateIdbSyncStatusUI = updateIdbSyncStatusUI;
+    window.setIdbSyncStatus = setIdbSyncStatus;
 }
 
 let climateHistoryCacheByRoom = {}; // roomKey -> { savedAtMs, tempPoints, humPoints }
@@ -259,6 +401,7 @@ function persistBarExplorerCacheToIdb() {
 }
 
 async function hydrateFromPersistentIndexedDB() {
+    setIdbSyncStatus('loading', 'Lade lokalen Gerätespeicher (IndexedDB) …');
     try {
         PVProPersistentDB.ensurePersistentStorage();
         const [
@@ -404,7 +547,35 @@ async function hydrateFromPersistentIndexedDB() {
                 renderLiveCockpitUI();
             } catch (e) {}
         }
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+        setIdbSyncStatus('synced');
+    }
+}
+
+async function triggerManualIdbSyncCheck() {
+    setIdbSyncStatus('loading', 'Prüfe & synchronisiere IndexedDB-Speicher …');
+    try {
+        await hydrateFromPersistentIndexedDB();
+        saveInstantBootSnapshot();
+        saveEnergyCounterBaselines();
+        persistIntradayHistoryCacheToIdb();
+        persistBarExplorerCacheToIdb();
+        if (haConfigState.baseUrl && haConfigState.accessToken) {
+            await refreshLiveTelemetryNow();
+            await fetchAndRenderIntradayHistory(true);
+        }
+        if (typeof showToastNotification === 'function') {
+            const count = Math.max(1, idbSyncMeta.syncedStores.size);
+            showToastNotification(`IndexedDB synchron (${count} Speicher-Blöcke lokal auf dem Gerät gesichert).`, 'success');
+        }
+    } catch (e) {
+    } finally {
+        setIdbSyncStatus('synced');
+    }
+}
+if (typeof window !== 'undefined') {
+    window.triggerManualIdbSyncCheck = triggerManualIdbSyncCheck;
 }
 
 function getActiveAnalysisProjectId() {
@@ -3654,31 +3825,36 @@ async function fetchAndRenderIntradayHistory(forceRefresh = false) {
     const controller = new AbortController();
     intradayFetchAbortController = controller;
 
-    const freshDataset = await fetchTimeframeDataset(targetTf, controller.signal);
-    if (controller.signal.aborted) return;
+    setIdbSyncStatus('loading', 'Lade Verlaufsdaten aus Home Assistant …');
+    try {
+        const freshDataset = await fetchTimeframeDataset(targetTf, controller.signal);
+        if (controller.signal.aborted) return;
 
-    if (freshDataset) {
-        intradayHistoryCache[targetTf] = freshDataset;
-        persistIntradayHistoryCacheToIdb();
-        if (currentCurveTimeframe === targetTf) {
-            intradaySeriesState = {
-                startOfDayIso: freshDataset.startOfDayIso,
-                nowIso: freshDataset.nowIso,
-                labels: freshDataset.labels,
-                bucketTimes: freshDataset.bucketTimes,
-                series: freshDataset.series,
-                integratedKwh: freshDataset.integratedKwh,
-                peakValues: freshDataset.peakValues
-            };
+        if (freshDataset) {
+            intradayHistoryCache[targetTf] = freshDataset;
+            persistIntradayHistoryCacheToIdb();
+            if (currentCurveTimeframe === targetTf) {
+                intradaySeriesState = {
+                    startOfDayIso: freshDataset.startOfDayIso,
+                    nowIso: freshDataset.nowIso,
+                    labels: freshDataset.labels,
+                    bucketTimes: freshDataset.bucketTimes,
+                    series: freshDataset.series,
+                    integratedKwh: freshDataset.integratedKwh,
+                    peakValues: freshDataset.peakValues
+                };
+                renderIntradayCurveSection(baseline);
+            }
+            if (targetTf === 'day') {
+                renderLiveCockpitUI(baseline);
+                prewarmOtherTimeframesInBackground();
+            }
+        } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
+            resetToEmptyIntradaySeries();
             renderIntradayCurveSection(baseline);
         }
-        if (targetTf === 'day') {
-            renderLiveCockpitUI(baseline);
-            prewarmOtherTimeframesInBackground();
-        }
-    } else if (!intradaySeriesState.labels || intradaySeriesState.labels.length === 0) {
-        resetToEmptyIntradaySeries();
-        renderIntradayCurveSection(baseline);
+    } finally {
+        setIdbSyncStatus('synced');
     }
 }
 

@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '11.3';
+const APP_VERSION = '11.4';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -3138,6 +3138,9 @@ function switchTab(tabId, fromPopState = false) {
 }
 
 function openMoreSheet() {
+    if (typeof window.updateIdbSyncStatusUI === 'function') {
+        window.updateIdbSyncStatusUI();
+    }
     const sheet = document.getElementById('m3MoreSheet');
     const backdrop = document.getElementById('m3SheetBackdrop');
     if(sheet && backdrop) {
