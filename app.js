@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '11.4';
+const APP_VERSION = '11.5';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -1267,22 +1267,26 @@ function renderProjectManagerModal(tab = null) {
                         </div>
                         <div>
                             <h4 class="text-xs sm:text-sm font-black text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
-                                <span>Wie bei Windows: „Speichern unter…“ &amp; „Datei öffnen…“ (für dein NAS)</span>
+                                <span>„Speichern unter…“ (App-Auswahl / Solid Explorer / NAS) &amp; „Datei öffnen…“</span>
                                 <span class="px-2 py-0.5 rounded-full bg-emerald-500 text-white text-[10px] font-black uppercase">Inkl. HA-Token</span>
                             </h4>
                             <p class="text-[11px] text-slate-600 dark:text-slate-300 leading-snug mt-0.5">
-                                Speichert deine komplette Anlage (PV-Planung, alle Sensoren, <strong>Home Assistant Token</strong>, Logbuch &amp; Design) in einer einzigen Datei (<code>.pvpro.json</code>). Lege sie auf dein <strong>NAS</strong> und öffne sie auf Handy, Tablet oder PC mit 1 Klick – ohne erneute Token-Eingabe!
+                                Speichert deine komplette Anlage (PV-Planung, alle Sensoren, <strong>Home Assistant Token</strong>, Logbuch &amp; Design) als Datei. Auf Android öffnet <strong>„Speichern unter…“</strong> direkt die System-App-Auswahl (z.&nbsp;B. <strong>Solid Explorer</strong>, Nextcloud, Google Drive) zum Ablegen auf deinem <strong>NAS</strong> oder Handy; auf dem PC das Windows-Speichern-Fenster.
                             </p>
                         </div>
                     </div>
                     <div class="flex flex-wrap items-center gap-2 shrink-0">
-                        <button type="button" onclick="saveProjectFileAs()" class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer">
+                        <button type="button" onclick="saveProjectFileAs('auto')" class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer" title="Öffnet auf Android die App-Auswahl (Solid Explorer, Drive, Nextcloud...) bzw. auf PC den Speichern-unter-Dialog">
                             <span class="material-symbols-rounded text-base">save_as</span>
-                            <span>Speichern unter… (NAS / Datei)</span>
+                            <span>Speichern unter… (App / NAS)</span>
+                        </button>
+                        <button type="button" onclick="saveProjectFileAs('download')" class="px-3 py-2.5 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300/80 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer" title="Direkt im Browser-Downloads-Ordner als .pvpro.json ablegen">
+                            <span class="material-symbols-rounded text-base">download</span>
+                            <span>Direkt-Download</span>
                         </button>
                         <button type="button" onclick="openProjectFileFromDisk()" class="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-900 dark:text-white border border-slate-300 dark:border-slate-600 text-xs font-extrabold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer">
                             <span class="material-symbols-rounded text-base text-indigo-500">upload_file</span>
-                            <span>Datei öffnen… (Vom NAS laden)</span>
+                            <span>Datei öffnen… (Solid Explorer / NAS)</span>
                         </button>
                     </div>
                 </div>
@@ -2427,46 +2431,73 @@ function shareViaWebShare(url, code) {
     }
 }
 
-async function saveProjectFileAs() {
+async function saveProjectFileAs(mode = 'auto') {
     saveCurrentProjectData(false);
     const config = exportFullConfigurationWithToken();
     const dateStr = new Date().toISOString().slice(0, 10);
     const rawName = document.getElementById('headerProjectName')?.innerText || LocationData?.name || 'Anlage';
     const cleanName = rawName.replace(/[^a-zA-Z0-9äöüÄÖÜß_-]/g, '_');
-    const fileName = `PVPro_${cleanName}_${dateStr}.pvpro.json`;
+    const jsonFileName = `PVPro_${cleanName}_${dateStr}.pvpro.json`;
+    const shareTxtFileName = `PVPro_${cleanName}_${dateStr}.txt`;
     const jsonText = JSON.stringify(config, null, 2);
 
-    // Try native Windows/macOS/Chrome File System Access API ("Speichern unter...") first if not blocked by iframe
-    if (typeof window.showSaveFilePicker === 'function') {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '') || (navigator.maxTouchPoints > 1 && typeof window.showSaveFilePicker !== 'function');
+
+    // 1. Auf Android / Mobilgeräten (oder bei mode === 'share'): Native System-App-Auswahl (Solid Explorer, Nextcloud, Google Drive, Dateien...) öffnen!
+    // WICHTIG: Chromium ShareServiceImpl auf Android erlaubt .txt mit MIME 'text/plain' ohne Einschränkung.
+    // Durch Übergabe von ausschließlich { files: [shareFile] } erzeugt Android einen reinen EXTRA_STREAM File-Intent,
+    // sodass Dateimanager wie Solid Explorer direkt als Speicherziel (inkl. SMB/NAS-Ordnerwahl) erscheinen.
+    if (mode !== 'download' && (mode === 'share' || isMobile) && typeof navigator.share === 'function' && typeof File === 'function') {
+        try {
+            const shareFile = new File([jsonText], shareTxtFileName, { type: 'text/plain' });
+            const canShareFiles = typeof navigator.canShare === 'function' ? navigator.canShare({ files: [shareFile] }) : true;
+            if (canShareFiles) {
+                await navigator.share({
+                    files: [shareFile]
+                });
+                showToastNotification(`💾 Komplettpaket inkl. HA-Token an gewählte App übergeben!`, 'success');
+                return;
+            }
+        } catch (err) {
+            if (err && err.name === 'AbortError') return;
+            console.warn('Web Share File Fallback:', err);
+        }
+    }
+
+    // 2. Auf Desktop (Windows / macOS / Chrome): Nativer „Speichern unter...“-Dialog
+    if (mode !== 'download' && typeof window.showSaveFilePicker === 'function') {
         try {
             const handle = await window.showSaveFilePicker({
-                suggestedName: fileName,
+                suggestedName: jsonFileName,
                 types: [{
-                    description: 'PV-Planung Pro Komplettpaket (.pvpro.json)',
-                    accept: { 'application/json': ['.pvpro.json', '.json'] }
+                    description: 'PV-Planung Pro Komplettpaket (.pvpro.json / .txt)',
+                    accept: {
+                        'application/json': ['.pvpro.json', '.json'],
+                        'text/plain': ['.txt']
+                    }
                 }]
             });
             const writable = await handle.createWritable();
             await writable.write(jsonText);
             await writable.close();
-            showToastNotification(`💾 Komplettpaket inkl. HA-Token gespeichert als „${handle.name || fileName}“!`, 'success');
+            showToastNotification(`💾 Komplettpaket inkl. HA-Token gespeichert als „${handle.name || jsonFileName}“!`, 'success');
             return;
         } catch (err) {
             if (err && err.name === 'AbortError') return;
-            // If blocked by cross-origin iframe or unsupported, fall through to direct file download
         }
     }
 
+    // 3. Fallback bzw. expliziter Direkt-Download in den Downloads-Ordner
     const blob = new Blob([jsonText], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = fileName;
+    a.download = jsonFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToastNotification(`💾 Datei „${fileName}“ (inkl. HA-Token & Sensoren) gespeichert!`, 'success');
+    showToastNotification(`💾 Datei „${jsonFileName}“ (inkl. HA-Token & Sensoren) in Downloads gespeichert!`, 'success');
 }
 
 function openProjectFileFromDisk() {
@@ -2474,21 +2505,24 @@ function openProjectFileFromDisk() {
 }
 
 function downloadConfigurationFile() {
-    saveProjectFileAs();
+    saveProjectFileAs('auto');
 }
 
 function triggerConfigurationFileInput() {
     let inp = document.getElementById('file-config-upload');
-    if (!inp) {
-        inp = document.createElement('input');
-        inp.id = 'file-config-upload';
-        inp.type = 'file';
-        inp.accept = '.json,.pvpro.json,application/json';
-        inp.style.display = 'none';
-        inp.onchange = (e) => handleConfigurationFileUpload(e);
-        document.body.appendChild(inp);
+    if (inp) {
+        inp.remove();
     }
-    inp.value = '';
+    inp = document.createElement('input');
+    inp.id = 'file-config-upload';
+    inp.type = 'file';
+    // Auf Android '*/*' nutzen, damit Android im Auswahl-Menü alle Dateimanager wie Solid Explorer anzeigt
+    // und sowohl .pvpro.json / .json als auch .txt-Backups vom NAS wählbar sind.
+    const isAndroid = /Android/i.test(navigator.userAgent || '');
+    inp.accept = isAndroid ? '*/*' : '.json,.pvpro.json,.txt,application/json,text/plain';
+    inp.style.display = 'none';
+    inp.onchange = (e) => handleConfigurationFileUpload(e);
+    document.body.appendChild(inp);
     inp.click();
 }
 
@@ -2498,13 +2532,15 @@ function handleConfigurationFileUpload(e) {
     const reader = new FileReader();
     reader.onload = (event) => {
         try {
-            const cfg = JSON.parse(event.target.result);
+            const rawText = String(event.target.result || '').trim();
+            const cfg = JSON.parse(rawText);
             if (cfg && typeof cfg === 'object') {
-                importFullConfiguration(cfg, file.name.replace(/\.pvpro\.json$|\.json$/i, ''));
+                const cleanImportName = file.name.replace(/\.pvpro\.json$|\.json\.txt$|\.pvpro\.txt$|\.json$|\.txt$/i, '');
+                importFullConfiguration(cfg, cleanImportName);
                 closeShareModal();
                 closeProjectManagerModal();
             } else {
-                showToastNotification('Ungültiges Format der JSON-Datei.', 'error');
+                showToastNotification('Ungültiges Format der Backup-Datei.', 'error');
             }
         } catch (err) {
             showToastNotification('Fehler beim Lesen der Datei: ' + err.message, 'error');
@@ -2658,9 +2694,12 @@ function updateTwoRowHeader(title, subtitle, iconName, level = 1, backLabel = 'Z
 }
 
 // ==========================================
-// 2.1 SMARTPHONE SWIPE-BACK (HISTORY API: EBENE 2 -> EBENE 1 -> EBENE 0 START) & 6-STEP PLANNING WIZARD
+// 2.1 SMARTPHONE SWIPE-BACK (STRIKTE 3-EBENEN-HIERARCHIE: EBENE 2 -> EBENE 1 -> EBENE 0 -> APP SCHLIESSEN) & 6-STEP WIZARD
 // ==========================================
 let _suppressHistoryPush = false;
+let _browserHistoryDepth = 0; // Strikte Ebenen-Tiefe im Browser-History-Stack: 0 = Start (Ebene 0), 1 = Übersicht (Ebene 1), 2 = Detail (Ebene 2)
+let _ignoreProgrammaticPopState = false;
+let _pendingHistoryReplaceState = null;
 let currentPlanningWizardStep = 1;
 
 const PLANNING_WIZARD_STEPS = [
@@ -2672,41 +2711,106 @@ const PLANNING_WIZARD_STEPS = [
     { step: 6, tabIds: ['uebersicht', 'auswertung'], title: '6/6 · Ergebnis', subtitle: 'Ebene 2 · PVGIS-Simulation, Autarkie, Cashflow & Druck-Dossier', nextLabel: 'Fertig' }
 ];
 
-function pushAppNavHistoryState(section, level, detailId = '') {
-    if (_suppressHistoryPush) return;
+// Synchronisiert den Browser-History-Stack strikt nach Hierarchie-Ebene (0, 1, 2) statt nach chronologischer Klick-Historie:
+// - Wechsel auf derselben Ebene (z.B. Live <-> Analyse <-> Planung, oder Schritt 1 <-> Schritt 2): immer replaceState!
+// - Abstieg in tiefere Ebene (0 -> 1, 1 -> 2, 0 -> 2): pushState bis genau Tiefe 1 bzw. 2.
+// - Aufstieg in höhere Ebene per UI-Button (2 -> 1, 2 -> 0, 1 -> 0): history.go(delta) baut überzählige History-Einträge ab.
+// Dadurch gilt beim Zurück-Wischen IMMER: 1x Wischen = Ebene 1, 2x Wischen = Ebene 0 (Start), 3x Wischen = App schließen!
+function pushAppNavHistoryState(section, level, detailId = '', fromPopState = false) {
+    const targetLevel = Math.max(0, Math.min(2, Number(level) || 0));
+    const stateObj = { pvproSection: section, pvproLevel: targetLevel, pvproDepth: targetLevel, pvproDetail: detailId };
     try {
-        const currentState = history.state;
-        if (currentState && currentState.pvproSection === section && currentState.pvproLevel === level && currentState.pvproDetail === detailId) {
+        if (fromPopState || _suppressHistoryPush) {
+            _browserHistoryDepth = targetLevel;
+            history.replaceState(stateObj, '');
             return;
         }
-        history.pushState({ pvproSection: section, pvproLevel: level, pvproDetail: detailId }, '');
+        if (targetLevel === _browserHistoryDepth) {
+            history.replaceState(stateObj, '');
+            return;
+        }
+        if (targetLevel > _browserHistoryDepth) {
+            if (_browserHistoryDepth === 0 && targetLevel === 2) {
+                const hubSection = section === 'planung' ? 'planung-hub' : section;
+                history.pushState({ pvproSection: hubSection, pvproLevel: 1, pvproDepth: 1, pvproDetail: '' }, '');
+            }
+            history.pushState(stateObj, '');
+            _browserHistoryDepth = targetLevel;
+            return;
+        }
+        if (targetLevel < _browserHistoryDepth) {
+            const delta = targetLevel - _browserHistoryDepth;
+            _browserHistoryDepth = targetLevel;
+            _pendingHistoryReplaceState = stateObj;
+            _ignoreProgrammaticPopState = true;
+            history.go(delta);
+            setTimeout(() => {
+                _ignoreProgrammaticPopState = false;
+            }, 150);
+        }
+    } catch (e) {}
+}
+
+function closeAllTransientOverlaysOnBack() {
+    try {
+        const fsModal = document.getElementById('modal-intraday-fullscreen');
+        if (fsModal && !fsModal.classList.contains('hidden') && typeof closeIntradayFullscreen === 'function') {
+            closeIntradayFullscreen();
+        }
+        const climateModal = document.getElementById('modal-climate-curve');
+        if (climateModal && !climateModal.classList.contains('hidden') && typeof closeClimateHistoryModal === 'function') {
+            closeClimateHistoryModal();
+        }
+        closeMoreSheet();
     } catch (e) {}
 }
 
 if (typeof window !== 'undefined') {
-    window.addEventListener('popstate', (event) => {
-        // 1. Falls Vollbild-Tagesdiagramm offen ist -> zuerst dieses schließen
-        const fsModal = document.getElementById('modal-intraday-fullscreen');
-        if (fsModal && !fsModal.classList.contains('hidden') && typeof closeIntradayFullscreen === 'function') {
-            _suppressHistoryPush = true;
-            closeIntradayFullscreen();
-            _suppressHistoryPush = false;
+    // Beim initialen Laden sicherstellen, dass Start (Ebene 0) auf Tiefe 0 liegt
+    try {
+        const initialDepth = (history.state && typeof history.state.pvproDepth === 'number') ? history.state.pvproDepth : 0;
+        if (initialDepth > 0) {
+            _browserHistoryDepth = 0;
+            _pendingHistoryReplaceState = { pvproSection: 'home', pvproLevel: 0, pvproDepth: 0, pvproDetail: '' };
+            _ignoreProgrammaticPopState = true;
+            history.go(-initialDepth);
+            setTimeout(() => { _ignoreProgrammaticPopState = false; }, 150);
+        } else {
+            _browserHistoryDepth = 0;
+            history.replaceState({ pvproSection: 'home', pvproLevel: 0, pvproDepth: 0, pvproDetail: '' }, '');
+        }
+    } catch (e) {}
+
+    window.addEventListener('popstate', () => {
+        if (_ignoreProgrammaticPopState) {
+            _ignoreProgrammaticPopState = false;
+            if (_pendingHistoryReplaceState) {
+                try { history.replaceState(_pendingHistoryReplaceState, ''); } catch (e) {}
+                _pendingHistoryReplaceState = null;
+            }
             return;
         }
-        // 2. Falls wir auf Ebene 2 sind -> sanft zurück auf Ebene 1 (Übersicht)
+
+        closeAllTransientOverlaysOnBack();
+
+        // Strikte Ebenen-Hierarchie beim Zurück-Wischen:
+        // 1. Von Ebene 2 (Detail) -> 1 Ebene hoch auf Ebene 1 (Übersicht der aktuellen Sektion)
         if (currentNavLevel === 2) {
+            _browserHistoryDepth = 1;
             _suppressHistoryPush = true;
             navigateBackToHub(true);
             _suppressHistoryPush = false;
             return;
         }
-        // 3. Falls wir auf Ebene 1 (Live, Analyse, Planung) sind -> sanft zurück auf Ebene 0 (Startseite / Home), statt die App zu schließen!
+        // 2. Von Ebene 1 (Übersicht: Live, Analyse, Planung) -> 1 Ebene hoch auf Ebene 0 (Startseite)
         if (currentNavLevel === 1) {
+            _browserHistoryDepth = 0;
             _suppressHistoryPush = true;
             switchTab('home', true);
             _suppressHistoryPush = false;
             return;
         }
+        // 3. Auf Ebene 0 (Startseite): Browser hat 0 Einträge übrig -> App schließt sich beim 3. Zurück-Wischen automatisch!
     });
 }
 
@@ -2960,11 +3064,11 @@ function openPlanungDrillDown(tabId = 'system') {
 
 function navigateBackToHub(fromPopState = false) {
     if (currentNavSection === 'live') {
-        switchTab('live');
+        switchTab('live', fromPopState);
     } else if (currentNavSection === 'analyse') {
-        switchTab('analyse');
+        switchTab('analyse', fromPopState);
     } else {
-        switchTab('planung-hub');
+        switchTab('planung-hub', fromPopState);
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -3027,11 +3131,7 @@ function switchTab(tabId, fromPopState = false) {
     if (tabId === 'home') {
         currentNavSection = 'home';
         currentNavLevel = 0;
-        try {
-            if (!fromPopState && (!history.state || history.state.pvproSection !== 'home')) {
-                history.replaceState({ pvproSection: 'home', pvproLevel: 0, pvproDetail: '' }, '');
-            }
-        } catch (e) {}
+        pushAppNavHistoryState('home', 0, '', fromPopState);
         updateTwoRowHeader(
             'Start',
             'Ebene 0 · Dein Zuhause · Wetter & Energie im Überblick',
@@ -3041,7 +3141,7 @@ function switchTab(tabId, fromPopState = false) {
     } else if (tabId === 'live') {
         currentNavSection = 'live';
         currentNavLevel = 1;
-        if (!fromPopState) pushAppNavHistoryState('live', 1);
+        pushAppNavHistoryState('live', 1, '', fromPopState);
         const wideCockpit = typeof window.isWideCockpitViewport === 'function' && window.isWideCockpitViewport();
         document.getElementById('live-hub-view')?.classList.remove('hidden');
         if (wideCockpit) {
@@ -3063,7 +3163,7 @@ function switchTab(tabId, fromPopState = false) {
     } else if (tabId === 'analyse') {
         currentNavSection = 'analyse';
         currentNavLevel = 1;
-        if (!fromPopState) pushAppNavHistoryState('analyse', 1);
+        pushAppNavHistoryState('analyse', 1, '', fromPopState);
         document.getElementById('analyse-hub-view')?.classList.remove('hidden');
         document.getElementById('analyse-detail-view')?.classList.add('hidden');
         updateTwoRowHeader(
@@ -3075,7 +3175,7 @@ function switchTab(tabId, fromPopState = false) {
     } else if (isPlanningHub) {
         currentNavSection = 'planung';
         currentNavLevel = 1;
-        if (!fromPopState) pushAppNavHistoryState('planung-hub', 1);
+        pushAppNavHistoryState('planung-hub', 1, '', fromPopState);
         updatePlanungHubCards();
         updateTwoRowHeader(
             'Planung',
@@ -3086,7 +3186,7 @@ function switchTab(tabId, fromPopState = false) {
     } else if (isPlanningDetail) {
         currentNavSection = 'planung';
         currentNavLevel = 2;
-        if (!fromPopState) pushAppNavHistoryState('planung', 2, tabId);
+        pushAppNavHistoryState('planung', 2, tabId, fromPopState);
         const tabTitles = {
             faq: 'Handbuch'
         };

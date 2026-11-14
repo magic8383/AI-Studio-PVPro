@@ -1,5 +1,5 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.4)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.5)
 // Zentrale Single Source of Truth (IndexedDB Persistent Device Storage,
 // Live Sync-Status-Indikator, Non-Blocking Baseline Sync & 24h-Klima-Kurven)
 // ============================================================================

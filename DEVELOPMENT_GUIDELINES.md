@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.4 (Echtzeit-Synchronisations-Indikator für die IndexedDB auf dem Dashboard, im Header und im Menü mit Status-Anzeige `Daten synchron` / `Lädt...`, Zeitstempel des letzten Syncs, Anzahl aktiver Speicherblöcke, `Persistent Storage`-Schutzstatus und manuellem `Prüfen`-Button)  
+**Aktuelle Version:** 11.5 (Strikte 3-Ebenen-Hierarchie beim Zurück-Wischen `Ebene 2 -> Ebene 1 -> Ebene 0 -> App schließen` ohne History-Stau aus vorherigen Tab-Wechseln sowie native Android-App-Auswahl inkl. **Solid Explorer**, Nextcloud & Google Drive bei „Speichern unter…“ und „Datei öffnen…“)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

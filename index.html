@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 11.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 11.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=11.4">
+    <link rel="manifest" href="manifest.json?v=11.5">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.4">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.4">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.4">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.4">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.5">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.5">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.5">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.5">
     <script>
-        // V11.4: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V11.5: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v11.4') {
+                            if (key !== 'pvpro-cache-v11.5') {
                                 caches.delete(key);
                             }
                         });
@@ -48,7 +48,7 @@
                 }
                 if (!('serviceWorker' in navigator)) return;
 
-                var swUrl = './sw.js?v=11.4';
+                var swUrl = './sw.js?v=11.5';
                 var probeRes = await fetch(swUrl, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(function () { return null; });
                 var contentType = probeRes && probeRes.headers ? String(probeRes.headers.get('content-type') || '').toLowerCase() : '';
                 var isJavaScriptMime = Boolean(probeRes && probeRes.ok && (contentType.includes('javascript') || contentType.includes('ecmascript')));
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=11.4" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.5" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.4</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.5</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2881,7 +2881,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.4</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.5</p>
                     </div>
                 </button>
             </div>
@@ -4093,13 +4093,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V11.4 (IndexedDB Sync-Status-Indikator, Non-Blocking Baseline Sync & Netzbezug/TV-Wand 7-Tage-Fix) -->
-    <script src="qrcode.client.js?v=11.4"></script>
-    <script src="database.js?v=11.4"></script>
-    <script src="content.js?v=11.4"></script>
-    <script src="app.js?v=11.4"></script>
-    <script src="wiring.js?v=11.4"></script>
-    <script src="dossier.js?v=11.4"></script>
-    <script src="telemetry.js?v=11.4"></script>
+    <!-- MODULARE ARCHITEKTUR V11.5 (Strikte 3-Ebenen Zurück-Wischen-Hierarchie & Android App-Auswahl / Solid Explorer bei Speichern unter) -->
+    <script src="qrcode.client.js?v=11.5"></script>
+    <script src="database.js?v=11.5"></script>
+    <script src="content.js?v=11.5"></script>
+    <script src="app.js?v=11.5"></script>
+    <script src="wiring.js?v=11.5"></script>
+    <script src="dossier.js?v=11.5"></script>
+    <script src="telemetry.js?v=11.5"></script>
 </body>
 </html>

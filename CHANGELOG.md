@@ -4,6 +4,32 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.5] – 2026-11-14
+
+### ✨ Strikte 3-Ebenen-Hierarchie beim Zurück-Wischen (3x Zurück = App schließen) & Native Android-App-Auswahl (Solid Explorer, Nextcloud, Drive) bei „Speichern unter…“
+
+#### 1. Zurück-Wischen geht strikt eine Hierarchie-Ebene hoch (`Ebene 2 -> Ebene 1 -> Ebene 0 -> Schließen`) (`app.js`)
+* **Kein Zurücklaufen durch alte Tab-Wechsel oder Wizard-Schritte mehr (`_browserHistoryDepth`):**
+  - Bisher erzeugte jeder Wechsel zwischen gleichrangigen Ansichten (z. B. `Live <-> Analyse <-> Planung` auf Ebene 1 oder `Schritt 1 -> 2 -> 3` auf Ebene 2) per `history.pushState` einen neuen Eintrag im Browser-Verlauf. Dadurch musste man beim Verlassen der App sämtliche vorher besuchten Tabs rückwärts durchwischen.
+  - **Fix:** `pushAppNavHistoryState` verwaltet den Browser-History-Stack strikt nach den 3 Hierarchie-Ebenen (`_browserHistoryDepth = 0, 1, 2`):
+    - Gleichrangige Wechsel innerhalb derselben Ebene (`Ebene 1 <-> Ebene 1` oder `Ebene 2 <-> Ebene 2`) nutzen ausnahmslos `history.replaceState`.
+    - Beim Wechsel in eine höhere Ebene per UI-Button (`← Zurück` oder untere Navigationsleiste) baut `history.go(delta)` überzählige History-Einträge automatisch ab.
+  - **Ergebnis beim Zurück-Wischen:**
+    1. **1x Zurück (von Ebene 2 Detail):** Geht 1 Ebene hoch zur jeweiligen **Ebene 1 (Übersicht)**.
+    2. **2x Zurück (von Ebene 1 Übersicht):** Geht 1 Ebene hoch zur **Ebene 0 (`Start`)**.
+    3. **3x Zurück (auf Ebene 0 `Start`):** Da keine History-Einträge mehr dahinter liegen, **schließt sich die App sofort**.
+
+#### 2. Native Android-App-Auswahl (z. B. Solid Explorer, Nextcloud, Google Drive) bei „Speichern unter…“ & „Datei öffnen…“ (`app.js`)
+* **Warum bisher auf Android keine Apps wie Solid Explorer angezeigt wurden:**
+  - Auf Android existiert `window.showSaveFilePicker` nicht, sodass `saveProjectFileAs()` direkt auf einen stillen `<a download>`-Link in den internen `Downloads`-Ordner zurückfiel. Zudem blockiert Chromiums C++-`ShareServiceImpl` auf Android `.json`-Dateiendungen beim Web-Share-Intent, und restriktive `accept=".json"`-Filter beim Datei-Upload blenden Dateimanager wie Solid Explorer aus.
+* **Fix für „Speichern unter…“ (`saveProjectFileAs`):**
+  - Öffnet auf Android und Mobilgeräten über `navigator.share({ files: [shareFile] })` (als reiner `EXTRA_STREAM`-Datei-Intent mit `text/plain`-kompatiblem Backup-Container) direkt die **native Android-App-Auswahl**, in der **Solid Explorer**, Total Commander, Nextcloud, Synology Drive und Google Drive zum direkten Speichern (auch auf SMB/NAS-Freigaben) ausgewählt werden können.
+  - Zusätzlich steht im Projekt-Manager weiterhin ein separater Button **„Direkt-Download“** für das direkte Ablegen im `Downloads`-Ordner bereit.
+* **Fix für „Datei öffnen…“ (`triggerConfigurationFileInput`):**
+  - Nutzt auf Android `accept="*/*"`, sodass im System-Auswahldialog auch **Solid Explorer** als Quelle erscheint und sowohl `.pvpro.json` / `.json` als auch `.txt`-Backups direkt vom NAS geladen werden können.
+
+---
+
 ## [Version 11.4] – 2026-11-13
 
 ### ✨ Echtzeit-Synchronisations-Indikator für die IndexedDB (`Daten synchron` / `Lädt...`) auf dem Dashboard & im Menü
