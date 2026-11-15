@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '11.5';
+const APP_VERSION = '11.6';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -688,7 +688,8 @@ function createDefaultHaConfig() {
     },
     pvEnergyExtraEntities: [],
     customStrings: getDefaultCustomStrings(),
-    customConsumers: getDefaultCustomConsumers()
+    customConsumers: getDefaultCustomConsumers(),
+    monitoredDevices: []
   };
 }
 
@@ -712,7 +713,8 @@ function loadHaConfig() {
         },
         pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : [],
         customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : defaults.customStrings,
-        customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : defaults.customConsumers
+        customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : defaults.customConsumers,
+        monitoredDevices: Array.isArray(parsed.monitoredDevices) ? parsed.monitoredDevices : []
       };
     }
   } catch (err) {
@@ -898,6 +900,7 @@ app.post('/api/ha/config', (req, res) => {
       pvEnergyExtraEntities: Array.isArray(incoming.pvEnergyExtraEntities) ? incoming.pvEnergyExtraEntities : (current.pvEnergyExtraEntities || []),
       customStrings: Array.isArray(incoming.customStrings) ? incoming.customStrings : (current.customStrings || getDefaultCustomStrings()),
       customConsumers: Array.isArray(incoming.customConsumers) ? incoming.customConsumers : (current.customConsumers || getDefaultCustomConsumers()),
+      monitoredDevices: Array.isArray(incoming.monitoredDevices) ? incoming.monitoredDevices : (current.monitoredDevices || []),
       updatedAt: new Date().toISOString()
     };
     saveHaConfig(merged);
@@ -1041,6 +1044,16 @@ function parseHaNumericState(stateObj, targetType = 'power') {
   if (!stateObj || stateObj.state === undefined || stateObj.state === null) return null;
   const sStr = String(stateObj.state).trim().toLowerCase();
   if (sStr === 'unavailable' || sStr === 'unknown' || sStr === '') return null;
+  // Power Outage / Stale Guard (15 min silence -> 0 W for power sensors)
+  if (targetType === 'power') {
+    const tsStr = stateObj.last_updated || stateObj.last_changed;
+    if (tsStr) {
+      const ageMs = Date.now() - new Date(tsStr).getTime();
+      if (Number.isFinite(ageMs) && ageMs > 15 * 60 * 1000) {
+        return 0;
+      }
+    }
+  }
   const rawVal = parseFloat(sStr.replace(',', '.'));
   if (isNaN(rawVal)) return null;
   const unit = String(stateObj.attributes?.unit_of_measurement || stateObj.unit || '').trim().toLowerCase();
@@ -1341,7 +1354,7 @@ app.all('/api/ha/history', async (req, res) => {
       bucketTimes.push(now.getTime());
     }
 
-    // Parse each entity's timeline
+    // Parse each entity's timeline (Power Outage Guard: unavailable/unknown = 0 W for power sensors!)
     const historyByEntity = new Map();
     if (Array.isArray(rawHistoryArrays)) {
       rawHistoryArrays.forEach(arr => {
@@ -1352,11 +1365,17 @@ app.all('/api/ha/history', async (req, res) => {
         const targetType = mInfo ? mInfo.type : 'power';
         const pts = [];
         arr.forEach(item => {
-          const val = parseHaNumericState(item, targetType);
           const tsStr = item.last_changed || item.last_updated;
           const ts = tsStr ? new Date(tsStr).getTime() : NaN;
-          if (val !== null && !isNaN(ts)) {
-            pts.push({ ts, val });
+          if (isNaN(ts)) return;
+          const sLower = String(item.state ?? '').trim().toLowerCase();
+          if (targetType === 'power' && (sLower === 'unavailable' || sLower === 'unknown' || sLower === '')) {
+            pts.push({ ts, val: 0, isOutage: true });
+            return;
+          }
+          const val = parseHaNumericState({ ...item, last_updated: null, last_changed: null }, targetType);
+          if (val !== null) {
+            pts.push({ ts, val, isOutage: false });
           }
         });
         pts.sort((a, b) => a.ts - b.ts);
@@ -1364,9 +1383,10 @@ app.all('/api/ha/history', async (req, res) => {
       });
     }
 
-    // Sample onto bucketTimes (step-hold interpolation) and integrate kWh
+    // Sample onto bucketTimes (with 15-min silence/outage drop to 0 W for power sensors) and integrate kWh
     const series = {};
     const integratedKwh = {};
+    const silenceMaxMs = range === 'day' ? 15 * 60 * 1000 : stepMs * 2;
 
     entityKeyMap.forEach(({ key, entityId, type }) => {
       const pts = historyByEntity.get(entityId) || [];
@@ -1374,13 +1394,31 @@ app.all('/api/ha/history', async (req, res) => {
       if (pts.length > 0) {
         let pIdx = 0;
         let lastVal = pts[0].val;
+        let lastTs = pts[0].ts;
+        let lastWasOutage = Boolean(pts[0].isOutage);
         for (let i = 0; i < bucketTimes.length; i++) {
           const bt = bucketTimes[i];
+          if (bt < pts[0].ts) {
+            sampled[i] = type === 'power' ? 0 : Math.round(pts[0].val * 10) / 10;
+            continue;
+          }
           while (pIdx < pts.length && pts[pIdx].ts <= bt) {
             lastVal = pts[pIdx].val;
+            lastTs = pts[pIdx].ts;
+            lastWasOutage = Boolean(pts[pIdx].isOutage);
             pIdx++;
           }
-          sampled[i] = Math.round(lastVal * 10) / 10;
+          if (type === 'power') {
+            const nextPt = pIdx < pts.length ? pts[pIdx] : null;
+            const gapToNextMs = nextPt ? (nextPt.ts - lastTs) : (now.getTime() - lastTs);
+            if (lastWasOutage || ((bt - lastTs) > silenceMaxMs && gapToNextMs > silenceMaxMs)) {
+              sampled[i] = 0;
+            } else {
+              sampled[i] = Math.round(lastVal * 10) / 10;
+            }
+          } else {
+            sampled[i] = Math.round(lastVal * 10) / 10;
+          }
         }
       }
       series[key] = sampled;

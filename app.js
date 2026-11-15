@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '11.5';
+const APP_VERSION = '11.6';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -3183,6 +3183,16 @@ function switchTab(tabId, fromPopState = false) {
             'solar_power',
             1
         );
+    } else if (tabId === 'devices') {
+        currentNavSection = 'devices';
+        currentNavLevel = 1;
+        pushAppNavHistoryState('devices', 1, '', fromPopState);
+        updateTwoRowHeader(
+            'Geräte & Diagnose',
+            'Ebene 1 · Wechselrichter, Speicher & Zähler · Alle HA-Sensoren & IP-Zugriff',
+            'router',
+            1
+        );
     } else if (isPlanningDetail) {
         currentNavSection = 'planung';
         currentNavLevel = 2;
@@ -3234,6 +3244,9 @@ function switchTab(tabId, fromPopState = false) {
         if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
     } else if (tabId === 'analyse') {
         if (typeof renderAnalyseTab === 'function') renderAnalyseTab();
+    } else if (tabId === 'devices') {
+        if (typeof renderDevicesDiagnosticsTab === 'function') renderDevicesDiagnosticsTab();
+        if (typeof startLiveTelemetryLoop === 'function') startLiveTelemetryLoop();
     }
 }
 

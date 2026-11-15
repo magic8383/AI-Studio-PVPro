@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.5 (Strikte 3-Ebenen-Hierarchie beim Zurück-Wischen `Ebene 2 -> Ebene 1 -> Ebene 0 -> App schließen` ohne History-Stau aus vorherigen Tab-Wechseln sowie native Android-App-Auswahl inkl. **Solid Explorer**, Nextcloud & Google Drive bei „Speichern unter…“ und „Datei öffnen…“)  
+**Aktuelle Version:** 11.6 (Stromausfall-/Offline-`0 W`-Schutz gegen eingefrorene horizontale Linien im Live- & Tagesdiagramm, eigener Reiter „2. Verbraucher“ mit aufklappbaren Verbrauchergruppen + Gruppenkurven im Diagramm sowie neue Geräte-Diagnoseleiste auf der Startseite & Hardware-Diagnoseseite mit allen HA-Sensoren und direktem IP-Web-UI-Link)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

@@ -4,6 +4,43 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.6] – 2026-11-15
+
+### ✨ Stromausfall-/Offline-`0 W`-Schutz (Keine eingefrorene Linie mehr), Eigener Verbraucher-Tab mit aufklappbaren Gruppen & Geräte-Diagnoseseite inkl. IP-Direktlink
+
+#### 1. Warum bei Stromausfall / abgeschaltetem Fronius die Live-Ansicht & Einspeisung als gerade Linie weiterliefen – und der Fix (`telemetry.js`, `server.js`)
+* **Ursachen-Analyse (3 „smarte“ Halte-Mechanismen):**
+  1. **Step-Hold-Interpolation in `sampleEntity` (`fetchHaHistoryInBrowser` & `/api/ha/history`):** Wenn ein Wechselrichter oder Smart Meter bei Arbeiten am Sicherungskasten stromlos wird, wechseln die Home-Assistant-Sensoren auf `unavailable` oder senden keine neuen Messpunkte mehr. Bisher wurden `unavailable`/`unknown`-Zustände beim Parsen der Historie komplett übersprungen und der letzte gültige Watt-Wert vor dem Abschalten (`lastVal`) über alle nachfolgenden 5-Minuten-Buckets als waagerechte gerade Linie bis zur aktuellen Uhrzeit fortgeschrieben (und per Trapez-Integration sogar weiter in `kWh` aufsummiert).
+  2. **Stale-Value-Übernahme in `extractHaNumericClient`:** Solange ein Sensor im gecachten Zustand noch seinen letzten Zahlenwert vor dem Ausfall hielt, wurde dieser ohne Altersprüfung (`last_updated`) als aktuelle Live-Leistung gewertet.
+  3. **Einfrieren von `currentLiveTelemetry` bei Verbindungsabbruch:** Schlug der Live-Abruf fehl, blieben die letzten Watt-Zahlen im UI stehen.
+* **Lösung (Striktes `0 W`-Gesetz für Leistungs-Sensoren bei Ausfall & Funkstille):**
+  - **History-Parser:** Jeder `unavailable`- oder `unknown`-Eintrag eines Leistungs-Sensors (`W` / `kW`) erzeugt in der Zeitleiste sofort einen expliziten **`0 W` Outage-Punkt** (`{ ts, val: 0, isOutage: true }`).
+  - **15-Minuten-Silence-Guard (`POWER_OUTAGE_SILENCE_MS`):** Kommt von einem Leistungs-Sensor länger als **15 Minuten** kein Lebenszeichen mehr (oder ist der aktuelle Status `unavailable`), fällt die Kurve im Diagramm und in der Live-Anzeige sofort sauber auf **`0 W`** ab.
+  - **Energiezähler (`kWh`) bleiben unangetastet:** Kumulative `kWh`-Zähler werden bei Ausfall niemals genullt und synchronisieren sich beim Wiedereinschalten nahtlos weiter.
+
+#### 2. Eigener Reiter „2. Verbraucher“ in den Einstellungen & Aufklappbare Verbrauchergruppen (`index.html`, `telemetry.js`)
+* **4-Tab-Struktur im Home-Assistant-Konfigurator (`#modal-ha-config`):**
+  1. **`1. Energie & PV`** (Verbindung, Hauptzähler, PV-Strings)
+  2. **`2. Verbraucher`** (Eigener übersichtlicher Tab für alle Einzelverbraucher & Gruppen)
+  3. **`3. Klima & Geräte`** (Überwachte Hardware-Geräte mit IP-Links + Wetter- & Raumklima-Sensoren)
+  4. **`4. Proxy-Hilfe`** (Reverse-Proxy & CORS-Vorlage)
+* **Verbrauchergruppen mit Summenzeile & Gruppenkurve:**
+  - Jedem Einzelverbraucher kann im Tab **„2. Verbraucher“** optional eine **Gruppe** zugewiesen werden (z. B. *„Wohnzimmer & Media“*, *„Waschküche“*, *„Beleuchtung“* – mit Vorschlagsliste und Gruppen-Übersichtsleiste).
+  - **Auf dem Live-Dashboard (`Aktive Verbraucher`):** Gruppierte Verbraucher erscheinen standardmäßig als **eine zusammengefasste Gruppenzeile** mit aufsummierter Live-Leistung (`W`), aufsummiertem Tagesverbrauch (`kWh heute`) und gemeinsamem Fortschrittsbalken. Ein Tipp auf den Pfeil (`▸` / `▾`) klappt die enthaltenen Einzelgeräte bei Bedarf auf oder zu.
+  - **Im Tages-/Wochen-/Monatsdiagramm:** Jede Gruppe besitzt eine eigene aggregierte **Gruppenkurve** (`Gruppe · <Name>`), die sich per Tipp auf die Gruppenzeile oder über die Kanal-Kacheln unter dem Diagramm direkt einblenden lässt.
+
+#### 3. Geräte-Kachelleiste auf der Startseite & Eigene Geräte-Diagnoseseite mit IP-Direktlink (`index.html`, `telemetry.js`, `app.js`)
+* **Manuelle Geräte-Auswahl mit automatischem Sensor-Abruf (`3. Klima & Geräte`):**
+  - Über **„+ Aus HA-Geräteliste wählen“** lassen sich Wechselrichter (z. B. Fronius, Hoymiles/OpenDTU), Batteriespeicher (BYD HVS+), Smart Meter oder Shellys direkt aus den erkannten Home-Assistant-Geräten auswählen (inkl. automatischer Vorbelegung für erkannte Fronius/BYD/Smart-Meter-Hardware).
+  - Für jedes ausgewählte Gerät zieht sich die App automatisch **alle zugehörigen Home-Assistant-Sensoren** (Leistung, Spannungen, Ströme, Temperaturen, SoC, Status, Firmware).
+  - Optional kann pro Gerät die lokale **IP-Adresse / Web-UI-URL** (z. B. `192.168.178.45`) hinterlegt werden (oder wird automatisch aus `configuration_url` übernommen).
+* **Kompakte Geräte-Kachelleiste unten auf der Startseite (`#homeMonitoredDevicesSection`):**
+  - Zeigt unterhalb von „Raumklima & Temperaturen“ für jedes überwachte Gerät den Online-/Offline-Status, die wichtigste Hauptkennzahl (`W` / `% SoC`), einen direkten **`IP`-Button** zum Öffnen der Geräte-Weboberfläche sowie den Direkt-Sprung in die Diagnose.
+* **Dedizierte Geräte- & Hardware-Diagnoseseite (`#tab-devices`, erreichbar über Startseite oder `☰ Menü -> Geräte & Hardware-Diagnose`):**
+  - Zeigt für alle ausgewählten Geräte übersichtliche Diagnosekarten mit Online-Status-Badge, Direktbutton **„Weboberfläche öffnen (IP)“**, Geräte-Filter-Pills, Echtzeit-Sensorsuche und sämtlichen zugehörigen Home-Assistant-Entitäten.
+
+---
+
 ## [Version 11.5] – 2026-11-14
 
 ### ✨ Strikte 3-Ebenen-Hierarchie beim Zurück-Wischen (3x Zurück = App schließen) & Native Android-App-Auswahl (Solid Explorer, Nextcloud, Drive) bei „Speichern unter…“

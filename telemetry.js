@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.5)
-// Zentrale Single Source of Truth (IndexedDB Persistent Device Storage,
-// Live Sync-Status-Indikator, Non-Blocking Baseline Sync & 24h-Klima-Kurven)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.6)
+// Zentrale Single Source of Truth (Stromausfall-0W-Guard, Verbraucher-Gruppen,
+// Geräte-Diagnose inkl. Direkt-IP, IndexedDB Persistent Storage & 24h-Klima)
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -11,10 +11,10 @@ const DEFAULT_CUSTOM_STRINGS = [
 ];
 
 const DEFAULT_CUSTOM_CONSUMERS = [
-    { id: 'cons_1', name: 'Trockner', powerEntity: 'sensor.trockner_power', energyEntity: '' },
-    { id: 'cons_2', name: 'TV-Verstärker', powerEntity: 'sensor.tv_verstaerker_power', energyEntity: '' },
-    { id: 'cons_3', name: 'Esszimmer Licht', powerEntity: 'sensor.esszimmer_licht_power', energyEntity: '' },
-    { id: 'cons_4', name: 'Küche Licht', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
+    { id: 'cons_1', name: 'Trockner', group: '', powerEntity: 'sensor.trockner_power', energyEntity: '' },
+    { id: 'cons_2', name: 'TV-Verstärker', group: '', powerEntity: 'sensor.tv_verstaerker_power', energyEntity: '' },
+    { id: 'cons_3', name: 'Esszimmer Licht', group: '', powerEntity: 'sensor.esszimmer_licht_power', energyEntity: '' },
+    { id: 'cons_4', name: 'Küche Licht', group: '', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
 ];
 
 let haConfigState = {
@@ -48,18 +48,62 @@ let haConfigState = {
     weatherEntity: '',
     outdoorTempEntity: '',
     customWeatherSensors: [],
+    monitoredDevices: [],
     customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
     customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS))
 };
 
 let discoveredHaSensors = [];
+let discoveredHaTemplateDeviceMap = {}; // entity_id -> { deviceName, areaName, manufacturer, model, swVersion, configUrl }
 let lastKnownHaUnitMap = new Map(); // entity_id -> unit_of_measurement (populated from /api/states)
 let lastKnownHaStateClassMap = new Map(); // entity_id -> state_class
 let lastKnownHaReadingMap = new Map(); // entity_id -> latest numeric reading (scaled to kWh or W)
-let lastKnownHaAvailabilityMap = new Map(); // entity_id -> boolean (true if numeric state available)
+let lastKnownHaAvailabilityMap = new Map(); // entity_id -> 'ok' | 'unavailable' | 'unknown' | ...
+let lastKnownHaUpdatedMsMap = new Map(); // entity_id -> timestamp (ms) of last_updated / last_changed in HA
+let expandedConsumerGroups = new Set(); // Set of groupName strings currently expanded on Live dashboard
+let selectedDiagnosticDeviceFilter = '__ALL__';
+let devicesDiagnosticSearchQuery = '';
 let sensorDiagnosticsByEntity = {}; // entity_id -> { status, reason, filteredSpikeKwh, spikeDateStr, cleanDeltaKwh, rawDeltaKwh, updatedAt }
 if (typeof window !== 'undefined') {
     window.sensorDiagnosticsByEntity = sensorDiagnosticsByEntity;
+}
+
+const POWER_OUTAGE_SILENCE_MS = 15 * 60 * 1000; // 15 minutes silence / unavailable -> drop W to 0
+
+function normalizeConsumerGroupSlug(groupName) {
+    const clean = String(groupName || '').trim().toLowerCase()
+        .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+    return clean || 'default';
+}
+
+function getConsumerGroupsSummary(cfg = haConfigState) {
+    const list = Array.isArray(cfg?.customConsumers) ? cfg.customConsumers : [];
+    const groupMap = new Map();
+    const groupPalette = ['#6366f1', '#ec4899', '#14b8a6', '#f59e0b', '#06b6d4', '#8b5cf6', '#10b981'];
+    let colorIdx = 0;
+
+    list.forEach((cc, idx) => {
+        if (!cc || !cc.id) return;
+        const gName = String(cc.group || '').trim();
+        if (!gName) return;
+        const slug = normalizeConsumerGroupSlug(gName);
+        const curveKey = `group_${slug}`;
+        if (!groupMap.has(curveKey)) {
+            groupMap.set(curveKey, {
+                groupName: gName,
+                slug,
+                curveKey,
+                color: groupPalette[colorIdx % groupPalette.length],
+                members: []
+            });
+            colorIdx++;
+        }
+        groupMap.get(curveKey).members.push({ ...cc, index: idx });
+    });
+
+    return [...groupMap.values()];
 }
 let liveTelemetryTimer = null;
 let intradayHistoryTimer = null;
@@ -435,6 +479,9 @@ async function hydrateFromPersistentIndexedDB() {
                     customWeatherSensors: Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0
                         ? idbHaCfg.customWeatherSensors
                         : (haConfigState.customWeatherSensors || []),
+                    monitoredDevices: Array.isArray(idbHaCfg.monitoredDevices) && idbHaCfg.monitoredDevices.length > 0
+                        ? idbHaCfg.monitoredDevices
+                        : (haConfigState.monitoredDevices || []),
                     customStrings: Array.isArray(idbHaCfg.customStrings) && idbHaCfg.customStrings.length > 0
                         ? idbHaCfg.customStrings
                         : haConfigState.customStrings,
@@ -445,10 +492,18 @@ async function hydrateFromPersistentIndexedDB() {
                 try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
                 needsUiRefresh = true;
                 startLiveTelemetryLoop();
-            } else if ((!Array.isArray(haConfigState.customWeatherSensors) || haConfigState.customWeatherSensors.length === 0) && Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0) {
-                haConfigState.customWeatherSensors = idbHaCfg.customWeatherSensors;
-                try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
-                needsUiRefresh = true;
+            } else {
+                if ((!Array.isArray(haConfigState.customWeatherSensors) || haConfigState.customWeatherSensors.length === 0) && Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0) {
+                    haConfigState.customWeatherSensors = idbHaCfg.customWeatherSensors;
+                    needsUiRefresh = true;
+                }
+                if ((!Array.isArray(haConfigState.monitoredDevices) || haConfigState.monitoredDevices.length === 0) && Array.isArray(idbHaCfg.monitoredDevices) && idbHaCfg.monitoredDevices.length > 0) {
+                    haConfigState.monitoredDevices = idbHaCfg.monitoredDevices;
+                    needsUiRefresh = true;
+                }
+                if (needsUiRefresh) {
+                    try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
+                }
             }
         } else if (haConfigState.accessToken) {
             PVProPersistentDB.set('ha_config_backup', haConfigState);
@@ -639,6 +694,9 @@ async function initTelemetryAndAnalysis() {
                 customWeatherSensors: Array.isArray(parsed.customWeatherSensors) && parsed.customWeatherSensors.length > 0
                     ? parsed.customWeatherSensors
                     : (haConfigState.customWeatherSensors || []),
+                monitoredDevices: Array.isArray(parsed.monitoredDevices) && parsed.monitoredDevices.length > 0
+                    ? parsed.monitoredDevices
+                    : (haConfigState.monitoredDevices || []),
                 customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : haConfigState.customConsumers
             };
@@ -690,6 +748,9 @@ async function initTelemetryAndAnalysis() {
                 customWeatherSensors: Array.isArray(srvCfg.customWeatherSensors) && srvCfg.customWeatherSensors.length > 0
                     ? srvCfg.customWeatherSensors
                     : (haConfigState.customWeatherSensors || []),
+                monitoredDevices: Array.isArray(srvCfg.monitoredDevices) && srvCfg.monitoredDevices.length > 0
+                    ? srvCfg.monitoredDevices
+                    : (haConfigState.monitoredDevices || []),
                 customStrings: Array.isArray(srvCfg.customStrings) && srvCfg.customStrings.length > 0 ? srvCfg.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(srvCfg.customConsumers) && srvCfg.customConsumers.length > 0 ? srvCfg.customConsumers : haConfigState.customConsumers
             };
@@ -2017,7 +2078,7 @@ window.triggerManualLongTermStatsSync = triggerManualLongTermStatsSync;
 window.onChangeTrackingStartDate = onChangeTrackingStartDate;
 window.applyTrackingStartDateAndResync = applyTrackingStartDateAndResync;
 
-function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
+function extractHaNumericClient(statesMap, entityId, targetUnitType = null, options = null) {
     if (!entityId || typeof entityId !== 'string') return null;
     const cleanId = entityId.trim();
     if (!cleanId) return null;
@@ -2026,8 +2087,9 @@ function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
         lastKnownHaAvailabilityMap.set(cleanId, 'nicht gefunden');
         return null;
     }
-    if (st.state === 'unavailable' || st.state === 'unknown' || st.state === null || st.state === undefined) {
-        lastKnownHaAvailabilityMap.set(cleanId, String(st.state || 'unavailable'));
+    const rawStateStr = String(st.state ?? '').trim().toLowerCase();
+    if (rawStateStr === 'unavailable' || rawStateStr === 'unknown' || rawStateStr === 'none' || rawStateStr === 'off' || st.state === null || st.state === undefined) {
+        lastKnownHaAvailabilityMap.set(cleanId, rawStateStr || 'unavailable');
         return null;
     }
     const val = parseFloat(String(st.state).replace(',', '.'));
@@ -2035,6 +2097,22 @@ function extractHaNumericClient(statesMap, entityId, targetUnitType = null) {
         lastKnownHaAvailabilityMap.set(cleanId, 'ungültig');
         return null;
     }
+    const updMs = new Date(st.last_updated || st.last_changed || 0).getTime();
+    if (Number.isFinite(updMs) && updMs > 0) {
+        lastKnownHaUpdatedMsMap.set(cleanId, updMs);
+    }
+
+    // V11.6 Power Outage / Offline Guard for Live Power (W) sensors:
+    // If the main inverter / PV system is unavailable/offline AND this power sensor (e.g. a SolarNet / template export sensor)
+    // hasn't received any update from Home Assistant for > 15 minutes while still holding a stale non-zero W value, force 0 W!
+    if (targetUnitType === 'W' && options?.enforceStaleGuard && Math.abs(val) > 5 && Number.isFinite(updMs) && updMs > 0) {
+        const ageMs = Date.now() - updMs;
+        if (ageMs > POWER_OUTAGE_SILENCE_MS) {
+            lastKnownHaAvailabilityMap.set(cleanId, 'stale_outage');
+            return 0;
+        }
+    }
+
     const unit = String(st.attributes?.unit_of_measurement || '').trim().toLowerCase();
     if (unit) lastKnownHaUnitMap.set(cleanId, unit);
     if (st.attributes?.state_class) lastKnownHaStateClassMap.set(cleanId, st.attributes.state_class);
@@ -2074,6 +2152,16 @@ function pickExistingHaEntityId(statesMap, candidates = []) {
     return { id: '', val: null, forceCumulative: false };
 }
 
+function isEntityCurrentlyUnavailableInMap(statesMap, entityId) {
+    if (!entityId || typeof entityId !== 'string') return false;
+    const cleanId = entityId.trim();
+    if (!cleanId) return false;
+    const st = statesMap.get(cleanId);
+    if (!st) return false;
+    const s = String(st.state ?? '').trim().toLowerCase();
+    return s === 'unavailable' || s === 'unknown' || s === 'none';
+}
+
 function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
     const statesMap = prebuiltStatesMap || new Map();
     if (!prebuiltStatesMap) {
@@ -2091,21 +2179,42 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
     const maxPlausibleDailyPvKwh = Math.max(80, (baseline.totalKwp || 15) * 9.5);
 
     const e = cfg.entities || {};
-    const pvPowerW = extractHaNumericClient(statesMap, e.pvPower, 'W');
-    const loadPowerW = extractHaNumericClient(statesMap, e.loadPower, 'W');
-    const gridImpW = extractHaNumericClient(statesMap, e.gridImportPower, 'W');
-    const gridExpW = extractHaNumericClient(statesMap, e.gridExportPower, 'W');
+
+    // Check if primary inverter / PV / SmartMeter entities are currently reporting 'unavailable' (e.g. breaker off / Fronius shut down)
+    const anyStringUnavailable = Array.isArray(cfg.customStrings) && cfg.customStrings.some(cs => isEntityCurrentlyUnavailableInMap(statesMap, cs?.powerEntity));
+    const mainSystemUnavailable = isEntityCurrentlyUnavailableInMap(statesMap, e.pvPower) ||
+        isEntityCurrentlyUnavailableInMap(statesMap, e.gridPower) ||
+        isEntityCurrentlyUnavailableInMap(statesMap, e.loadPower) ||
+        anyStringUnavailable;
+
+    const powerOpts = { enforceStaleGuard: mainSystemUnavailable };
+
+    const pvPowerW = extractHaNumericClient(statesMap, e.pvPower, 'W', powerOpts);
+    const loadPowerW = extractHaNumericClient(statesMap, e.loadPower, 'W', powerOpts);
+    const gridImpW = extractHaNumericClient(statesMap, e.gridImportPower, 'W', powerOpts);
+    let gridExpW = extractHaNumericClient(statesMap, e.gridExportPower, 'W', powerOpts);
+
+    // Additional physical guard: if all PV strings & PV power are 0 W or unavailable AND battery is not discharging,
+    // a stale template sensor for gridExportPower (>15 min old) cannot physically be exporting power!
+    if (gridExpW !== null && gridExpW > 10 && e.gridExportPower) {
+        const expUpdMs = lastKnownHaUpdatedMsMap.get(e.gridExportPower.trim()) || 0;
+        const isExpStale = expUpdMs > 0 && (Date.now() - expUpdMs) > POWER_OUTAGE_SILENCE_MS;
+        if (isExpStale && (pvPowerW === null || pvPowerW <= 10)) {
+            gridExpW = 0;
+        }
+    }
+
     let gridPowerW = null;
     if (gridImpW !== null || gridExpW !== null) {
         gridPowerW = (gridImpW || 0) - (gridExpW || 0);
     } else {
-        gridPowerW = extractHaNumericClient(statesMap, e.gridPower, 'W');
+        gridPowerW = extractHaNumericClient(statesMap, e.gridPower, 'W', powerOpts);
     }
 
     // Support 2 separate battery power sensors (Ladeleistung W & Entladeleistung W) + optional combined sensor
-    const batChgPowerW = extractHaNumericClient(statesMap, e.batteryChargePower, 'W');
-    const batDisPowerW = extractHaNumericClient(statesMap, e.batteryDischargePower, 'W');
-    const batCombinedPowerW = extractHaNumericClient(statesMap, e.batteryPower, 'W');
+    const batChgPowerW = extractHaNumericClient(statesMap, e.batteryChargePower, 'W', powerOpts);
+    const batDisPowerW = extractHaNumericClient(statesMap, e.batteryDischargePower, 'W', powerOpts);
+    const batCombinedPowerW = extractHaNumericClient(statesMap, e.batteryPower, 'W', powerOpts);
     let batteryPowerW = null;
     if (batChgPowerW !== null || batDisPowerW !== null) {
         batteryPowerW = Math.max(0, batChgPowerW || 0) - Math.max(0, batDisPowerW || 0);
@@ -2339,6 +2448,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
                 consumersTelemetry.push({
                     id: cc.id,
                     name: cc.name,
+                    group: String(cc.group || '').trim(),
                     powerEntity: cc.powerEntity,
                     energyEntity: cc.energyEntity || '',
                     powerW: 0,
@@ -2351,6 +2461,7 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
                 consumersTelemetry.push({
                     id: cc.id,
                     name: cc.name,
+                    group: String(cc.group || '').trim(),
                     powerEntity: cc.powerEntity,
                     energyEntity: cc.energyEntity || '',
                     powerW: pW !== null ? Math.max(0, pW) : 0,
@@ -2741,13 +2852,32 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                 if (!entId) return;
 
                 if (powerEntitySet.has(entId)) {
-                    const scale = (entId === socEntityId) ? 1 : getPowerScaleForEntity(entId, null);
+                    const isSocEnt = (entId === socEntityId);
+                    const scale = isSocEnt ? 1 : getPowerScaleForEntity(entId, null);
                     const points = [];
                     entityHistoryArr.forEach(pt => {
-                        const val = parseFloat(String(pt.state).replace(',', '.'));
                         const ts = new Date(pt.last_changed || pt.last_updated || restStartIso).getTime();
-                        if (!isNaN(val) && !isNaN(ts)) points.push({ ts, val: val * scale });
+                        if (isNaN(ts)) return;
+                        const rawState = String(pt.state ?? '').trim().toLowerCase();
+                        // V11.6 Power Outage & Offline Guard:
+                        // When a power sensor reports 'unavailable', 'unknown', or 'off' (e.g. Fronius inverter shut down or breaker off),
+                        // explicitly record a 0 W transition point instead of ignoring it and drawing a fake horizontal straight line!
+                        if (!isSocEnt && (rawState === 'unavailable' || rawState === 'unknown' || rawState === 'off' || rawState === 'none')) {
+                            points.push({ ts, val: 0, unavailable: true });
+                            return;
+                        }
+                        const val = parseFloat(String(pt.state).replace(',', '.'));
+                        if (!isNaN(val)) {
+                            points.push({ ts, val: val * scale, unavailable: false });
+                        }
                     });
+                    // Also if the live state of this power sensor is currently unavailable, append a live 0 W point at 'now'
+                    if (!isSocEnt) {
+                        const curAvail = lastKnownHaAvailabilityMap.get(entId);
+                        if (curAvail && curAvail !== 'ok') {
+                            points.push({ ts: now.getTime(), val: 0, unavailable: true });
+                        }
+                    }
                     if (points.length > 0) {
                         points.sort((a, b) => a.ts - b.ts);
                         rawSeriesByEntity.set(entId, points);
@@ -2849,24 +2979,68 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
             if (arr) return arr.map(v => +(v * scale).toFixed(2));
         }
 
-        // Priority 2: Short-Term REST History
+        // Priority 2: Short-Term REST History (with V11.6 Power Outage 0W & 15-Min Silence Guard)
         const pts = cleanId ? (rawSeriesByEntity.get(cleanId) || []) : [];
         if (pts.length > 0) {
+            // Detect if main PV / Inverter power sensor had an outage gap at timestamp bTs
+            const pvEntId = (e.pvPower || '').trim();
+            const pvPts = pvEntId ? (rawSeriesByEntity.get(pvEntId) || []) : [];
+            const isSystemInOutageAt = (tsMs) => {
+                // Check if PV power sensor or any string power sensor explicitly reported unavailable or had a >15 min gap while non-zero
+                if (pvPts.length > 0) {
+                    let lo = 0, hi = pvPts.length - 1, idx = -1;
+                    while (lo <= hi) {
+                        const mid = (lo + hi) >> 1;
+                        if (pvPts[mid].ts <= tsMs) { idx = mid; lo = mid + 1; }
+                        else { hi = mid - 1; }
+                    }
+                    if (idx >= 0) {
+                        const pt = pvPts[idx];
+                        if (pt.unavailable) return true;
+                        const nextPt = idx + 1 < pvPts.length ? pvPts[idx + 1] : null;
+                        const gapToNext = nextPt ? (nextPt.ts - pt.ts) : (now.getTime() - pt.ts);
+                        if (gapToNext > POWER_OUTAGE_SILENCE_MS && (tsMs - pt.ts) > POWER_OUTAGE_SILENCE_MS && Math.abs(pt.val) > 5) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
             if (!isMultiDay) {
-                // High-resolution 5-min step-hold for intraday ('day')
+                // High-resolution 5-min step-hold for intraday ('day') with 15-minute silence / outage drop to 0 W
                 let pIdx = 0;
                 let lastVal = pts[0].ts <= bucketTimes[0] ? pts[0].val : 0;
+                let lastTs = pts[0].ts <= bucketTimes[0] ? pts[0].ts : bucketTimes[0];
+                let lastUnavail = pts[0].ts <= bucketTimes[0] ? Boolean(pts[0].unavailable) : false;
+
                 return bucketTimes.map(bTs => {
                     while (pIdx < pts.length && pts[pIdx].ts <= bTs) {
                         lastVal = pts[pIdx].val;
+                        lastTs = pts[pIdx].ts;
+                        lastUnavail = Boolean(pts[pIdx].unavailable);
                         pIdx++;
+                    }
+                    if (!isSoc) {
+                        if (lastUnavail) return 0;
+                        const silenceMs = bTs - lastTs;
+                        if (silenceMs > POWER_OUTAGE_SILENCE_MS && Math.abs(lastVal) > 5) {
+                            const nextPt = pIdx < pts.length ? pts[pIdx] : null;
+                            const totalGapMs = nextPt ? (nextPt.ts - lastTs) : (now.getTime() - lastTs);
+                            // If the sensor went silent for > 15 minutes (power cut, breaker off, or next point is unavailable/far away)
+                            if (!nextPt || nextPt.unavailable || totalGapMs > POWER_OUTAGE_SILENCE_MS || isSystemInOutageAt(bTs)) {
+                                return 0;
+                            }
+                        }
                     }
                     return +(lastVal * scale).toFixed(2);
                 });
             } else {
-                // Bucket-averaged step-hold for 'week' / 'month'
+                // Bucket-averaged step-hold for 'week' / 'month' with outage guard
                 let pIdx = 0;
                 let lastVal = pts[0].ts <= bucketTimes[0] ? pts[0].val : 0;
+                let lastTs = pts[0].ts <= bucketTimes[0] ? pts[0].ts : bucketTimes[0];
+                let lastUnavail = pts[0].ts <= bucketTimes[0] ? Boolean(pts[0].unavailable) : false;
                 const firstTs = pts[0].ts;
                 return bucketTimes.map((bTs, idx) => {
                     const prevTs = idx > 0 ? bucketTimes[idx - 1] : (bTs - stepMs);
@@ -2874,6 +3048,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                     let cntInBucket = 0;
                     while (pIdx < pts.length && pts[pIdx].ts <= bTs) {
                         lastVal = pts[pIdx].val;
+                        lastTs = pts[pIdx].ts;
+                        lastUnavail = Boolean(pts[pIdx].unavailable);
                         if (pts[pIdx].ts >= prevTs) {
                             sumInBucket += pts[pIdx].val;
                             cntInBucket++;
@@ -2881,8 +3057,13 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         pIdx++;
                     }
                     if (bTs < firstTs - stepMs && !isSoc) return 0;
-                    const effVal = cntInBucket > 0 ? (sumInBucket / cntInBucket) : lastVal;
-                    return +(effVal * scale).toFixed(2);
+                    if (cntInBucket > 0) {
+                        return +((sumInBucket / cntInBucket) * scale).toFixed(2);
+                    }
+                    if (!isSoc && (lastUnavail || (bTs - lastTs) > POWER_OUTAGE_SILENCE_MS)) {
+                        return 0;
+                    }
+                    return +(lastVal * scale).toFixed(2);
                 });
             }
         }
@@ -3153,6 +3334,26 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         integratedKwh[cKey] = resolveChannelKwh(cc.energyEntity, integrateKwh(arr), periodConsFallback, true);
     });
 
+    // 6B. Consumer Groups (Aggregated Group Curves & Summed kWh)
+    const consumerGroups = getConsumerGroupsSummary(cfg);
+    consumerGroups.forEach(grp => {
+        const gKey = grp.curveKey;
+        const grpArr = bucketTimes.map((_, bIdx) => {
+            let sumW = 0;
+            grp.members.forEach(m => {
+                const mArr = series[`consumer_${m.id}`];
+                if (mArr) sumW += (mArr[bIdx] || 0);
+            });
+            return +sumW.toFixed(2);
+        });
+        series[gKey] = grpArr;
+        let grpKwhSum = 0;
+        grp.members.forEach(m => {
+            grpKwhSum += (integratedKwh[`consumer_${m.id}`] || 0);
+        });
+        integratedKwh[gKey] = +Math.max(grpKwhSum, integrateKwh(grpArr)).toFixed(3);
+    });
+
     // 7. Compute Peak Values (combining Curve Max + LTS Hourly Instantaneous Peak + Today Peak)
     // For signed net grid sensors (e.gridPower), use positive peak for grid_power (Netzbezug) and negative peak for grid_feedin (Netzeinspeisung)!
     const entityForKey = {
@@ -3337,8 +3538,34 @@ async function refreshLiveTelemetryNow() {
             syncCurrentMonthFromLiveTelemetry(false);
         }
     } else {
+        // V11.6 Power Outage / Offline Guard:
+        // When Home Assistant or the inverter is unreachable (e.g. power cut at breaker box),
+        // immediately drop all live Watt readings (PV, Grid Import/Export, House Load, Battery W, Strings & Consumers W) to 0 W
+        // so the Live view never stays frozen on pre-outage Watt values, while keeping all kWh counters and SoC intact!
         currentLiveTelemetry.connectionOk = false;
-        currentLiveTelemetry.lastError = directRes.error || backendRes.data?.error || 'Home Assistant nicht erreichbar (CORS / Token prüfen).';
+        currentLiveTelemetry.pvPowerW = 0;
+        currentLiveTelemetry.loadPowerW = 0;
+        currentLiveTelemetry.gridPowerW = 0;
+        currentLiveTelemetry.batteryPowerW = 0;
+        if (currentLiveTelemetry.stringTelemetry && typeof currentLiveTelemetry.stringTelemetry === 'object') {
+            Object.keys(currentLiveTelemetry.stringTelemetry).forEach(k => {
+                if (currentLiveTelemetry.stringTelemetry[k]) {
+                    currentLiveTelemetry.stringTelemetry[k].powerW = 0;
+                    currentLiveTelemetry.stringTelemetry[k].available = false;
+                }
+            });
+        }
+        if (Array.isArray(currentLiveTelemetry.customStringsTelemetry)) {
+            currentLiveTelemetry.customStringsTelemetry.forEach(cs => {
+                if (cs) { cs.powerW = 0; cs.available = false; }
+            });
+        }
+        if (Array.isArray(currentLiveTelemetry.consumersTelemetry)) {
+            currentLiveTelemetry.consumersTelemetry.forEach(cc => {
+                if (cc) { cc.powerW = 0; cc.available = false; }
+            });
+        }
+        currentLiveTelemetry.lastError = directRes.error || backendRes.data?.error || 'Home Assistant nicht erreichbar (Stromausfall / Verbindung unterbrochen – Live-Leistung auf 0 W gesetzt).';
     }
 
     renderLiveCockpitUI(baseline);
@@ -4037,24 +4264,29 @@ function renderLiveCockpitUI(baseline) {
 
     const consContainer = document.getElementById('dash_active_consumers_list');
     if (consContainer) {
+        const cfgConsumersMap = new Map((haConfigState.customConsumers || []).map(c => [String(c.id), c]));
         const rawConsumers = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
             ? [...t.consumersTelemetry]
-            : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, powerW: 0, energyKwh: null, available: false }));
+            : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, group: c.group || '', powerW: 0, energyKwh: null, available: false }));
 
         const consumers = rawConsumers.map(c => {
+            const cfgItem = cfgConsumersMap.get(String(c.id));
+            const groupName = String(c.group ?? cfgItem?.group ?? '').trim();
             const pW = Math.max(0, Number(c.powerW) || 0);
             const fromCounterKwh = (c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null;
             const fromIntegralKwh = Number(dayInt[`consumer_${c.id}`] || 0);
             const consKwh = fromCounterKwh !== null ? Math.max(fromCounterKwh, fromIntegralKwh) : fromIntegralKwh;
             return {
                 ...c,
+                name: cfgItem?.name || c.name,
+                group: groupName,
                 powerW: pW,
                 consKwh: +Math.max(0, consKwh).toFixed(3),
                 isActive: pW > 5
             };
         });
 
-        consumers.sort((a, b) => {
+        const sortConsItems = (a, b) => {
             if (consumerSortMode === 'kwh_first') {
                 if (Math.abs(b.consKwh - a.consKwh) > 0.005) return b.consKwh - a.consKwh;
                 return b.powerW - a.powerW;
@@ -4066,9 +4298,48 @@ function renderLiveCockpitUI(baseline) {
             }
             if (Math.abs(b.consKwh - a.consKwh) > 0.003) return b.consKwh - a.consKwh;
             return b.powerW - a.powerW;
+        };
+
+        // Bundle consumers that belong to a group into a single expandable group item
+        const groupMap = new Map();
+        const displayItems = [];
+        consumers.forEach(c => {
+            if (c.group) {
+                const slug = normalizeConsumerGroupSlug(c.group);
+                const curveKey = `group_${slug}`;
+                if (!groupMap.has(curveKey)) {
+                    const grpItem = {
+                        isGroup: true,
+                        id: curveKey,
+                        curveKey,
+                        groupName: c.group,
+                        name: c.group,
+                        powerW: 0,
+                        consKwh: 0,
+                        isActive: false,
+                        members: []
+                    };
+                    groupMap.set(curveKey, grpItem);
+                    displayItems.push(grpItem);
+                }
+                const grp = groupMap.get(curveKey);
+                grp.powerW += c.powerW;
+                grp.consKwh = +(grp.consKwh + c.consKwh).toFixed(3);
+                if (c.isActive) grp.isActive = true;
+                grp.members.push(c);
+            } else {
+                displayItems.push({ ...c, isGroup: false });
+            }
         });
 
-        if (consumers.length === 0) {
+        displayItems.forEach(item => {
+            if (item.isGroup && Array.isArray(item.members)) {
+                item.members.sort(sortConsItems);
+            }
+        });
+        displayItems.sort(sortConsItems);
+
+        if (displayItems.length === 0) {
             consContainer.innerHTML = `
                 <div class="rounded-[18px] border border-dashed border-slate-300 dark:border-slate-700 px-4 py-3.5 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
                     <span>Noch keine Einzelverbraucher-Sensoren hinterlegt.</span>
@@ -4076,18 +4347,17 @@ function renderLiveCockpitUI(baseline) {
                 </div>`;
         } else {
             const TOP_LIMIT = 5;
-            const visibleConsumers = showAllDashboardConsumers ? consumers : consumers.slice(0, TOP_LIMIT);
-            const hiddenCount = Math.max(0, consumers.length - TOP_LIMIT);
-            const maxConsKwhToday = Math.max(0.05, ...consumers.map(x => x.consKwh || 0));
+            const visibleItems = showAllDashboardConsumers ? displayItems : displayItems.slice(0, TOP_LIMIT);
+            const hiddenCount = Math.max(0, displayItems.length - TOP_LIMIT);
+            const maxConsKwhToday = Math.max(0.05, ...displayItems.map(x => x.consKwh || 0));
 
-            const rowsHtml = visibleConsumers.map(c => {
+            const renderSingleConsumerRow = (c, isMember = false) => {
                 const safeName = typeof escapeHtml === 'function' ? escapeHtml(c.name) : c.name;
                 const valStr = formatPowerDe(c.powerW, c.powerW < 1000);
                 const consKwh = c.consKwh || 0;
                 const isActive = c.isActive;
                 const liveSharePct = (isActive && t.loadPowerW > 20) ? Math.min(100, Math.round((c.powerW / t.loadPowerW) * 100)) : 0;
 
-                // Subtle background progress bar width representing daily kWh consumption
                 let barWidthPct = 0;
                 if (consKwh > 0.002) {
                     barWidthPct = Math.min(100, Math.max(5, Math.round((consKwh / maxConsKwhToday) * 100)));
@@ -4101,7 +4371,6 @@ function renderLiveCockpitUI(baseline) {
 
                 const safeIdJs = String(c.id || '').replace(/'/g, "\\'");
 
-                // Calm white/glass card design matching reference screenshot (no pulsing dot, clean sans-serif)
                 const cardClasses = isActive
                     ? 'border-slate-200/90 dark:border-slate-700/80 bg-white/92 dark:bg-slate-900/85 hover:border-teal-500/50 shadow-2xs'
                     : 'border-slate-200/75 dark:border-slate-800/80 bg-white/75 dark:bg-slate-900/55 hover:border-slate-300 dark:hover:border-slate-700';
@@ -4118,29 +4387,105 @@ function renderLiveCockpitUI(baseline) {
                     ? 'text-slate-900 dark:text-white font-bold'
                     : 'text-slate-500 dark:text-slate-400 font-semibold';
 
+                const padCls = isMember ? 'px-3.5 py-2.5 rounded-[15px]' : 'px-4 py-3 rounded-[18px]';
+
                 return `
                 <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
                     role="button" tabindex="0" title="Tippen für Verlaufskurve (${safeName})"
-                    class="relative overflow-hidden rounded-[18px] border ${cardClasses} px-4 py-3 flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
-                    <!-- Subtle Full-Row Horizontal Background Progress Bar (indicates daily kWh consumption) -->
+                    class="relative overflow-hidden border ${cardClasses} ${padCls} flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
                     <div aria-hidden="true" class="absolute inset-y-0 left-0 pointer-events-none transition-all duration-700 ease-out rounded-r-xl ${fillBarClasses}" style="width: ${barWidthPct}%"></div>
-
-                    <!-- Foreground Content (Calm, Finely Detailed Reference Style) -->
                     <div class="relative z-10 min-w-0 pr-3">
-                        <div class="text-[14px] ${nameClasses} group-hover:text-teal-700 dark:group-hover:text-teal-300 truncate leading-snug">${safeName}</div>
-                        ${kwhText ? `<div class="text-[12.5px] font-normal text-slate-500 dark:text-slate-400 tabular-nums truncate leading-snug mt-0.5">${kwhText}</div>` : ''}
+                        <div class="text-[13.5px] sm:text-[14px] ${nameClasses} group-hover:text-teal-700 dark:group-hover:text-teal-300 truncate leading-snug">${safeName}</div>
+                        ${kwhText ? `<div class="text-[12px] font-normal text-slate-500 dark:text-slate-400 tabular-nums truncate leading-snug mt-0.5">${kwhText}</div>` : ''}
                     </div>
                     <div class="relative z-10 flex items-baseline gap-1 shrink-0 tabular-nums pl-2">
-                        <span class="text-[14px] sm:text-[15px] ${powerClasses}">${valStr}</span>
+                        <span class="text-[13.5px] sm:text-[15px] ${powerClasses}">${valStr}</span>
                     </div>
+                </div>`;
+            };
+
+            const rowsHtml = visibleItems.map(item => {
+                if (!item.isGroup) {
+                    return renderSingleConsumerRow(item, false);
+                }
+
+                // Render expandable Consumer Group Summary Row + optional expanded member list
+                const safeGroupName = typeof escapeHtml === 'function' ? escapeHtml(item.groupName) : item.groupName;
+                const safeGroupJs = String(item.groupName || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const safeCurveJs = String(item.curveKey || '').replace(/'/g, "\\'");
+                const isExpanded = expandedConsumerGroups.has(item.groupName);
+                const valStr = formatPowerDe(item.powerW, item.powerW < 1000);
+                const consKwh = item.consKwh || 0;
+                const isActive = item.isActive;
+                const liveSharePct = (isActive && t.loadPowerW > 20) ? Math.min(100, Math.round((item.powerW / t.loadPowerW) * 100)) : 0;
+                const activeMembersCount = item.members.filter(m => m.isActive).length;
+
+                let barWidthPct = 0;
+                if (consKwh > 0.002) {
+                    barWidthPct = Math.min(100, Math.max(5, Math.round((consKwh / maxConsKwhToday) * 100)));
+                } else if (isActive) {
+                    barWidthPct = Math.min(28, Math.max(6, Math.round((item.powerW / Math.max(600, t.loadPowerW || 1000)) * 32)));
+                }
+
+                const memberStatusStr = activeMembersCount > 0
+                    ? `${activeMembersCount}/${item.members.length} aktiv`
+                    : `${item.members.length} Sensoren`;
+                const kwhText = consKwh > 0.001
+                    ? `${formatKwhDe(consKwh, 2)} heute · ${memberStatusStr}${isActive && liveSharePct > 0 ? ` · ${liveSharePct}% Hauslast` : ''}`
+                    : `${memberStatusStr}${isActive && liveSharePct > 0 ? ` · ${liveSharePct}% Hauslast` : ''}`;
+
+                const cardClasses = isActive
+                    ? 'border-indigo-500/40 dark:border-indigo-400/35 bg-white/95 dark:bg-slate-900/90 hover:border-indigo-500/60 shadow-2xs'
+                    : 'border-slate-200/85 dark:border-slate-800/85 bg-white/80 dark:bg-slate-900/60 hover:border-slate-300 dark:hover:border-slate-700';
+
+                const fillBarClasses = isActive
+                    ? 'consumer-progress-fill-active'
+                    : (consKwh > 0.002 ? 'consumer-progress-fill-idle' : 'bg-slate-200/55 dark:bg-slate-800/45');
+
+                const powerClasses = isActive
+                    ? 'text-slate-900 dark:text-white font-bold'
+                    : 'text-slate-500 dark:text-slate-400 font-semibold';
+
+                const membersHtml = isExpanded
+                    ? `<div class="pl-3 sm:pl-4 ml-2 border-l-2 border-indigo-500/35 dark:border-indigo-400/30 space-y-1.5 mt-1.5 mb-2">
+                        ${item.members.map(m => renderSingleConsumerRow(m, true)).join('')}
+                       </div>`
+                    : '';
+
+                return `
+                <div>
+                    <div onclick="openLiveCurveFocus('group:${safeCurveJs}')"
+                        role="button" tabindex="0" title="Tippen für Gruppenkurve (${safeGroupName}) · Pfeil links klappt Einzelgeräte auf"
+                        class="relative overflow-hidden rounded-[18px] border ${cardClasses} px-3.5 py-3 flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
+                        <div aria-hidden="true" class="absolute inset-y-0 left-0 pointer-events-none transition-all duration-700 ease-out rounded-r-xl ${fillBarClasses}" style="width: ${barWidthPct}%"></div>
+                        <div class="relative z-10 flex items-center gap-2.5 min-w-0 pr-2">
+                            <button type="button" onclick="toggleConsumerGroupExpand('${safeGroupJs}', event)"
+                                class="w-7 h-7 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/25 dark:bg-indigo-400/15 dark:hover:bg-indigo-400/30 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 flex items-center justify-center shrink-0 transition-all cursor-pointer"
+                                title="${isExpanded ? 'Gruppe einklappen' : 'Einzelgeräte der Gruppe aufklappen'}">
+                                <span class="material-symbols-rounded text-base transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}">expand_more</span>
+                            </button>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-1.5">
+                                    <span class="text-[14px] font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-300 truncate leading-snug">${safeGroupName}</span>
+                                    <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-500/12 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 shrink-0">${item.members.length}</span>
+                                </div>
+                                <div class="text-[12px] font-normal text-slate-500 dark:text-slate-400 tabular-nums truncate leading-snug mt-0.5">${kwhText}</div>
+                            </div>
+                        </div>
+                        <div class="relative z-10 flex items-center gap-1.5 shrink-0 tabular-nums pl-2">
+                            <span class="text-[14px] sm:text-[15px] ${powerClasses}">${valStr}</span>
+                            <span class="material-symbols-rounded text-sm text-slate-400 group-hover:text-indigo-500 transition-colors" title="Gruppenkurve öffnen">stacked_line_chart</span>
+                        </div>
+                    </div>
+                    ${membersHtml}
                 </div>`;
             }).join('');
 
-            const expandBtnHtml = consumers.length > TOP_LIMIT ? `
+            const expandBtnHtml = displayItems.length > TOP_LIMIT ? `
                 <button type="button" onclick="toggleShowAllDashboardConsumers()"
                     class="w-full mt-1.5 py-2.5 px-3 rounded-[18px] bg-white/80 hover:bg-white dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/85 dark:border-slate-700/60 text-xs font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer">
                     <span class="material-symbols-rounded text-base text-teal-600 dark:text-teal-400">${showAllDashboardConsumers ? 'expand_less' : 'expand_more'}</span>
-                    <span>${showAllDashboardConsumers ? 'Auf Top 5 Verbraucher reduzieren' : `Alle ${consumers.length} Verbraucher anzeigen (+${hiddenCount} weitere)`}</span>
+                    <span>${showAllDashboardConsumers ? 'Auf Top 5 Einträge reduzieren' : `Alle ${displayItems.length} Einträge anzeigen (+${hiddenCount} weitere)`}</span>
                 </button>` : '';
 
             consContainer.innerHTML = rowsHtml + expandBtnHtml;
@@ -4153,7 +4498,7 @@ function renderLiveCockpitUI(baseline) {
             const modeDesc = consumerSortMode === 'kwh_first'
                 ? 'Sortiert nach Tagesverbrauch (kWh heute)'
                 : 'Prio 1: Aktive Verbraucher (W) · Prio 2: Tagesverbrauch (kWh)';
-            fnEl.innerText = `${modeDesc} · Hintergrundbalken zeigt kWh heute · Tipp öffnet 24h-Kurve${unavailText}`;
+            fnEl.innerText = `${modeDesc} · Gruppen per Pfeil aufklappbar · Tipp öffnet 24h-Kurve${unavailText}`;
         }
     }
 
@@ -4182,6 +4527,23 @@ if (typeof window !== 'undefined') {
 function toggleShowAllDashboardConsumers() {
     showAllDashboardConsumers = !showAllDashboardConsumers;
     renderLiveCockpitUI();
+}
+
+function toggleConsumerGroupExpand(groupName, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const key = String(groupName || '').trim();
+    if (!key) return;
+    if (expandedConsumerGroups.has(key)) {
+        expandedConsumerGroups.delete(key);
+    } else {
+        expandedConsumerGroups.add(key);
+    }
+    renderLiveCockpitUI();
+}
+if (typeof window !== 'undefined') {
+    window.toggleConsumerGroupExpand = toggleConsumerGroupExpand;
 }
 
 function toggleConsumerSortMode() {
@@ -4235,6 +4597,13 @@ function openLiveCurveFocus(target = 'all') {
     } else if (target === 'grid') {
         activeCurveKeys = new Set(['grid_power', 'grid_feedin']);
         currentFocusedCurveTitle = 'Fokus: Netzbezug & Einspeisung';
+    } else if (String(target).startsWith('group:')) {
+        const gCurveKey = String(target).slice('group:'.length);
+        const groups = getConsumerGroupsSummary(haConfigState);
+        const grpObj = groups.find(g => g.curveKey === gCurveKey || g.groupName === gCurveKey);
+        const finalKey = grpObj ? grpObj.curveKey : gCurveKey;
+        activeCurveKeys = new Set([finalKey]);
+        currentFocusedCurveTitle = `Fokus Gruppe: ${grpObj ? grpObj.groupName : 'Verbraucher-Gruppe'}`;
     } else if (String(target).startsWith('consumer:')) {
         const consId = String(target).slice('consumer:'.length);
         const consObj = (haConfigState.customConsumers || []).find(c => String(c.id) === consId);
@@ -4568,6 +4937,70 @@ function getAvailableCurveDefinitions() {
         subLine1: `${minSoc.toFixed(0)} % Minimum`,
         subLine2: `${maxSoc.toFixed(0)} % Maximum`,
         subDisplay: `Min ${minSoc.toFixed(0)}% · Max ${maxSoc.toFixed(0)}%`
+    });
+
+    // 7B. Verbraucher-Gruppen (Synthesized Group Curves & Summed kWh)
+    const consumerGroups = getConsumerGroupsSummary(haConfigState);
+    consumerGroups.forEach(grp => {
+        const gKey = grp.curveKey;
+        // Dynamically synthesize series[gKey] from member curves if not yet populated in intradaySeriesState
+        if (intradaySeriesState.series && !intradaySeriesState.series[gKey] && Array.isArray(intradaySeriesState.labels) && intradaySeriesState.labels.length > 0) {
+            const nPts = intradaySeriesState.labels.length;
+            const synthArr = new Array(nPts).fill(0);
+            grp.members.forEach(m => {
+                const mArr = intradaySeriesState.series[`consumer_${m.id}`];
+                if (Array.isArray(mArr)) {
+                    for (let i = 0; i < nPts; i++) synthArr[i] = +(synthArr[i] + (Number(mArr[i]) || 0)).toFixed(2);
+                }
+            });
+            intradaySeriesState.series[gKey] = synthArr;
+        }
+
+        let liveGrpW = 0;
+        let grpKwhSum = 0;
+        let grpPeakSum = 0;
+        const memberEnergyIds = [];
+
+        grp.members.forEach(m => {
+            const cKey = `consumer_${m.id}`;
+            const teleCons = (t.consumersTelemetry || []).find(x => x.id === m.id);
+            const mLiveW = teleCons ? (teleCons.powerW || 0) : 0;
+            liveGrpW += mLiveW;
+            if (m.energyEntity) memberEnergyIds.push(m.energyEntity);
+
+            const rawConsExplicit = teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? null;
+            const rawConsMonthExplicit = teleCons?.energyMonthKwh ?? null;
+            const todayConsKwh = rawConsExplicit ?? dayIntCache[cKey] ?? 0;
+            const calcKwh = intKwh[cKey] ?? 0;
+            const mKwh = isDay
+                ? (todayConsKwh > 0 ? todayConsKwh : calcKwh)
+                : (isMonth
+                    ? ((calcKwh > 0) ? Math.max(calcKwh, todayConsKwh) : Math.max(rawConsMonthExplicit ?? 0, todayConsKwh))
+                    : Math.max(calcKwh, todayConsKwh || 0));
+            grpKwhSum += (mKwh || 0);
+            grpPeakSum += Math.max(mLiveW, peaks[cKey] || 0);
+        });
+
+        const grpSeriesArr = intradaySeriesState.series?.[gKey] || [];
+        const grpCurvePeak = grpSeriesArr.reduce((mx, v) => Math.max(mx, Number(v) || 0), 0);
+        const gPeakW = Math.round(Math.max(liveGrpW, peaks[gKey] || 0, grpCurvePeak, isDay ? 0 : (dayPeakCache[gKey] || 0)));
+        const gKwh = +Math.max(grpKwhSum, intKwh[gKey] || 0).toFixed(3);
+        const grpDiag = getChannelEnergyDiagnosticBadge(memberEnergyIds, gKwh, intKwh[gKey] || gKwh);
+
+        defs.push({
+            key: gKey,
+            name: `${grp.groupName} (${grp.members.length})`,
+            color: grp.color || '#6366f1',
+            axis: 'yPower',
+            unit: 'W',
+            category: 'consumer_group',
+            liveDisplay: formatPowerDe(liveGrpW, true),
+            subLine1: `${formatKwhDe(gKwh, 2)} ${periodSuffix}`,
+            subLine2: `${formatPowerDe(gPeakW, true)} Max`,
+            subDisplay: `${formatKwhDe(gKwh, 2)} · Max ${formatPowerDe(gPeakW, true)}`,
+            diagTone: grpDiag.tone,
+            diagText: `Summe aus ${grp.members.length} Sensoren · ${grpDiag.text}`
+        });
     });
 
     // 8. Einzelverbraucher (Consumers)
@@ -8050,9 +8483,11 @@ function onImportPerformanceCsvFile(event) {
 
 function switchHaModalTab(tab = 'config') {
     const panelCfg = document.getElementById('ha-modal-panel-config');
+    const panelConsumers = document.getElementById('ha-modal-panel-consumers');
     const panelClimate = document.getElementById('ha-modal-panel-climate');
     const panelGuide = document.getElementById('ha-modal-panel-guide');
     const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
+    const btnConsumers = document.getElementById('btn-ha-tab-consumers');
     const btnClimate = document.getElementById('btn-ha-tab-climate');
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
     const scrollBody = document.getElementById('haModalScrollBody');
@@ -8061,10 +8496,12 @@ function switchHaModalTab(tab = 'config') {
     const inactiveCls = "px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center leading-tight";
 
     if (panelCfg) panelCfg.classList.toggle('hidden', tab !== 'config');
+    if (panelConsumers) panelConsumers.classList.toggle('hidden', tab !== 'consumers');
     if (panelClimate) panelClimate.classList.toggle('hidden', tab !== 'climate');
     if (panelGuide) panelGuide.classList.toggle('hidden', tab !== 'guide');
 
     if (btnCfg) btnCfg.className = tab === 'config' ? activeCls : inactiveCls;
+    if (btnConsumers) btnConsumers.className = tab === 'consumers' ? activeCls : inactiveCls;
     if (btnClimate) btnClimate.className = tab === 'climate' ? activeCls : inactiveCls;
     if (btnGuide) btnGuide.className = tab === 'guide' ? activeCls : inactiveCls;
 
@@ -8224,6 +8661,7 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
     renderHaCustomStringsEditor();
     renderHaCustomConsumersEditor();
     renderHaWeatherSensorsEditor();
+    renderHaMonitoredDevicesEditor();
     renderHaPvEnergyExtraList();
     renderHaUnifiedSensorMatrix();
     updateHaWebhookYamlSnippet();
@@ -8249,8 +8687,26 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
         return;
     }
 
+    if (focusSection === 'consumers' || scrollTargetId === 'haConsumersSectionBox') {
+        switchHaModalTab('consumers');
+        return;
+    }
+
+    if (focusSection === 'devices' || scrollTargetId === 'haMonitoredDevicesSectionBox') {
+        switchHaModalTab('climate');
+        setTimeout(() => {
+            document.getElementById('haMonitoredDevicesSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 80);
+        return;
+    }
+
     if (focusSection === 'climate' || scrollTargetId === 'haWeatherSectionBox') {
         switchHaModalTab('climate');
+        if (scrollTargetId === 'haWeatherSectionBox') {
+            setTimeout(() => {
+                document.getElementById('haWeatherSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 80);
+        }
         return;
     }
 
@@ -8259,10 +8715,6 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
     if (scrollTargetId) {
         setTimeout(() => {
             document.getElementById(scrollTargetId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 100);
-    } else if (focusSection === 'consumers') {
-        setTimeout(() => {
-            document.getElementById('haConsumersSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
     } else if (focusSection === 'strings') {
         setTimeout(() => {
@@ -8412,6 +8864,38 @@ function renderHaCustomConsumersEditor() {
     if (!container) return;
 
     const list = Array.isArray(haConfigState.customConsumers) ? haConfigState.customConsumers : [];
+    const groupsSummary = getConsumerGroupsSummary(haConfigState);
+
+    // Populate datalist and summary bar for consumer groups
+    const groupDatalist = document.getElementById('haConsumerGroupsDatalist');
+    if (groupDatalist) {
+        const defaultSuggestions = ['Wohnzimmer & Media', 'Haushalt & Waschen', 'Küche', 'Beleuchtung', 'IT & Netzwerk', 'Warmwasser & Heizung'];
+        const allGroupNames = [...new Set([...groupsSummary.map(g => g.name), ...defaultSuggestions])];
+        groupDatalist.innerHTML = allGroupNames.map(g => `<option value="${escapeHtml(g)}"></option>`).join('');
+    }
+
+    const summaryBar = document.getElementById('haConsumerGroupsSummaryBar');
+    if (summaryBar) {
+        if (groupsSummary.length > 0) {
+            summaryBar.classList.remove('hidden');
+            summaryBar.innerHTML = `
+                <span class="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 flex items-center gap-1 mr-1">
+                    <span class="material-symbols-rounded text-sm">folder_open</span>
+                    <span>Aktive Gruppen (${groupsSummary.length}):</span>
+                </span>
+                ${groupsSummary.map(g => `
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-500/12 border border-indigo-500/30 text-[10.5px] font-bold text-indigo-700 dark:text-indigo-300">
+                        <span>${escapeHtml(g.name)}</span>
+                        <span class="px-1 rounded bg-indigo-500/20 text-[9.5px] font-mono">${g.members.length}</span>
+                    </span>
+                `).join('')}
+            `;
+        } else {
+            summaryBar.classList.add('hidden');
+            summaryBar.innerHTML = '';
+        }
+    }
+
     if (list.length === 0) {
         container.innerHTML = `<p class="text-xs text-slate-400 py-2">Noch keine Einzelverbraucher angelegt. Klicke auf „+ Verbraucher hinzufügen“.</p>`;
         return;
@@ -8419,18 +8903,29 @@ function renderHaCustomConsumersEditor() {
 
     container.innerHTML = list.map((cc, idx) => {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(cc.name || '') : (cc.name || '');
+        const safeGroup = typeof escapeHtml === 'function' ? escapeHtml(cc.group || '') : (cc.group || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.powerEntity || '') : (cc.powerEntity || '');
         const safeNrgEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.energyEntity || '') : (cc.energyEntity || '');
         const diagHtml = renderEntityDiagnosticSubline(cc.energyEntity);
         return `
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5">
-            <div class="flex items-center gap-1.5">
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
                 <input type="text" id="ha_cons_name_${idx}" value="${safeName}" oninput="updateHaCustomConsumerField(${idx}, 'name', this.value)"
                     placeholder="Gerätename (z.B. Trockner)"
-                    class="flex-1 min-w-0 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                <button type="button" onclick="removeHaCustomConsumer(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Verbraucher entfernen" aria-label="Verbraucher entfernen">
-                    <span class="material-symbols-rounded text-base">delete</span>
-                </button>
+                    class="flex-1 min-w-[140px] text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <div class="flex items-center gap-1.5 w-full sm:w-auto sm:min-w-[210px]">
+                    <div class="relative flex-1">
+                        <span class="material-symbols-rounded text-[14px] text-indigo-500 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">folder</span>
+                        <input type="text" id="ha_cons_grp_${idx}" list="haConsumerGroupsDatalist" value="${safeGroup}"
+                            oninput="updateHaCustomConsumerField(${idx}, 'group', this.value)"
+                            onchange="renderHaCustomConsumersEditor()"
+                            placeholder="Gruppe (optional, z.B. Wohnzimmer)"
+                            class="w-full text-[11px] font-semibold pl-7 pr-2.5 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/5 dark:bg-indigo-950/30 text-indigo-900 dark:text-indigo-200 placeholder:text-slate-400 outline-none focus:border-indigo-500">
+                    </div>
+                    <button type="button" onclick="removeHaCustomConsumer(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="Verbraucher entfernen" aria-label="Verbraucher entfernen">
+                        <span class="material-symbols-rounded text-base">delete</span>
+                    </button>
+                </div>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 <div>
@@ -8473,7 +8968,8 @@ function addHaCustomConsumer() {
         id: 'cons_' + Date.now(),
         name: `Verbraucher ${nextNum}`,
         powerEntity: '',
-        energyEntity: ''
+        energyEntity: '',
+        group: ''
     });
     renderHaCustomConsumersEditor();
 }
@@ -8612,15 +9108,21 @@ async function fetchHaTemplateDeviceMapInBrowser(rawBaseUrl, rawToken) {
     const cleanTok = cleanHaTokenClient(rawToken);
     if (!cleanUrl || !cleanTok) return {};
 
-    // Query Home Assistant /api/template to resolve real Device Names & Area Names for entities
+    // Query Home Assistant /api/template to resolve real Device Names, Areas, Manufacturer, Model & configuration_url
     const jinjaTemplate = [
         "{% set ns = namespace(items=[]) %}",
-        "{% for s in states.sensor %}",
+        "{% for domain in [states.sensor, states.binary_sensor, states.switch, states.number, states.select] %}",
+        "{% for s in domain %}",
         "{% set dev = device_attr(s.entity_id, 'name_by_user') or device_attr(s.entity_id, 'name') or '' %}",
         "{% set area = area_name(s.entity_id) or '' %}",
+        "{% set mfr = device_attr(s.entity_id, 'manufacturer') or '' %}",
+        "{% set mdl = device_attr(s.entity_id, 'model') or '' %}",
+        "{% set sw = device_attr(s.entity_id, 'sw_version') or '' %}",
+        "{% set url = device_attr(s.entity_id, 'configuration_url') or '' %}",
         "{% if dev or area %}",
-        "{% set ns.items = ns.items + [[s.entity_id, dev, area]] %}",
+        "{% set ns.items = ns.items + [[s.entity_id, dev, area, mfr, mdl, sw, url]] %}",
         "{% endif %}",
+        "{% endfor %}",
         "{% endfor %}",
         "{{ ns.items | to_json }}"
     ].join('');
@@ -8649,10 +9151,18 @@ async function fetchHaTemplateDeviceMapInBrowser(rawBaseUrl, rawToken) {
         if (Array.isArray(arr)) {
             arr.forEach(row => {
                 if (Array.isArray(row) && row[0]) {
-                    map[row[0]] = { deviceName: row[1] || '', areaName: row[2] || '' };
+                    map[row[0]] = {
+                        deviceName: row[1] || '',
+                        areaName: row[2] || '',
+                        manufacturer: row[3] || '',
+                        model: row[4] || '',
+                        swVersion: row[5] || '',
+                        configUrl: row[6] || ''
+                    };
                 }
             });
         }
+        discoveredHaTemplateDeviceMap = map;
         return map;
     } catch (e) {
         return {};
@@ -9374,6 +9884,9 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
         customConsumers: Array.isArray(sanitizedCfg.customConsumers)
             ? JSON.parse(JSON.stringify(sanitizedCfg.customConsumers))
             : haConfigState.customConsumers,
+        monitoredDevices: Array.isArray(sanitizedCfg.monitoredDevices)
+            ? JSON.parse(JSON.stringify(sanitizedCfg.monitoredDevices))
+            : (haConfigState.monitoredDevices || []),
         loadedFromSharedProject: true
     };
     try {
@@ -9451,6 +9964,9 @@ function applyFullHaConfigWithTokenFromBackup(fullCfg) {
         customConsumers: Array.isArray(fullCfg.customConsumers)
             ? JSON.parse(JSON.stringify(fullCfg.customConsumers))
             : haConfigState.customConsumers,
+        monitoredDevices: Array.isArray(fullCfg.monitoredDevices)
+            ? JSON.parse(JSON.stringify(fullCfg.monitoredDevices))
+            : (haConfigState.monitoredDevices || []),
         loadedFromSharedProject: !effectiveToken
     };
     try {
@@ -9885,6 +10401,64 @@ function updateHomeStatesFromHaArray(statesArray) {
         });
     }
 
+    // Auto-seed key hardware devices (Fronius, BYD, Smart Meter, Hoymiles) into monitoredDevices if none configured yet
+    if (!Array.isArray(haConfigState.monitoredDevices) || haConfigState.monitoredDevices.length === 0) {
+        const autoDevices = [];
+        const hasFronius = statesArray.some(s => /fronius|symo|gen24|solarnet/i.test(`${s?.entity_id || ''} ${s?.attributes?.friendly_name || ''}`));
+        const hasByd = statesArray.some(s => /byd|battery_box|hvs|hvm/i.test(`${s?.entity_id || ''} ${s?.attributes?.friendly_name || ''}`));
+        const hasSmartMeter = statesArray.some(s => /smart_meter|smartmeter|grid_power|power_flow/i.test(`${s?.entity_id || ''} ${s?.attributes?.friendly_name || ''}`));
+        const hasHoymiles = statesArray.some(s => /hoymiles|opendtu|ahoy|hms_|hm_/i.test(`${s?.entity_id || ''} ${s?.attributes?.friendly_name || ''}`));
+
+        if (hasFronius) {
+            autoDevices.push({
+                id: 'dev_auto_fronius',
+                name: 'Fronius Wechselrichter',
+                deviceGroupKey: 'Fronius',
+                matchPattern: 'fronius|symo|gen24|solarnet',
+                ipUrl: '',
+                icon: 'solar_power',
+                category: 'inverter'
+            });
+        }
+        if (hasByd) {
+            autoDevices.push({
+                id: 'dev_auto_byd',
+                name: haConfigState.batteryName || 'BYD Battery-Box HVS+',
+                deviceGroupKey: 'BYD',
+                matchPattern: 'byd|battery_box|hvs|battery_soc|battery_power|storage',
+                ipUrl: '',
+                icon: 'battery_charging_full',
+                category: 'battery'
+            });
+        }
+        if (hasSmartMeter) {
+            autoDevices.push({
+                id: 'dev_auto_meter',
+                name: 'Smart Meter · Netzpunkt',
+                deviceGroupKey: 'Smart Meter',
+                matchPattern: 'smart_meter|smartmeter|meter_',
+                ipUrl: '',
+                icon: 'speed',
+                category: 'meter'
+            });
+        }
+        if (hasHoymiles) {
+            autoDevices.push({
+                id: 'dev_auto_hoymiles',
+                name: 'Hoymiles / OpenDTU',
+                deviceGroupKey: 'Hoymiles',
+                matchPattern: 'hoymiles|opendtu|hms_|hm_',
+                ipUrl: '',
+                icon: 'router',
+                category: 'inverter'
+            });
+        }
+        if (autoDevices.length > 0) {
+            haConfigState.monitoredDevices = autoDevices;
+            configChanged = true;
+        }
+    }
+
     if (configChanged) {
         try {
             localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
@@ -9893,6 +10467,8 @@ function updateHomeStatesFromHaArray(statesArray) {
 
     renderHomeWeatherWidget();
     renderHomeCustomWeatherSensors();
+    renderHomeMonitoredDevicesBar();
+    renderDevicesDiagnosticsTab();
     syncHomeRoomSensorsMinMaxFromHistory();
 }
 
@@ -10583,6 +11159,8 @@ function refreshHomeWeatherAndSensors(force = false) {
     updateHomeEnergyOverview();
     fetchOpenMeteoForecastForHome(force);
     renderHomeCustomWeatherSensors();
+    renderHomeMonitoredDevicesBar();
+    renderDevicesDiagnosticsTab();
     if (force) {
         refreshLiveTelemetryNow();
     }
@@ -10593,6 +11171,702 @@ function renderHomeTab() {
     updateHomeEnergyOverview();
     fetchOpenMeteoForecastForHome(false);
     renderHomeCustomWeatherSensors();
+    renderHomeMonitoredDevicesBar();
+}
+
+// ============================================================================
+// 10. MONITORED HARDWARE DEVICES & IP WEB-UI DIAGNOSTICS (START BAR + TAB-DEVICES)
+// ============================================================================
+
+let selectedDevicesDiagnosticFilter = '__ALL__';
+let discoveredHaDeviceGroupsCache = []; // [{ groupName, entityCount, sampleEntities, manufacturer, model, swVersion, configUrl }]
+
+function normalizeDeviceIpUrl(rawIpOrUrl) {
+    const trimmed = String(rawIpOrUrl || '').trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `http://${trimmed}`;
+}
+
+function getDeviceCategoryIcon(dev) {
+    if (dev && dev.icon && dev.icon !== 'auto') return dev.icon;
+    const hay = `${dev?.name || ''} ${dev?.deviceGroupKey || ''} ${dev?.matchPattern || ''}`.toLowerCase();
+    if (/byd|batter|speicher|hvs|hvm|accu|akku/.test(hay)) return 'battery_charging_full';
+    if (/fronius|symo|gen24|hoymiles|opendtu|wechselrichter|inverter|solar/.test(hay)) return 'solar_power';
+    if (/meter|z[aä]hler|grid|netz/.test(hay)) return 'speed';
+    if (/shelly|plug|steckdose|schalter|switch/.test(hay)) return 'power';
+    if (/wallbox|evcc|auto|car|go-e/.test(hay)) return 'ev_station';
+    return 'memory';
+}
+
+function getEntitiesForMonitoredDevice(dev) {
+    if (!dev) return [];
+    const results = [];
+    const seen = new Set();
+
+    const groupKey = String(dev.deviceGroupKey || '').trim().toLowerCase();
+    const rawPattern = String(dev.matchPattern || '').trim();
+    let regex = null;
+    if (rawPattern) {
+        try {
+            regex = new RegExp(rawPattern, 'i');
+        } catch (e) {
+            regex = null;
+        }
+    }
+    const nameWords = String(dev.name || '')
+        .replace(/[^\w\säöüÄÖÜß\-]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3)
+        .map(w => w.toLowerCase());
+
+    const checkAndPushState = (sObj) => {
+        if (!sObj || !sObj.entity_id || seen.has(sObj.entity_id)) return;
+        const eid = String(sObj.entity_id);
+        // Only include relevant diagnostic/sensor/actor domains
+        if (!/^(sensor|binary_sensor|switch|number|select|button|update)\./.test(eid)) return;
+
+        const fn = String(sObj.attributes?.friendly_name || eid);
+        const tplInfo = discoveredHaTemplateDeviceMap?.[eid] || {};
+        const groupInfo = classifyHaEntityGroup(sObj, discoveredHaTemplateDeviceMap);
+        const resolvedGroup = String(tplInfo.deviceName || groupInfo.groupName || '').toLowerCase();
+
+        let matched = false;
+        if (groupKey && resolvedGroup && (resolvedGroup === groupKey || resolvedGroup.includes(groupKey))) {
+            matched = true;
+        } else if (regex && (regex.test(eid) || regex.test(fn) || (resolvedGroup && regex.test(resolvedGroup)))) {
+            matched = true;
+        } else if (!groupKey && !regex && nameWords.length > 0) {
+            const hay = `${eid} ${fn} ${resolvedGroup}`.toLowerCase();
+            if (nameWords.some(w => hay.includes(w))) matched = true;
+        }
+
+        if (matched) {
+            seen.add(eid);
+            const rawState = String(sObj.state ?? '').trim();
+            const rawLower = rawState.toLowerCase();
+            const isOffline = rawLower === 'unavailable' || rawLower === 'unknown' || rawLower === '';
+            const unit = String(sObj.attributes?.unit_of_measurement || '').trim();
+            const lastUpdatedMs = new Date(sObj.last_updated || sObj.last_changed || 0).getTime();
+
+            results.push({
+                entity_id: eid,
+                name: fn,
+                state: rawState,
+                unit,
+                isOffline,
+                deviceClass: String(sObj.attributes?.device_class || '').toLowerCase(),
+                lastUpdatedMs: Number.isFinite(lastUpdatedMs) ? lastUpdatedMs : 0,
+                manufacturer: tplInfo.manufacturer || '',
+                model: tplInfo.model || '',
+                swVersion: tplInfo.swVersion || '',
+                configUrl: tplInfo.configUrl || ''
+            });
+        }
+    };
+
+    for (const sObj of homeHaStatesCache.values()) {
+        checkAndPushState(sObj);
+    }
+
+    // Fallback to discoveredHaSensors if homeHaStatesCache hasn't populated yet
+    if (results.length === 0 && Array.isArray(discoveredHaSensors) && discoveredHaSensors.length > 0) {
+        discoveredHaSensors.forEach(ds => {
+            if (seen.has(ds.entity_id)) return;
+            const grp = String(ds.groupName || '').toLowerCase();
+            let matched = false;
+            if (groupKey && grp && (grp === groupKey || grp.includes(groupKey))) matched = true;
+            else if (regex && (regex.test(ds.entity_id) || regex.test(ds.name) || regex.test(grp))) matched = true;
+            if (matched) {
+                seen.add(ds.entity_id);
+                const rawLower = String(ds.state ?? '').trim().toLowerCase();
+                results.push({
+                    entity_id: ds.entity_id,
+                    name: ds.name,
+                    state: String(ds.state ?? ''),
+                    unit: ds.unit || '',
+                    isOffline: rawLower === 'unavailable' || rawLower === 'unknown' || rawLower === '',
+                    deviceClass: ds.unitCategory || '',
+                    lastUpdatedMs: 0,
+                    manufacturer: '',
+                    model: '',
+                    swVersion: '',
+                    configUrl: ''
+                });
+            }
+        });
+    }
+
+    // Sort: Power/SoC/Energy first, then online status, then alphabetically
+    const priorityRank = (e) => {
+        const u = e.unit.toLowerCase();
+        if (u === 'w' || u === 'kw' || e.deviceClass === 'power') return 1;
+        if (u === '%' || e.deviceClass === 'battery') return 2;
+        if (u === 'kwh' || u === 'wh' || e.deviceClass === 'energy') return 3;
+        if (u === 'v' || u === 'a' || u === 'hz' || u === '°c') return 4;
+        return 5;
+    };
+
+    return results.sort((a, b) => {
+        if (a.isOffline !== b.isOffline) return a.isOffline ? 1 : -1;
+        const rDiff = priorityRank(a) - priorityRank(b);
+        if (rDiff !== 0) return rDiff;
+        return a.name.localeCompare(b.name, 'de');
+    });
+}
+
+function summarizeMonitoredDeviceStatus(dev) {
+    const entities = getEntitiesForMonitoredDevice(dev);
+    const totalCount = entities.length;
+    const onlineEntities = entities.filter(e => !e.isOffline);
+    const offlineCount = totalCount - onlineEntities.length;
+
+    // Determine primary headline KPI (e.g., Power W, SoC %, or Voltage/Status)
+    let primaryKpi = '—';
+    let secondaryKpi = '';
+
+    const pwrEnt = onlineEntities.find(e => {
+        const u = e.unit.toLowerCase();
+        return (u === 'w' || u === 'kw') && /power|leistung|ac|dc|grid|load|charge|discharge/i.test(`${e.entity_id} ${e.name}`);
+    }) || onlineEntities.find(e => e.unit.toLowerCase() === 'w' || e.unit.toLowerCase() === 'kw');
+
+    const socEnt = onlineEntities.find(e => e.unit === '%' && /soc|state_of_charge|ladezustand|battery|speicher/i.test(`${e.entity_id} ${e.name}`));
+    const kwhEnt = onlineEntities.find(e => e.unit.toLowerCase() === 'kwh' || e.unit.toLowerCase() === 'mwh');
+
+    if (socEnt && pwrEnt) {
+        const socNum = parseFloat(String(socEnt.state).replace(',', '.'));
+        const pwrNum = parseFloat(String(pwrEnt.state).replace(',', '.'));
+        const pwrW = pwrEnt.unit.toLowerCase() === 'kw' ? pwrNum * 1000 : pwrNum;
+        primaryKpi = Number.isFinite(socNum) ? `${socNum.toLocaleString('de-DE', { maximumFractionDigits: 1 })} %` : `${socEnt.state} %`;
+        secondaryKpi = Number.isFinite(pwrW) ? formatPowerDe(pwrW, true) : `${pwrEnt.state} ${pwrEnt.unit}`;
+    } else if (pwrEnt) {
+        const pwrNum = parseFloat(String(pwrEnt.state).replace(',', '.'));
+        const pwrW = pwrEnt.unit.toLowerCase() === 'kw' ? pwrNum * 1000 : pwrNum;
+        primaryKpi = Number.isFinite(pwrW) ? formatPowerDe(pwrW, Math.abs(pwrW) < 1000) : `${pwrEnt.state} ${pwrEnt.unit}`;
+        if (kwhEnt) {
+            const kwhNum = parseFloat(String(kwhEnt.state).replace(',', '.'));
+            secondaryKpi = Number.isFinite(kwhNum)
+                ? `${kwhNum.toLocaleString('de-DE', { maximumFractionDigits: 1 })} ${kwhEnt.unit}`
+                : `${kwhEnt.state} ${kwhEnt.unit}`;
+        }
+    } else if (socEnt) {
+        primaryKpi = `${socEnt.state} %`;
+    } else if (onlineEntities.length > 0) {
+        const first = onlineEntities[0];
+        primaryKpi = `${first.state} ${first.unit}`.trim();
+    }
+
+    // Check if HA template reported a configuration_url if user hasn't set ipUrl manually
+    const autoConfigUrl = entities.find(e => e.configUrl)?.configUrl || '';
+    const effectiveUrl = normalizeDeviceIpUrl(dev.ipUrl || autoConfigUrl);
+
+    let healthState = 'online'; // 'online' | 'partial' | 'offline' | 'empty'
+    if (totalCount === 0) healthState = 'empty';
+    else if (onlineEntities.length === 0) healthState = 'offline';
+    else if (offlineCount > 0 && offlineCount >= totalCount * 0.5) healthState = 'partial';
+
+    return {
+        entities,
+        totalCount,
+        onlineCount: onlineEntities.length,
+        offlineCount,
+        primaryKpi,
+        secondaryKpi,
+        effectiveUrl,
+        healthState
+    };
+}
+
+function renderHomeMonitoredDevicesBar() {
+    const grid = document.getElementById('homeMonitoredDevicesGrid');
+    if (!grid) return;
+
+    const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
+    if (list.length === 0) {
+        grid.innerHTML = `
+            <div onclick="openHaConfigModal('devices', 'haMonitoredDevicesSectionBox')" role="button" tabindex="0"
+                class="col-span-2 dash-sub-tile rounded-[20px] p-4 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl">router</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white truncate">Geräte &amp; IP-Direktlinks auswählen</p>
+                        <p class="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">Wechselrichter, Speicher &amp; Zähler mit allen HA-Sensoren überwachen</p>
+                    </div>
+                </div>
+                <span class="material-symbols-rounded text-slate-400 shrink-0">add_circle</span>
+            </div>`;
+        return;
+    }
+
+    grid.innerHTML = list.map((dev) => {
+        const summary = summarizeMonitoredDeviceStatus(dev);
+        const iconName = getDeviceCategoryIcon(dev);
+        const safeName = escapeHtml(dev.name || 'Gerät');
+        const safeIdJs = String(dev.id || '').replace(/'/g, "\\'");
+
+        const statusDotCls = summary.healthState === 'online'
+            ? 'bg-emerald-500'
+            : (summary.healthState === 'offline' ? 'bg-rose-500 animate-pulse' : 'bg-amber-500');
+        const statusLabel = summary.healthState === 'online'
+            ? `${summary.onlineCount} Sensoren aktiv`
+            : (summary.healthState === 'offline'
+                ? `Offline (${summary.totalCount} unavailable)`
+                : (summary.totalCount > 0 ? `${summary.onlineCount}/${summary.totalCount} online` : 'Sensoren laden...'));
+
+        const ipButtonHtml = summary.effectiveUrl
+            ? `<a href="${escapeHtml(summary.effectiveUrl)}" target="_blank" rel="noopener noreferrer"
+                onclick="event.stopPropagation();"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-500/12 hover:bg-teal-500/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-[11px] font-bold transition-colors shrink-0"
+                title="Geräte-Weboberfläche direkt öffnen (${escapeHtml(summary.effectiveUrl)})">
+                <span class="material-symbols-rounded text-[13px]">open_in_new</span>
+                <span>IP</span>
+               </a>`
+            : '';
+
+        return `
+        <div onclick="openDeviceDiagnosticsDetail('${safeIdJs}')" role="button" tabindex="0"
+            class="dash-sub-tile rounded-[20px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[120px] cursor-pointer hover:ring-2 hover:ring-primary/40 active:scale-[0.99] transition-all group">
+            <div>
+                <div class="flex items-center justify-between gap-1.5">
+                    <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200 min-w-0">
+                        <span class="material-symbols-rounded text-primary text-[19px] shrink-0">${escapeHtml(iconName)}</span>
+                        <span class="truncate font-semibold">${safeName}</span>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        ${ipButtonHtml}
+                        <span class="material-symbols-rounded text-[15px] text-slate-400 group-hover:text-primary transition-colors">chevron_right</span>
+                    </div>
+                </div>
+                <div class="mt-2.5 flex items-baseline justify-between gap-2">
+                    <p class="text-[21px] sm:text-[23px] font-bold ${summary.healthState === 'offline' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'} tabular-nums tracking-tight leading-none truncate">
+                        ${summary.healthState === 'offline' ? 'Offline' : escapeHtml(summary.primaryKpi)}
+                    </p>
+                    ${summary.secondaryKpi ? `<span class="text-[12px] font-mono font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">${escapeHtml(summary.secondaryKpi)}</span>` : ''}
+                </div>
+            </div>
+            <div class="pt-2 mt-2.5 border-t border-slate-200/70 dark:border-white/10 flex items-center justify-between gap-1.5 text-[11.5px] text-slate-500 dark:text-slate-400">
+                <span class="inline-flex items-center gap-1.5 truncate">
+                    <span class="w-2 h-2 rounded-full ${statusDotCls} shrink-0"></span>
+                    <span class="truncate">${escapeHtml(statusLabel)}</span>
+                </span>
+                <span class="text-[10.5px] font-semibold text-teal-600 dark:text-teal-400 shrink-0">Diagnose →</span>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function openDeviceDiagnosticsDetail(deviceId) {
+    selectedDevicesDiagnosticFilter = deviceId || '__ALL__';
+    if (typeof switchTab === 'function') {
+        switchTab('devices');
+    }
+    renderDevicesDiagnosticsTab();
+}
+
+function setDevicesDiagnosticFilter(filterId) {
+    selectedDevicesDiagnosticFilter = filterId || '__ALL__';
+    renderDevicesDiagnosticsTab();
+}
+
+function onDevicesDiagnosticSearch(val) {
+    devicesDiagnosticSearchQuery = String(val || '').trim();
+    renderDevicesDiagnosticsTab();
+}
+
+async function refreshMonitoredDevicesNow() {
+    await refreshLiveTelemetryNow();
+    renderHomeMonitoredDevicesBar();
+    renderDevicesDiagnosticsTab();
+    if (typeof showToastNotification === 'function') {
+        showToastNotification('Geräte-Sensoren & Status aktualisiert!', 'success');
+    }
+}
+
+function renderDevicesDiagnosticsTab() {
+    const container = document.getElementById('devicesDiagnosticsCardsContainer');
+    const filterBar = document.getElementById('devicesFilterPillsBar');
+    if (!container) return;
+
+    const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
+
+    if (filterBar) {
+        const isAll = selectedDevicesDiagnosticFilter === '__ALL__';
+        let pillsHtml = `
+            <button type="button" onclick="setDevicesDiagnosticFilter('__ALL__')"
+                class="px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${isAll ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-teal-500/15'}">
+                Alle Geräte (${list.length})
+            </button>`;
+        pillsHtml += list.map(dev => {
+            const isSel = selectedDevicesDiagnosticFilter === dev.id;
+            const safeIdJs = String(dev.id || '').replace(/'/g, "\\'");
+            return `
+            <button type="button" onclick="setDevicesDiagnosticFilter('${safeIdJs}')"
+                class="px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${isSel ? 'bg-teal-600 text-white shadow-xs' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-teal-500/15'}">
+                <span class="material-symbols-rounded text-sm">${escapeHtml(getDeviceCategoryIcon(dev))}</span>
+                <span>${escapeHtml(dev.name || 'Gerät')}</span>
+            </button>`;
+        }).join('');
+        filterBar.innerHTML = pillsHtml;
+    }
+
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div class="m3-card p-8 text-center space-y-3">
+                <span class="material-symbols-rounded text-4xl text-teal-500">router</span>
+                <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Noch keine Geräte zur Diagnose ausgewählt</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                    Wähle in den Home Assistant Einstellungen unter „3. Klima &amp; Geräte“ deine Wechselrichter, Batteriespeicher, Smart Meter oder Shellys aus. Alle zugehörigen Sensoren werden automatisch geladen.
+                </p>
+                <button type="button" onclick="openHaConfigModal('devices', 'haMonitoredDevicesSectionBox')"
+                    class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold inline-flex items-center gap-2 cursor-pointer shadow-xs">
+                    <span class="material-symbols-rounded text-base">add_circle</span>
+                    <span>Geräte jetzt auswählen</span>
+                </button>
+            </div>`;
+        return;
+    }
+
+    const q = devicesDiagnosticSearchQuery.toLowerCase();
+    const visibleDevices = selectedDevicesDiagnosticFilter === '__ALL__'
+        ? list
+        : list.filter(d => d.id === selectedDevicesDiagnosticFilter);
+
+    container.innerHTML = visibleDevices.map((dev, devIdx) => {
+        const summary = summarizeMonitoredDeviceStatus(dev);
+        const iconName = getDeviceCategoryIcon(dev);
+        const safeName = escapeHtml(dev.name || `Gerät ${devIdx + 1}`);
+
+        const filteredEntities = q
+            ? summary.entities.filter(e => `${e.name} ${e.entity_id} ${e.state} ${e.unit}`.toLowerCase().includes(q))
+            : summary.entities;
+
+        const firstWithMeta = summary.entities.find(e => e.manufacturer || e.model || e.swVersion) || {};
+        const metaParts = [
+            firstWithMeta.manufacturer,
+            firstWithMeta.model,
+            firstWithMeta.swVersion ? `FW ${firstWithMeta.swVersion}` : ''
+        ].filter(Boolean);
+
+        const statusBadgeHtml = summary.healthState === 'online'
+            ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/12 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-extrabold">
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Online · ${summary.onlineCount} Sensoren</span>
+               </span>`
+            : (summary.healthState === 'offline'
+                ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-500/15 border border-rose-500/40 text-rose-700 dark:text-rose-300 text-xs font-extrabold">
+                    <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                    <span>Offline / Stromlos (${summary.totalCount} unavailable)</span>
+                   </span>`
+                : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/40 text-amber-700 dark:text-amber-300 text-xs font-extrabold">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>${summary.onlineCount} / ${summary.totalCount} Sensoren verfügbar</span>
+                   </span>`);
+
+        const ipActionHtml = summary.effectiveUrl
+            ? `<a href="${escapeHtml(summary.effectiveUrl)}" target="_blank" rel="noopener noreferrer"
+                class="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-xs transition-all">
+                <span class="material-symbols-rounded text-base">open_in_new</span>
+                <span>Weboberfläche öffnen (${escapeHtml(dev.ipUrl || summary.effectiveUrl.replace(/^https?:\/\//, ''))})</span>
+               </a>`
+            : `<button type="button" onclick="openHaConfigModal('devices', 'haMonitoredDevicesSectionBox')"
+                class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/15 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors">
+                <span class="material-symbols-rounded text-sm">link</span>
+                <span>IP-Adresse hinterlegen</span>
+               </button>`;
+
+        const entitiesGridHtml = filteredEntities.length > 0
+            ? `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 mt-4">
+                ${filteredEntities.map(e => {
+                    const cleanLabel = String(e.name || e.entity_id)
+                        .replace(new RegExp(`^${dev.name}\\s*[-·:]?\\s*`, 'i'), '')
+                        .replace(new RegExp(`^${dev.deviceGroupKey || ''}\\s*[-·:]?\\s*`, 'i'), '')
+                        .trim() || e.name;
+                    const numVal = parseFloat(String(e.state).replace(',', '.'));
+                    let formattedVal = `${e.state} ${e.unit}`.trim();
+                    if (!e.isOffline && Number.isFinite(numVal) && e.unit) {
+                        const dec = Math.abs(numVal) < 10 && numVal % 1 !== 0 ? 2 : (numVal % 1 !== 0 ? 1 : 0);
+                        formattedVal = `${numVal.toLocaleString('de-DE', { minimumFractionDigits: dec, maximumFractionDigits: dec })} ${e.unit}`.trim();
+                    }
+                    const relAgeSec = e.lastUpdatedMs > 0 ? Math.max(0, Math.round((Date.now() - e.lastUpdatedMs) / 1000)) : null;
+                    const ageLabel = relAgeSec !== null
+                        ? (relAgeSec < 60 ? 'gerade eben' : (relAgeSec < 3600 ? `vor ${Math.round(relAgeSec / 60)} Min.` : `vor ${Math.round(relAgeSec / 3600)} Std.`))
+                        : '';
+
+                    return `
+                    <div class="p-3 rounded-xl border ${e.isOffline ? 'border-rose-500/35 bg-rose-500/5 dark:bg-rose-950/20' : 'border-slate-200/80 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60'} flex items-center justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-bold text-slate-800 dark:text-slate-100 break-words leading-snug">${escapeHtml(cleanLabel)}</p>
+                            <p class="text-[10px] font-mono text-slate-400 dark:text-slate-500 truncate mt-0.5" title="${escapeHtml(e.entity_id)}">${escapeHtml(e.entity_id)}${ageLabel ? ` · ${ageLabel}` : ''}</p>
+                        </div>
+                        <div class="text-right shrink-0">
+                            <span class="inline-block px-2.5 py-1 rounded-lg font-mono text-xs font-extrabold tabular-nums ${e.isOffline ? 'bg-rose-500/15 text-rose-600 dark:text-rose-300' : 'bg-white dark:bg-slate-950 text-teal-700 dark:text-teal-300 border border-slate-200/80 dark:border-slate-800'}">
+                                ${e.isOffline ? 'unavailable' : escapeHtml(formattedVal)}
+                            </span>
+                        </div>
+                    </div>`;
+                }).join('')}
+               </div>`
+            : `<div class="mt-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400">
+                Keine passenden Entitäten für dieses Gerät gefunden. Prüfe den Gerätenamen oder Suchfilter in den Einstellungen.
+               </div>`;
+
+        return `
+        <div class="m3-card p-4 sm:p-5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-slate-200/80 dark:border-slate-800">
+                <div class="flex items-start gap-3">
+                    <div class="w-11 h-11 rounded-2xl bg-teal-500/12 border border-teal-500/25 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-2xl">${escapeHtml(iconName)}</span>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white tracking-tight">${safeName}</h3>
+                            ${statusBadgeHtml}
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            ${metaParts.length > 0 ? escapeHtml(metaParts.join(' · ')) : `Filter: ${escapeHtml(dev.deviceGroupKey || dev.matchPattern || dev.name)}`}
+                            ${summary.primaryKpi && summary.primaryKpi !== '—' ? ` · Hauptwert: <strong class="text-slate-700 dark:text-slate-200">${escapeHtml(summary.primaryKpi)}</strong>` : ''}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    ${ipActionHtml}
+                </div>
+            </div>
+            ${entitiesGridHtml}
+        </div>`;
+    }).join('');
+}
+
+function renderHaMonitoredDevicesEditor() {
+    const container = document.getElementById('haMonitoredDevicesContainer');
+    if (!container) return;
+
+    const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
+    if (list.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400 py-2">Noch keine Geräte überwacht. Klicke oben auf „+ Aus HA-Geräteliste wählen“, um Wechselrichter, Speicher oder Zähler hinzuzufügen.</p>`;
+        return;
+    }
+
+    const iconOptions = [
+        { val: 'solar_power', label: 'Wechselrichter / PV' },
+        { val: 'battery_charging_full', label: 'Batteriespeicher' },
+        { val: 'speed', label: 'Smart Meter / Zähler' },
+        { val: 'router', label: 'DTU / Gateway / Funk' },
+        { val: 'power', label: 'Shelly / Aktor / Steckdose' },
+        { val: 'ev_station', label: 'Wallbox / E-Auto' },
+        { val: 'memory', label: 'System / Sonstiges Gerät' }
+    ];
+
+    container.innerHTML = list.map((dev, idx) => {
+        const safeName = escapeHtml(dev.name || '');
+        const safeGroup = escapeHtml(dev.deviceGroupKey || '');
+        const safePattern = escapeHtml(dev.matchPattern || '');
+        const safeIp = escapeHtml(dev.ipUrl || '');
+        const curIcon = dev.icon || getDeviceCategoryIcon(dev);
+        const entitiesCount = getEntitiesForMonitoredDevice(dev).length;
+
+        const iconSelectHtml = iconOptions.map(opt =>
+            `<option value="${opt.val}" ${curIcon === opt.val ? 'selected' : ''}>${opt.label}</option>`
+        ).join('');
+
+        return `
+        <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div class="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-[180px]">
+                    <span class="w-8 h-8 rounded-lg bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-lg">${escapeHtml(curIcon)}</span>
+                    </span>
+                    <input type="text" value="${safeName}" oninput="updateHaMonitoredDeviceField(${idx}, 'name', this.value)"
+                        placeholder="Anzeigename (z.B. Fronius Symo GEN24)"
+                        class="flex-1 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+                <div class="flex items-center gap-1.5 w-full sm:w-auto justify-end">
+                    <span class="px-2 py-1 rounded-lg bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10.5px] font-mono font-bold shrink-0">
+                        ${entitiesCount} Sensoren
+                    </span>
+                    <select onchange="updateHaMonitoredDeviceField(${idx}, 'icon', this.value); renderHaMonitoredDevicesEditor();"
+                        class="text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-200 outline-none focus:border-teal-500 cursor-pointer">
+                        ${iconSelectHtml}
+                    </select>
+                    <button type="button" onclick="removeHaMonitoredDevice(${idx})"
+                        class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center shrink-0 cursor-pointer" title="Gerät entfernen">
+                        <span class="material-symbols-rounded text-base">delete</span>
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">HA-Gerätename (Auto-Zuordnung)</label>
+                    <input type="text" value="${safeGroup}" oninput="updateHaMonitoredDeviceField(${idx}, 'deviceGroupKey', this.value)"
+                        placeholder="z.B. SolarNet / BYD / Fronius"
+                        class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Sensor-Suchmuster (entity_id Filter)</label>
+                    <input type="text" value="${safePattern}" oninput="updateHaMonitoredDeviceField(${idx}, 'matchPattern', this.value)"
+                        placeholder="z.B. fronius|symo|solarnet"
+                        class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-semibold text-teal-600 dark:text-teal-400 mb-0.5">IP-Adresse / Web-UI Link (optional)</label>
+                    <input type="text" value="${safeIp}" oninput="updateHaMonitoredDeviceField(${idx}, 'ipUrl', this.value)"
+                        placeholder="z.B. 192.168.178.45 oder http://..."
+                        class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-teal-500/40 bg-teal-500/5 dark:bg-teal-950/30 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function updateHaMonitoredDeviceField(idx, field, val) {
+    if (!Array.isArray(haConfigState.monitoredDevices) || !haConfigState.monitoredDevices[idx]) return;
+    haConfigState.monitoredDevices[idx][field] = val;
+}
+
+function addHaMonitoredDeviceManual() {
+    readHaModalIntoState();
+    if (!Array.isArray(haConfigState.monitoredDevices)) haConfigState.monitoredDevices = [];
+    const nextNum = haConfigState.monitoredDevices.length + 1;
+    haConfigState.monitoredDevices.push({
+        id: 'dev_' + Date.now(),
+        name: `Gerät ${nextNum}`,
+        deviceGroupKey: '',
+        matchPattern: '',
+        ipUrl: '',
+        icon: 'solar_power'
+    });
+    renderHaMonitoredDevicesEditor();
+}
+
+function removeHaMonitoredDevice(idx) {
+    if (!Array.isArray(haConfigState.monitoredDevices)) return;
+    haConfigState.monitoredDevices.splice(idx, 1);
+    renderHaMonitoredDevicesEditor();
+}
+
+async function openHaDeviceDiscoveryPicker() {
+    readHaModalIntoState();
+    const box = document.getElementById('haDiscoveredDevicesPickerBox');
+    const listEl = document.getElementById('haDiscoveredDevicesList');
+    if (!box || !listEl) return;
+
+    box.classList.remove('hidden');
+    listEl.innerHTML = `<div class="col-span-full p-4 text-xs text-slate-400 flex items-center gap-2"><span class="material-symbols-rounded animate-spin text-teal-400">progress_activity</span><span>Lade verfügbare Geräte &amp; Sensorgruppen aus Home Assistant...</span></div>`;
+
+    if (discoveredHaSensors.length === 0 || Object.keys(discoveredHaTemplateDeviceMap).length === 0) {
+        const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+        if (directRes.ok && Array.isArray(directRes.data)) {
+            const tplMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+            discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplMap);
+            updateHomeStatesFromHaArray(directRes.data);
+        }
+    }
+
+    // Group discovered entities by device groupName
+    const map = new Map();
+    discoveredHaSensors.forEach(s => {
+        if (s.category !== 'device') return;
+        const gName = s.groupName || 'Sonstige';
+        if (!map.has(gName)) {
+            const tplInfo = discoveredHaTemplateDeviceMap?.[s.entity_id] || {};
+            map.set(gName, {
+                groupName: gName,
+                entityCount: 0,
+                areaName: s.areaName || tplInfo.areaName || '',
+                manufacturer: tplInfo.manufacturer || '',
+                model: tplInfo.model || '',
+                configUrl: tplInfo.configUrl || '',
+                sampleEntityId: s.entity_id
+            });
+        }
+        const entry = map.get(gName);
+        entry.entityCount++;
+        const tpl = discoveredHaTemplateDeviceMap?.[s.entity_id] || {};
+        if (!entry.configUrl && tpl.configUrl) entry.configUrl = tpl.configUrl;
+        if (!entry.manufacturer && tpl.manufacturer) entry.manufacturer = tpl.manufacturer;
+        if (!entry.model && tpl.model) entry.model = tpl.model;
+    });
+
+    discoveredHaDeviceGroupsCache = [...map.values()].sort((a, b) => b.entityCount - a.entityCount);
+    renderHaDiscoveredDevicesList('');
+}
+
+function renderHaDiscoveredDevicesList(searchQuery = '') {
+    const listEl = document.getElementById('haDiscoveredDevicesList');
+    if (!listEl) return;
+
+    const q = String(searchQuery || '').trim().toLowerCase();
+    const filtered = q
+        ? discoveredHaDeviceGroupsCache.filter(g => `${g.groupName} ${g.manufacturer} ${g.model} ${g.areaName} ${g.sampleEntityId}`.toLowerCase().includes(q))
+        : discoveredHaDeviceGroupsCache;
+
+    if (filtered.length === 0) {
+        listEl.innerHTML = `<div class="col-span-full p-3 text-xs text-slate-400">Keine passenden HA-Geräte gefunden. Prüfe die Verbindung im Tab „1. Energie &amp; PV“.</div>`;
+        return;
+    }
+
+    const existingKeys = new Set((haConfigState.monitoredDevices || []).map(d => String(d.deviceGroupKey || d.name || '').toLowerCase()));
+
+    listEl.innerHTML = filtered.slice(0, 60).map(g => {
+        const alreadyAdded = existingKeys.has(g.groupName.toLowerCase());
+        const safeJsName = g.groupName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        const meta = [g.manufacturer, g.model, g.areaName].filter(Boolean).join(' · ');
+        return `
+        <button type="button" onclick="selectDiscoveredHaDevice('${safeJsName}')"
+            class="text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
+                alreadyAdded
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-800 dark:text-emerald-200'
+                    : 'bg-slate-50 dark:bg-slate-950 hover:bg-teal-500/10 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100'
+            }">
+            <div class="min-w-0 flex-1">
+                <p class="text-xs font-extrabold truncate">${escapeHtml(g.groupName)}</p>
+                <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(meta || g.sampleEntityId)}</p>
+            </div>
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 ${alreadyAdded ? 'bg-emerald-500 text-white' : 'bg-teal-500/15 text-teal-700 dark:text-teal-300'}">
+                ${alreadyAdded ? '✓ Aktiv' : `+ ${g.entityCount} Sens.`}
+            </span>
+        </button>`;
+    }).join('');
+}
+
+function selectDiscoveredHaDevice(groupName) {
+    if (!groupName) return;
+    if (!Array.isArray(haConfigState.monitoredDevices)) haConfigState.monitoredDevices = [];
+
+    const existingIdx = haConfigState.monitoredDevices.findIndex(
+        d => String(d.deviceGroupKey || '').toLowerCase() === groupName.toLowerCase()
+    );
+    if (existingIdx !== -1) {
+        if (typeof showToastNotification === 'function') {
+            showToastNotification(`Gerät „${groupName}“ ist bereits in deiner Liste!`, 'info');
+        }
+        return;
+    }
+
+    const foundInfo = discoveredHaDeviceGroupsCache.find(g => g.groupName === groupName) || {};
+    const stemSlug = String(foundInfo.sampleEntityId || '')
+        .replace(/^[a-z_]+\./, '')
+        .split('_')
+        .slice(0, 2)
+        .join('_');
+
+    const newDev = {
+        id: 'dev_' + Date.now(),
+        name: groupName,
+        deviceGroupKey: groupName,
+        matchPattern: stemSlug || groupName.toLowerCase().replace(/\s+/g, '_'),
+        ipUrl: foundInfo.configUrl || '',
+        icon: getDeviceCategoryIcon({ name: groupName, deviceGroupKey: groupName, matchPattern: stemSlug })
+    };
+
+    haConfigState.monitoredDevices.push(newDev);
+    renderHaMonitoredDevicesEditor();
+    renderHaDiscoveredDevicesList(document.getElementById('haDiscoveredDevicesSearch')?.value || '');
+    if (typeof showToastNotification === 'function') {
+        showToastNotification(`Gerät „${groupName}“ mit allen verfügbaren Sensoren hinzugefügt!`, 'success');
+    }
 }
 
 window.renderHomeTab = renderHomeTab;
@@ -10602,6 +11876,19 @@ window.updateHaCustomWeatherSensorField = updateHaCustomWeatherSensorField;
 window.removeHaCustomWeatherSensor = removeHaCustomWeatherSensor;
 window.openClimateHistoryModal = openClimateHistoryModal;
 window.closeClimateHistoryModal = closeClimateHistoryModal;
+window.renderHomeMonitoredDevicesBar = renderHomeMonitoredDevicesBar;
+window.renderDevicesDiagnosticsTab = renderDevicesDiagnosticsTab;
+window.openDeviceDiagnosticsDetail = openDeviceDiagnosticsDetail;
+window.setDevicesDiagnosticFilter = setDevicesDiagnosticFilter;
+window.onDevicesDiagnosticSearch = onDevicesDiagnosticSearch;
+window.refreshMonitoredDevicesNow = refreshMonitoredDevicesNow;
+window.renderHaMonitoredDevicesEditor = renderHaMonitoredDevicesEditor;
+window.updateHaMonitoredDeviceField = updateHaMonitoredDeviceField;
+window.addHaMonitoredDeviceManual = addHaMonitoredDeviceManual;
+window.removeHaMonitoredDevice = removeHaMonitoredDevice;
+window.openHaDeviceDiscoveryPicker = openHaDeviceDiscoveryPicker;
+window.renderHaDiscoveredDevicesList = renderHaDiscoveredDevicesList;
+window.selectDiscoveredHaDevice = selectDiscoveredHaDevice;
 
 // Auto-initialize immediately once DOM is ready (0ms delay for instant start!)
 document.addEventListener('DOMContentLoaded', () => {
