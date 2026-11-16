@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 11.7 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 11.7 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=11.7">
+    <link rel="manifest" href="manifest.json?v=11.8">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.7">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.7">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.7">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.7">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.8">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.8">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.8">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.8">
     <script>
-        // V11.7: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V11.8: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v11.7') {
+                            if (key !== 'pvpro-cache-v11.8') {
                                 caches.delete(key);
                             }
                         });
@@ -48,7 +48,7 @@
                 }
                 if (!('serviceWorker' in navigator)) return;
 
-                var swUrl = './sw.js?v=11.7';
+                var swUrl = './sw.js?v=11.8';
                 var probeRes = await fetch(swUrl, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(function () { return null; });
                 var contentType = probeRes && probeRes.headers ? String(probeRes.headers.get('content-type') || '').toLowerCase() : '';
                 var isJavaScriptMime = Boolean(probeRes && probeRes.ok && (contentType.includes('javascript') || contentType.includes('ecmascript')));
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=11.7" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.8" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.7</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.8</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2965,7 +2965,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.7</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.8</p>
                     </div>
                 </button>
             </div>
@@ -3950,7 +3950,7 @@
                 </div>
 
                 <!-- ========================================================= -->
-                <!-- TAB-PANEL D: 4. MEINE GERÄTE & HARDWARE (EIGENER TAB V11.7) -->
+                <!-- TAB-PANEL D: 4. MEINE GERÄTE & HARDWARE (EIGENER TAB V11.8) -->
                 <!-- ========================================================= -->
                 <div id="ha-modal-panel-devices" class="hidden space-y-5">
                     <div id="haMonitoredDevicesSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-teal-500/30 space-y-3.5">
@@ -3959,6 +3959,7 @@
                                 <h4 class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                                     <span class="material-symbols-rounded text-teal-500 text-lg">developer_board</span>
                                     <span>Meine Geräte &amp; Hardware-Infos (Startseite &amp; Geräte-Diagnose inkl. IP-Link)</span>
+                                    <span id="haMonitoredDevicesActiveCountBadge" class="px-2 py-0.5 rounded-full bg-teal-500/15 text-teal-700 dark:text-teal-300 text-[10.5px] font-extrabold">0 aktiv</span>
                                 </h4>
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                                     Wähle deine wichtigsten Geräte (z. B. <strong>Fronius Wechselrichter</strong>, <strong>BYD Batterie</strong>, <strong>Smart Meter</strong>, <strong>OpenDTU / Hoymiles</strong>, <strong>Shelly</strong>) aus Home Assistant aus. Die App zieht sich automatisch <strong>alle verfügbaren Sensoren</strong> des Geräts und bietet einen Direkt-Button auf die lokale <strong>IP-Weboberfläche</strong>.
@@ -3983,14 +3984,23 @@
                                     <span class="material-symbols-rounded text-base">radar</span>
                                     <span>Gefundene Geräte &amp; Sensor-Gruppen in Home Assistant (Tippen zum Hinzufügen / Entfernen)</span>
                                 </span>
-                                <button type="button" onclick="openHaDeviceDiscoveryPicker(true)" class="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 cursor-pointer">
+                                <button type="button" onclick="openHaDeviceDiscoveryPicker(true)" class="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 cursor-pointer shrink-0">
                                     <span class="material-symbols-rounded text-sm">refresh</span>
                                     <span>Neu scannen</span>
                                 </button>
                             </div>
                             <input type="text" id="haDiscoveredDevicesSearchInput" oninput="renderHaDiscoveredDevicesList(this.value)" placeholder="Gerätename oder Sensor suchen (z. B. Fronius, BYD, SolarNet, Smart Meter, Shelly)..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                            <div id="haDiscoveredDevicesListContainer" class="max-h-64 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                            <div id="haDiscoveredDevicesListContainer" class="max-h-56 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                                 <!-- Dynamically populated by renderHaDiscoveredDevicesList() -->
+                            </div>
+                            <div class="pt-2.5 mt-1 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                                <span id="haDiscoveredDevicesSelectionCounter" class="text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                    0 Geräte ausgewählt
+                                </span>
+                                <button type="button" onclick="confirmHaDeviceDiscoverySelection()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer">
+                                    <span class="material-symbols-rounded text-base">check_circle</span>
+                                    <span id="haDiscoveredDevicesConfirmBtnText">Auswahl übernehmen &amp; Liste schließen</span>
+                                </button>
                             </div>
                         </div>
 
@@ -4253,13 +4263,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V11.7 (Ausklappbare Diagramm-Gruppenkacheln, 4. Geräte-Tab & Kompakte Startseiten-Leisten) -->
-    <script src="qrcode.client.js?v=11.7"></script>
-    <script src="database.js?v=11.7"></script>
-    <script src="content.js?v=11.7"></script>
-    <script src="app.js?v=11.7"></script>
-    <script src="wiring.js?v=11.7"></script>
-    <script src="dossier.js?v=11.7"></script>
-    <script src="telemetry.js?v=11.7"></script>
+    <!-- MODULARE ARCHITEKTUR V11.8 (Wallbox-Verbrauchertyp mit PV-Ladeanteil, Geräte-Diagnose-Fix & Bestätigungs-Button) -->
+    <script src="qrcode.client.js?v=11.8"></script>
+    <script src="database.js?v=11.8"></script>
+    <script src="content.js?v=11.8"></script>
+    <script src="app.js?v=11.8"></script>
+    <script src="wiring.js?v=11.8"></script>
+    <script src="dossier.js?v=11.8"></script>
+    <script src="telemetry.js?v=11.8"></script>
 </body>
 </html>

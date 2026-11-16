@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.8] – 2026-11-16
+
+### ✨ Eigener Verbraucher-Typ „Wallbox / E-Auto“ mit Live-PV-Ladeanteil & geladenen kWh, Fix der Geräte-Diagnoseseite & Bestätigungs-Button im Geräte-Picker
+
+#### 1. Eigener Verbraucher-Typ „Wallbox / E-Auto“ mit PV-Ladeanteil & geladenen kWh (`telemetry.js`, `server.js`)
+* **Typ-Auswahl im Reiter `2. Verbraucher` (`renderHaCustomConsumersEditor`):**
+  - Jeder Einzelverbraucher verfügt über eine direkte Typ-Auswahl zwischen **`🔌 Standard-Verbraucher`** und **`🚗 Wallbox / E-Auto (PV-Anteil & kWh)`**.
+  - Verbraucher mit Namen wie *„Wallbox“*, *„E-Auto“*, *„go-e“*, *„evcc“*, *„Keba“*, *„Easee“*, *„Wattpilot“* oder *„openWB“* werden automatisch als Wallbox erkannt (`isWallboxConsumerName`).
+* **Echtzeit-PV-Ladeanteil & Tages-PV-Anteil (`getWallboxConsumerMetrics`):**
+  - Sobald die Wallbox aktiv lädt (`> 30 W`), berechnet das Dashboard in Echtzeit aus der aktuellen Hauslast und dem aktuellen Netzbezug den exakten **Solar-/Eigenstrom-Anteil der Ladung** (`☀️ X% PV-Strom (Y,Y kW)` in Smaragdgrün bei überwiegender Solarladung, Gelb bei Mischbezug oder `⚡ Netz-Ladung` bei reinem Netzstrom).
+  - Nach Abschluss eines Ladevorgangs wertet die Funktion automatisch die heutigen 5-Minuten-Verlaufsbuckets aus und zeigt den **heutigen Durchschnitts-PV-Anteil** (`☀️ X% PV heute`) neben den **geladenen Kilowattstunden (`X,XX kWh geladen heute`)** an.
+* **Spezielle Wallbox-Darstellung im Live-Dashboard & in den Diagramm-Kacheln:**
+  - Eigene Wallbox-Karte mit `ev_station`-Symbol, PV-Anteil-Pill, geladenen `kWh` und smaragdgrüner Ladekurve (`#10b981`) im Tages-/Wochen-/Monatsdiagramm.
+
+#### 2. Behebung der leeren Geräte-Diagnoseseite (`#tab-devices`) (`telemetry.js`)
+* **Ursache & Korrektur der Container-IDs (`renderDevicesDiagnosticsTab`):**
+  - Auf der Seite **Geräte & Hardware-Diagnose** (`#tab-devices`) wurden die gespeicherten Geräte bisher nicht gerendert, weil `renderDevicesDiagnosticsTab()` nach `devicesDiagnosticsCardsContainer` und `devicesFilterPillsBar` suchte, während `index.html` die IDs `devicesDiagnosticsContainer`, `devicesFilterPills` und `devicesPageCountBadge` verwendete.
+  - Alle IDs sind nun synchronisiert; zudem aktualisiert `#devicesPageCountBadge` sofort die Anzahl der überwachten Geräte (`X Geräte`).
+* **Automatische Hintergrund-Hydrierung (`ensureMonitoredDevicesStatesLoaded`):**
+  - Tippt man direkt nach dem App-Start auf der Startseite auf eine Gerätekachel (oder wechselt über das Menü auf **Geräte & Diagnose**), lädt die App bei Bedarf automatisch `/api/states` und die Home-Assistant-Gerätezuordnung im Hintergrund nach und rendert sofort alle zugehörigen Sensoren.
+
+#### 3. Bestätigungs-Leiste im Home-Assistant-Geräte-Picker (`4. Geräte`) (`index.html`, `telemetry.js`)
+* **Klarer Abschluss-Button (`confirmHaDeviceDiscoverySelection`):**
+  - Unterhalb der Such- und Auswahlliste in `#haDiscoveredDevicesPickerBox` zeigt eine feste Fußzeile live an, wie viele Geräte ausgewählt sind (`X Geräte ausgewählt`), kombiniert mit dem grünen Bestätigungs-Button **`✓ Auswahl übernehmen (X Geräte)`**.
+  - Ein Tipp darauf schließt die Auswahlliste und scrollt direkt zu den konfigurierten Gerätekarten darunter.
+  - Sind bereits Geräte ausgewählt, zeigt das Öffnen von Reiter **`4. Geräte`** sofort die aktiven Gerätekarten zuerst an, während die Auswahlliste jederzeit über **„Geräte aus HA laden & wählen“** ein- und ausgeklappt werden kann.
+
+---
+
 ## [Version 11.7] – 2026-11-15
 
 ### ✨ Ausklappbare Gruppen-Kacheln unter dem Diagramm, Eigener Reiter „4. Geräte“ mit zuverlässiger HA-Endgeräte-Auswahl & Kompakte Startseiten-Kachelleisten

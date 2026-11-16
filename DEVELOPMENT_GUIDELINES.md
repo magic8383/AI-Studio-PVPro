@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.7 (Ausklappbare Gruppen-Kacheln unter dem Tagesdiagramm mit standardmäßig ausgeblendeten Einzelverbrauchern, eigener Einstellungen-Tab „4. Geräte“ mit schneller Home-Assistant-Endgeräte-Auswahl & Sofort-Speicherung sowie kompakte mehrspaltige Kachelleisten für Raumklima & Temperaturen und Meine Geräte & Hardware auf der Startseite)  
+**Aktuelle Version:** 11.8 (Eigener Verbraucher-Typ „Wallbox / E-Auto“ mit Live-PV-Ladeanteil und geladenen kWh im Live-Dashboard, reparierte Geräte-Diagnoseseite `#tab-devices` inkl. automatischer Sensor-Hydrierung sowie prominenter Bestätigungs-Button „✓ Auswahl übernehmen“ im Home-Assistant-Geräte-Picker)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

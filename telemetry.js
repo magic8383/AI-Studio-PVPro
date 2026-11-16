@@ -4268,19 +4268,24 @@ function renderLiveCockpitUI(baseline) {
         const cfgConsumersMap = new Map((haConfigState.customConsumers || []).map(c => [String(c.id), c]));
         const rawConsumers = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
             ? [...t.consumersTelemetry]
-            : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, group: c.group || '', powerW: 0, energyKwh: null, available: false }));
+            : (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, group: c.group || '', type: c.type || '', powerW: 0, energyKwh: null, available: false }));
 
         const consumers = rawConsumers.map(c => {
             const cfgItem = cfgConsumersMap.get(String(c.id));
+            const resolvedName = cfgItem?.name || c.name || '';
             const groupName = String(c.group ?? cfgItem?.group ?? '').trim();
+            const rawType = String(cfgItem?.type || c.type || '').trim().toLowerCase();
+            const isWallbox = rawType === 'wallbox' || (!rawType && isWallboxConsumerName(resolvedName));
             const pW = Math.max(0, Number(c.powerW) || 0);
             const fromCounterKwh = (c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null;
             const fromIntegralKwh = Number(dayInt[`consumer_${c.id}`] || 0);
             const consKwh = fromCounterKwh !== null ? Math.max(fromCounterKwh, fromIntegralKwh) : fromIntegralKwh;
             return {
                 ...c,
-                name: cfgItem?.name || c.name,
+                name: resolvedName,
                 group: groupName,
+                type: isWallbox ? 'wallbox' : 'standard',
+                isWallbox,
                 powerW: pW,
                 consKwh: +Math.max(0, consKwh).toFixed(3),
                 isActive: pW > 5
@@ -4357,6 +4362,7 @@ function renderLiveCockpitUI(baseline) {
                 const valStr = formatPowerDe(c.powerW, c.powerW < 1000);
                 const consKwh = c.consKwh || 0;
                 const isActive = c.isActive;
+                const isWallbox = Boolean(c.isWallbox || c.type === 'wallbox' || isWallboxConsumer(c));
                 const liveSharePct = (isActive && t.loadPowerW > 20) ? Math.min(100, Math.round((c.powerW / t.loadPowerW) * 100)) : 0;
 
                 let barWidthPct = 0;
@@ -4366,11 +4372,72 @@ function renderLiveCockpitUI(baseline) {
                     barWidthPct = Math.min(28, Math.max(6, Math.round((c.powerW / Math.max(600, t.loadPowerW || 1000)) * 32)));
                 }
 
+                const safeIdJs = String(c.id || '').replace(/'/g, "\\'");
+                const padCls = isMember ? 'px-3.5 py-2.5 rounded-[15px]' : 'px-4 py-3 rounded-[18px]';
+
+                if (isWallbox) {
+                    const wbMetrics = getWallboxConsumerMetrics(c, t);
+                    const isCharging = isActive && c.powerW > 30;
+                    const wbCardClasses = isCharging
+                        ? 'border-emerald-500/45 dark:border-emerald-400/40 bg-white/95 dark:bg-slate-900/90 hover:border-emerald-500/70 shadow-2xs'
+                        : 'border-teal-500/25 dark:border-teal-500/25 bg-white/85 dark:bg-slate-900/65 hover:border-teal-500/45';
+
+                    const wbFillBarClasses = isCharging
+                        ? 'consumer-progress-fill-active'
+                        : (consKwh > 0.002 ? 'consumer-progress-fill-idle' : 'bg-slate-200/55 dark:bg-slate-800/45');
+
+                    let pvSharePillHtml = '';
+                    if (isCharging) {
+                        const pct = wbMetrics.livePvSharePct;
+                        const pillTone = pct >= 60
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/35'
+                            : (pct >= 20
+                                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/35'
+                                : 'bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/35');
+                        const pillLabel = pct >= 15
+                            ? `☀️ ${pct}% PV-Strom (${formatPowerDe(wbMetrics.livePvPowerW, true)})`
+                            : `⚡ Netz-Ladung`;
+                        pvSharePillHtml = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[10.5px] font-bold tabular-nums ${pillTone}">${pillLabel}</span>`;
+                    } else if (consKwh > 0.01 && wbMetrics.dayPvSharePct !== null) {
+                        pvSharePillHtml = `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10.5px] font-bold tabular-nums">☀️ ${wbMetrics.dayPvSharePct}% PV heute</span>`;
+                    } else {
+                        pvSharePillHtml = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-semibold">Bereit</span>`;
+                    }
+
+                    const wbKwhBadge = `<span class="font-semibold text-teal-700 dark:text-teal-300">${formatKwhDe(consKwh, 2)} geladen heute</span>`;
+                    const wbSubExtra = isCharging && liveSharePct > 0
+                        ? ` · ${liveSharePct}% Hauslast`
+                        : (!isCharging && consKwh <= 0.001 ? ' · Kein Ladevorgang heute' : '');
+
+                    return `
+                    <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
+                        role="button" tabindex="0" title="Tippen für Wallbox-Ladekurve (${safeName})"
+                        class="relative overflow-hidden border ${wbCardClasses} ${padCls} flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]">
+                        <div aria-hidden="true" class="absolute inset-y-0 left-0 pointer-events-none transition-all duration-700 ease-out rounded-r-xl ${wbFillBarClasses}" style="width: ${barWidthPct}%"></div>
+                        <div class="relative z-10 flex items-center gap-2.5 min-w-0 pr-3">
+                            <div class="w-8 h-8 rounded-xl ${isCharging ? 'bg-emerald-500/18 text-emerald-600 dark:text-emerald-300 border border-emerald-500/35' : 'bg-teal-500/12 text-teal-600 dark:text-teal-400 border border-teal-500/25'} flex items-center justify-center shrink-0">
+                                <span class="material-symbols-rounded text-[18px]">ev_station</span>
+                            </div>
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="text-[13.5px] sm:text-[14px] ${isCharging ? 'text-slate-900 dark:text-white font-semibold' : 'text-slate-700 dark:text-slate-200 font-medium'} group-hover:text-teal-700 dark:group-hover:text-teal-300 truncate leading-snug">${safeName}</span>
+                                    ${pvSharePillHtml}
+                                </div>
+                                <div class="text-[12px] font-normal text-slate-500 dark:text-slate-400 tabular-nums truncate leading-snug mt-0.5">
+                                    ${wbKwhBadge}${wbSubExtra}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="relative z-10 flex flex-col items-end shrink-0 tabular-nums pl-2">
+                            <span class="text-[14px] sm:text-[15.5px] ${isCharging ? 'text-emerald-700 dark:text-emerald-300 font-extrabold' : 'text-slate-500 dark:text-slate-400 font-semibold'}">${valStr}</span>
+                            <span class="text-[10.5px] font-semibold text-slate-400 dark:text-slate-500">${formatKwhDe(consKwh, 2)}</span>
+                        </div>
+                    </div>`;
+                }
+
                 const kwhText = consKwh > 0.001
                     ? `${formatKwhDe(consKwh, 2)} heute${isActive && liveSharePct > 0 ? ` · ${liveSharePct}% Hauslast` : ''}`
                     : (isActive && liveSharePct > 0 ? `${liveSharePct}% der aktuellen Hauslast` : '');
-
-                const safeIdJs = String(c.id || '').replace(/'/g, "\\'");
 
                 const cardClasses = isActive
                     ? 'border-slate-200/90 dark:border-slate-700/80 bg-white/92 dark:bg-slate-900/85 hover:border-teal-500/50 shadow-2xs'
@@ -4387,8 +4454,6 @@ function renderLiveCockpitUI(baseline) {
                 const powerClasses = isActive
                     ? 'text-slate-900 dark:text-white font-bold'
                     : 'text-slate-500 dark:text-slate-400 font-semibold';
-
-                const padCls = isMember ? 'px-3.5 py-2.5 rounded-[15px]' : 'px-4 py-3 rounded-[18px]';
 
                 return `
                 <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')"
@@ -5043,18 +5108,31 @@ function getAvailableCurveDefinitions() {
         const rawGrpName = String(cc.group || '').trim();
         const parentGroupSlug = rawGrpName ? normalizeConsumerGroupSlug(rawGrpName) : null;
 
+        const isWb = isWallboxConsumer(cc);
+        const wbMetrics = isWb ? getWallboxConsumerMetrics({ ...cc, powerW: liveW }, t) : null;
+        const wbPvShareToDisplay = isWb
+            ? (liveW > 30 ? wbMetrics.livePvSharePct : wbMetrics.dayPvSharePct)
+            : null;
+        const wbSubLine1 = isWb
+            ? `${formatKwhDe(cKwh, 2)} geladen (${periodSuffix})`
+            : `${formatKwhDe(cKwh, 2)} ${periodSuffix}`;
+        const wbSubLine2 = isWb && wbPvShareToDisplay !== null
+            ? `☀️ ${wbPvShareToDisplay}% PV · ${formatPowerDe(cPeakW, true)} Max`
+            : `${formatPowerDe(cPeakW, true)} Max`;
+
         defs.push({
             key: cKey,
             name: cc.name || `Verbraucher ${idx + 1}`,
+            isWallbox: isWb,
             parentGroupName: rawGrpName || null,
             parentGroupSlug,
-            color: consumerPalette[idx % consumerPalette.length],
+            color: isWb ? '#10b981' : consumerPalette[idx % consumerPalette.length],
             axis: 'yPower',
             unit: 'W',
             category: 'consumer',
             liveDisplay: formatPowerDe(liveW, true),
-            subLine1: `${formatKwhDe(cKwh, 2)} ${periodSuffix}`,
-            subLine2: `${formatPowerDe(cPeakW, true)} Max`,
+            subLine1: wbSubLine1,
+            subLine2: wbSubLine2,
             subDisplay: `${formatKwhDe(cKwh, 2)} · Max ${formatPowerDe(cPeakW, true)}`,
             diagTone: consDiag.tone,
             diagText: consDiag.text
@@ -5277,6 +5355,10 @@ function renderIntradayCurveSection(baseline) {
                 ? `<span class="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 shrink-0" title="Gruppe: ${escapeHtml(d.parentGroupName)}">↳</span>`
                 : '';
 
+            const wallboxIconBadge = d.isWallbox
+                ? `<span class="material-symbols-rounded text-[14px] text-emerald-600 dark:text-emerald-400 shrink-0" title="Wallbox / E-Auto">ev_station</span>`
+                : '';
+
             return `
             <div onclick="toggleIntradayCurve('${safeKeyJs}')"
                 style="${cardStyle}"
@@ -5285,6 +5367,7 @@ function renderIntradayCurveSection(baseline) {
                     <div class="flex items-center gap-1.5 min-w-0">
                         <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${isActive ? d.color : '#94a3b8'}"></span>
                         ${memberPrefixBadge}
+                        ${wallboxIconBadge}
                         <p class="text-[12.5px] ${isActive ? 'font-medium text-slate-900 dark:text-slate-100' : 'font-normal text-slate-600 dark:text-slate-400'} truncate">${safeName}</p>
                     </div>
                     <div class="flex items-center gap-1 shrink-0">
@@ -8579,7 +8662,16 @@ function switchHaModalTab(tab = 'config') {
     }
 
     if (tab === 'devices') {
-        openHaDeviceDiscoveryPicker(false);
+        renderHaMonitoredDevicesEditor();
+        const hasConfigured = Array.isArray(haConfigState.monitoredDevices) && haConfigState.monitoredDevices.length > 0;
+        if (!hasConfigured) {
+            openHaDeviceDiscoveryPicker(false);
+        } else {
+            // Preload discovery groups quietly in the background while keeping configured devices visible first
+            const box = document.getElementById('haDiscoveredDevicesPickerBox');
+            if (box) box.classList.add('hidden');
+            ensureMonitoredDevicesStatesLoaded();
+        }
     }
 }
 
@@ -8971,14 +9063,22 @@ function renderHaCustomConsumersEditor() {
         const safeGroup = typeof escapeHtml === 'function' ? escapeHtml(cc.group || '') : (cc.group || '');
         const safeEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.powerEntity || '') : (cc.powerEntity || '');
         const safeNrgEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.energyEntity || '') : (cc.energyEntity || '');
+        const isWb = isWallboxConsumer(cc);
+        const curType = isWb ? 'wallbox' : 'standard';
         const diagHtml = renderEntityDiagnosticSubline(cc.energyEntity);
         return `
-        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1.5">
+        <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border ${isWb ? 'border-emerald-500/45 dark:border-emerald-500/40' : 'border-slate-200 dark:border-slate-800'} space-y-1.5">
             <div class="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
                 <input type="text" id="ha_cons_name_${idx}" value="${safeName}" oninput="updateHaCustomConsumerField(${idx}, 'name', this.value)"
-                    placeholder="Gerätename (z.B. Trockner)"
-                    class="flex-1 min-w-[140px] text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                <div class="flex items-center gap-1.5 w-full sm:w-auto sm:min-w-[210px]">
+                    placeholder="Gerätename (z.B. Wallbox oder Trockner)"
+                    class="flex-1 min-w-[130px] text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <select id="ha_cons_type_${idx}" onchange="updateHaCustomConsumerField(${idx}, 'type', this.value); renderHaCustomConsumersEditor();"
+                    class="text-[11px] font-bold px-2 py-1.5 rounded-lg border ${isWb ? 'border-emerald-500/45 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200' : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-200'} outline-none focus:border-teal-500 cursor-pointer shrink-0"
+                    title="Verbraucher-Typ (Wallbox berechnet automatisch den PV-Ladeanteil)">
+                    <option value="standard" ${curType === 'standard' ? 'selected' : ''}>🔌 Standard-Verbraucher</option>
+                    <option value="wallbox" ${curType === 'wallbox' ? 'selected' : ''}>🚗 Wallbox / E-Auto (PV-Anteil &amp; kWh)</option>
+                </select>
+                <div class="flex items-center gap-1.5 w-full sm:w-auto sm:min-w-[195px]">
                     <div class="relative flex-1">
                         <span class="material-symbols-rounded text-[14px] text-indigo-500 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none">folder</span>
                         <input type="text" id="ha_cons_grp_${idx}" list="haConsumerGroupsDatalist" value="${safeGroup}"
@@ -8992,6 +9092,7 @@ function renderHaCustomConsumersEditor() {
                     </button>
                 </div>
             </div>
+            ${isWb ? `<div class="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[10.5px] font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5"><span class="material-symbols-rounded text-sm">ev_station</span><span>Wallbox-Modus aktiv: Zeigt im Live-Dashboard automatisch die geladenen kWh sowie den Echtzeit-PV-Ladeanteil (☀️ % PV-Strom) an.</span></div>` : ''}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 <div>
                     <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Leistung (W / kW)</label>
@@ -9005,7 +9106,7 @@ function renderHaCustomConsumersEditor() {
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Energiezähler (kWh, optional für Tagesbalken)</label>
+                    <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Energiezähler (kWh, optional für Tagesbalken &amp; Lademenge)</label>
                     <div class="flex items-center gap-1">
                         <input type="text" id="ha_cons_nrg_${idx}" list="haEntitiesDatalist" value="${safeNrgEnt}" oninput="updateHaCustomConsumerField(${idx}, 'energyEntity', this.value)"
                             placeholder="Leer = aus W berechnet"
@@ -9021,9 +9122,68 @@ function renderHaCustomConsumersEditor() {
     }).join('');
 }
 
+function isWallboxConsumerName(name) {
+    return /wallbox|e-auto|evcc|go-e|goe|ladeziegel|auto\s*laden|ev\s*charger|keba|easee|mennekes|wattpilot|openwb/i.test(String(name || ''));
+}
+
+function isWallboxConsumer(c) {
+    if (!c) return false;
+    const explicitType = String(c.type || '').trim().toLowerCase();
+    if (explicitType === 'wallbox') return true;
+    if (explicitType === 'standard') return false;
+    return isWallboxConsumerName(c.name);
+}
+
+function getWallboxConsumerMetrics(c, telemetryObj) {
+    const t = telemetryObj || liveTelemetryState || {};
+    const wbW = Math.max(0, Number(c?.powerW) || 0);
+    const totalLoadW = Math.max(wbW, Number(t.loadPowerW) || 0);
+    const gridImpW = Math.max(0, Number(t.gridImportPowerW) || 0);
+    const ownSupplyW = Math.max(0, totalLoadW - gridImpW);
+    const livePvSharePct = totalLoadW > 10
+        ? Math.min(100, Math.max(0, Math.round((ownSupplyW / totalLoadW) * 100)))
+        : 0;
+    const livePvPowerW = Math.round(wbW * (livePvSharePct / 100));
+    const liveGridPowerW = Math.max(0, Math.round(wbW - livePvPowerW));
+
+    // Calculate historical PV charging share across today's buckets if available
+    let dayPvSharePct = null;
+    const cKey = `consumer_${c?.id}`;
+    const wbSeries = intradaySeriesState?.series?.[cKey];
+    const loadSeries = intradaySeriesState?.series?.load;
+    const gridImpSeries = intradaySeriesState?.series?.grid_imp;
+    if (Array.isArray(wbSeries) && wbSeries.length > 0) {
+        let totalWbWeight = 0;
+        let solarWbWeight = 0;
+        for (let i = 0; i < wbSeries.length; i++) {
+            const w = Number(wbSeries[i]) || 0;
+            if (w > 40) {
+                const lW = Math.max(w, Number(loadSeries?.[i]) || w);
+                const gW = Math.max(0, Number(gridImpSeries?.[i]) || 0);
+                const ownRatio = lW > 0 ? Math.min(1, Math.max(0, (lW - gW) / lW)) : 0;
+                totalWbWeight += w;
+                solarWbWeight += w * ownRatio;
+            }
+        }
+        if (totalWbWeight > 0) {
+            dayPvSharePct = Math.min(100, Math.max(0, Math.round((solarWbWeight / totalWbWeight) * 100)));
+        }
+    }
+
+    return {
+        livePvSharePct,
+        livePvPowerW,
+        liveGridPowerW,
+        dayPvSharePct
+    };
+}
+
 function updateHaCustomConsumerField(idx, field, val) {
     if (!Array.isArray(haConfigState.customConsumers) || !haConfigState.customConsumers[idx]) return;
     haConfigState.customConsumers[idx][field] = val;
+    if (field === 'name' && !haConfigState.customConsumers[idx].type && isWallboxConsumerName(val)) {
+        haConfigState.customConsumers[idx].type = 'wallbox';
+    }
 }
 
 function addHaCustomConsumer() {
@@ -9032,6 +9192,7 @@ function addHaCustomConsumer() {
     haConfigState.customConsumers.push({
         id: 'cons_' + Date.now(),
         name: `Verbraucher ${nextNum}`,
+        type: 'standard',
         powerEntity: '',
         energyEntity: '',
         group: ''
@@ -11462,6 +11623,10 @@ function renderHomeMonitoredDevicesBar() {
         return;
     }
 
+    if (homeHaStatesCache.size === 0 || Object.keys(discoveredHaTemplateDeviceMap || {}).length === 0) {
+        ensureMonitoredDevicesStatesLoaded();
+    }
+
     // Dynamic multi-column horizontal strip layout matching Energie · Kurzüberblick
     const colsClass = list.length === 1
         ? 'grid grid-cols-1 gap-2 sm:gap-2.5'
@@ -11529,6 +11694,8 @@ function openDeviceDiagnosticsDetail(deviceId) {
         switchTab('devices');
     }
     renderDevicesDiagnosticsTab();
+    ensureMonitoredDevicesStatesLoaded();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function setDevicesDiagnosticFilter(filterId) {
@@ -11541,8 +11708,39 @@ function onDevicesDiagnosticSearch(val) {
     renderDevicesDiagnosticsTab();
 }
 
+let isFetchingMonitoredDevicesStates = false;
+async function ensureMonitoredDevicesStatesLoaded() {
+    if (isFetchingMonitoredDevicesStates) return;
+    if (!haConfigState.baseUrl || !haConfigState.accessToken) return;
+    const needsStates = homeHaStatesCache.size === 0;
+    const needsTplMap = Object.keys(discoveredHaTemplateDeviceMap || {}).length === 0;
+    if (!needsStates && !needsTplMap) return;
+
+    isFetchingMonitoredDevicesStates = true;
+    try {
+        if (needsStates) {
+            const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+            if (directRes.ok && Array.isArray(directRes.data)) {
+                updateHomeStatesFromHaArray(directRes.data);
+            }
+        }
+        if (needsTplMap) {
+            const tplMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+            if (Object.keys(tplMap).length > 0 && homeHaStatesCache.size > 0) {
+                discoveredHaSensors = buildEnrichedSensorList([...homeHaStatesCache.values()], tplMap);
+            }
+        }
+        renderHomeMonitoredDevicesBar();
+        renderDevicesDiagnosticsTab();
+    } catch (e) {
+    } finally {
+        isFetchingMonitoredDevicesStates = false;
+    }
+}
+
 async function refreshMonitoredDevicesNow() {
     await refreshLiveTelemetryNow();
+    await ensureMonitoredDevicesStatesLoaded();
     renderHomeMonitoredDevicesBar();
     renderDevicesDiagnosticsTab();
     if (typeof showToastNotification === 'function') {
@@ -11551,11 +11749,23 @@ async function refreshMonitoredDevicesNow() {
 }
 
 function renderDevicesDiagnosticsTab() {
-    const container = document.getElementById('devicesDiagnosticsCardsContainer');
-    const filterBar = document.getElementById('devicesFilterPillsBar');
+    const container = document.getElementById('devicesDiagnosticsContainer') || document.getElementById('devicesDiagnosticsCardsContainer');
+    const filterBar = document.getElementById('devicesFilterPills') || document.getElementById('devicesFilterPillsBar');
+    const countBadge = document.getElementById('devicesPageCountBadge');
     if (!container) return;
 
     const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
+    if (countBadge) {
+        countBadge.innerText = `${list.length} ${list.length === 1 ? 'Gerät' : 'Geräte'}`;
+    }
+
+    if (list.length > 0 && (homeHaStatesCache.size === 0 || Object.keys(discoveredHaTemplateDeviceMap || {}).length === 0)) {
+        ensureMonitoredDevicesStatesLoaded();
+    }
+
+    if (selectedDevicesDiagnosticFilter !== '__ALL__' && !list.some(d => d.id === selectedDevicesDiagnosticFilter)) {
+        selectedDevicesDiagnosticFilter = '__ALL__';
+    }
 
     if (filterBar) {
         const isAll = selectedDevicesDiagnosticFilter === '__ALL__';
@@ -11716,6 +11926,7 @@ function persistMonitoredDevicesConfigImmediate() {
 
 function renderHaMonitoredDevicesEditor() {
     const container = document.getElementById('haMonitoredDevicesMappingContainer') || document.getElementById('haMonitoredDevicesContainer');
+    updateDiscoveredDevicesConfirmFooter();
     if (!container) return;
 
     const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
@@ -11938,8 +12149,45 @@ async function openHaDeviceDiscoveryPicker(forceReload = false) {
     renderHaMonitoredDevicesEditor();
 }
 
+function updateDiscoveredDevicesConfirmFooter() {
+    const count = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices.length : 0;
+    const counterEl = document.getElementById('haDiscoveredDevicesSelectionCounter');
+    const btnTextEl = document.getElementById('haDiscoveredDevicesConfirmBtnText');
+    const headerCountEl = document.getElementById('haMonitoredDevicesActiveCountBadge');
+    if (counterEl) {
+        counterEl.innerText = `${count} ${count === 1 ? 'Gerät' : 'Geräte'} ausgewählt`;
+    }
+    if (btnTextEl) {
+        btnTextEl.innerText = count > 0
+            ? `Auswahl übernehmen (${count} ${count === 1 ? 'Gerät' : 'Geräte'})`
+            : 'Liste schließen';
+    }
+    if (headerCountEl) {
+        headerCountEl.innerText = `${count} aktiv`;
+    }
+}
+
+function confirmHaDeviceDiscoverySelection() {
+    persistMonitoredDevicesConfigImmediate();
+    renderHaMonitoredDevicesEditor();
+    updateDiscoveredDevicesConfirmFooter();
+    const box = document.getElementById('haDiscoveredDevicesPickerBox');
+    if (box) box.classList.add('hidden');
+    const target = document.getElementById('haMonitoredDevicesMappingContainer');
+    if (target) {
+        setTimeout(() => {
+            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 60);
+    }
+    const count = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices.length : 0;
+    if (typeof showToastNotification === 'function') {
+        showToastNotification(`Geräte-Auswahl übernommen (${count} ${count === 1 ? 'Gerät' : 'Geräte'} aktiv)!`, 'success');
+    }
+}
+
 function renderHaDiscoveredDevicesList(searchQuery = '') {
     const listEl = document.getElementById('haDiscoveredDevicesListContainer') || document.getElementById('haDiscoveredDevicesList');
+    updateDiscoveredDevicesConfirmFooter();
     if (!listEl) return;
 
     const q = String(searchQuery || '').trim().toLowerCase();
@@ -12023,10 +12271,11 @@ function selectDiscoveredHaDevice(groupName) {
     renderHaMonitoredDevicesEditor();
     renderHaDiscoveredDevicesList(searchEl ? searchEl.value : '');
     if (typeof showToastNotification === 'function') {
-        showToastNotification(`Gerät „${groupName}“ (${newDev.entityIds.length || 'alle'} Sensoren) hinzugefügt & gespeichert!`, 'success');
+        showToastNotification(`Gerät „${groupName}“ (${newDev.entityIds.length || 'alle'} Sensoren) hinzugefügt! Tippe unten auf „Auswahl übernehmen“.`, 'success');
     }
 }
 
+window.confirmHaDeviceDiscoverySelection = confirmHaDeviceDiscoverySelection;
 window.renderHomeTab = renderHomeTab;
 window.refreshHomeWeatherAndSensors = refreshHomeWeatherAndSensors;
 window.addHaCustomWeatherSensor = addHaCustomWeatherSensor;

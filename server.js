@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '11.7';
+const APP_VERSION = '11.8';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1176,6 +1176,8 @@ app.all('/api/ha/states', async (req, res) => {
       return {
         id: cc.id,
         name: cc.name || cc.powerEntity || 'Verbraucher',
+        group: cc.group || '',
+        type: cc.type || '',
         powerEntity: cc.powerEntity || '',
         powerW: isAvail ? Math.max(0, Math.round(pVal)) : 0,
         available: Boolean(isAvail)
