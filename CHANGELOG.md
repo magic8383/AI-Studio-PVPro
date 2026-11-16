@@ -4,6 +4,37 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.1] – 2026-11-16
+
+### ✨ Lokale Schlüssel-Konfiguration (`localDeviceSecrets`) ganz oben in der „Speichern unter…“-Backup-Datei, OpenRouter-Unterstützung (Modell-Auswahl im KI-Fenster + JSON), 100 % GitHub-freier Geheimnisschutz & Bereinigung aller Screenshots
+
+#### 1. Schlüssel-Block (`localDeviceSecrets`) ganz oben in der „Speichern unter…“-Backup-Datei (`app.js`, `telemetry.js`)
+* **Sofort auffindbar in den ersten Zeilen der Backup-Datei (`.txt` / `.pvpro.json`):**
+  - Beim Export über **Menü -> „Speichern unter…“** steht der Block `localDeviceSecrets` ab sofort ganz oben in den ersten Zeilen der Datei:
+    - `openRouterApiKey`: Für persönliche OpenRouter-Keys (`sk-or-v1-...`)
+    - `geminiApiKey`: Für direkte Google Gemini API-Keys (`AIzaSy...`)
+    - `aiProvider`: `"auto"` | `"openrouter"` | `"gemini"`
+    - `openRouterModel`: Freies Modell-Feld (Standard: `"google/gemini-2.5-flash"`)
+    - `haAccessToken`: Dein persönlicher Home Assistant Long-Lived Access Token
+* **Dauerhafte Handy-Speicherung (`localStorage` + `IndexedDB`) & Versions-Übernahme:**
+  - Nach dem Einlesen über **„Datei öffnen…“** werden alle Keys fest im geschützten Gerätespeicher (`localStorage` + `PVProPersistentDB` IndexedDB) hinterlegt.
+  - Sie bleiben bei jedem zukünftigen App-Update erhalten und werden bei jedem neuen **„Speichern unter…“** automatisch wieder in die neue Backup-Datei übernommen.
+
+#### 2. Volle OpenRouter-Unterstützung mit Modell-Auswahl im KI-Fenster & JSON (`index.html`, `telemetry.js`, `server.js`)
+* **Modell-Auswahl direkt im KI-Assistenten (`#aiOpenRouterModelSelect`):**
+  - Unter **„Einstellungen“** im KI-Fenster lässt sich das gewünschte Sprachmodell direkt auswählen (u. a. `google/gemini-2.5-flash`, `google/gemini-2.5-pro`, `anthropic/claude-3.7-sonnet`, `openai/gpt-4o-mini`, `deepseek/deepseek-chat-v3-0324`, `meta-llama/llama-3.3-70b-instruct`).
+  - Zusätzlich wird jedes beliebige in der JSON-Backup-Datei unter `openRouterModel` eingetragene Modell automatisch übernommen und in das Auswahlmenü aufgenommen.
+* **Autarker Browser-Aufruf & Server-Unterstützung:**
+  - Ist ein `openRouterApiKey` hinterlegt, kommuniziert der KI-Assistent direkt mit `https://openrouter.ai/api/v1/chat/completions` (funktioniert 100 % autark auch ohne AI Studio oder Node-Server auf GitHub Pages) sowie über `/api/ai/assistant`.
+
+#### 3. 100 % GitHub-freier Geheimnisschutz & Bereinigung aller hochgeladenen Screenshots (`app.js`, `server.js`, `telemetry.js`)
+* **Kein Token- oder Key-Leak in GitHub-Commits:**
+  - `getShareableConfig()`, `/api/ha/config` (`data/ha_config.json`) und `data/system_plans.json` filtern `localDeviceSecrets`, `openRouterApiKey`, `geminiApiKey` und `accessToken` strikt heraus, sodass das öffentliche GitHub-Repository niemals persönliche Schlüssel enthält.
+* **Bereinigung hochgeladener Screenshots:**
+  - Sämtliche im Arbeitsverzeichnis `/public/assets/aistudio/` abgelegten Chat-Screenshots wurden restlos gelöscht.
+
+---
+
 ## [Version 12.0] – 2026-11-16
 
 ### ✨ KI-Assistent Bugfix (`discoveredHaSensors`), Wählbare Analyse-Tiefe (Denkmodus) & Fokus-Rolle sowie Transparente Modell-, Verbindungs- & Kontext-Anzeige

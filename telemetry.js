@@ -456,7 +456,8 @@ async function hydrateFromPersistentIndexedDB() {
             idbBootSnap,
             idbIntraday,
             idbBarExplorer,
-            idbClimateCurves
+            idbClimateCurves,
+            idbLocalSecrets
         ] = await Promise.all([
             PVProPersistentDB.get('ha_config_backup'),
             PVProPersistentDB.get('energy_counter_baselines'),
@@ -464,8 +465,29 @@ async function hydrateFromPersistentIndexedDB() {
             PVProPersistentDB.get('boot_snapshot'),
             PVProPersistentDB.get('intraday_history_cache'),
             PVProPersistentDB.get('bar_explorer_cache'),
-            PVProPersistentDB.get('climate_history_cache')
+            PVProPersistentDB.get('climate_history_cache'),
+            PVProPersistentDB.get('local_device_secrets')
         ]);
+
+        if (idbLocalSecrets && typeof idbLocalSecrets === 'object') {
+            if (!localDeviceSecretsState.openRouterApiKey && idbLocalSecrets.openRouterApiKey) {
+                localDeviceSecretsState.openRouterApiKey = String(idbLocalSecrets.openRouterApiKey).trim();
+            }
+            if (!localDeviceSecretsState.geminiApiKey && idbLocalSecrets.geminiApiKey) {
+                localDeviceSecretsState.geminiApiKey = String(idbLocalSecrets.geminiApiKey).trim();
+            }
+            if (idbLocalSecrets.openRouterModel && (!localDeviceSecretsState.openRouterModel || localDeviceSecretsState.openRouterModel === 'google/gemini-2.5-flash')) {
+                localDeviceSecretsState.openRouterModel = String(idbLocalSecrets.openRouterModel).trim();
+                aiAssistantSettings.openRouterModel = localDeviceSecretsState.openRouterModel;
+            }
+            if (!localDeviceSecretsState.haAccessToken && idbLocalSecrets.haAccessToken) {
+                localDeviceSecretsState.haAccessToken = String(idbLocalSecrets.haAccessToken).trim();
+            }
+            if (!haConfigState.accessToken && localDeviceSecretsState.haAccessToken) {
+                haConfigState.accessToken = localDeviceSecretsState.haAccessToken;
+            }
+            try { localStorage.setItem('pvpro_local_device_secrets', JSON.stringify(localDeviceSecretsState)); } catch (e) {}
+        }
 
         let needsUiRefresh = false;
 
@@ -679,6 +701,7 @@ async function initTelemetryAndAnalysis() {
 
     // Load cached kWh total counter baselines for Today / Month delta calculation
     loadEnergyCounterBaselines();
+    loadLocalDeviceSecrets();
 
     // 1. Load local cached HA config & performance records synchronously (0 ms)
     try {
@@ -4193,7 +4216,7 @@ function setLiveTelemetryMode(newMode) {
     fetch('/api/ha/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config: haConfigState })
+        body: JSON.stringify({ config: { ...haConfigState, accessToken: '' } })
     }).catch(() => {});
 
     refreshIntradayHistoryAndLive();
@@ -10499,6 +10522,10 @@ function pickHaEntityFromModal(entityId) {
 
 async function saveHaConfigFromModal() {
     readHaModalIntoState();
+    if (haConfigState.accessToken) {
+        localDeviceSecretsState.haAccessToken = haConfigState.accessToken;
+        saveLocalDeviceSecrets();
+    }
     localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
     PVProPersistentDB.set('ha_config_backup', haConfigState);
     energyCounterBaselines.lastHistorySyncMs = 0;
@@ -10507,7 +10534,7 @@ async function saveHaConfigFromModal() {
         await fetch('/api/ha/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: haConfigState })
+            body: JSON.stringify({ config: { ...haConfigState, accessToken: '' } })
         });
     } catch (e) {}
 
@@ -10685,14 +10712,19 @@ function applyFullHaConfigWithTokenFromBackup(fullCfg) {
             : (haConfigState.monitoredDevices || []),
         loadedFromSharedProject: !effectiveToken
     };
+    if (effectiveToken) {
+        localDeviceSecretsState.haAccessToken = effectiveToken;
+        saveLocalDeviceSecrets();
+    }
     try {
         localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+        PVProPersistentDB.set('ha_config_backup', haConfigState);
     } catch (e) {}
     try {
         fetch('/api/ha/config', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: haConfigState })
+            body: JSON.stringify({ config: { ...haConfigState, accessToken: '' } })
         }).catch(() => {});
     } catch (e) {}
     energyCounterBaselines.lastHistorySyncMs = 0;
@@ -12761,27 +12793,129 @@ function selectDiscoveredHaDevice(groupName) {
 }
 
 // =========================================================================
-// IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V12.0)
+// IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & LOKALE BACKUP-SCHLÜSSEL (V12.1)
 // =========================================================================
-const AI_SETTINGS_STORAGE_KEY = 'pv_pro_ai_settings_v120';
+const AI_SETTINGS_STORAGE_KEY = 'pv_pro_ai_settings_v121';
+const LOCAL_SECRETS_STORAGE_KEY = 'pvpro_local_device_secrets';
+
+let localDeviceSecretsState = {
+    openRouterApiKey: '',
+    geminiApiKey: '',
+    aiProvider: 'auto', // 'auto' | 'openrouter' | 'gemini'
+    openRouterModel: 'google/gemini-2.5-flash',
+    haAccessToken: ''
+};
+
 let aiAssistantConversationHistory = [];
 let aiAssistantBusy = false;
 let aiServerStatusCache = {
     checked: false,
     hasApiKey: false,
     activeEngine: 'local-inspector',
-    engineLabel: 'Google Gemini 4 / Lokale Diagnose',
+    engineLabel: 'Google Gemini 4 / OpenRouter / Lokale Diagnose',
     statusLabel: 'Bereit'
 };
 let aiAssistantSettings = {
     thinkingLevel: 'HIGH', // 'LOW' | 'HIGH' | 'XHIGH'
     roleFocus: 'general',  // 'general' | 'sensor_finder' | 'telemetry_debugger' | 'wallbox_optimizer' | 'architecture_inspector'
+    openRouterModel: 'google/gemini-2.5-flash',
     settingsOpen: false
 };
 
-function loadAiAssistantSettings() {
+function loadLocalDeviceSecrets() {
     try {
-        const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY);
+        const raw = localStorage.getItem(LOCAL_SECRETS_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                if (typeof parsed.openRouterApiKey === 'string') {
+                    localDeviceSecretsState.openRouterApiKey = parsed.openRouterApiKey.trim();
+                }
+                if (typeof parsed.geminiApiKey === 'string') {
+                    localDeviceSecretsState.geminiApiKey = parsed.geminiApiKey.trim();
+                }
+                if (typeof parsed.aiProvider === 'string' && parsed.aiProvider.trim()) {
+                    localDeviceSecretsState.aiProvider = parsed.aiProvider.trim();
+                }
+                if (typeof parsed.openRouterModel === 'string' && parsed.openRouterModel.trim()) {
+                    localDeviceSecretsState.openRouterModel = parsed.openRouterModel.trim();
+                    aiAssistantSettings.openRouterModel = localDeviceSecretsState.openRouterModel;
+                }
+                if (typeof parsed.haAccessToken === 'string' && parsed.haAccessToken.trim()) {
+                    localDeviceSecretsState.haAccessToken = parsed.haAccessToken.trim();
+                }
+            }
+        }
+        if (!localDeviceSecretsState.haAccessToken && haConfigState && haConfigState.accessToken) {
+            localDeviceSecretsState.haAccessToken = String(haConfigState.accessToken).trim();
+        } else if (localDeviceSecretsState.haAccessToken && haConfigState && !haConfigState.accessToken) {
+            haConfigState.accessToken = localDeviceSecretsState.haAccessToken;
+        }
+    } catch (e) {}
+}
+
+function saveLocalDeviceSecrets() {
+    try {
+        if (haConfigState && haConfigState.accessToken) {
+            localDeviceSecretsState.haAccessToken = String(haConfigState.accessToken).trim();
+        }
+        localStorage.setItem(LOCAL_SECRETS_STORAGE_KEY, JSON.stringify(localDeviceSecretsState));
+        PVProPersistentDB.set('local_device_secrets', localDeviceSecretsState);
+    } catch (e) {}
+}
+
+function getLocalDeviceSecretsForBackup() {
+    loadLocalDeviceSecrets();
+    const haToken = String(haConfigState?.accessToken || localDeviceSecretsState.haAccessToken || '').trim();
+    return {
+        _hinweis: 'PERSOENLICHE SCHLUESSEL (Nur lokal auf deinem Handy & in dieser Backup-Datei gespeichert - niemals auf GitHub)',
+        openRouterApiKey: String(localDeviceSecretsState.openRouterApiKey || '').trim(),
+        geminiApiKey: String(localDeviceSecretsState.geminiApiKey || '').trim(),
+        aiProvider: String(localDeviceSecretsState.aiProvider || 'auto').trim(),
+        openRouterModel: String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim(),
+        haAccessToken: haToken
+    };
+}
+
+function applyLocalDeviceSecretsFromBackup(rawObj) {
+    if (!rawObj || typeof rawObj !== 'object') return;
+    loadLocalDeviceSecrets();
+
+    const src = (rawObj.localDeviceSecrets && typeof rawObj.localDeviceSecrets === 'object')
+        ? rawObj.localDeviceSecrets
+        : rawObj;
+
+    const inOpenRouter = String(src.openRouterApiKey ?? rawObj.openRouterApiKey ?? '').trim();
+    const inGemini = String(src.geminiApiKey ?? rawObj.geminiApiKey ?? '').trim();
+    const inProvider = String(src.aiProvider ?? rawObj.aiProvider ?? '').trim();
+    const inModel = String(src.openRouterModel ?? rawObj.openRouterModel ?? '').trim();
+    const inHaToken = String(src.haAccessToken ?? rawObj.haAccessToken ?? rawObj.haConfigFull?.accessToken ?? '').trim();
+
+    if (inOpenRouter) localDeviceSecretsState.openRouterApiKey = inOpenRouter;
+    if (inGemini) localDeviceSecretsState.geminiApiKey = inGemini;
+    if (inProvider) localDeviceSecretsState.aiProvider = inProvider;
+    if (inModel) {
+        localDeviceSecretsState.openRouterModel = inModel;
+        aiAssistantSettings.openRouterModel = inModel;
+        saveAiAssistantSettings();
+    }
+    if (inHaToken) {
+        localDeviceSecretsState.haAccessToken = inHaToken;
+        haConfigState.accessToken = inHaToken;
+        try {
+            localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+            PVProPersistentDB.set('ha_config_backup', haConfigState);
+        } catch (e) {}
+    }
+
+    saveLocalDeviceSecrets();
+    syncAiSettingsControlsUI();
+}
+
+function loadAiAssistantSettings() {
+    loadLocalDeviceSecrets();
+    try {
+        const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY) || localStorage.getItem('pv_pro_ai_settings_v120');
         if (raw) {
             const parsed = JSON.parse(raw);
             if (parsed && typeof parsed === 'object') {
@@ -12791,10 +12925,16 @@ function loadAiAssistantSettings() {
                 if (['general', 'sensor_finder', 'telemetry_debugger', 'wallbox_optimizer', 'architecture_inspector'].includes(parsed.roleFocus)) {
                     aiAssistantSettings.roleFocus = parsed.roleFocus;
                 }
+                if (typeof parsed.openRouterModel === 'string' && parsed.openRouterModel.trim()) {
+                    aiAssistantSettings.openRouterModel = parsed.openRouterModel.trim();
+                }
                 if (typeof parsed.settingsOpen === 'boolean') {
                     aiAssistantSettings.settingsOpen = parsed.settingsOpen;
                 }
             }
+        }
+        if (localDeviceSecretsState.openRouterModel && localDeviceSecretsState.openRouterModel.trim()) {
+            aiAssistantSettings.openRouterModel = localDeviceSecretsState.openRouterModel.trim();
         }
     } catch (e) {}
 }
@@ -12890,10 +13030,24 @@ function syncAiSettingsControlsUI() {
         roleSelect.value = aiAssistantSettings.roleFocus || 'general';
     }
 
+    const modelSelect = document.getElementById('aiOpenRouterModelSelect');
+    if (modelSelect) {
+        const activeModel = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+        const exists = Array.from(modelSelect.options).some(opt => opt.value === activeModel);
+        if (!exists && activeModel) {
+            const customOpt = document.createElement('option');
+            customOpt.value = activeModel;
+            customOpt.textContent = `${activeModel} (aus JSON-Backup)`;
+            modelSelect.appendChild(customOpt);
+        }
+        modelSelect.value = activeModel;
+    }
+
     updateAiTransparencyBarUI();
 }
 
 function updateAiTransparencyBarUI() {
+    loadLocalDeviceSecrets();
     const engineEl = document.getElementById('aiStatusEngineText');
     const connEl = document.getElementById('aiStatusConnectionText');
     const ctxEl = document.getElementById('aiStatusContextText');
@@ -12904,23 +13058,44 @@ function updateAiTransparencyBarUI() {
     const hasWb = (haConfigState?.customConsumers || []).some(c => isWallboxConsumer(c));
     const thinkLvl = aiAssistantSettings.thinkingLevel || 'HIGH';
 
+    const hasLocalOpenRouter = Boolean(localDeviceSecretsState.openRouterApiKey && localDeviceSecretsState.openRouterApiKey.length > 8);
+    const hasLocalGemini = Boolean(localDeviceSecretsState.geminiApiKey && localDeviceSecretsState.geminiApiKey.length > 8);
+    const activeOrModel = localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash';
+
     if (engineEl) {
-        engineEl.innerText = aiServerStatusCache.hasApiKey
-            ? `Modell: Google Gemini 4 (gemini-4-hydrogen · ${thinkLvl})`
-            : `Modell: Lokale Diagnose-Engine (${thinkLvl})`;
+        if (hasLocalOpenRouter) {
+            engineEl.innerText = `Modell: OpenRouter (${activeOrModel} · ${thinkLvl})`;
+        } else if (hasLocalGemini) {
+            engineEl.innerText = `Modell: Google Gemini 4 (gemini-4-hydrogen · ${thinkLvl})`;
+        } else if (aiServerStatusCache.hasApiKey) {
+            engineEl.innerText = `Modell: ${aiServerStatusCache.engineLabel || 'Google Gemini 4'} (${thinkLvl})`;
+        } else {
+            engineEl.innerText = `Modell: Lokale Diagnose-Engine (${thinkLvl})`;
+        }
     }
     if (connEl) {
-        connEl.innerText = aiServerStatusCache.hasApiKey
-            ? 'Server-Key aktiv (AI Studio Secrets)'
-            : 'Lokal-Inspektor aktiv (Kein GEMINI_API_KEY in Secrets)';
+        if (hasLocalOpenRouter) {
+            connEl.innerText = 'Lokaler OpenRouter-Key aktiv (Handy-Speicher)';
+        } else if (hasLocalGemini) {
+            connEl.innerText = 'Lokaler Gemini-Key aktiv (Handy-Speicher)';
+        } else if (aiServerStatusCache.hasApiKey) {
+            connEl.innerText = 'Server-Key aktiv';
+        } else {
+            connEl.innerText = 'Lokal-Inspektor aktiv (Key in Backup-Datei eintragbar)';
+        }
     }
     if (ctxEl) {
         ctxEl.innerText = `Kontext: ${entitiesCount} HA-Sensoren · ${consumersCount} Verbraucher${hasWb ? ' · Wallbox aktiv' : ''}`;
     }
     if (badgeEl) {
-        badgeEl.innerText = aiServerStatusCache.hasApiKey
-            ? `Gemini 4 · ${thinkLvl}`
-            : `System-Inspektor · ${thinkLvl}`;
+        if (hasLocalOpenRouter) {
+            const shortMod = activeOrModel.split('/').pop() || activeOrModel;
+            badgeEl.innerText = `OpenRouter (${shortMod}) · ${thinkLvl}`;
+        } else if (hasLocalGemini || aiServerStatusCache.hasApiKey) {
+            badgeEl.innerText = `Gemini 4 · ${thinkLvl}`;
+        } else {
+            badgeEl.innerText = `System-Inspektor · ${thinkLvl}`;
+        }
     }
 }
 
@@ -12966,6 +13141,19 @@ function setAiRoleFocus(role) {
     syncAiSettingsControlsUI();
     if (typeof showToastNotification === 'function') {
         showToastNotification('KI-Fokus-Rolle aktualisiert.', 'info');
+    }
+}
+
+function setAiOpenRouterModel(modelId) {
+    const clean = String(modelId || 'google/gemini-2.5-flash').trim();
+    if (!clean) return;
+    aiAssistantSettings.openRouterModel = clean;
+    localDeviceSecretsState.openRouterModel = clean;
+    saveAiAssistantSettings();
+    saveLocalDeviceSecrets();
+    syncAiSettingsControlsUI();
+    if (typeof showToastNotification === 'function') {
+        showToastNotification(`KI-Modell auf „${clean}“ gesetzt (wird auch im Backup gespeichert).`, 'info');
     }
 }
 
@@ -13080,13 +13268,13 @@ function renderAiAssistantConversation() {
             <div class="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 text-xs text-slate-700 dark:text-slate-200 space-y-2">
                 <div class="flex items-center gap-2 font-black text-indigo-800 dark:text-indigo-200 text-sm">
                     <span class="material-symbols-rounded text-lg">auto_awesome</span>
-                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v12.0)</span>
+                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v12.1)</span>
                 </div>
                 <p class="leading-relaxed">
-                    Ich arbeite im Backend mit <strong>Google Gemini 4 (<code>gemini-4-hydrogen</code>)</strong> sowie dem regelkonformen <strong>lokalen System-Inspektor</strong> und kenne deine PV-Auslegung, deine Home-Assistant-Sensoren und deinen <strong>Wallbox-Hybrid-Tracker</strong>.
+                    Ich arbeite wahlweise mit deinem persönlichen <strong>OpenRouter-Key</strong> (z. B. <code>google/gemini-2.5-flash</code>, <code>claude-3.7-sonnet</code>, <code>deepseek</code>), <strong>Google Gemini 4 (<code>gemini-4-hydrogen</code>)</strong> sowie dem <strong>lokalen System-Inspektor</strong> und kenne deine PV-Auslegung, deine Home-Assistant-Sensoren und deinen <strong>Wallbox-Hybrid-Tracker</strong>.
                 </p>
                 <p class="leading-relaxed text-[11px] text-slate-500 dark:text-slate-400">
-                    Über <strong>„Einstellungen“</strong> oben kannst du jederzeit meine <strong>Analyse-Tiefe (Schnell / Ausgewogen / Tiefen-Check)</strong> und meine <strong>Fokus-Rolle</strong> anpassen.
+                    Deine Keys (<code>openRouterApiKey</code>, <code>geminiApiKey</code>, <code>openRouterModel</code>, <code>haAccessToken</code>) stehen ganz oben in den ersten Zeilen deiner <strong>„Speichern unter…“</strong>-Backup-Datei und bleiben zu 100 % lokal auf deinem Handy.
                 </p>
             </div>
         `;
@@ -13193,6 +13381,66 @@ async function submitAiAssistantForm(event) {
     await sendAiAssistantPrompt(text);
 }
 
+async function callOpenRouterDirectFromBrowser(promptText, contextObj) {
+    loadLocalDeviceSecrets();
+    const apiKey = String(localDeviceSecretsState.openRouterApiKey || '').trim();
+    if (!apiKey) return null;
+
+    const modelId = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+    const thinkingLevel = aiAssistantSettings.thinkingLevel || 'HIGH';
+    const roleFocus = aiAssistantSettings.roleFocus || 'general';
+
+    const systemPrompt = `Du bist der integrierte System-Ingenieur, Konfigurator und Telemetrie-Debugger von "PV-Planung Pro 12.1".
+Du hältst dich strikt an AGENTS.md und DEVELOPMENT_GUIDELINES.md:
+- Single Source of Truth: Alle Energiebilanzen laufen über getUnifiedEnergyLedger in telemetry.js.
+- Die Wallbox ist physisch hinter dem Smart Meter angeschlossen und bereits im Hausverbrauch enthalten (nicht doppelt auf den Hausverbrauch addieren).
+- Fokus-Rolle: ${roleFocus} | Analyse-Tiefe: ${thinkingLevel}
+Antworte auf Deutsch und gib valides JSON im Format {"answerMarkdown": "...", "suggestedActions": [{"actionType": "...", "title": "...", "description": "...", "payloadJson": "..."}]} zurück.
+Erlaubte actionType: "assign_main_sensor", "add_or_update_wallbox", "assign_consumer_group", "add_monitored_device", "reset_wallbox_session", "open_modal_tab", "scan_ha_sensors".`;
+
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': window.location.origin || 'https://pvpro.local',
+            'X-Title': 'PV-Planung Pro 12.1'
+        },
+        body: JSON.stringify({
+            model: modelId,
+            messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Nutzer-Anfrage: ${promptText}\n\nAktueller App- & Home-Assistant-Kontext:\n${JSON.stringify(contextObj)}` }
+            ]
+        })
+    });
+
+    if (!res.ok) {
+        const errTxt = await res.text().catch(() => '');
+        throw new Error(`OpenRouter HTTP ${res.status}: ${errTxt.slice(0, 140)}`);
+    }
+
+    const data = await res.json();
+    const rawContent = String(data?.choices?.[0]?.message?.content || '').trim();
+    const cleanedJson = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    try {
+        const parsed = JSON.parse(cleanedJson);
+        return {
+            mode: 'openrouter',
+            model: modelId,
+            answerMarkdown: parsed.answerMarkdown || rawContent,
+            suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : []
+        };
+    } catch (e) {
+        return {
+            mode: 'openrouter',
+            model: modelId,
+            answerMarkdown: rawContent || 'Antwort von OpenRouter erhalten.',
+            suggestedActions: []
+        };
+    }
+}
+
 async function sendAiAssistantPrompt(promptText) {
     if (aiAssistantBusy) return;
     const cleanPrompt = String(promptText || '').trim();
@@ -13203,8 +13451,31 @@ async function sendAiAssistantPrompt(promptText) {
     renderAiAssistantConversation();
 
     try {
+        loadLocalDeviceSecrets();
         const context = collectAiAssistantContext();
         updateAiTransparencyBarUI();
+
+        const hasOpenRouterKey = Boolean(localDeviceSecretsState.openRouterApiKey && localDeviceSecretsState.openRouterApiKey.length > 8);
+        const wantsOpenRouter = hasOpenRouterKey && (localDeviceSecretsState.aiProvider !== 'gemini');
+
+        // 1. Direct autonomous OpenRouter execution in the browser (works on static GitHub Pages & mobile without Node backend)
+        if (wantsOpenRouter) {
+            try {
+                const directOrResult = await callOpenRouterDirectFromBrowser(cleanPrompt, context);
+                if (directOrResult && directOrResult.answerMarkdown) {
+                    aiAssistantConversationHistory.push({
+                        role: 'assistant',
+                        text: directOrResult.answerMarkdown,
+                        suggestedActions: Array.isArray(directOrResult.suggestedActions) ? directOrResult.suggestedActions : []
+                    });
+                    return;
+                }
+            } catch (directErr) {
+                console.warn('Direct browser OpenRouter call failed, falling back to /api/ai/assistant:', directErr.message);
+            }
+        }
+
+        // 2. Server-assisted execution (/api/ai/assistant with localSecrets support + local deterministic inspector fallback)
         const res = await fetch('/api/ai/assistant', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -13213,14 +13484,21 @@ async function sendAiAssistantPrompt(promptText) {
                 context,
                 aiSettings: {
                     thinkingLevel: aiAssistantSettings.thinkingLevel || 'HIGH',
-                    roleFocus: aiAssistantSettings.roleFocus || 'general'
+                    roleFocus: aiAssistantSettings.roleFocus || 'general',
+                    openRouterModel: localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash'
+                },
+                localSecrets: {
+                    openRouterApiKey: localDeviceSecretsState.openRouterApiKey || '',
+                    geminiApiKey: localDeviceSecretsState.geminiApiKey || '',
+                    aiProvider: localDeviceSecretsState.aiProvider || 'auto',
+                    openRouterModel: localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash'
                 }
             })
         });
         const data = await res.json();
-        if (data.mode === 'gemini-4-hydrogen') {
+        if (data.mode === 'gemini-4-hydrogen' || data.mode === 'openrouter') {
             aiServerStatusCache.hasApiKey = true;
-            aiServerStatusCache.activeEngine = 'gemini-4-hydrogen';
+            aiServerStatusCache.activeEngine = data.mode;
         }
         updateAiTransparencyBarUI();
 
@@ -13232,7 +13510,7 @@ async function sendAiAssistantPrompt(promptText) {
     } catch (err) {
         aiAssistantConversationHistory.push({
             role: 'assistant',
-            text: `### ⚠️ Hinweis bei der Abfrage\nVerbindungsfehler zum lokalen Diagnose-Endpunkt (${err.message || 'Unbekannter Fehler'}).`,
+            text: `### ⚠️ Hinweis bei der Abfrage\nVerbindungsfehler (${err.message || 'Unbekannter Fehler'}). Prüfe bei Nutzung eines eigenen OpenRouter-Keys das Feld \`openRouterApiKey\` ganz oben in deiner Backup-Datei.`,
             suggestedActions: []
         });
     } finally {
@@ -13310,6 +13588,9 @@ function executeAiSuggestedAction(msgIdx, actIdx) {
     }
 }
 
+window.getLocalDeviceSecretsForBackup = getLocalDeviceSecretsForBackup;
+window.applyLocalDeviceSecretsFromBackup = applyLocalDeviceSecretsFromBackup;
+window.setAiOpenRouterModel = setAiOpenRouterModel;
 window.resetWallboxSessionNow = resetWallboxSessionNow;
 window.renderWallboxLiveStatusCard = renderWallboxLiveStatusCard;
 window.openAiAssistantModal = openAiAssistantModal;

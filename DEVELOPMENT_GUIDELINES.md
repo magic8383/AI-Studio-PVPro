@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.0 (KI-Assistent & Telemetrie-Debugger Bugfix für `discoveredHaSensors`, konfigurierbare KI-Einstellungen für Analyse-Tiefe `LOW`/`HIGH`/`XHIGH` und Fokus-Rolle sowie transparente Statusleiste für aktives Modell, Verbindungsstatus und Kontext-Umfang)  
+**Aktuelle Version:** 12.1 (Lokale Schlüssel-Konfiguration `localDeviceSecrets` ganz oben in den ersten Zeilen der „Speichern unter…“-Backup-Datei für `openRouterApiKey`, `geminiApiKey`, `openRouterModel` und `haAccessToken`, volle OpenRouter-Unterstützung mit Modell-Auswahl im KI-Fenster + freiem Modell-Feld in JSON, 100 % lokale Gerätespeicherung ohne GitHub-Leakage sowie Bereinigung aller hochgeladenen Screenshots)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

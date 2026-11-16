@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 12.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 12.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 12.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 12.1 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=12.0">
+    <link rel="manifest" href="manifest.json?v=12.1">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.0">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.0">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.0">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.0">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.1">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.1">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.1">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.1">
     <script>
-        // V12.0: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V12.1: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v12.0') {
+                            if (key !== 'pvpro-cache-v12.1') {
                                 caches.delete(key);
                             }
                         });
@@ -48,7 +48,7 @@
                 }
                 if (!('serviceWorker' in navigator)) return;
 
-                var swUrl = './sw.js?v=12.0';
+                var swUrl = './sw.js?v=12.1';
                 var probeRes = await fetch(swUrl, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(function () { return null; });
                 var contentType = probeRes && probeRes.headers ? String(probeRes.headers.get('content-type') || '').toLowerCase() : '';
                 var isJavaScriptMime = Boolean(probeRes && probeRes.ok && (contentType.includes('javascript') || contentType.includes('ecmascript')));
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=12.0" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=12.1" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.0</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.1</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2998,7 +2998,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.0</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.1</p>
                     </div>
                 </button>
             </div>
@@ -4338,9 +4338,9 @@
                 </div>
             </div>
 
-            <!-- Collapsible AI Settings Panel (Thinking Level + Focus Role + Sensor Rescan) -->
+            <!-- Collapsible AI Settings Panel (Thinking Level + Focus Role + OpenRouter Model + Sensor Rescan) -->
             <div id="aiAssistantSettingsPanel" class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/90 space-y-3 shrink-0">
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <!-- 1. Analyse-Tiefe & Denkmodus -->
                     <div class="space-y-1.5">
                         <label class="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between">
@@ -4374,11 +4374,27 @@
                             <option value="architecture_inspector">AGENTS.md Regel- &amp; Architektur-Prüfer</option>
                         </select>
                     </div>
+
+                    <!-- 3. OpenRouter / KI-Sprachmodell Auswahl -->
+                    <div class="space-y-1.5">
+                        <label for="aiOpenRouterModelSelect" class="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center justify-between">
+                            <span>OpenRouter / KI-Modell</span>
+                            <span class="text-[10.5px] text-slate-500 dark:text-slate-400">Auswahl &amp; JSON</span>
+                        </label>
+                        <select id="aiOpenRouterModelSelect" onchange="setAiOpenRouterModel(this.value)" class="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-indigo-500 cursor-pointer">
+                            <option value="google/gemini-2.5-flash">Google Gemini 2.5 Flash (OpenRouter)</option>
+                            <option value="google/gemini-2.5-pro">Google Gemini 2.5 Pro (OpenRouter)</option>
+                            <option value="anthropic/claude-3.7-sonnet">Anthropic Claude 3.7 Sonnet</option>
+                            <option value="openai/gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                            <option value="deepseek/deepseek-chat-v3-0324">DeepSeek Chat V3</option>
+                            <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option>
+                        </select>
+                    </div>
                 </div>
 
-                <!-- 3. Info & Live Sensor Sync Row -->
+                <!-- 4. Info & Live Sensor Sync Row -->
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1 border-t border-slate-200/70 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span>Backend: <strong>Google Gemini 4 (<code>gemini-4-hydrogen</code>)</strong> via Server-Secret (<code>Settings &gt; Secrets: GEMINI_API_KEY</code>) + lokaler Diagnose-Inspektor.</span>
+                    <span>Tipp: <strong>OpenRouter-Key (<code>openRouterApiKey</code>)</strong>, <strong>Gemini-Key (<code>geminiApiKey</code>)</strong>, <strong><code>openRouterModel</code></strong> &amp; <strong><code>haAccessToken</code></strong> stehen ganz oben in den ersten Zeilen deiner <em>„Speichern unter…“</em>-Backup-Datei (nur lokal auf deinem Handy gespeichert, nie auf GitHub).</span>
                     <button type="button" onclick="refreshAiSensorContextNow()" class="px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-800 hover:bg-indigo-500/15 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer transition-all self-start sm:self-auto whitespace-nowrap">
                         <span class="material-symbols-rounded text-xs">refresh</span>
                         <span>HA-Sensoren neu scannen</span>
@@ -4427,13 +4443,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V12.0 (KI-Assistent mit Denkmodus, Fokus-Rolle & Transparenz-Leiste, Wallbox-Status-Kachel & Analyse) -->
-    <script src="qrcode.client.js?v=12.0"></script>
-    <script src="database.js?v=12.0"></script>
-    <script src="content.js?v=12.0"></script>
-    <script src="app.js?v=12.0"></script>
-    <script src="wiring.js?v=12.0"></script>
-    <script src="dossier.js?v=12.0"></script>
-    <script src="telemetry.js?v=12.0"></script>
+    <!-- MODULARE ARCHITEKTUR V12.1 (Lokale Backup-Keys ganz oben in Speichern unter, OpenRouter-Unterstützung & KI-Modell-Auswahl) -->
+    <script src="qrcode.client.js?v=12.1"></script>
+    <script src="database.js?v=12.1"></script>
+    <script src="content.js?v=12.1"></script>
+    <script src="app.js?v=12.1"></script>
+    <script src="wiring.js?v=12.1"></script>
+    <script src="dossier.js?v=12.1"></script>
+    <script src="telemetry.js?v=12.1"></script>
 </body>
 </html>

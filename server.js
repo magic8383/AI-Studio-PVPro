@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '12.0';
+const APP_VERSION = '12.1';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -726,7 +726,10 @@ function loadHaConfig() {
 
 function saveHaConfig(cfg) {
   try {
-    fs.writeFileSync(HA_CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+    // Security rule: Never persist accessToken or local AI keys on server disk (keep tokens strictly on the user's device & local backup file)
+    const sanitized = { ...(cfg || {}), accessToken: '' };
+    delete sanitized.localDeviceSecrets;
+    fs.writeFileSync(HA_CONFIG_FILE, JSON.stringify(sanitized, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not save HA config:', err.message);
   }
@@ -1791,10 +1794,11 @@ function buildLocalDiagnosticFallback(promptText, contextObj = {}, aiSettings = 
 
 app.post('/api/ai/assistant', async (req, res) => {
   try {
-    const { prompt, context, aiSettings } = req.body || {};
+    const { prompt, context, aiSettings, localSecrets } = req.body || {};
     const userPrompt = String(prompt || 'Prüfe meine aktuelle Telemetrie, Wallbox-Einbindung und Sensoren.').trim();
     const safeContext = context && typeof context === 'object' ? context : {};
     const safeSettings = aiSettings && typeof aiSettings === 'object' ? aiSettings : {};
+    const safeSecrets = localSecrets && typeof localSecrets === 'object' ? localSecrets : {};
     const roleFocus = String(safeSettings.roleFocus || 'general');
     const roleLabel = AI_ROLE_LABELS[roleFocus] || AI_ROLE_LABELS.general;
     const rawThinking = String(safeSettings.thinkingLevel || 'HIGH').toUpperCase();
@@ -1807,29 +1811,6 @@ app.post('/api/ai/assistant', async (req, res) => {
       diagnosticCount: Array.isArray(safeContext.sensorDiagnostics) ? safeContext.sensorDiagnostics.length : 0,
       hasWallbox: Boolean(safeContext.wallboxSummary?.hasWallbox)
     };
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || !String(apiKey).trim()) {
-      const fallback = buildLocalDiagnosticFallback(userPrompt, safeContext, { roleFocus, thinkingLevel: thinkingLevelKey });
-      return res.json({
-        success: true,
-        mode: 'local-inspector',
-        engineLabel: 'Lokale Diagnose-Engine (System-Inspektor)',
-        thinkingLevel: thinkingLevelKey,
-        roleFocus,
-        contextStats,
-        ...fallback
-      });
-    }
-
-    const ai = new GoogleGenAI({
-      apiKey: String(apiKey).trim(),
-      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-    });
-
-    const mappedThinkingLevel = thinkingLevelKey === 'LOW'
-      ? ThinkingLevel.LOW
-      : (thinkingLevelKey === 'XHIGH' ? ThinkingLevel.XHIGH : ThinkingLevel.HIGH);
 
     const roleSpecificDirective = {
       general: 'Beantworte alle Fragen zu PV-Auslegung, Home-Assistant-Sensoren, Wallbox-Ladung und System-Einstellungen.',
@@ -1846,7 +1827,7 @@ Du arbeitest strikt regelkonform nach AGENTS.md und DEVELOPMENT_GUIDELINES.md:
 1. Single Source of Truth (Keine Insellösungen): Alle Energiewerte (Heute, Monat, Jahr, Sankey, Autarkie, Wallbox) stammen konsistent aus getUnifiedEnergyLedger().
 2. Wallbox hinter Smart Meter: Die Wallbox ist regulär hinter dem Smart Meter angeschlossen und Teil des Hausverbrauchs. Die dedizierte Wallbox-Status-Kachel auf dem Live-Dashboard nutzt den Hybrid-Session-Tracker (exakter kWh-Zähleranker bei Ladebeginn + verzögerungsfreies Watt-Integral zwischen Zähler-Updates) und berechnet den Live- & Session-PV-Ladeanteil (%).
 3. Modulare Architektur: index.html (DOM & Liquid Glass UI), app.js (PVGIS & Physik), telemetry.js (HA Live-Telemetrie, Wallbox-Tracker, Sankey, Analyse), wiring.js (DC-Verkabelung), dossier.js (DIN VDE 0100-712 Print/PDF).
-4. Antworte immer auf Deutsch, präzise, technisch fundiert und übersichtlich formatiert (mit kurzen Absätzen oder Aufzählungen). Wenn der Nutzer fragt, wer hinter der KI steckt, erkläre transparent, dass Google Gemini 4 (gemini-4-hydrogen) über das Server-Backend (@google/genai) mit dem angegebenen Denkmodus und Live-Telemetrie-Kontext arbeitet.
+4. Antworte immer auf Deutsch, präzise, technisch fundiert und übersichtlich formatiert (mit kurzen Absätzen oder Aufzählungen).
 5. Liefere in "suggestedActions" passende, direkt ausführbare 1-Klick-Aktionen mit gültigem JSON-String in "payloadJson".
 Erlaubte Werte für actionType in suggestedActions:
 - "assign_main_sensor": payloadJson = {"field": "pvPower|loadPower|gridPower|batteryPower|batterySoc|pvEnergyTotal|gridImportMonth|gridExportMonth|loadEnergyMonth|batteryChargeMonth|batteryDischargeMonth", "entityId": "sensor.xyz"}
@@ -1867,6 +1848,91 @@ Erlaubte Werte für actionType in suggestedActions:
       sensorDiagnostics: (safeContext.sensorDiagnostics || []).slice(0, 25),
       availableEntitiesSample: (safeContext.availableEntities || []).slice(0, 150)
     };
+
+    // Check local backup keys (OpenRouter or Gemini) passed from device storage
+    const rawOrKey = String(safeSecrets.openRouterApiKey || '').trim();
+    const rawGemKey = String(safeSecrets.geminiApiKey || '').trim();
+    const prefProvider = String(safeSecrets.aiProvider || 'auto').toLowerCase();
+    const openRouterModel = String(safeSecrets.openRouterModel || safeSettings.openRouterModel || 'google/gemini-2.5-flash').trim() || 'google/gemini-2.5-flash';
+
+    // Auto-detect if user pasted an OpenRouter key (sk-or-...) into either field
+    const effectiveOpenRouterKey = rawOrKey || (rawGemKey.startsWith('sk-or-') ? rawGemKey : '');
+    const effectiveGeminiKey = (!rawGemKey.startsWith('sk-or-') && rawGemKey) ? rawGemKey : String(process.env.GEMINI_API_KEY || '').trim();
+
+    const shouldUseOpenRouter = Boolean(effectiveOpenRouterKey && (prefProvider === 'openrouter' || prefProvider === 'auto' || !effectiveGeminiKey));
+
+    if (shouldUseOpenRouter) {
+      const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${effectiveOpenRouterKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/magic8383/PVPro',
+          'X-Title': `PV-Planung Pro v${APP_VERSION}`
+        },
+        body: JSON.stringify({
+          model: openRouterModel,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content: `${systemInstruction}\n\nAntworte AUSSCHLIESSLICH als valides JSON-Objekt im Format: {"answerMarkdown": "...", "suggestedActions": [{"id": "...", "actionType": "...", "title": "...", "description": "...", "payloadJson": "..."}]}`
+            },
+            {
+              role: 'user',
+              content: `Nutzer-Anfrage: ${userPrompt}\n\nAktueller App- & Telemetrie-Kontext (JSON):\n${JSON.stringify(compactContext)}`
+            }
+          ]
+        })
+      });
+
+      if (!orRes.ok) {
+        const errText = await orRes.text();
+        throw new Error(`OpenRouter HTTP ${orRes.status}: ${errText.slice(0, 180)}`);
+      }
+      const orData = await orRes.json();
+      const rawContent = String(orData?.choices?.[0]?.message?.content || '').trim();
+      const cleanedJson = rawContent.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      let parsedOr = null;
+      try {
+        parsedOr = JSON.parse(cleanedJson);
+      } catch (e) {
+        parsedOr = { answerMarkdown: rawContent || 'Antwort von OpenRouter erhalten.', suggestedActions: [] };
+      }
+
+      return res.json({
+        success: true,
+        mode: 'openrouter',
+        engineLabel: `OpenRouter (${openRouterModel})`,
+        thinkingLevel: thinkingLevelKey,
+        roleFocus,
+        contextStats,
+        answerMarkdown: parsedOr.answerMarkdown || rawContent || 'Diagnose abgeschlossen.',
+        suggestedActions: Array.isArray(parsedOr.suggestedActions) ? parsedOr.suggestedActions : []
+      });
+    }
+
+    if (!effectiveGeminiKey) {
+      const fallback = buildLocalDiagnosticFallback(userPrompt, safeContext, { roleFocus, thinkingLevel: thinkingLevelKey });
+      return res.json({
+        success: true,
+        mode: 'local-inspector',
+        engineLabel: 'Lokale Diagnose-Engine (System-Inspektor)',
+        thinkingLevel: thinkingLevelKey,
+        roleFocus,
+        contextStats,
+        ...fallback
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: effectiveGeminiKey,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const mappedThinkingLevel = thinkingLevelKey === 'LOW'
+      ? ThinkingLevel.LOW
+      : (thinkingLevelKey === 'XHIGH' ? ThinkingLevel.XHIGH : ThinkingLevel.HIGH);
 
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',

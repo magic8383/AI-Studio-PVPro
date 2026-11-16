@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '12.0';
+const APP_VERSION = '12.1';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -1852,17 +1852,36 @@ function exportFullConfiguration() {
 
 function exportFullConfigurationWithToken() {
     const base = exportFullConfiguration();
-    if (typeof getFullHaConfigWithTokenForBackup === 'function') {
-        base.haConfigFull = getFullHaConfigWithTokenForBackup();
-    }
-    return base;
+    const localSecrets = typeof getLocalDeviceSecretsForBackup === 'function'
+        ? getLocalDeviceSecretsForBackup()
+        : {
+            _hinweis: 'Nur lokal auf deinem Handy & in dieser Backup-Datei. Wird NIEMALS zu GitHub hochgeladen!',
+            openRouterApiKey: '',
+            geminiApiKey: '',
+            aiProvider: 'auto',
+            openRouterModel: 'google/gemini-2.5-flash',
+            haAccessToken: ''
+        };
+    const haFull = typeof getFullHaConfigWithTokenForBackup === 'function'
+        ? getFullHaConfigWithTokenForBackup()
+        : null;
+    // Place localDeviceSecrets right at the top (lines 1-10) so it can be edited immediately on the phone without scrolling
+    return {
+        localDeviceSecrets: localSecrets,
+        ...base,
+        haConfigFull: haFull
+    };
 }
 
 function getShareableConfig(fullConfig) {
     const clean = JSON.parse(JSON.stringify(fullConfig));
-    // Always guarantee accessToken is stripped for public QR/GitHub sharing
+    // Always guarantee accessToken and AI keys are stripped for public QR/GitHub sharing
     if (clean.haConfigSanitized) clean.haConfigSanitized.accessToken = '';
     if (clean.haConfig) clean.haConfig.accessToken = '';
+    delete clean.localDeviceSecrets;
+    delete clean.openRouterApiKey;
+    delete clean.geminiApiKey;
+    delete clean.haAccessToken;
     delete clean.haConfigFull;
     // If userDB contains document attachments (base64 PDFs/images), strip large binary payloads for URL/QR transfer
     if (clean.userDB && typeof clean.userDB === 'object') {
@@ -1943,10 +1962,20 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
             localStorage.setItem('pvpro_theme', JSON.stringify(mergedTheme));
             applyThemeSettingsObj(mergedTheme);
         }
+        if (typeof applyLocalDeviceSecretsFromBackup === 'function') {
+            applyLocalDeviceSecretsFromBackup(config.localDeviceSecrets || config);
+        }
+        const topHaToken = String(config.localDeviceSecrets?.haAccessToken || config.haAccessToken || '').trim();
         if (config.haConfigFull && typeof applyFullHaConfigWithTokenFromBackup === 'function') {
+            if (topHaToken && !config.haConfigFull.accessToken) {
+                config.haConfigFull.accessToken = topHaToken;
+            }
             applyFullHaConfigWithTokenFromBackup(config.haConfigFull);
         } else if (config.haConfigSanitized && typeof applySanitizedHaConfigFromProject === 'function') {
             applySanitizedHaConfigFromProject(config.haConfigSanitized);
+            if (topHaToken && typeof applyLocalDeviceSecretsFromBackup === 'function') {
+                applyLocalDeviceSecretsFromBackup({ haAccessToken: topHaToken });
+            }
         }
         if (config.performanceRecords && typeof applyPerformanceRecordsFromProject === 'function') {
             applyPerformanceRecordsFromProject(config.performanceRecords);
@@ -1970,10 +1999,19 @@ function importFullConfiguration(config, sourceLabel = 'Geteilte Konfiguration')
         if (typeof renderLiveCockpitUI === 'function') renderLiveCockpitUI();
         if (typeof renderAnalysisSection === 'function') renderAnalysisSection();
         
-        const hasTokenRestored = Boolean(config.haConfigFull && config.haConfigFull.accessToken);
+        const hasTokenRestored = Boolean((config.haConfigFull && config.haConfigFull.accessToken) || topHaToken);
+        const hasAiKeyRestored = Boolean(
+            config.localDeviceSecrets?.openRouterApiKey ||
+            config.localDeviceSecrets?.geminiApiKey ||
+            config.openRouterApiKey ||
+            config.geminiApiKey
+        );
+        const restoredParts = [];
+        if (hasTokenRestored) restoredParts.push('HA-Token');
+        if (hasAiKeyRestored) restoredParts.push('KI-Key');
         showToastNotification(
-            hasTokenRestored
-                ? `✅ Komplettpaket (${sourceLabel}) inkl. Home Assistant Token & Sensoren sofort geladen!`
+            restoredParts.length > 0
+                ? `✅ Komplettpaket (${sourceLabel}) inkl. ${restoredParts.join(' & ')} lokal auf dem Gerät gespeichert!`
                 : `✅ Konfiguration (${sourceLabel}) inkl. Sensoren übernommen!`,
             'success'
         );
