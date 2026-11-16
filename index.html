@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 11.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.7 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 11.6 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.7 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=11.6">
+    <link rel="manifest" href="manifest.json?v=11.7">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.6">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.6">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.6">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.6">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.7">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.7">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.7">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.7">
     <script>
-        // V11.6: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V11.7: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v11.6') {
+                            if (key !== 'pvpro-cache-v11.7') {
                                 caches.delete(key);
                             }
                         });
@@ -48,7 +48,7 @@
                 }
                 if (!('serviceWorker' in navigator)) return;
 
-                var swUrl = './sw.js?v=11.6';
+                var swUrl = './sw.js?v=11.7';
                 var probeRes = await fetch(swUrl, { method: 'GET', cache: 'no-store', credentials: 'same-origin' }).catch(function () { return null; });
                 var contentType = probeRes && probeRes.headers ? String(probeRes.headers.get('content-type') || '').toLowerCase() : '';
                 var isJavaScriptMime = Boolean(probeRes && probeRes.ok && (contentType.includes('javascript') || contentType.includes('ecmascript')));
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=11.6" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.7" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.6</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.7</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1661,9 +1661,9 @@
                 </div>
             </div>
 
-            <!-- 5. Eingefasster Abschnitt: Raumklima & Temperaturen (°C + 💧 Luftfeuchtigkeit + 24h-Kurven-Popup bei Klick) -->
-            <div id="homeCustomWeatherSection" class="space-y-2.5">
-                <div class="flex items-center justify-between px-1 pt-1">
+            <!-- 5. Kompakte Kachelleiste: Raumklima & Temperaturen (°C + % rF + 24h-Kurven-Popup bei Klick) -->
+            <div id="homeCustomWeatherSection" class="space-y-2">
+                <div class="flex items-center justify-between px-1 pt-0.5">
                     <div class="flex items-center gap-2">
                         <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px]">device_thermostat</span>
                         <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900 dark:text-white tracking-tight">Raumklima &amp; Temperaturen</h2>
@@ -1674,20 +1674,16 @@
                     </button>
                 </div>
 
-                <div class="dash-main-card rounded-[28px] p-4 sm:p-5 transition-all">
-                    <div id="homeCustomWeatherGrid" class="grid grid-cols-2 gap-3 sm:gap-3.5">
+                <div class="dash-main-card rounded-[26px] p-3.5 sm:p-4 transition-all">
+                    <div id="homeCustomWeatherGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
                         <!-- Dynamically populated by renderHomeCustomWeatherSensors() -->
                     </div>
-                    <p class="text-[12px] text-slate-500 dark:text-slate-400 mt-3.5 flex items-center justify-between gap-2">
-                        <span>Tipp auf einen Raum öffnet den 24h-Temperatur- &amp; Feuchteverlauf</span>
-                        <span class="tabular-nums">°C · % rF</span>
-                    </p>
                 </div>
             </div>
 
-            <!-- 6. Eingefasster Abschnitt: Meine Geräte & Hardware-Kachelleiste (WR, Batterie, Smart Meter + Direkt-IP) -->
-            <div id="homeMonitoredDevicesSection" class="space-y-2.5">
-                <div class="flex items-center justify-between px-1 pt-1">
+            <!-- 6. Kompakte Kachelleiste: Meine Geräte & Hardware (WR, Batterie, Smart Meter + Direkt-IP) -->
+            <div id="homeMonitoredDevicesSection" class="space-y-2">
+                <div class="flex items-center justify-between px-1 pt-0.5">
                     <div class="flex items-center gap-2">
                         <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[20px]">developer_board</span>
                         <h2 class="text-[17px] sm:text-[18px] font-bold text-slate-900 dark:text-white tracking-tight">Meine Geräte &amp; Hardware</h2>
@@ -1699,19 +1695,15 @@
                         </button>
                         <button type="button" onclick="switchTab('devices')" class="text-xs font-semibold text-teal-700 dark:text-teal-300 hover:underline flex items-center gap-1 cursor-pointer" title="Alle Gerätesensoren &amp; Diagnose öffnen">
                             <span>Alle Infos</span>
-                            <span class="material-symbols-rounded text-sm">arrow_forward</span>
+                            <span class="material-symbols-rounded text-sm">chevron_right</span>
                         </button>
                     </div>
                 </div>
 
-                <div class="dash-main-card rounded-[28px] p-4 sm:p-5 transition-all">
-                    <div id="homeMonitoredDevicesGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-3.5">
+                <div class="dash-main-card rounded-[26px] p-3.5 sm:p-4 transition-all">
+                    <div id="homeMonitoredDevicesGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
                         <!-- Dynamically populated by renderHomeMonitoredDevicesBar() -->
                     </div>
-                    <p class="text-[12px] text-slate-500 dark:text-slate-400 mt-3.5 flex items-center justify-between gap-2">
-                        <span>Tipp auf ein Gerät zeigt alle HA-Sensoren · IP-Button öffnet das Web-Interface</span>
-                        <span class="tabular-nums">Live-Diagnose</span>
-                    </p>
                 </div>
             </div>
         </div>
@@ -2973,7 +2965,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.6</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.7</p>
                     </div>
                 </button>
             </div>
@@ -3367,8 +3359,8 @@
                 </button>
             </div>
 
-            <!-- 4-Tab Umschalter: 1. Energie & PV | 2. Verbraucher & Gruppen | 3. Klima & Geräte | 4. Proxy-Hilfe -->
-            <div class="px-3 sm:px-5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/80 grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2">
+            <!-- 5-Tab Umschalter: 1. Energie & PV | 2. Verbraucher | 3. Klima & Wetter | 4. Geräte | 5. Proxy-Hilfe -->
+            <div class="px-3 sm:px-5 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/80 grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                 <button type="button" id="btn-ha-tab-config" onclick="switchHaModalTab('config')" class="px-2.5 py-2 rounded-xl bg-teal-600 text-white text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate shadow-xs">
                     <span class="material-symbols-rounded text-base shrink-0">bolt</span>
                     <span class="truncate">1. Energie &amp; PV</span>
@@ -3378,12 +3370,16 @@
                     <span class="truncate">2. Verbraucher</span>
                 </button>
                 <button type="button" id="btn-ha-tab-climate" onclick="switchHaModalTab('climate')" class="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate">
-                    <span class="material-symbols-rounded text-base text-sky-500 shrink-0">developer_board</span>
-                    <span class="truncate">3. Klima &amp; Geräte</span>
+                    <span class="material-symbols-rounded text-base text-sky-500 shrink-0">device_thermostat</span>
+                    <span class="truncate">3. Klima &amp; Wetter</span>
                 </button>
-                <button type="button" id="btn-ha-tab-guide" onclick="switchHaModalTab('guide')" class="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate">
+                <button type="button" id="btn-ha-tab-devices" onclick="switchHaModalTab('devices')" class="px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate">
+                    <span class="material-symbols-rounded text-base text-teal-500 shrink-0">developer_board</span>
+                    <span class="truncate">4. Geräte</span>
+                </button>
+                <button type="button" id="btn-ha-tab-guide" onclick="switchHaModalTab('guide')" class="col-span-2 sm:col-span-1 px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer truncate">
                     <span class="material-symbols-rounded text-base text-amber-500 shrink-0">menu_book</span>
-                    <span class="truncate">4. Proxy-Hilfe</span>
+                    <span class="truncate">5. Proxy-Hilfe</span>
                 </button>
             </div>
 
@@ -3906,59 +3902,15 @@
                 </div>
 
                 <!-- ========================================================= -->
-                <!-- TAB-PANEL C: 3. KLIMA, WETTER & MEINE GERÄTE / IP-LINKS    -->
+                <!-- TAB-PANEL C: 3. KLIMA & WETTER (STARTSEITE)               -->
                 <!-- ========================================================= -->
                 <div id="ha-modal-panel-climate" class="hidden space-y-5">
-                    <!-- Sektion 1: Meine Geräte & Hardware-Diagnose (Manuelle Geräteauswahl + Direkt-IP) -->
-                    <div id="haMonitoredDevicesSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-teal-500/30 space-y-3.5">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                            <div>
-                                <h4 class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                                    <span class="material-symbols-rounded text-teal-500 text-lg">developer_board</span>
-                                    <span>Meine Geräte &amp; Hardware-Infos (Startseite &amp; Geräte-Diagnose inkl. IP-Link)</span>
-                                </h4>
-                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                                    Wähle deine wichtigsten Geräte (z. B. <strong>Fronius Wechselrichter</strong>, <strong>BYD Batterie</strong>, <strong>Smart Meter</strong>, <strong>OpenDTU / Hoymiles</strong>) aus Home Assistant aus. Die App zieht sich automatisch <strong>alle verfügbaren Sensoren</strong> des Geräts und bietet einen Direkt-Button auf die lokale <strong>IP-Weboberfläche</strong>.
-                                </p>
-                            </div>
-                            <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
-                                <button type="button" onclick="openHaDeviceDiscoveryPicker()" class="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs">
-                                    <span class="material-symbols-rounded text-base">devices</span>
-                                    <span>Gerät aus HA auswählen</span>
-                                </button>
-                                <button type="button" onclick="addHaMonitoredDeviceManual()" class="px-2.5 py-2 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer" title="Manuelles Gerät hinzufügen">
-                                    <span class="material-symbols-rounded text-base">add</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Discovered HA Devices Quick-Select Drawer (shown when clicking 'Gerät aus HA auswählen') -->
-                        <div id="haDiscoveredDevicesPickerBox" class="hidden p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-teal-500/40 space-y-2.5">
-                            <div class="flex items-center justify-between gap-2">
-                                <span class="text-xs font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1.5">
-                                    <span class="material-symbols-rounded text-base">radar</span>
-                                    <span>Gefundene Geräte in Home Assistant (Tippen zum Hinzufügen)</span>
-                                </span>
-                                <button type="button" onclick="document.getElementById('haDiscoveredDevicesPickerBox').classList.add('hidden')" class="text-xs font-bold text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">Schließen ✕</button>
-                            </div>
-                            <input type="text" id="haDiscoveredDevicesSearchInput" oninput="renderHaDiscoveredDevicesList(this.value)" placeholder="Gerätename suchen (z. B. Fronius, BYD, SolarNet, Shelly)..." class="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white outline-none focus:border-teal-500">
-                            <div id="haDiscoveredDevicesListContainer" class="max-h-60 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
-                                <!-- Dynamically populated by renderHaDiscoveredDevicesList() -->
-                            </div>
-                        </div>
-
-                        <div id="haMonitoredDevicesMappingContainer" class="space-y-2.5">
-                            <!-- Dynamisch gefüllt durch renderHaMonitoredDevicesEditor() -->
-                        </div>
-                    </div>
-
-                    <!-- Sektion 2: Wetter-Prognose & Raumklima-Sensoren -->
                     <div id="haWeatherSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-4">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div>
                                 <h4 class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
                                     <span class="material-symbols-rounded text-sky-500 text-lg">partly_cloudy_day</span>
-                                    <span>Wetter-Prognose &amp; Raumklima-Sensoren (Startseite · Ebene 0)</span>
+                                    <span>Wetter-Prognose &amp; Raumklima-Sensoren (Startseite · Kachelleiste)</span>
                                 </h4>
                                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
                                     Hinterlege für jeden Raum den <strong>Temperatur-Sensor (°C)</strong> und optional den <strong>Luftfeuchtigkeits-Sensor (% rF)</strong>. Ist die Luftfeuchtigkeit leer, wird sie automatisch vom selben Raum/Gerät erkannt.
@@ -3993,6 +3945,57 @@
 
                         <div id="haWeatherSensorsMappingContainer" class="space-y-2.5">
                             <!-- Dynamisch gefüllt durch renderHaWeatherSensorsEditor() -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ========================================================= -->
+                <!-- TAB-PANEL D: 4. MEINE GERÄTE & HARDWARE (EIGENER TAB V11.7) -->
+                <!-- ========================================================= -->
+                <div id="ha-modal-panel-devices" class="hidden space-y-5">
+                    <div id="haMonitoredDevicesSectionBox" class="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-teal-500/30 space-y-3.5">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                            <div>
+                                <h4 class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                    <span class="material-symbols-rounded text-teal-500 text-lg">developer_board</span>
+                                    <span>Meine Geräte &amp; Hardware-Infos (Startseite &amp; Geräte-Diagnose inkl. IP-Link)</span>
+                                </h4>
+                                <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
+                                    Wähle deine wichtigsten Geräte (z. B. <strong>Fronius Wechselrichter</strong>, <strong>BYD Batterie</strong>, <strong>Smart Meter</strong>, <strong>OpenDTU / Hoymiles</strong>, <strong>Shelly</strong>) aus Home Assistant aus. Die App zieht sich automatisch <strong>alle verfügbaren Sensoren</strong> des Geräts und bietet einen Direkt-Button auf die lokale <strong>IP-Weboberfläche</strong>.
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+                                <button type="button" onclick="openHaDeviceDiscoveryPicker(true)" class="px-3 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs">
+                                    <span class="material-symbols-rounded text-base">devices</span>
+                                    <span>Geräte aus HA laden &amp; wählen</span>
+                                </button>
+                                <button type="button" onclick="addHaMonitoredDeviceManual()" class="px-2.5 py-2 rounded-xl bg-slate-200/80 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer" title="Manuelles Gerät hinzufügen">
+                                    <span class="material-symbols-rounded text-base">add</span>
+                                    <span class="hidden sm:inline">Manuell</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Discovered HA Devices Quick-Select Drawer -->
+                        <div id="haDiscoveredDevicesPickerBox" class="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-teal-500/40 space-y-2.5">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-xs font-bold text-teal-700 dark:text-teal-300 flex items-center gap-1.5">
+                                    <span class="material-symbols-rounded text-base">radar</span>
+                                    <span>Gefundene Geräte &amp; Sensor-Gruppen in Home Assistant (Tippen zum Hinzufügen / Entfernen)</span>
+                                </span>
+                                <button type="button" onclick="openHaDeviceDiscoveryPicker(true)" class="text-xs font-bold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 cursor-pointer">
+                                    <span class="material-symbols-rounded text-sm">refresh</span>
+                                    <span>Neu scannen</span>
+                                </button>
+                            </div>
+                            <input type="text" id="haDiscoveredDevicesSearchInput" oninput="renderHaDiscoveredDevicesList(this.value)" placeholder="Gerätename oder Sensor suchen (z. B. Fronius, BYD, SolarNet, Smart Meter, Shelly)..." class="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                            <div id="haDiscoveredDevicesListContainer" class="max-h-64 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                                <!-- Dynamically populated by renderHaDiscoveredDevicesList() -->
+                            </div>
+                        </div>
+
+                        <div id="haMonitoredDevicesMappingContainer" class="space-y-2.5">
+                            <!-- Dynamisch gefüllt durch renderHaMonitoredDevicesEditor() -->
                         </div>
                     </div>
                 </div>
@@ -4250,13 +4253,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V11.6 (Stromausfall-0W-Guard, Verbraucher-Gruppen & Geräte-Diagnose inkl. IP-Links) -->
-    <script src="qrcode.client.js?v=11.6"></script>
-    <script src="database.js?v=11.6"></script>
-    <script src="content.js?v=11.6"></script>
-    <script src="app.js?v=11.6"></script>
-    <script src="wiring.js?v=11.6"></script>
-    <script src="dossier.js?v=11.6"></script>
-    <script src="telemetry.js?v=11.6"></script>
+    <!-- MODULARE ARCHITEKTUR V11.7 (Ausklappbare Diagramm-Gruppenkacheln, 4. Geräte-Tab & Kompakte Startseiten-Leisten) -->
+    <script src="qrcode.client.js?v=11.7"></script>
+    <script src="database.js?v=11.7"></script>
+    <script src="content.js?v=11.7"></script>
+    <script src="app.js?v=11.7"></script>
+    <script src="wiring.js?v=11.7"></script>
+    <script src="dossier.js?v=11.7"></script>
+    <script src="telemetry.js?v=11.7"></script>
 </body>
 </html>

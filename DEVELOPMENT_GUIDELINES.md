@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.6 (Stromausfall-/Offline-`0 W`-Schutz gegen eingefrorene horizontale Linien im Live- & Tagesdiagramm, eigener Reiter „2. Verbraucher“ mit aufklappbaren Verbrauchergruppen + Gruppenkurven im Diagramm sowie neue Geräte-Diagnoseleiste auf der Startseite & Hardware-Diagnoseseite mit allen HA-Sensoren und direktem IP-Web-UI-Link)  
+**Aktuelle Version:** 11.7 (Ausklappbare Gruppen-Kacheln unter dem Tagesdiagramm mit standardmäßig ausgeblendeten Einzelverbrauchern, eigener Einstellungen-Tab „4. Geräte“ mit schneller Home-Assistant-Endgeräte-Auswahl & Sofort-Speicherung sowie kompakte mehrspaltige Kachelleisten für Raumklima & Temperaturen und Meine Geräte & Hardware auf der Startseite)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

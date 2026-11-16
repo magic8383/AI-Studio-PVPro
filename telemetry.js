@@ -61,6 +61,7 @@ let lastKnownHaReadingMap = new Map(); // entity_id -> latest numeric reading (s
 let lastKnownHaAvailabilityMap = new Map(); // entity_id -> 'ok' | 'unavailable' | 'unknown' | ...
 let lastKnownHaUpdatedMsMap = new Map(); // entity_id -> timestamp (ms) of last_updated / last_changed in HA
 let expandedConsumerGroups = new Set(); // Set of groupName strings currently expanded on Live dashboard
+let expandedChartConsumerGroups = new Set(); // Set of groupSlug strings currently expanded in #dash_curve_tiles_grid below chart
 let selectedDiagnosticDeviceFilter = '__ALL__';
 let devicesDiagnosticSearchQuery = '';
 let sensorDiagnosticsByEntity = {}; // entity_id -> { status, reason, filteredSpikeKwh, spikeDateStr, cleanDeltaKwh, rawDeltaKwh, updatedAt }
@@ -4542,8 +4543,22 @@ function toggleConsumerGroupExpand(groupName, event = null) {
     }
     renderLiveCockpitUI();
 }
+function toggleChartConsumerGroupExpand(groupSlug, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const slug = String(groupSlug || '').trim();
+    if (!slug) return;
+    if (expandedChartConsumerGroups.has(slug)) {
+        expandedChartConsumerGroups.delete(slug);
+    } else {
+        expandedChartConsumerGroups.add(slug);
+    }
+    renderIntradayCurveSection();
+}
 if (typeof window !== 'undefined') {
     window.toggleConsumerGroupExpand = toggleConsumerGroupExpand;
+    window.toggleChartConsumerGroupExpand = toggleChartConsumerGroupExpand;
 }
 
 function toggleConsumerSortMode() {
@@ -4989,7 +5004,10 @@ function getAvailableCurveDefinitions() {
 
         defs.push({
             key: gKey,
-            name: `${grp.groupName} (${grp.members.length})`,
+            name: `∑ ${grp.groupName}`,
+            groupName: grp.groupName,
+            groupSlug: grp.slug,
+            memberCount: grp.members.length,
             color: grp.color || '#6366f1',
             axis: 'yPower',
             unit: 'W',
@@ -5022,10 +5040,14 @@ function getAvailableCurveDefinitions() {
         const cPeakW = Math.max(liveW, peaks[cKey] || 0, isDay ? 0 : (dayPeakCache[cKey] || 0));
         const diagRefKwh = isDay ? rawConsExplicit : Math.max(rawConsExplicit ?? 0, rawConsMonthExplicit ?? 0, cKwh);
         const consDiag = getChannelEnergyDiagnosticBadge(cc.energyEntity, diagRefKwh, calcKwh);
+        const rawGrpName = String(cc.group || '').trim();
+        const parentGroupSlug = rawGrpName ? normalizeConsumerGroupSlug(rawGrpName) : null;
 
         defs.push({
             key: cKey,
             name: cc.name || `Verbraucher ${idx + 1}`,
+            parentGroupName: rawGrpName || null,
+            parentGroupSlug,
             color: consumerPalette[idx % consumerPalette.length],
             axis: 'yPower',
             unit: 'W',
@@ -5187,21 +5209,23 @@ function renderIntradayCurveSection(baseline) {
         activeCountBadge.innerText = `${activeCount} / ${defs.length} Kanäle aktiv`;
     }
 
-    // 3. Render Fullscreen Overlay Chips (Theme-Aware for Light & Dark Mode)
-    const buildChipsHtml = () => defs.map(d => {
-        const isActive = activeCurveKeys.has(d.key);
-        const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
-        return `
-        <button type="button" onclick="toggleIntradayCurve('${d.key}')"
-            class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer select-none whitespace-nowrap shrink-0 ${
-                isActive
-                    ? 'bg-slate-900 text-white dark:bg-[#192c34] dark:text-white shadow-2xs ring-1 ring-slate-900/10 dark:ring-white/15'
-                    : 'bg-slate-200/80 text-slate-500 dark:bg-slate-900/40 dark:text-slate-500 opacity-55 hover:opacity-85'
-            }"
-            style="border-left: 3px solid ${isActive ? d.color : '#64748b'}">
-            <span>${safeName}</span>
-        </button>`;
-    }).join('');
+    // 3. Render Fullscreen Overlay Chips (Theme-Aware for Light & Dark Mode; grouped members hidden unless active or expanded)
+    const buildChipsHtml = () => defs
+        .filter(d => !d.parentGroupSlug || expandedChartConsumerGroups.has(d.parentGroupSlug) || activeCurveKeys.has(d.key))
+        .map(d => {
+            const isActive = activeCurveKeys.has(d.key);
+            const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
+            return `
+            <button type="button" onclick="toggleIntradayCurve('${d.key}')"
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer select-none whitespace-nowrap shrink-0 ${
+                    isActive
+                        ? 'bg-slate-900 text-white dark:bg-[#192c34] dark:text-white shadow-2xs ring-1 ring-slate-900/10 dark:ring-white/15'
+                        : 'bg-slate-200/80 text-slate-500 dark:bg-slate-900/40 dark:text-slate-500 opacity-55 hover:opacity-85'
+                }"
+                style="border-left: 3px solid ${isActive ? d.color : '#64748b'}">
+                <span>${safeName}</span>
+            </button>`;
+        }).join('');
 
     const chipsEl = document.getElementById('dash_curve_legend_chips');
     if (chipsEl) chipsEl.innerHTML = buildChipsHtml();
@@ -5211,15 +5235,18 @@ function renderIntradayCurveSection(baseline) {
     // 3B. Apply In-Place Full-Bleed Expansion State to DOM
     applyIntradayInlineExpandDOM();
 
-    // 4. Render Compact Technical Channel Cards Below Chart (Theme-Aware for Light & Dark Mode)
+    // 4. Render Compact Technical Channel Cards Below Chart (Grouped consumer tiles hidden by default, expandable via group tile button)
     const isDark = document.documentElement.classList.contains('dark');
     const tilesGrid = document.getElementById('dash_curve_tiles_grid');
     if (tilesGrid) {
-        tilesGrid.innerHTML = defs.map(d => {
+        const renderSingleCurveTileHtml = (d, isExpandedGroupMember = false) => {
             const isActive = activeCurveKeys.has(d.key);
             const isSoloFocused = currentFocusedCurveMode && activeCurveKeys.size === 1 && isActive;
             const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
             const safeKeyJs = String(d.key).replace(/'/g, "\\'");
+            const isConsumerGroup = d.category === 'consumer_group' && d.groupSlug;
+            const isGroupExpanded = isConsumerGroup && expandedChartConsumerGroups.has(d.groupSlug);
+            const safeGroupSlugJs = isConsumerGroup ? String(d.groupSlug).replace(/'/g, "\\'") : '';
 
             let cardStyle = '';
             if (isDark) {
@@ -5232,25 +5259,47 @@ function renderIntradayCurveSection(baseline) {
                     : `border-left: 3.5px solid #cbd5e1; border-top: 1px solid rgba(203, 213, 225, 0.85); border-right: 1px solid rgba(203, 213, 225, 0.85); border-bottom: 1px solid rgba(203, 213, 225, 0.85); background: rgba(248, 250, 252, 0.88); opacity: 0.74;`;
             }
 
+            const expandGroupBtnHtml = isConsumerGroup
+                ? `<button type="button"
+                    onclick="toggleChartConsumerGroupExpand('${safeGroupSlugJs}', event)"
+                    title="${isGroupExpanded ? 'Einzelverbraucher dieser Gruppe ausblenden' : `Alle ${d.memberCount} Einzelverbraucher dieser Gruppe aufklappen`}"
+                    class="h-6 px-1.5 rounded-lg flex items-center gap-0.5 shrink-0 transition-colors cursor-pointer border ${
+                        isGroupExpanded
+                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-2xs'
+                            : 'bg-indigo-500/12 dark:bg-indigo-400/15 text-indigo-700 dark:text-indigo-300 border-indigo-500/25 hover:bg-indigo-500/25'
+                    }">
+                    <span class="text-[10.5px] font-bold tabular-nums">${d.memberCount}</span>
+                    <span class="material-symbols-rounded text-[14px] leading-none transition-transform duration-200 ${isGroupExpanded ? 'rotate-180' : ''}">expand_more</span>
+                   </button>`
+                : '';
+
+            const memberPrefixBadge = isExpandedGroupMember && d.parentGroupName
+                ? `<span class="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 shrink-0" title="Gruppe: ${escapeHtml(d.parentGroupName)}">↳</span>`
+                : '';
+
             return `
             <div onclick="toggleIntradayCurve('${safeKeyJs}')"
                 style="${cardStyle}"
-                class="rounded-2xl px-3 py-2.5 cursor-pointer select-none transition-all duration-150 hover:opacity-100 group">
+                class="rounded-2xl px-3 py-2.5 cursor-pointer select-none transition-all duration-150 hover:opacity-100 group ${isExpandedGroupMember ? 'ring-1 ring-indigo-500/30 dark:ring-indigo-400/25' : ''}">
                 <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
                         <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${isActive ? d.color : '#94a3b8'}"></span>
+                        ${memberPrefixBadge}
                         <p class="text-[12.5px] ${isActive ? 'font-medium text-slate-900 dark:text-slate-100' : 'font-normal text-slate-600 dark:text-slate-400'} truncate">${safeName}</p>
                     </div>
-                    <button type="button"
-                        onclick="focusSingleIntradayCurve('${safeKeyJs}', event)"
-                        title="${isSoloFocused ? 'Alle Kurven einblenden' : 'Nur diese Kurve fokussieren (Solo)'}"
-                        class="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
-                            isSoloFocused
-                                ? 'bg-teal-600 text-white dark:bg-teal-400 dark:text-slate-950 font-semibold'
-                                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10'
-                        }">
-                        <span class="material-symbols-rounded text-[14px]">center_focus_strong</span>
-                    </button>
+                    <div class="flex items-center gap-1 shrink-0">
+                        ${expandGroupBtnHtml}
+                        <button type="button"
+                            onclick="focusSingleIntradayCurve('${safeKeyJs}', event)"
+                            title="${isSoloFocused ? 'Alle Kurven einblenden' : 'Nur diese Kurve fokussieren (Solo)'}"
+                            class="w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-colors cursor-pointer ${
+                                isSoloFocused
+                                    ? 'bg-teal-600 text-white dark:bg-teal-400 dark:text-slate-950 font-semibold'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-white/10'
+                            }">
+                            <span class="material-symbols-rounded text-[14px]">center_focus_strong</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="mt-1.5 flex items-baseline justify-between gap-1 tabular-nums">
                     <p class="text-[16px] sm:text-[17px] font-bold ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight">${d.liveDisplay}</p>
@@ -5263,7 +5312,22 @@ function renderIntradayCurveSection(baseline) {
                     <p class="text-[12px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-snug truncate">${d.subLine2 || ''}</p>
                 </div>
             </div>`;
-        }).join('');
+        };
+
+        const orderedTilesHtml = [];
+        defs.forEach(d => {
+            // Skip individual consumers that belong to a group here; they are rendered right after their group tile when expanded
+            if (d.parentGroupSlug) return;
+            orderedTilesHtml.push(renderSingleCurveTileHtml(d, false));
+            if (d.category === 'consumer_group' && d.groupSlug && expandedChartConsumerGroups.has(d.groupSlug)) {
+                const groupMembers = defs.filter(m => m.parentGroupSlug === d.groupSlug);
+                groupMembers.forEach(memberDef => {
+                    orderedTilesHtml.push(renderSingleCurveTileHtml(memberDef, true));
+                });
+            }
+        });
+
+        tilesGrid.innerHTML = orderedTilesHtml.join('');
     }
 
     // 5. Render Dual-Axis Chart.js Line Chart first so intradayVisibleStartIdx is up to date
@@ -8485,28 +8549,37 @@ function switchHaModalTab(tab = 'config') {
     const panelCfg = document.getElementById('ha-modal-panel-config');
     const panelConsumers = document.getElementById('ha-modal-panel-consumers');
     const panelClimate = document.getElementById('ha-modal-panel-climate');
+    const panelDevices = document.getElementById('ha-modal-panel-devices');
     const panelGuide = document.getElementById('ha-modal-panel-guide');
     const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
     const btnConsumers = document.getElementById('btn-ha-tab-consumers');
     const btnClimate = document.getElementById('btn-ha-tab-climate');
+    const btnDevices = document.getElementById('btn-ha-tab-devices');
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
     const scrollBody = document.getElementById('haModalScrollBody');
 
-    const activeCls = "px-2.5 py-2 rounded-xl bg-teal-600 text-white text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs text-center leading-tight";
-    const inactiveCls = "px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer text-center leading-tight";
+    const activeCls = "px-2.5 py-2 rounded-xl bg-teal-600 text-white text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs text-center leading-tight truncate";
+    const inactiveCls = "px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer text-center leading-tight truncate";
+    const guideExtraCls = " col-span-2 sm:col-span-1";
 
     if (panelCfg) panelCfg.classList.toggle('hidden', tab !== 'config');
     if (panelConsumers) panelConsumers.classList.toggle('hidden', tab !== 'consumers');
     if (panelClimate) panelClimate.classList.toggle('hidden', tab !== 'climate');
+    if (panelDevices) panelDevices.classList.toggle('hidden', tab !== 'devices');
     if (panelGuide) panelGuide.classList.toggle('hidden', tab !== 'guide');
 
     if (btnCfg) btnCfg.className = tab === 'config' ? activeCls : inactiveCls;
     if (btnConsumers) btnConsumers.className = tab === 'consumers' ? activeCls : inactiveCls;
     if (btnClimate) btnClimate.className = tab === 'climate' ? activeCls : inactiveCls;
-    if (btnGuide) btnGuide.className = tab === 'guide' ? activeCls : inactiveCls;
+    if (btnDevices) btnDevices.className = tab === 'devices' ? activeCls : inactiveCls;
+    if (btnGuide) btnGuide.className = (tab === 'guide' ? activeCls : inactiveCls) + guideExtraCls;
 
     if (scrollBody) {
         scrollBody.scrollTop = 0;
+    }
+
+    if (tab === 'devices') {
+        openHaDeviceDiscoveryPicker(false);
     }
 }
 
@@ -8693,20 +8766,12 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
     }
 
     if (focusSection === 'devices' || scrollTargetId === 'haMonitoredDevicesSectionBox') {
-        switchHaModalTab('climate');
-        setTimeout(() => {
-            document.getElementById('haMonitoredDevicesSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 80);
+        switchHaModalTab('devices');
         return;
     }
 
     if (focusSection === 'climate' || scrollTargetId === 'haWeatherSectionBox') {
         switchHaModalTab('climate');
-        if (scrollTargetId === 'haWeatherSectionBox') {
-            setTimeout(() => {
-                document.getElementById('haWeatherSectionBox')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 80);
-        }
         return;
     }
 
@@ -9108,28 +9173,28 @@ async function fetchHaTemplateDeviceMapInBrowser(rawBaseUrl, rawToken) {
     const cleanTok = cleanHaTokenClient(rawToken);
     if (!cleanUrl || !cleanTok) return {};
 
-    // Query Home Assistant /api/template to resolve real Device Names, Areas, Manufacturer, Model & configuration_url
-    const jinjaTemplate = [
-        "{% set ns = namespace(items=[]) %}",
-        "{% for domain in [states.sensor, states.binary_sensor, states.switch, states.number, states.select] %}",
-        "{% for s in domain %}",
-        "{% set dev = device_attr(s.entity_id, 'name_by_user') or device_attr(s.entity_id, 'name') or '' %}",
-        "{% set area = area_name(s.entity_id) or '' %}",
-        "{% set mfr = device_attr(s.entity_id, 'manufacturer') or '' %}",
-        "{% set mdl = device_attr(s.entity_id, 'model') or '' %}",
-        "{% set sw = device_attr(s.entity_id, 'sw_version') or '' %}",
-        "{% set url = device_attr(s.entity_id, 'configuration_url') or '' %}",
-        "{% if dev or area %}",
-        "{% set ns.items = ns.items + [[s.entity_id, dev, area, mfr, mdl, sw, url]] %}",
+    // Fast deduplicated Jinja template: evaluates unique device_ids once (~20-50 devices) instead of thousands of entities
+    const fastDeviceTemplate = [
+        "{% set dids = states | map(attribute='entity_id') | map('device_id') | unique | reject('none') | list %}",
+        "{% set ns = namespace(devs=[]) %}",
+        "{% for did in dids %}",
+        "{% set dname = device_attr(did, 'name_by_user') or device_attr(did, 'name') or '' %}",
+        "{% if dname %}",
+        "{% set area = area_name(did) or '' %}",
+        "{% set mfr = device_attr(did, 'manufacturer') or '' %}",
+        "{% set mdl = device_attr(did, 'model') or '' %}",
+        "{% set sw = device_attr(did, 'sw_version') or '' %}",
+        "{% set url = device_attr(did, 'configuration_url') or '' %}",
+        "{% set ents = device_entities(did) | list %}",
+        "{% set ns.devs = ns.devs + [[dname, area, mfr, mdl, sw, url, ents]] %}",
         "{% endif %}",
         "{% endfor %}",
-        "{% endfor %}",
-        "{{ ns.items | to_json }}"
+        "{{ ns.devs | to_json }}"
     ].join('');
 
     try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5500);
+        const timer = setTimeout(() => controller.abort(), 5000);
         const res = await fetch(`${cleanUrl}/api/template`, {
             method: 'POST',
             headers: {
@@ -9137,35 +9202,40 @@ async function fetchHaTemplateDeviceMapInBrowser(rawBaseUrl, rawToken) {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ template: jinjaTemplate }),
+            body: JSON.stringify({ template: fastDeviceTemplate }),
             mode: 'cors',
             credentials: 'omit',
             signal: controller.signal
         });
         clearTimeout(timer);
-        if (!res.ok) return {};
+        if (!res.ok) return discoveredHaTemplateDeviceMap || {};
         const text = (await res.text() || '').trim();
-        if (!text.startsWith('[')) return {};
+        if (!text.startsWith('[')) return discoveredHaTemplateDeviceMap || {};
         const arr = JSON.parse(text);
         const map = {};
         if (Array.isArray(arr)) {
             arr.forEach(row => {
-                if (Array.isArray(row) && row[0]) {
-                    map[row[0]] = {
-                        deviceName: row[1] || '',
-                        areaName: row[2] || '',
-                        manufacturer: row[3] || '',
-                        model: row[4] || '',
-                        swVersion: row[5] || '',
-                        configUrl: row[6] || ''
+                if (Array.isArray(row) && row[0] && Array.isArray(row[6])) {
+                    const meta = {
+                        deviceName: String(row[0] || '').trim(),
+                        areaName: String(row[1] || '').trim(),
+                        manufacturer: String(row[2] || '').trim(),
+                        model: String(row[3] || '').trim(),
+                        swVersion: String(row[4] || '').trim(),
+                        configUrl: String(row[5] || '').trim()
                     };
+                    row[6].forEach(eid => {
+                        if (eid) map[String(eid)] = meta;
+                    });
                 }
             });
         }
-        discoveredHaTemplateDeviceMap = map;
-        return map;
+        if (Object.keys(map).length > 0) {
+            discoveredHaTemplateDeviceMap = map;
+        }
+        return discoveredHaTemplateDeviceMap || map;
     } catch (e) {
-        return {};
+        return discoveredHaTemplateDeviceMap || {};
     }
 }
 
@@ -10670,22 +10740,31 @@ function renderHomeCustomWeatherSensors() {
 
     const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
     if (list.length === 0) {
+        grid.className = 'grid grid-cols-1 gap-2';
         grid.innerHTML = `
             <div onclick="openHaConfigModal('climate')" role="button" tabindex="0"
-                class="col-span-2 dash-sub-tile rounded-[20px] p-4 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-2xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl">device_thermostat</span>
-                    </div>
+                class="rounded-[18px] p-3 bg-sky-500/[0.08] dark:bg-sky-500/[0.14] border border-sky-500/20 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-rounded text-sky-600 dark:text-sky-400 text-[18px] shrink-0">device_thermostat</span>
                     <div class="min-w-0">
-                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white truncate">Eigene Raum- &amp; Klimasensoren einbinden</p>
-                        <p class="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">z. B. Wohnzimmer, Esszimmer (°C &amp; % Luftfeuchte) aus Home Assistant</p>
+                        <p class="text-[13px] font-semibold text-slate-900 dark:text-white truncate">Raumklima &amp; Temperatursensoren auswählen</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Wohnzimmer, Esszimmer (°C &amp; % rF) als kompakte Kachelleiste</p>
                     </div>
                 </div>
-                <span class="material-symbols-rounded text-slate-400 shrink-0">add_circle</span>
+                <span class="material-symbols-rounded text-slate-400 text-[18px] shrink-0">add_circle</span>
             </div>`;
         return;
     }
+
+    // Dynamic multi-column horizontal strip layout matching Energie · Kurzüberblick
+    const colsClass = list.length === 1
+        ? 'grid grid-cols-1 gap-2 sm:gap-2.5'
+        : (list.length === 2
+            ? 'grid grid-cols-2 gap-2 sm:gap-2.5'
+            : (list.length === 3
+                ? 'grid grid-cols-3 gap-2 sm:gap-2.5'
+                : 'grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5'));
+    grid.className = colsClass;
 
     grid.innerHTML = list.map((ws, idx) => {
         const entId = String(ws.entityId || '').trim();
@@ -10696,58 +10775,39 @@ function renderHomeCustomWeatherSensors() {
             ? `${rawVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${unit}`
             : '—';
 
-        // Resolve optional / auto-matched humidity sensor for this room
         const humEntId = resolveRoomHumidityEntity(ws);
         const humReading = humEntId ? getClimateReadingWithFallback(humEntId, '%') : { val: NaN, unit: '%' };
         const hasHumidity = Number.isFinite(humReading.val);
-        const humBadgeHtml = hasHumidity
-            ? `<div class="pl-2.5 border-l border-slate-200/80 dark:border-white/10 flex items-center shrink-0">
-                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-500/10 dark:bg-sky-400/15 border border-sky-500/20 text-sky-700 dark:text-sky-300 text-[12.5px] font-semibold tabular-nums" title="Relative Luftfeuchtigkeit (${escapeHtml(humEntId)})">
-                    <span class="material-symbols-rounded text-[13.5px]">water_drop</span>
-                    <span>${Math.round(humReading.val)} %</span>
-                </span>
-               </div>`
-            : '';
+        const humCompactHtml = hasHumidity
+            ? `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-sky-500/12 dark:bg-sky-400/15 text-sky-700 dark:text-sky-300 text-[11px] font-semibold tabular-nums shrink-0" title="Luftfeuchtigkeit (${escapeHtml(humEntId)})">
+                <span class="material-symbols-rounded text-[11.5px]">water_drop</span>
+                <span>${Math.round(humReading.val)}%</span>
+               </span>`
+            : `<span class="material-symbols-rounded text-[13px] text-slate-400 group-hover:text-teal-500 transition-colors shrink-0">show_chart</span>`;
 
         const mm = entId ? homeSensorMinMaxCache.byEntity[entId] : null;
-        let subHtml = `<span class="text-slate-400 dark:text-slate-500">${entId ? 'Tippen für 24h-Kurve' : 'Sensor in Einstellungen wählen'}</span>`;
+        let subText = entId ? '24h-Verlauf →' : 'Sensor wählen';
         if (mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)) {
             const minVal = Number.isFinite(rawVal) ? Math.min(mm.min, rawVal) : mm.min;
             const maxVal = Number.isFinite(rawVal) ? Math.max(mm.max, rawVal) : mm.max;
-            const degSuffix = unit === '°C' ? '°' : ` ${unit}`;
-            subHtml = `
-                <span class="inline-flex items-center gap-1">
-                    <span class="text-slate-400 dark:text-slate-500">Min</span>
-                    <span class="font-medium text-slate-700 dark:text-slate-300">${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}</span>
-                </span>
-                <span class="text-slate-300 dark:text-slate-600">·</span>
-                <span class="inline-flex items-center gap-1">
-                    <span class="text-slate-400 dark:text-slate-500">Max</span>
-                    <span class="font-medium text-slate-700 dark:text-slate-300">${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}</span>
-                </span>`;
+            const degSuffix = unit === '°C' ? '°' : '';
+            subText = `↓ ${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix} · ↑ ${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}`;
         }
 
         const iconName = getRoomClimateIcon(ws);
 
         return `
         <div onclick="openClimateHistoryModal(${idx})" role="button" tabindex="0" title="Tippen für 24h Temperatur- &amp; Feuchte-Verlauf (${escapeHtml(ws.name || `Raum ${idx + 1}`)})"
-            class="dash-sub-tile rounded-[20px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[124px] cursor-pointer hover:ring-2 hover:ring-primary/40 active:scale-[0.99] transition-all group">
-            <div>
-                <div class="flex items-center justify-between gap-1.5">
-                    <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200 min-w-0">
-                        <span class="material-symbols-rounded text-primary text-[19px] shrink-0">${escapeHtml(iconName)}</span>
-                        <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
-                    </div>
-                    <span class="material-symbols-rounded text-[15px] text-slate-400 group-hover:text-primary transition-colors shrink-0">show_chart</span>
+            class="rounded-[18px] p-2.5 sm:p-3 bg-sky-500/[0.08] dark:bg-sky-500/[0.14] border border-sky-500/20 flex flex-col justify-between min-w-0 cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.99] transition-all group">
+            <div class="flex items-center justify-between gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                <div class="flex items-center gap-1 min-w-0">
+                    <span class="material-symbols-rounded text-sky-600 dark:text-sky-400 text-[16px] shrink-0">${escapeHtml(iconName)}</span>
+                    <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
                 </div>
-                <div class="mt-3 flex items-center justify-between gap-2">
-                    <p class="text-[23px] sm:text-[25px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-none">${escapeHtml(valText)}</p>
-                    ${humBadgeHtml}
-                </div>
+                ${humCompactHtml}
             </div>
-            <div class="pt-2 mt-2.5 border-t border-slate-200/70 dark:border-white/10 flex items-center justify-between gap-1.5 text-[12px] tabular-nums truncate">
-                <div class="flex items-center gap-1.5 truncate">${subHtml}</div>
-            </div>
+            <p class="text-[16px] sm:text-[19px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">${escapeHtml(valText)}</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">${escapeHtml(subText)}</p>
         </div>`;
     }).join('');
 }
@@ -11203,6 +11263,9 @@ function getEntitiesForMonitoredDevice(dev) {
     if (!dev) return [];
     const results = [];
     const seen = new Set();
+    const explicitIdSet = Array.isArray(dev.entityIds) && dev.entityIds.length > 0
+        ? new Set(dev.entityIds.map(id => String(id).trim()))
+        : null;
 
     const groupKey = String(dev.deviceGroupKey || '').trim().toLowerCase();
     const rawPattern = String(dev.matchPattern || '').trim();
@@ -11223,7 +11286,6 @@ function getEntitiesForMonitoredDevice(dev) {
     const checkAndPushState = (sObj) => {
         if (!sObj || !sObj.entity_id || seen.has(sObj.entity_id)) return;
         const eid = String(sObj.entity_id);
-        // Only include relevant diagnostic/sensor/actor domains
         if (!/^(sensor|binary_sensor|switch|number|select|button|update)\./.test(eid)) return;
 
         const fn = String(sObj.attributes?.friendly_name || eid);
@@ -11232,7 +11294,9 @@ function getEntitiesForMonitoredDevice(dev) {
         const resolvedGroup = String(tplInfo.deviceName || groupInfo.groupName || '').toLowerCase();
 
         let matched = false;
-        if (groupKey && resolvedGroup && (resolvedGroup === groupKey || resolvedGroup.includes(groupKey))) {
+        if (explicitIdSet && explicitIdSet.has(eid)) {
+            matched = true;
+        } else if (groupKey && resolvedGroup && (resolvedGroup === groupKey || resolvedGroup.includes(groupKey))) {
             matched = true;
         } else if (regex && (regex.test(eid) || regex.test(fn) || (resolvedGroup && regex.test(resolvedGroup)))) {
             matched = true;
@@ -11269,17 +11333,19 @@ function getEntitiesForMonitoredDevice(dev) {
         checkAndPushState(sObj);
     }
 
-    // Fallback to discoveredHaSensors if homeHaStatesCache hasn't populated yet
-    if (results.length === 0 && Array.isArray(discoveredHaSensors) && discoveredHaSensors.length > 0) {
+    // Fallback to discoveredHaSensors if homeHaStatesCache hasn't populated all items yet
+    if (Array.isArray(discoveredHaSensors) && discoveredHaSensors.length > 0) {
         discoveredHaSensors.forEach(ds => {
             if (seen.has(ds.entity_id)) return;
             const grp = String(ds.groupName || '').toLowerCase();
             let matched = false;
-            if (groupKey && grp && (grp === groupKey || grp.includes(groupKey))) matched = true;
+            if (explicitIdSet && explicitIdSet.has(ds.entity_id)) matched = true;
+            else if (groupKey && grp && (grp === groupKey || grp.includes(groupKey))) matched = true;
             else if (regex && (regex.test(ds.entity_id) || regex.test(ds.name) || regex.test(grp))) matched = true;
             if (matched) {
                 seen.add(ds.entity_id);
                 const rawLower = String(ds.state ?? '').trim().toLowerCase();
+                const tplInfo = discoveredHaTemplateDeviceMap?.[ds.entity_id] || {};
                 results.push({
                     entity_id: ds.entity_id,
                     name: ds.name,
@@ -11288,16 +11354,15 @@ function getEntitiesForMonitoredDevice(dev) {
                     isOffline: rawLower === 'unavailable' || rawLower === 'unknown' || rawLower === '',
                     deviceClass: ds.unitCategory || '',
                     lastUpdatedMs: 0,
-                    manufacturer: '',
-                    model: '',
-                    swVersion: '',
-                    configUrl: ''
+                    manufacturer: tplInfo.manufacturer || '',
+                    model: tplInfo.model || '',
+                    swVersion: tplInfo.swVersion || '',
+                    configUrl: tplInfo.configUrl || ''
                 });
             }
         });
     }
 
-    // Sort: Power/SoC/Energy first, then online status, then alphabetically
     const priorityRank = (e) => {
         const u = e.unit.toLowerCase();
         if (u === 'w' || u === 'kw' || e.deviceClass === 'power') return 1;
@@ -11321,7 +11386,6 @@ function summarizeMonitoredDeviceStatus(dev) {
     const onlineEntities = entities.filter(e => !e.isOffline);
     const offlineCount = totalCount - onlineEntities.length;
 
-    // Determine primary headline KPI (e.g., Power W, SoC %, or Voltage/Status)
     let primaryKpi = '—';
     let secondaryKpi = '';
 
@@ -11356,11 +11420,10 @@ function summarizeMonitoredDeviceStatus(dev) {
         primaryKpi = `${first.state} ${first.unit}`.trim();
     }
 
-    // Check if HA template reported a configuration_url if user hasn't set ipUrl manually
     const autoConfigUrl = entities.find(e => e.configUrl)?.configUrl || '';
     const effectiveUrl = normalizeDeviceIpUrl(dev.ipUrl || autoConfigUrl);
 
-    let healthState = 'online'; // 'online' | 'partial' | 'offline' | 'empty'
+    let healthState = 'online';
     if (totalCount === 0) healthState = 'empty';
     else if (onlineEntities.length === 0) healthState = 'offline';
     else if (offlineCount > 0 && offlineCount >= totalCount * 0.5) healthState = 'partial';
@@ -11383,22 +11446,31 @@ function renderHomeMonitoredDevicesBar() {
 
     const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
     if (list.length === 0) {
+        grid.className = 'grid grid-cols-1 gap-2';
         grid.innerHTML = `
-            <div onclick="openHaConfigModal('devices', 'haMonitoredDevicesSectionBox')" role="button" tabindex="0"
-                class="col-span-2 dash-sub-tile rounded-[20px] p-4 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-2xl bg-teal-500/12 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl">router</span>
-                    </div>
+            <div onclick="openHaConfigModal('devices')" role="button" tabindex="0"
+                class="rounded-[18px] p-3 bg-teal-500/[0.08] dark:bg-teal-500/[0.14] border border-teal-500/20 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[18px] shrink-0">developer_board</span>
                     <div class="min-w-0">
-                        <p class="text-[14px] font-semibold text-slate-900 dark:text-white truncate">Geräte &amp; IP-Direktlinks auswählen</p>
-                        <p class="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">Wechselrichter, Speicher &amp; Zähler mit allen HA-Sensoren überwachen</p>
+                        <p class="text-[13px] font-semibold text-slate-900 dark:text-white truncate">Geräte &amp; IP-Direktlinks auswählen</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Wechselrichter, Speicher &amp; Zähler als kompakte Kachelleiste</p>
                     </div>
                 </div>
-                <span class="material-symbols-rounded text-slate-400 shrink-0">add_circle</span>
+                <span class="material-symbols-rounded text-slate-400 text-[18px] shrink-0">add_circle</span>
             </div>`;
         return;
     }
+
+    // Dynamic multi-column horizontal strip layout matching Energie · Kurzüberblick
+    const colsClass = list.length === 1
+        ? 'grid grid-cols-1 gap-2 sm:gap-2.5'
+        : (list.length === 2
+            ? 'grid grid-cols-2 gap-2 sm:gap-2.5'
+            : (list.length === 3
+                ? 'grid grid-cols-3 gap-2 sm:gap-2.5'
+                : 'grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5'));
+    grid.className = colsClass;
 
     grid.innerHTML = list.map((dev) => {
         const summary = summarizeMonitoredDeviceStatus(dev);
@@ -11410,49 +11482,43 @@ function renderHomeMonitoredDevicesBar() {
             ? 'bg-emerald-500'
             : (summary.healthState === 'offline' ? 'bg-rose-500 animate-pulse' : 'bg-amber-500');
         const statusLabel = summary.healthState === 'online'
-            ? `${summary.onlineCount} Sensoren aktiv`
+            ? `${summary.onlineCount} Sensoren`
             : (summary.healthState === 'offline'
-                ? `Offline (${summary.totalCount} unavailable)`
-                : (summary.totalCount > 0 ? `${summary.onlineCount}/${summary.totalCount} online` : 'Sensoren laden...'));
+                ? `Offline (${summary.totalCount})`
+                : (summary.totalCount > 0 ? `${summary.onlineCount}/${summary.totalCount} aktiv` : 'Lade Sensoren...'));
 
         const ipButtonHtml = summary.effectiveUrl
             ? `<a href="${escapeHtml(summary.effectiveUrl)}" target="_blank" rel="noopener noreferrer"
                 onclick="event.stopPropagation();"
-                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-teal-500/12 hover:bg-teal-500/25 border border-teal-500/30 text-teal-700 dark:text-teal-300 text-[11px] font-bold transition-colors shrink-0"
+                class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-teal-500/15 hover:bg-teal-500/30 border border-teal-500/30 text-teal-800 dark:text-teal-200 text-[10px] font-bold transition-colors shrink-0"
                 title="Geräte-Weboberfläche direkt öffnen (${escapeHtml(summary.effectiveUrl)})">
-                <span class="material-symbols-rounded text-[13px]">open_in_new</span>
+                <span class="material-symbols-rounded text-[11px]">open_in_new</span>
                 <span>IP</span>
                </a>`
             : '';
 
+        const subText = summary.secondaryKpi
+            ? `${summary.secondaryKpi} · ${statusLabel}`
+            : statusLabel;
+
         return `
         <div onclick="openDeviceDiagnosticsDetail('${safeIdJs}')" role="button" tabindex="0"
-            class="dash-sub-tile rounded-[20px] p-3.5 sm:p-4 flex flex-col justify-between min-h-[120px] cursor-pointer hover:ring-2 hover:ring-primary/40 active:scale-[0.99] transition-all group">
-            <div>
-                <div class="flex items-center justify-between gap-1.5">
-                    <div class="flex items-center gap-2 text-[14px] font-medium text-slate-700 dark:text-slate-200 min-w-0">
-                        <span class="material-symbols-rounded text-primary text-[19px] shrink-0">${escapeHtml(iconName)}</span>
-                        <span class="truncate font-semibold">${safeName}</span>
-                    </div>
-                    <div class="flex items-center gap-1.5 shrink-0">
-                        ${ipButtonHtml}
-                        <span class="material-symbols-rounded text-[15px] text-slate-400 group-hover:text-primary transition-colors">chevron_right</span>
-                    </div>
+            title="Tippen für alle HA-Sensoren (${safeName})"
+            class="rounded-[18px] p-2.5 sm:p-3 bg-teal-500/[0.08] dark:bg-teal-500/[0.14] border border-teal-500/20 flex flex-col justify-between min-w-0 cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.99] transition-all group">
+            <div class="flex items-center justify-between gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
+                <div class="flex items-center gap-1 min-w-0">
+                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[16px] shrink-0">${escapeHtml(iconName)}</span>
+                    <span class="truncate">${safeName}</span>
                 </div>
-                <div class="mt-2.5 flex items-baseline justify-between gap-2">
-                    <p class="text-[21px] sm:text-[23px] font-bold ${summary.healthState === 'offline' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'} tabular-nums tracking-tight leading-none truncate">
-                        ${summary.healthState === 'offline' ? 'Offline' : escapeHtml(summary.primaryKpi)}
-                    </p>
-                    ${summary.secondaryKpi ? `<span class="text-[12px] font-mono font-semibold text-slate-500 dark:text-slate-400 tabular-nums shrink-0">${escapeHtml(summary.secondaryKpi)}</span>` : ''}
-                </div>
+                <span class="w-2 h-2 rounded-full ${statusDotCls} shrink-0" title="${escapeHtml(statusLabel)}"></span>
             </div>
-            <div class="pt-2 mt-2.5 border-t border-slate-200/70 dark:border-white/10 flex items-center justify-between gap-1.5 text-[11.5px] text-slate-500 dark:text-slate-400">
-                <span class="inline-flex items-center gap-1.5 truncate">
-                    <span class="w-2 h-2 rounded-full ${statusDotCls} shrink-0"></span>
-                    <span class="truncate">${escapeHtml(statusLabel)}</span>
-                </span>
-                <span class="text-[10.5px] font-semibold text-teal-600 dark:text-teal-400 shrink-0">Diagnose →</span>
+            <div class="flex items-baseline justify-between gap-1 mt-1.5">
+                <p class="text-[16px] sm:text-[19px] font-bold ${summary.healthState === 'offline' ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'} tabular-nums tracking-tight leading-tight truncate">
+                    ${summary.healthState === 'offline' ? 'Offline' : escapeHtml(summary.primaryKpi)}
+                </p>
+                ${ipButtonHtml}
             </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">${escapeHtml(subText)}</p>
         </div>`;
     }).join('');
 }
@@ -11517,9 +11583,9 @@ function renderDevicesDiagnosticsTab() {
                 <span class="material-symbols-rounded text-4xl text-teal-500">router</span>
                 <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Noch keine Geräte zur Diagnose ausgewählt</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                    Wähle in den Home Assistant Einstellungen unter „3. Klima &amp; Geräte“ deine Wechselrichter, Batteriespeicher, Smart Meter oder Shellys aus. Alle zugehörigen Sensoren werden automatisch geladen.
+                    Wähle in den Home Assistant Einstellungen im Reiter „4. Geräte“ deine Wechselrichter, Batteriespeicher, Smart Meter oder Shellys aus. Alle zugehörigen Sensoren werden automatisch geladen.
                 </p>
-                <button type="button" onclick="openHaConfigModal('devices', 'haMonitoredDevicesSectionBox')"
+                <button type="button" onclick="openHaConfigModal('devices')"
                     class="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold inline-flex items-center gap-2 cursor-pointer shadow-xs">
                     <span class="material-symbols-rounded text-base">add_circle</span>
                     <span>Geräte jetzt auswählen</span>
@@ -11570,7 +11636,7 @@ function renderDevicesDiagnosticsTab() {
                 <span class="material-symbols-rounded text-base">open_in_new</span>
                 <span>Weboberfläche öffnen (${escapeHtml(dev.ipUrl || summary.effectiveUrl.replace(/^https?:\/\//, ''))})</span>
                </a>`
-            : `<button type="button" onclick="openHaConfigModal('devices', 'haMonitoredDevicesSectionBox')"
+            : `<button type="button" onclick="openHaConfigModal('devices')"
                 class="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-teal-500/15 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors">
                 <span class="material-symbols-rounded text-sm">link</span>
                 <span>IP-Adresse hinterlegen</span>
@@ -11639,13 +11705,22 @@ function renderDevicesDiagnosticsTab() {
     }).join('');
 }
 
+function persistMonitoredDevicesConfigImmediate() {
+    try {
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+        PVProPersistentDB.set('ha_config_backup', haConfigState);
+    } catch (e) {}
+    renderHomeMonitoredDevicesBar();
+    renderDevicesDiagnosticsTab();
+}
+
 function renderHaMonitoredDevicesEditor() {
-    const container = document.getElementById('haMonitoredDevicesContainer');
+    const container = document.getElementById('haMonitoredDevicesMappingContainer') || document.getElementById('haMonitoredDevicesContainer');
     if (!container) return;
 
     const list = Array.isArray(haConfigState.monitoredDevices) ? haConfigState.monitoredDevices : [];
     if (list.length === 0) {
-        container.innerHTML = `<p class="text-xs text-slate-400 py-2">Noch keine Geräte überwacht. Klicke oben auf „+ Aus HA-Geräteliste wählen“, um Wechselrichter, Speicher oder Zähler hinzuzufügen.</p>`;
+        container.innerHTML = `<p class="text-xs text-slate-500 dark:text-slate-400 py-2">Noch keine Geräte ausgewählt. Tippe oben in der Liste der gefundenen Home-Assistant-Geräte einfach auf deine Geräte (z. B. Wechselrichter, Speicher, Smart Meter), um sie hinzuzufügen.</p>`;
         return;
     }
 
@@ -11723,6 +11798,7 @@ function renderHaMonitoredDevicesEditor() {
 function updateHaMonitoredDeviceField(idx, field, val) {
     if (!Array.isArray(haConfigState.monitoredDevices) || !haConfigState.monitoredDevices[idx]) return;
     haConfigState.monitoredDevices[idx][field] = val;
+    persistMonitoredDevicesConfigImmediate();
 }
 
 function addHaMonitoredDeviceManual() {
@@ -11734,98 +11810,171 @@ function addHaMonitoredDeviceManual() {
         name: `Gerät ${nextNum}`,
         deviceGroupKey: '',
         matchPattern: '',
+        entityIds: [],
         ipUrl: '',
         icon: 'solar_power'
     });
+    persistMonitoredDevicesConfigImmediate();
     renderHaMonitoredDevicesEditor();
 }
 
 function removeHaMonitoredDevice(idx) {
     if (!Array.isArray(haConfigState.monitoredDevices)) return;
     haConfigState.monitoredDevices.splice(idx, 1);
+    persistMonitoredDevicesConfigImmediate();
     renderHaMonitoredDevicesEditor();
+    const searchEl = document.getElementById('haDiscoveredDevicesSearchInput') || document.getElementById('haDiscoveredDevicesSearch');
+    renderHaDiscoveredDevicesList(searchEl ? searchEl.value : '');
 }
 
-async function openHaDeviceDiscoveryPicker() {
+async function openHaDeviceDiscoveryPicker(forceReload = false) {
     readHaModalIntoState();
     const box = document.getElementById('haDiscoveredDevicesPickerBox');
-    const listEl = document.getElementById('haDiscoveredDevicesList');
-    if (!box || !listEl) return;
+    const listEl = document.getElementById('haDiscoveredDevicesListContainer') || document.getElementById('haDiscoveredDevicesList');
+    if (box) box.classList.remove('hidden');
+    if (!listEl) return;
 
-    box.classList.remove('hidden');
-    listEl.innerHTML = `<div class="col-span-full p-4 text-xs text-slate-400 flex items-center gap-2"><span class="material-symbols-rounded animate-spin text-teal-400">progress_activity</span><span>Lade verfügbare Geräte &amp; Sensorgruppen aus Home Assistant...</span></div>`;
+    if (forceReload || discoveredHaDeviceGroupsCache.length === 0) {
+        listEl.innerHTML = `<div class="col-span-full p-4 text-xs text-slate-400 flex items-center gap-2"><span class="material-symbols-rounded animate-spin text-teal-400">progress_activity</span><span>Scanne verfügbare Geräte &amp; Sensorgruppen in Home Assistant...</span></div>`;
+    }
 
-    if (discoveredHaSensors.length === 0 || Object.keys(discoveredHaTemplateDeviceMap).length === 0) {
+    // 1. Fetch states & fast device map if needed or forced
+    if (forceReload || discoveredHaSensors.length === 0 || homeHaStatesCache.size === 0) {
         const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
         if (directRes.ok && Array.isArray(directRes.data)) {
+            updateHomeStatesFromHaArray(directRes.data);
             const tplMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
             discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplMap);
-            updateHomeStatesFromHaArray(directRes.data);
+        } else {
+            // Fallback via backend proxy if direct browser CORS was blocked
+            try {
+                const proxyRes = await fetch('/api/ha/test-connection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        baseUrl: haConfigState.baseUrl,
+                        accessToken: haConfigState.accessToken
+                    })
+                });
+                const proxyData = await proxyRes.json();
+                if (proxyData && proxyData.ok && Array.isArray(proxyData.sensors)) {
+                    discoveredHaSensors = proxyData.sensors.map(s => {
+                        const groupInfo = classifyHaEntityGroup({
+                            entity_id: s.entity_id,
+                            attributes: { friendly_name: s.name, unit_of_measurement: s.unit }
+                        }, discoveredHaTemplateDeviceMap);
+                        return {
+                            ...s,
+                            category: groupInfo.category || 'device',
+                            groupName: s.groupName || groupInfo.groupName || 'Sonstige',
+                            areaName: s.areaName || groupInfo.areaName || ''
+                        };
+                    });
+                }
+            } catch (e) {}
+        }
+    } else if (Object.keys(discoveredHaTemplateDeviceMap).length === 0 && haConfigState.baseUrl && haConfigState.accessToken) {
+        const tplMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+        if (Object.keys(tplMap).length > 0 && homeHaStatesCache.size > 0) {
+            discoveredHaSensors = buildEnrichedSensorList([...homeHaStatesCache.values()], tplMap);
         }
     }
 
-    // Group discovered entities by device groupName
+    // 2. Build comprehensive device group map from both homeHaStatesCache and discoveredHaSensors
     const map = new Map();
-    discoveredHaSensors.forEach(s => {
-        if (s.category !== 'device') return;
-        const gName = s.groupName || 'Sonstige';
+    const addEntityToGroupMap = (entityId, friendlyName, rawObj = null, fallbackGroupName = '') => {
+        if (!entityId || !/^(sensor|binary_sensor|switch|number|select|button|update)\./.test(entityId)) return;
+        const tplInfo = discoveredHaTemplateDeviceMap?.[entityId] || {};
+        const classified = rawObj
+            ? classifyHaEntityGroup(rawObj, discoveredHaTemplateDeviceMap)
+            : { groupName: tplInfo.deviceName || fallbackGroupName || 'Sonstige', areaName: tplInfo.areaName || '' };
+
+        const gName = String(tplInfo.deviceName || classified.groupName || fallbackGroupName || '').trim();
+        if (!gName || gName.startsWith('Helfer ·')) return;
+
         if (!map.has(gName)) {
-            const tplInfo = discoveredHaTemplateDeviceMap?.[s.entity_id] || {};
             map.set(gName, {
                 groupName: gName,
                 entityCount: 0,
-                areaName: s.areaName || tplInfo.areaName || '',
+                entityIds: [],
+                sampleNames: [],
+                areaName: classified.areaName || tplInfo.areaName || '',
                 manufacturer: tplInfo.manufacturer || '',
                 model: tplInfo.model || '',
                 configUrl: tplInfo.configUrl || '',
-                sampleEntityId: s.entity_id
+                sampleEntityId: entityId
             });
         }
         const entry = map.get(gName);
-        entry.entityCount++;
-        const tpl = discoveredHaTemplateDeviceMap?.[s.entity_id] || {};
-        if (!entry.configUrl && tpl.configUrl) entry.configUrl = tpl.configUrl;
-        if (!entry.manufacturer && tpl.manufacturer) entry.manufacturer = tpl.manufacturer;
-        if (!entry.model && tpl.model) entry.model = tpl.model;
+        if (!entry.entityIds.includes(entityId)) {
+            entry.entityIds.push(entityId);
+            entry.entityCount = entry.entityIds.length;
+            if (entry.sampleNames.length < 3 && friendlyName) {
+                entry.sampleNames.push(friendlyName);
+            }
+        }
+        if (!entry.configUrl && tplInfo.configUrl) entry.configUrl = tplInfo.configUrl;
+        if (!entry.manufacturer && tplInfo.manufacturer) entry.manufacturer = tplInfo.manufacturer;
+        if (!entry.model && tplInfo.model) entry.model = tplInfo.model;
+    };
+
+    for (const sObj of homeHaStatesCache.values()) {
+        addEntityToGroupMap(sObj.entity_id, sObj.attributes?.friendly_name || sObj.entity_id, sObj, '');
+    }
+    discoveredHaSensors.forEach(s => {
+        addEntityToGroupMap(s.entity_id, s.name, null, s.groupName);
     });
 
-    discoveredHaDeviceGroupsCache = [...map.values()].sort((a, b) => b.entityCount - a.entityCount);
-    renderHaDiscoveredDevicesList('');
+    discoveredHaDeviceGroupsCache = [...map.values()].sort((a, b) => {
+        // Prioritize solar/inverter/battery/meter hardware at the top of the list
+        const isEnergyA = /fronius|symo|gen24|solar|byd|batter|speicher|meter|z[aä]hler|hoymiles|opendtu|shelly|wallbox|inverter/i.test(`${a.groupName} ${a.manufacturer} ${a.model}`);
+        const isEnergyB = /fronius|symo|gen24|solar|byd|batter|speicher|meter|z[aä]hler|hoymiles|opendtu|shelly|wallbox|inverter/i.test(`${b.groupName} ${b.manufacturer} ${b.model}`);
+        if (isEnergyA !== isEnergyB) return isEnergyA ? -1 : 1;
+        return b.entityCount - a.entityCount;
+    });
+
+    const searchEl = document.getElementById('haDiscoveredDevicesSearchInput') || document.getElementById('haDiscoveredDevicesSearch');
+    renderHaDiscoveredDevicesList(searchEl ? searchEl.value : '');
+    renderHaMonitoredDevicesEditor();
 }
 
 function renderHaDiscoveredDevicesList(searchQuery = '') {
-    const listEl = document.getElementById('haDiscoveredDevicesList');
+    const listEl = document.getElementById('haDiscoveredDevicesListContainer') || document.getElementById('haDiscoveredDevicesList');
     if (!listEl) return;
 
     const q = String(searchQuery || '').trim().toLowerCase();
     const filtered = q
-        ? discoveredHaDeviceGroupsCache.filter(g => `${g.groupName} ${g.manufacturer} ${g.model} ${g.areaName} ${g.sampleEntityId}`.toLowerCase().includes(q))
+        ? discoveredHaDeviceGroupsCache.filter(g => `${g.groupName} ${g.manufacturer} ${g.model} ${g.areaName} ${g.sampleEntityId} ${(g.sampleNames || []).join(' ')}`.toLowerCase().includes(q))
         : discoveredHaDeviceGroupsCache;
 
     if (filtered.length === 0) {
-        listEl.innerHTML = `<div class="col-span-full p-3 text-xs text-slate-400">Keine passenden HA-Geräte gefunden. Prüfe die Verbindung im Tab „1. Energie &amp; PV“.</div>`;
+        listEl.innerHTML = `<div class="col-span-full p-3 text-xs text-slate-500 dark:text-slate-400">Keine passenden HA-Geräte gefunden. Klicke oben rechts auf „Neu scannen“ oder prüfe die Verbindung im Tab „1. Energie &amp; PV“.</div>`;
         return;
     }
 
     const existingKeys = new Set((haConfigState.monitoredDevices || []).map(d => String(d.deviceGroupKey || d.name || '').toLowerCase()));
 
-    listEl.innerHTML = filtered.slice(0, 60).map(g => {
+    listEl.innerHTML = filtered.slice(0, 80).map(g => {
         const alreadyAdded = existingKeys.has(g.groupName.toLowerCase());
         const safeJsName = g.groupName.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
         const meta = [g.manufacturer, g.model, g.areaName].filter(Boolean).join(' · ');
+        const iconName = getDeviceCategoryIcon({ name: g.groupName, deviceGroupKey: g.groupName, matchPattern: g.sampleEntityId });
         return `
         <button type="button" onclick="selectDiscoveredHaDevice('${safeJsName}')"
             class="text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2 cursor-pointer ${
                 alreadyAdded
-                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-800 dark:text-emerald-200'
+                    ? 'bg-emerald-500/12 border-emerald-500/45 text-emerald-900 dark:text-emerald-200 ring-1 ring-emerald-500/30'
                     : 'bg-slate-50 dark:bg-slate-950 hover:bg-teal-500/10 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100'
             }">
-            <div class="min-w-0 flex-1">
-                <p class="text-xs font-extrabold truncate">${escapeHtml(g.groupName)}</p>
-                <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(meta || g.sampleEntityId)}</p>
+            <div class="flex items-center gap-2 min-w-0 flex-1">
+                <span class="material-symbols-rounded text-base ${alreadyAdded ? 'text-emerald-600 dark:text-emerald-400' : 'text-teal-600 dark:text-teal-400'} shrink-0">${escapeHtml(iconName)}</span>
+                <div class="min-w-0 flex-1">
+                    <p class="text-xs font-extrabold truncate">${escapeHtml(g.groupName)}</p>
+                    <p class="text-[10px] text-slate-500 dark:text-slate-400 truncate">${escapeHtml(meta || g.sampleEntityId)}</p>
+                </div>
             </div>
-            <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 ${alreadyAdded ? 'bg-emerald-500 text-white' : 'bg-teal-500/15 text-teal-700 dark:text-teal-300'}">
-                ${alreadyAdded ? '✓ Aktiv' : `+ ${g.entityCount} Sens.`}
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold shrink-0 ${alreadyAdded ? 'bg-emerald-600 text-white' : 'bg-teal-500/15 text-teal-700 dark:text-teal-300'}">
+                ${alreadyAdded ? '✓ Ausgewählt' : `+ ${g.entityCount} Sens.`}
             </span>
         </button>`;
     }).join('');
@@ -11836,11 +11985,18 @@ function selectDiscoveredHaDevice(groupName) {
     if (!Array.isArray(haConfigState.monitoredDevices)) haConfigState.monitoredDevices = [];
 
     const existingIdx = haConfigState.monitoredDevices.findIndex(
-        d => String(d.deviceGroupKey || '').toLowerCase() === groupName.toLowerCase()
+        d => String(d.deviceGroupKey || d.name || '').toLowerCase() === groupName.toLowerCase()
     );
+    const searchEl = document.getElementById('haDiscoveredDevicesSearchInput') || document.getElementById('haDiscoveredDevicesSearch');
+
     if (existingIdx !== -1) {
+        // Toggle off if already selected
+        haConfigState.monitoredDevices.splice(existingIdx, 1);
+        persistMonitoredDevicesConfigImmediate();
+        renderHaMonitoredDevicesEditor();
+        renderHaDiscoveredDevicesList(searchEl ? searchEl.value : '');
         if (typeof showToastNotification === 'function') {
-            showToastNotification(`Gerät „${groupName}“ ist bereits in deiner Liste!`, 'info');
+            showToastNotification(`Gerät „${groupName}“ aus der Auswahl entfernt.`, 'info');
         }
         return;
     }
@@ -11857,15 +12013,17 @@ function selectDiscoveredHaDevice(groupName) {
         name: groupName,
         deviceGroupKey: groupName,
         matchPattern: stemSlug || groupName.toLowerCase().replace(/\s+/g, '_'),
+        entityIds: Array.isArray(foundInfo.entityIds) ? [...foundInfo.entityIds] : [],
         ipUrl: foundInfo.configUrl || '',
         icon: getDeviceCategoryIcon({ name: groupName, deviceGroupKey: groupName, matchPattern: stemSlug })
     };
 
     haConfigState.monitoredDevices.push(newDev);
+    persistMonitoredDevicesConfigImmediate();
     renderHaMonitoredDevicesEditor();
-    renderHaDiscoveredDevicesList(document.getElementById('haDiscoveredDevicesSearch')?.value || '');
+    renderHaDiscoveredDevicesList(searchEl ? searchEl.value : '');
     if (typeof showToastNotification === 'function') {
-        showToastNotification(`Gerät „${groupName}“ mit allen verfügbaren Sensoren hinzugefügt!`, 'success');
+        showToastNotification(`Gerät „${groupName}“ (${newDev.entityIds.length || 'alle'} Sensoren) hinzugefügt & gespeichert!`, 'success');
     }
 }
 

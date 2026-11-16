@@ -4,6 +4,33 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.7] – 2026-11-15
+
+### ✨ Ausklappbare Gruppen-Kacheln unter dem Diagramm, Eigener Reiter „4. Geräte“ mit zuverlässiger HA-Endgeräte-Auswahl & Kompakte Startseiten-Kachelleisten
+
+#### 1. Ausklappbare Gruppen-Kacheln im Kanal-Raster unter dem Verlaufsdiagramm (`telemetry.js`)
+* **Standardmäßig ausgeblendete Einzelverbraucher einer Gruppe:**
+  - Einzelverbraucher, die einer Gruppe zugewiesen sind (`parentGroupSlug`), werden im Kachel-Raster unter dem Tages-/Wochen-/Monatsdiagramm (`#dash_curve_tiles_grid`) standardmäßig ausgeblendet, sodass nur die jeweilige Gruppenkachel (`∑ Gruppenname`) angezeigt wird.
+* **Aufklappen direkt an der Gruppenkachel (`toggleChartConsumerGroupExpand`):**
+  - Jede Gruppenkachel besitzt oben rechts neben dem Solo-Fokus-Button einen interaktiven Aufklapp-Button mit der Anzahl der enthaltenen Sensoren (`N ▾`).
+  - Ein Tipp auf diesen Button blendet alle zugehörigen Einzelverbraucher-Kacheln direkt hinter der Gruppenkachel (mit `↳`-Gruppenmarkierung) ein oder wieder aus, sodass auch einzelne Geräte einer Gruppe gezielt im Diagramm zu- oder abgeschaltet werden können.
+
+#### 2. Eigener Einstellungen-Tab „4. Geräte“ & Reparierte Home-Assistant-Endgeräte-Auswahl (`index.html`, `telemetry.js`)
+* **Eigener 4. Reiter `4. Geräte` im Home-Assistant-Konfigurator (`#modal-ha-config`):**
+  - Die Geräteverwaltung ist aus dem Klima-Tab herausgelöst und in einen eigenen Reiter **`4. Geräte`** (`1. Energie & PV` · `2. Verbraucher` · `3. Klima & Wetter` · `4. Geräte` · `5. Proxy-Hilfe`) verschoben.
+  - Beim Öffnen des Reiters **`4. Geräte`** scannt die App automatisch alle verfügbaren Geräte und Sensorgruppen aus Home Assistant.
+* **Ursachen-Behebung für die Endgeräte-Auswahl (`openHaDeviceDiscoveryPicker` & `fetchHaTemplateDeviceMapInBrowser`):**
+  - **Fix 1 (DOM-ID-Abgleich):** Die Container-IDs zwischen `index.html` und `telemetry.js` (`#haDiscoveredDevicesListContainer`, `#haMonitoredDevicesMappingContainer`, `#haDiscoveredDevicesSearchInput`) wurden vereinheitlicht.
+  - **Fix 2 (Schnelles dedupliziertes Device-Template):** Statt über tausende Einzel-Entitäten zu iterieren, fragt `/api/template` nur noch die eindeutigen `device_id`s (`states | map(attribute='entity_id') | map('device_id') | unique`) ab (< 20 ms statt Timeout).
+  - **Fix 3 (Lückenlose Gruppierung & Sofort-Speicherung):** Auch Geräte ohne eigene HA-Device-ID (z. B. Modbus-, SolarNet-, OpenDTU- oder YAML-Sensoren) werden aus `/api/states` (`homeHaStatesCache` & Proxy-Fallback) zuverlässig gruppiert, mit ihrer expliziten `entityIds`-Liste verknüpft und beim Antippen sofort persistent in `localStorage` & `IndexedDB` gespeichert.
+
+#### 3. Kompakte mehrspaltige Kachelleisten auf der Startseite (`index.html`, `telemetry.js`)
+* **Landing-Page-Kompaktheit analog zum „Energie · Kurzüberblick“:**
+  - **Raumklima & Temperaturen (`#homeCustomWeatherGrid`):** Dargestellt als flache, mehrspaltige Kachelleiste (`grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5` mit `rounded-[18px] p-2.5 sm:p-3`-Pills: Raum-Icon + Name + Luftfeuchte-Badge oben, Temperatur in `°C` mittig, kompaktes `↓ Min · ↑ Max` unten).
+  - **Meine Geräte & Hardware (`#homeMonitoredDevicesGrid`):** Ebenfalls als flache, mehrspaltige Kachelleiste (`grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5` mit `rounded-[18px] p-2.5 sm:p-3`-Pills: Geräte-Icon + Name + Statuspunkt oben, Live-Hauptwert + direkter `IP`-Kurzbutton mittig, Sekundärwert & Sensoranzahl unten).
+
+---
+
 ## [Version 11.6] – 2026-11-15
 
 ### ✨ Stromausfall-/Offline-`0 W`-Schutz (Keine eingefrorene Linie mehr), Eigener Verbraucher-Tab mit aufklappbaren Gruppen & Geräte-Diagnoseseite inkl. IP-Direktlink
