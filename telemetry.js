@@ -12761,10 +12761,256 @@ function selectDiscoveredHaDevice(groupName) {
 }
 
 // =========================================================================
-// IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V11.9)
+// IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V12.0)
 // =========================================================================
+const AI_SETTINGS_STORAGE_KEY = 'pv_pro_ai_settings_v120';
 let aiAssistantConversationHistory = [];
 let aiAssistantBusy = false;
+let aiServerStatusCache = {
+    checked: false,
+    hasApiKey: false,
+    activeEngine: 'local-inspector',
+    engineLabel: 'Google Gemini 4 / Lokale Diagnose',
+    statusLabel: 'Bereit'
+};
+let aiAssistantSettings = {
+    thinkingLevel: 'HIGH', // 'LOW' | 'HIGH' | 'XHIGH'
+    roleFocus: 'general',  // 'general' | 'sensor_finder' | 'telemetry_debugger' | 'wallbox_optimizer' | 'architecture_inspector'
+    settingsOpen: false
+};
+
+function loadAiAssistantSettings() {
+    try {
+        const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                if (['LOW', 'HIGH', 'XHIGH'].includes(String(parsed.thinkingLevel || '').toUpperCase())) {
+                    aiAssistantSettings.thinkingLevel = String(parsed.thinkingLevel).toUpperCase();
+                }
+                if (['general', 'sensor_finder', 'telemetry_debugger', 'wallbox_optimizer', 'architecture_inspector'].includes(parsed.roleFocus)) {
+                    aiAssistantSettings.roleFocus = parsed.roleFocus;
+                }
+                if (typeof parsed.settingsOpen === 'boolean') {
+                    aiAssistantSettings.settingsOpen = parsed.settingsOpen;
+                }
+            }
+        }
+    } catch (e) {}
+}
+
+function saveAiAssistantSettings() {
+    try {
+        localStorage.setItem(AI_SETTINGS_STORAGE_KEY, JSON.stringify(aiAssistantSettings));
+    } catch (e) {}
+}
+
+function getCombinedAiAvailableEntities() {
+    const entityMap = new Map();
+
+    // 1. Enriched discoveredHaSensors (if already scanned)
+    if (Array.isArray(discoveredHaSensors)) {
+        discoveredHaSensors.forEach(s => {
+            if (s && s.entity_id) {
+                entityMap.set(s.entity_id, {
+                    entity_id: s.entity_id,
+                    name: s.name || s.entity_id,
+                    state: s.state ?? '',
+                    unit: s.unit || ''
+                });
+            }
+        });
+    }
+
+    // 2. Live homeHaStatesCache (populated automatically during normal HA polling)
+    if (typeof homeHaStatesCache !== 'undefined' && homeHaStatesCache instanceof Map) {
+        homeHaStatesCache.forEach((st, entityId) => {
+            if (!entityId || entityMap.has(entityId)) return;
+            if (entityId.startsWith('sensor.') || entityId.startsWith('number.') || entityId.startsWith('input_number.') || entityId.startsWith('weather.')) {
+                entityMap.set(entityId, {
+                    entity_id: entityId,
+                    name: st?.attributes?.friendly_name || entityId,
+                    state: st?.state ?? '',
+                    unit: st?.attributes?.unit_of_measurement || ''
+                });
+            }
+        });
+    }
+
+    // 3. Fallback to lastKnownHaReadingMap for configured sensors
+    if (typeof lastKnownHaReadingMap !== 'undefined' && lastKnownHaReadingMap instanceof Map) {
+        lastKnownHaReadingMap.forEach((val, entityId) => {
+            if (!entityId || entityMap.has(entityId)) return;
+            entityMap.set(entityId, {
+                entity_id: entityId,
+                name: entityId,
+                state: String(val),
+                unit: lastKnownHaUnitMap.get(entityId) || ''
+            });
+        });
+    }
+
+    return [...entityMap.values()];
+}
+
+function syncAiSettingsControlsUI() {
+    const panel = document.getElementById('aiAssistantSettingsPanel');
+    const toggleBtn = document.getElementById('btnToggleAiSettings');
+    if (panel) {
+        if (aiAssistantSettings.settingsOpen) panel.classList.remove('hidden');
+        else panel.classList.add('hidden');
+    }
+    if (toggleBtn) {
+        if (aiAssistantSettings.settingsOpen) {
+            toggleBtn.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0 shadow-2xs';
+        } else {
+            toggleBtn.className = 'px-2.5 py-1.5 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0';
+        }
+    }
+
+    const curThink = aiAssistantSettings.thinkingLevel || 'HIGH';
+    const thinkLabel = document.getElementById('aiThinkingLevelLabel');
+    if (thinkLabel) {
+        const descMap = { LOW: 'LOW · Schnell', HIGH: 'HIGH · Ausgewogen', XHIGH: 'XHIGH · Tiefen-Analyse' };
+        thinkLabel.innerText = descMap[curThink] || curThink;
+    }
+
+    ['LOW', 'HIGH', 'XHIGH'].forEach(lvl => {
+        const btn = document.getElementById(`btnAiThink_${lvl}`);
+        if (!btn) return;
+        if (lvl === curThink) {
+            btn.className = 'px-2 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-bold shadow-2xs transition-all cursor-pointer whitespace-nowrap truncate';
+        } else {
+            btn.className = 'px-2 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white/60 dark:hover:bg-slate-800 text-[11px] font-semibold transition-all cursor-pointer whitespace-nowrap truncate';
+        }
+    });
+
+    const roleSelect = document.getElementById('aiRoleFocusSelect');
+    if (roleSelect && roleSelect.value !== aiAssistantSettings.roleFocus) {
+        roleSelect.value = aiAssistantSettings.roleFocus || 'general';
+    }
+
+    updateAiTransparencyBarUI();
+}
+
+function updateAiTransparencyBarUI() {
+    const engineEl = document.getElementById('aiStatusEngineText');
+    const connEl = document.getElementById('aiStatusConnectionText');
+    const ctxEl = document.getElementById('aiStatusContextText');
+    const badgeEl = document.getElementById('aiAssistantModeBadge');
+
+    const entitiesCount = getCombinedAiAvailableEntities().length;
+    const consumersCount = Array.isArray(haConfigState?.customConsumers) ? haConfigState.customConsumers.length : 0;
+    const hasWb = (haConfigState?.customConsumers || []).some(c => isWallboxConsumer(c));
+    const thinkLvl = aiAssistantSettings.thinkingLevel || 'HIGH';
+
+    if (engineEl) {
+        engineEl.innerText = aiServerStatusCache.hasApiKey
+            ? `Modell: Google Gemini 4 (gemini-4-hydrogen · ${thinkLvl})`
+            : `Modell: Lokale Diagnose-Engine (${thinkLvl})`;
+    }
+    if (connEl) {
+        connEl.innerText = aiServerStatusCache.hasApiKey
+            ? 'Server-Key aktiv (AI Studio Secrets)'
+            : 'Lokal-Inspektor aktiv (Kein GEMINI_API_KEY in Secrets)';
+    }
+    if (ctxEl) {
+        ctxEl.innerText = `Kontext: ${entitiesCount} HA-Sensoren · ${consumersCount} Verbraucher${hasWb ? ' · Wallbox aktiv' : ''}`;
+    }
+    if (badgeEl) {
+        badgeEl.innerText = aiServerStatusCache.hasApiKey
+            ? `Gemini 4 · ${thinkLvl}`
+            : `System-Inspektor · ${thinkLvl}`;
+    }
+}
+
+async function fetchAndRenderAiStatusBar() {
+    try {
+        const res = await fetch('/api/ai/status');
+        if (res.ok) {
+            const data = await res.json();
+            aiServerStatusCache = {
+                checked: true,
+                hasApiKey: Boolean(data.hasApiKey),
+                activeEngine: data.activeEngine || 'local-inspector',
+                engineLabel: data.engineLabel || 'Lokale Diagnose-Engine',
+                statusLabel: data.statusLabel || 'Bereit'
+            };
+        }
+    } catch (e) {}
+    updateAiTransparencyBarUI();
+}
+
+function toggleAiSettingsPanel() {
+    aiAssistantSettings.settingsOpen = !aiAssistantSettings.settingsOpen;
+    saveAiAssistantSettings();
+    syncAiSettingsControlsUI();
+}
+
+function setAiThinkingLevel(level) {
+    const clean = String(level || 'HIGH').toUpperCase();
+    if (!['LOW', 'HIGH', 'XHIGH'].includes(clean)) return;
+    aiAssistantSettings.thinkingLevel = clean;
+    saveAiAssistantSettings();
+    syncAiSettingsControlsUI();
+    if (typeof showToastNotification === 'function') {
+        const labelMap = { LOW: 'Schnell (LOW)', HIGH: 'Ausgewogen (HIGH)', XHIGH: 'Tiefen-Diagnose (XHIGH)' };
+        showToastNotification(`KI-Denkmodus auf „${labelMap[clean]}“ gesetzt.`, 'info');
+    }
+}
+
+function setAiRoleFocus(role) {
+    const clean = String(role || 'general');
+    aiAssistantSettings.roleFocus = clean;
+    saveAiAssistantSettings();
+    syncAiSettingsControlsUI();
+    if (typeof showToastNotification === 'function') {
+        showToastNotification('KI-Fokus-Rolle aktualisiert.', 'info');
+    }
+}
+
+function clearAiAssistantConversation() {
+    aiAssistantConversationHistory = [];
+    renderAiAssistantConversation();
+}
+
+async function refreshAiSensorContextNow() {
+    if (typeof showToastNotification === 'function') {
+        showToastNotification('Scanne Home-Assistant-Sensoren für KI-Kontext…', 'info');
+    }
+    try {
+        if (haConfigState.baseUrl && haConfigState.accessToken) {
+            const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+            if (directRes.ok && Array.isArray(directRes.data)) {
+                updateHomeStatesFromHaArray(directRes.data);
+                const tplMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+                discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplMap);
+                updateHaEntitiesDatalistElement();
+            } else {
+                const proxyRes = await fetch('/api/ha/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ baseUrl: haConfigState.baseUrl, accessToken: haConfigState.accessToken })
+                });
+                const proxyData = await proxyRes.json();
+                if (proxyData.success && Array.isArray(proxyData.sensors)) {
+                    discoveredHaSensors = proxyData.sensors.map(s => ({
+                        entity_id: s.entity_id,
+                        name: s.name || s.entity_id,
+                        state: s.state,
+                        unit: s.unit || '',
+                        device_class: s.device_class || ''
+                    }));
+                }
+            }
+        }
+    } catch (e) {}
+    updateAiTransparencyBarUI();
+    const total = getCombinedAiAvailableEntities().length;
+    if (typeof showToastNotification === 'function') {
+        showToastNotification(`${total} Home-Assistant-Sensoren im KI-Kontext bereit!`, 'success');
+    }
+}
 
 function formatAiMarkdownToSafeHtml(mdText) {
     const safe = typeof escapeHtml === 'function'
@@ -12784,7 +13030,8 @@ function collectAiAssistantContext() {
     const baseline = getPlannedSystemBaseline();
     const ledger = getUnifiedEnergyLedger(baseline);
     const t = currentLiveTelemetry || {};
-    const availableEntities = (Array.isArray(haDiscoveredEntities) ? haDiscoveredEntities : []).slice(0, 140).map(e => ({
+    const combinedEntities = getCombinedAiAvailableEntities();
+    const availableEntities = combinedEntities.slice(0, 180).map(e => ({
         entity_id: e.entity_id,
         name: e.name || '',
         state: e.state,
@@ -12833,13 +13080,13 @@ function renderAiAssistantConversation() {
             <div class="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 text-xs text-slate-700 dark:text-slate-200 space-y-2">
                 <div class="flex items-center gap-2 font-black text-indigo-800 dark:text-indigo-200 text-sm">
                     <span class="material-symbols-rounded text-lg">auto_awesome</span>
-                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v11.9)</span>
+                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v12.0)</span>
                 </div>
                 <p class="leading-relaxed">
-                    Ich kenne deine komplette PV-Auslegung, deine Home-Assistant-Sensoren, den neuen <strong>Wallbox-Hybrid-Tracker</strong> sowie das Architektur-Regelwerk aus <code>AGENTS.md</code> und <code>DEVELOPMENT_GUIDELINES.md</code>.
+                    Ich arbeite im Backend mit <strong>Google Gemini 4 (<code>gemini-4-hydrogen</code>)</strong> sowie dem regelkonformen <strong>lokalen System-Inspektor</strong> und kenne deine PV-Auslegung, deine Home-Assistant-Sensoren und deinen <strong>Wallbox-Hybrid-Tracker</strong>.
                 </p>
                 <p class="leading-relaxed text-[11px] text-slate-500 dark:text-slate-400">
-                    Tippe oben auf einen der 4 Schnell-Buttons oder stelle unten deine Frage – vorgeschlagene Sensor-Zuweisungen und Einstellungen kannst du direkt per <strong>1-Klick-Button</strong> ausführen.
+                    Über <strong>„Einstellungen“</strong> oben kannst du jederzeit meine <strong>Analyse-Tiefe (Schnell / Ausgewogen / Tiefen-Check)</strong> und meine <strong>Fokus-Rolle</strong> anpassen.
                 </p>
             </div>
         `;
@@ -12875,7 +13122,7 @@ function renderAiAssistantConversation() {
                                 ${safeDesc ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">${safeDesc}</p>` : ''}
                             </div>
                             <button type="button" onclick="executeAiSuggestedAction(${msgIdx}, ${actIdx})"
-                                class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs transition-all">
+                                class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs transition-all whitespace-nowrap">
                                 <span class="material-symbols-rounded text-sm">check_circle</span>
                                 <span>Jetzt anwenden</span>
                             </button>
@@ -12896,7 +13143,7 @@ function renderAiAssistantConversation() {
     }).join('') + (aiAssistantBusy ? `
         <div class="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 font-semibold px-2 py-1">
             <span class="material-symbols-rounded text-base animate-spin">progress_activity</span>
-            <span>KI-Assistent analysiert Sensoren, Telemetrie &amp; AGENTS.md Regeln…</span>
+            <span>KI-Assistent analysiert (${aiAssistantSettings.thinkingLevel} · ${aiAssistantSettings.roleFocus})…</span>
         </div>
     ` : '');
 
@@ -12904,15 +13151,19 @@ function renderAiAssistantConversation() {
 }
 
 async function openAiAssistantModal(initialPrompt = '') {
+    loadAiAssistantSettings();
     const modal = document.getElementById('modal-ai-assistant');
     if (!modal) return;
     modal.classList.remove('hidden');
 
-    // If HA entities haven't been loaded into memory yet and credentials exist, load them silently for sensor search
-    if ((!Array.isArray(haDiscoveredEntities) || haDiscoveredEntities.length === 0) && haConfigState.baseUrl && haConfigState.accessToken) {
-        try {
-            fetchHaEntitiesForAutocomplete(false);
-        } catch (e) {}
+    syncAiSettingsControlsUI();
+    fetchAndRenderAiStatusBar();
+
+    // Ensure HA states/sensors are loaded in background if credentials exist
+    if (getCombinedAiAvailableEntities().length < 10 && haConfigState.baseUrl && haConfigState.accessToken) {
+        ensureMonitoredDevicesStatesLoaded().then(() => {
+            updateAiTransparencyBarUI();
+        }).catch(() => {});
     }
 
     renderAiAssistantConversation();
@@ -12953,16 +13204,26 @@ async function sendAiAssistantPrompt(promptText) {
 
     try {
         const context = collectAiAssistantContext();
+        updateAiTransparencyBarUI();
         const res = await fetch('/api/ai/assistant', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt: cleanPrompt, context })
+            body: JSON.stringify({
+                prompt: cleanPrompt,
+                context,
+                aiSettings: {
+                    thinkingLevel: aiAssistantSettings.thinkingLevel || 'HIGH',
+                    roleFocus: aiAssistantSettings.roleFocus || 'general'
+                }
+            })
         });
         const data = await res.json();
-        const modeBadge = document.getElementById('aiAssistantModeBadge');
-        if (modeBadge && data.mode) {
-            modeBadge.innerText = data.mode === 'gemini-4-hydrogen' ? 'Gemini 4 KI · Aktiv' : 'System-Inspektor · Aktiv';
+        if (data.mode === 'gemini-4-hydrogen') {
+            aiServerStatusCache.hasApiKey = true;
+            aiServerStatusCache.activeEngine = 'gemini-4-hydrogen';
         }
+        updateAiTransparencyBarUI();
+
         aiAssistantConversationHistory.push({
             role: 'assistant',
             text: data.answerMarkdown || 'Diagnose abgeschlossen.',
@@ -12971,7 +13232,7 @@ async function sendAiAssistantPrompt(promptText) {
     } catch (err) {
         aiAssistantConversationHistory.push({
             role: 'assistant',
-            text: `### ⚠️ Hinweis bei der Abfrage\nDie lokale Telemetrie-Diagnose ist weiterhin aktiv (${err.message || 'Verbindungsfehler'}).`,
+            text: `### ⚠️ Hinweis bei der Abfrage\nVerbindungsfehler zum lokalen Diagnose-Endpunkt (${err.message || 'Unbekannter Fehler'}).`,
             suggestedActions: []
         });
     } finally {
@@ -12991,7 +13252,9 @@ function executeAiSuggestedAction(msgIdx, actIdx) {
     } catch (e) {}
 
     const type = String(act.actionType || '').trim();
-    if (type === 'assign_main_sensor' && payload.field && payload.entityId) {
+    if (type === 'scan_ha_sensors') {
+        refreshAiSensorContextNow();
+    } else if (type === 'assign_main_sensor' && payload.field && payload.entityId) {
         if (!haConfigState.entities) haConfigState.entities = {};
         haConfigState.entities[payload.field] = payload.entityId;
         persistMonitoredDevicesConfigImmediate();
@@ -13020,6 +13283,7 @@ function executeAiSuggestedAction(msgIdx, actIdx) {
         persistMonitoredDevicesConfigImmediate();
         pollLiveTelemetry();
         renderLiveCockpitUI();
+        updateAiTransparencyBarUI();
         if (typeof showToastNotification === 'function') {
             showToastNotification('Wallbox-Konfiguration übernommen und Status-Kachel aktiviert!', 'success');
         }
@@ -13050,6 +13314,11 @@ window.resetWallboxSessionNow = resetWallboxSessionNow;
 window.renderWallboxLiveStatusCard = renderWallboxLiveStatusCard;
 window.openAiAssistantModal = openAiAssistantModal;
 window.closeAiAssistantModal = closeAiAssistantModal;
+window.toggleAiSettingsPanel = toggleAiSettingsPanel;
+window.setAiThinkingLevel = setAiThinkingLevel;
+window.setAiRoleFocus = setAiRoleFocus;
+window.clearAiAssistantConversation = clearAiAssistantConversation;
+window.refreshAiSensorContextNow = refreshAiSensorContextNow;
 window.runAiQuickPrompt = runAiQuickPrompt;
 window.submitAiAssistantForm = submitAiAssistantForm;
 window.executeAiSuggestedAction = executeAiSuggestedAction;

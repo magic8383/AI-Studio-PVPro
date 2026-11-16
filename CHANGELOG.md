@@ -4,6 +4,28 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.0] – 2026-11-16
+
+### ✨ KI-Assistent Bugfix (`discoveredHaSensors`), Wählbare Analyse-Tiefe (Denkmodus) & Fokus-Rolle sowie Transparente Modell-, Verbindungs- & Kontext-Anzeige
+
+#### 1. Behebung des Abfragefehlers `haDiscoveredEntities is not defined` (`telemetry.js`)
+* **Zusammenführung aller Home-Assistant-Sensoren (`getCombinedAiAvailableEntities`):**
+  - Behebt den `ReferenceError: haDiscoveredEntities is not defined`, durch den Abfragen im KI-Assistenten vor dem Server-Aufruf abbrachen.
+  - Der Kontext-Sammler kombiniert nun automatisch `discoveredHaSensors`, den laufenden Live-Polling-Cache (`homeHaStatesCache`) sowie `lastKnownHaReadingMap`, sodass dem KI-Assistenten sofort beim Öffnen alle bekannten Home-Assistant-Sensoren samt Messwerten und Einheiten zur Verfügung stehen.
+  - Über den Button **„HA-Sensoren neu scannen“** lassen sich sämtliche Entitäten aus Home Assistant jederzeit live nachladen.
+
+#### 2. Direkt einstellbare KI-Parameter im Assistenten-Fenster (`index.html`, `telemetry.js`, `server.js`)
+* **Analyse-Tiefe & Denkmodus (`thinkingLevel`):**
+  - Über den Button **„Einstellungen“** im Header des KI-Fensters kann zwischen **`Schnell (LOW)`**, **`Ausgewogen (HIGH)`** und **`Tiefen-Check (XHIGH)`** umgeschaltet werden. Die Auswahl wird dauerhaft gespeichert und an `gemini-4-hydrogen` (`thinkingConfig.thinkingLevel`) bzw. die Diagnose-Engine übergeben.
+* **Spezialisierte Fokus-Rollen (`roleFocus`):**
+  - Direkt wählbar zwischen **Allround-Assistent & Konfigurator**, **HA-Sensor-Finder & Direkt-Zuweiser**, **Telemetrie-, Zähler- & Offline-Debugger**, **Wallbox- & PV-Ladeanteil-Optimierer** und **AGENTS.md Regel- & Architektur-Prüfer**.
+
+#### 3. Transparente Modell-, Verbindungs- & Kontext-Statusleiste (`GET /api/ai/status`, `#aiAssistantTransparencyBar`)
+* **Volle Transparenz im KI-Header:**
+  - Zeigt jederzeit das aktive Modell (**`Google Gemini 4 (gemini-4-hydrogen)`** über das Server-Backend bzw. **`Lokale Diagnose-Engine`**), den Verbindungsstatus (`Server-Key aktiv via AI Studio Secrets` vs. `Lokal-Inspektor aktiv`) sowie den exakten Kontext-Umfang (`X HA-Sensoren · Y Verbraucher · Wallbox aktiv`) an.
+
+---
+
 ## [Version 11.9] – 2026-11-16
 
 ### ✨ Dedizierte Wallbox-Status-Kachel auf dem Live-Dashboard (Hybrid-Session-Tracker), Wallbox-Integration in Analyse & Sankey sowie integrierter KI-Assistent & System-Debugger

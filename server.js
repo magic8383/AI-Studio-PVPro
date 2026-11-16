@@ -5,7 +5,7 @@ import http from 'http';
 import https from 'https';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '11.9';
+const APP_VERSION = '12.0';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1596,16 +1596,89 @@ app.post('/api/performance/records', (req, res) => {
 });
 
 // ==========================================
-// API: IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V11.9)
+// API: IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V12.0)
 // ==========================================
-function buildLocalDiagnosticFallback(promptText, contextObj = {}) {
-  const q = String(promptText || '').toLowerCase();
+const AI_ROLE_LABELS = {
+  general: 'Allround-Assistent & Konfigurator',
+  sensor_finder: 'HA-Sensor-Finder & Zuweiser',
+  telemetry_debugger: 'Telemetrie- & Zähler-Debugger',
+  wallbox_optimizer: 'Wallbox- & PV-Lade-Optimierer',
+  architecture_inspector: 'AGENTS.md Regel- & Code-Inspektor'
+};
+
+app.get('/api/ai/status', (req, res) => {
+  const hasKey = Boolean(process.env.GEMINI_API_KEY && String(process.env.GEMINI_API_KEY).trim());
+  res.json({
+    success: true,
+    appVersion: APP_VERSION,
+    hasApiKey: hasKey,
+    activeEngine: hasKey ? 'gemini-4-hydrogen' : 'local-inspector',
+    engineLabel: hasKey ? 'Google Gemini 4 (gemini-4-hydrogen)' : 'Lokale Diagnose-Engine (System-Inspektor)',
+    statusLabel: hasKey ? 'Gemini 4 Cloud-KI aktiv (Server-Secret)' : 'Lokale Diagnose aktiv (Kein GEMINI_API_KEY in Secrets)'
+  });
+});
+
+function buildLocalDiagnosticFallback(promptText, contextObj = {}, aiSettings = {}) {
+  const rawPrompt = String(promptText || '').trim();
+  const q = rawPrompt.toLowerCase();
+  const roleFocus = String(aiSettings.roleFocus || 'general');
+  const thinkingLevel = String(aiSettings.thinkingLevel || 'HIGH').toUpperCase();
+  const roleLabel = AI_ROLE_LABELS[roleFocus] || AI_ROLE_LABELS.general;
+
   const entities = Array.isArray(contextObj.availableEntities) ? contextObj.availableEntities : [];
   const diagnostics = Array.isArray(contextObj.sensorDiagnostics) ? contextObj.sensorDiagnostics : [];
   const tele = contextObj.liveTelemetry || {};
   const cfg = contextObj.haConfigSummary || {};
+  const wb = contextObj.wallboxSummary || {};
   const suggestedActions = [];
   const lines = [];
+
+  const isGreeting = /^(hallo|hi|hey|guten tag|moin|servus|wer bist du|wer steckt dahinter|was kannst du)\b/i.test(q);
+
+  lines.push(`### 🤖 ${roleLabel} · System-Status (v${APP_VERSION})`);
+  lines.push(`- **Aktive Engine:** \`Lokale Diagnose-Engine\` *(Fokus: ${roleLabel} · Denkmodus: ${thinkingLevel})*`);
+  lines.push(`- **Wer steckt dahinter?** Im Server-Backend (\`server.js\`) ist **Google Gemini 4 (\`gemini-4-hydrogen\`)** über das offizielle \`@google/genai\` SDK integriert. Sobald in AI Studio unter **Settings > Secrets** ein \`GEMINI_API_KEY\` hinterlegt ist, antwortet Gemini 4 live. Ist noch kein Schlüssel hinterlegt, übernimmt nahtlos dieser regelkonforme **lokale Telemetrie- & Sensor-Inspektor**.`);
+  lines.push(`- **Übergebener Echtzeit-Kontext:** \`${entities.length}\` HA-Sensoren · \`${(cfg.customConsumers || []).length}\` Einzelverbraucher · \`${(cfg.monitoredDevices || []).length}\` Geräte · Live: PV \`${tele.pvPowerW || 0} W\`, Hauslast \`${tele.loadPowerW || 0} W\`, Netz \`${tele.gridPowerW || 0} W\`, Speicher \`${tele.batterySocPct ?? '—'} %\`.`);
+
+  if (isGreeting) {
+    lines.push(`\n#### 👋 Hallo! Wie kann ich dir helfen?`);
+    lines.push(`- **Sensoren suchen & zuweisen:** Tippe z. B. *„Suche nach Fronius“*, *„Suche Wallbox Sensoren“* oder *„Zeige alle kWh Sensoren“*.`);
+    lines.push(`- **Wallbox & PV-Anteil prüfen:** Deine Wallbox (${wb.primaryWallboxName || 'Wallbox'}) ist hinter dem Smart Meter im Hausverbrauch eingebunden (Heute: \`${Number(wb.wallboxTodayKwh || 0).toFixed(2)} kWh\`, PV-Anteil: \`${wb.wallboxPvSharePct || 0} %\`).`);
+    lines.push(`- **Einstellungen oben anpassen:** Über den Button **„KI-Einstellungen“** oben im Header kannst du jederzeit die **Analyse-Tiefe (Schnell / Ausgewogen / Tiefen-Diagnose)** und meine **Fokus-Rolle** umschalten.`);
+  }
+
+  // Keyword search across discovered HA entities if user typed a specific search term
+  const stopWords = new Set(['suche', 'finde', 'zeige', 'mir', 'meine', 'meinen', 'sensor', 'sensoren', 'in', 'home', 'assistant', 'nach', 'bitte', 'alle', 'wie', 'wo', 'ist', 'sind', 'und', 'oder', 'der', 'die', 'das', 'für', 'von', 'mit', 'prüfe', 'pruefe', 'analysiere', 'hallo']);
+  const searchTokens = q
+    .replace(/[^a-z0-9äöüß_.-]+/gi, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !stopWords.has(w));
+
+  if (searchTokens.length > 0 && entities.length > 0) {
+    const matchedEntities = entities.filter(e => {
+      const hay = `${e.entity_id} ${e.name} ${e.unit}`.toLowerCase();
+      return searchTokens.some(tok => hay.includes(tok));
+    }).slice(0, 8);
+
+    if (matchedEntities.length > 0) {
+      lines.push(`\n#### 🔎 Gefundene Home-Assistant-Sensoren zur Anfrage (${matchedEntities.length} Treffer):`);
+      matchedEntities.forEach(e => {
+        lines.push(`- \`${e.entity_id}\` — **${e.name || e.entity_id}**: \`${e.state} ${e.unit || ''}\``);
+      });
+    }
+  }
+
+  if (entities.length === 0) {
+    lines.push(`\n#### 📡 Hinweis zur Home-Assistant-Sensorliste:`);
+    lines.push(`- Aktuell sind noch \`0\` entdeckte Sensoren im Browser-Zwischenspeicher geladen. Klicke unten auf **„HA-Sensoren jetzt scannen“**, um alle Entitäten aus Home Assistant zu laden.`);
+    suggestedActions.push({
+      id: 'act_scan_ha_entities',
+      actionType: 'scan_ha_sensors',
+      title: 'HA-Sensoren jetzt live scannen',
+      description: 'Lädt alle verfügbaren sensor.* Entitäten aus deiner Home-Assistant-Instanz in den KI-Kontext.',
+      payloadJson: JSON.stringify({})
+    });
+  }
 
   // 1. Check for Wallbox / EV sensors
   const wallboxCandidates = entities.filter(e => /wallbox|evcc|go_e|goe|wattpilot|keba|easee|openwb|charger|auto_laden|car_charge/i.test(`${e.entity_id} ${e.name}`));
@@ -1654,34 +1727,40 @@ function buildLocalDiagnosticFallback(promptText, contextObj = {}) {
     }
   }
 
-  // 3. Telemetry & Counter Diagnostics
-  lines.push(`### 🔍 System- & Telemetrie-Diagnose (Regelkonform nach AGENTS.md · v${APP_VERSION})`);
-  lines.push(`- **Live-Status:** PV \`${tele.pvPowerW || 0} W\` · Hauslast \`${tele.loadPowerW || 0} W\` · Netz \`${tele.gridPowerW || 0} W\` · Speicher SoC \`${tele.batterySocPct ?? '—'} %\``);
-  lines.push(`- **Erfasste HA-Sensoren:** \`${entities.length}\` Entitäten im Zwischenspeicher · \`${(cfg.customConsumers || []).length}\` Einzelverbraucher · \`${(cfg.monitoredDevices || []).length}\` überwachte Geräte.`);
+  // 3. Role-specific sections
+  if (roleFocus === 'telemetry_debugger' || q.includes('zähler') || q.includes('debug') || q.includes('telemetrie')) {
+    if (diagnostics.length > 0) {
+      lines.push(`\n#### ⚠️ Erkannte Sensor-Hinweise & Zähler-Sprünge (${diagnostics.length}):`);
+      diagnostics.slice(0, 6).forEach(d => {
+        lines.push(`- **\`${d.entityId}\`** (${d.status}): ${d.jumpInfo || d.reason || 'Prüfung empfohlen'}`);
+      });
+      suggestedActions.push({
+        id: 'act_open_counters',
+        actionType: 'open_modal_tab',
+        title: 'Zähler-Kalibrierung & Sensoren öffnen',
+        description: 'Öffnet den Home Assistant Sensor-Konfigurator zur Überprüfung der kWh-Gesamtzähler.',
+        payloadJson: JSON.stringify({ tab: 'config' })
+      });
+    } else {
+      lines.push(`\n#### ✅ Telemetrie- & Zähler-Integrität:`);
+      lines.push(`- Keine fehlerhaften Einheiten oder unkalibrierten Zähler-Sprünge erkannt. Single Source of Truth (\`getUnifiedEnergyLedger\`) ist synchron.`);
+    }
+  }
 
-  if (diagnostics.length > 0) {
-    lines.push(`\n#### ⚠️ Erkannte Sensor-Hinweise & Zähler-Sprünge (${diagnostics.length}):`);
-    diagnostics.slice(0, 6).forEach(d => {
-      lines.push(`- **\`${d.entityId}\`** (${d.status}): ${d.jumpInfo || d.reason || 'Prüfung empfohlen'}`);
-    });
+  if (roleFocus === 'wallbox_optimizer' || q.includes('wallbox') || q.includes('auto') || q.includes('laden')) {
+    lines.push(`\n#### 🚗 Wallbox & E-Mobility Status:`);
+    lines.push(`- **Integration im Hausverbrauch:** Deine Wallbox (${wb.primaryWallboxName || 'Wallbox'}) ist hinter dem Smart Meter angeschlossen und im Hausverbrauch, Sankey-Diagramm und der Autarkie-Analyse voll berücksichtigt.`);
+    lines.push(`- **Messwerte:** Heute \`${Number(wb.wallboxTodayKwh || 0).toFixed(2)} kWh\` geladen · Monat \`${Number(wb.wallboxMonthKwh || 0).toFixed(2)} kWh\` · PV-Ladeanteil \`${wb.wallboxPvSharePct || 0} %\`.`);
     suggestedActions.push({
-      id: 'act_open_counters',
-      actionType: 'open_modal_tab',
-      title: 'Zähler-Kalibrierung & Sensoren öffnen',
-      description: 'Öffnet den Home Assistant Sensor-Konfigurator zur Überprüfung der kWh-Gesamtzähler.',
-      payloadJson: JSON.stringify({ tab: 'config' })
+      id: 'act_reset_wb_session',
+      actionType: 'reset_wallbox_session',
+      title: 'Wallbox Lade-Session jetzt nullen (Session Reset)',
+      description: 'Setzt den kWh-Ankerpunkt der aktuellen Wallbox-Ladesession auf den jetzigen Zählerstand zurück.',
+      payloadJson: JSON.stringify({})
     });
-  } else {
-    lines.push(`- **Zähler-Integrität:** Keine fehlerhaften Einheiten oder unkalibrierten Zähler-Sprünge erkannt. Single Source of Truth (\`getUnifiedEnergyLedger\`) ist synchron.`);
   }
 
-  if (q.includes('wallbox') || q.includes('auto') || q.includes('laden')) {
-    lines.push(`\n#### 🔌 Wallbox & E-Mobility Integration:`);
-    lines.push(`- Deine Wallbox ist **hinter dem Smart Meter** angeschlossen und wird im Hausverbrauch, im Sankey-Diagramm und in der Autarkie-Analyse voll berücksichtigt.`);
-    lines.push(`- **Hybrid Session-Tracker:** Die neue Wallbox-Status-Kachel auf dem Live-Dashboard verankert den exakten \`kWh\`-Zählerstand bei Ladebeginn und interpoliert dazwischen verzögerungsfrei über das Echtzeit-Watt-Integral.`);
-  }
-
-  if (q.includes('regel') || q.includes('guideline') || q.includes('code') || q.includes('architektur')) {
+  if (roleFocus === 'architecture_inspector' || q.includes('regel') || q.includes('guideline') || q.includes('code') || q.includes('architektur')) {
     lines.push(`\n#### 📐 Architektur- & Guideline-Check (\`AGENTS.md\` & \`DEVELOPMENT_GUIDELINES.md\`):`);
     lines.push(`- **Versionierung:** Aktuelle Systemversion **v${APP_VERSION}** synchron über alle Module (\`package.json\`, \`index.html\`, \`sw.js\`, \`content.js\`, \`server.js\`).`);
     lines.push(`- **Keine Insellösungen:** Live-Kacheln, Wallbox-Status-Kachel, Sankey-Diagramm und Analyse beziehen ihre Werte aus \`getUnifiedEnergyLedger()\`.`);
@@ -1712,16 +1791,33 @@ function buildLocalDiagnosticFallback(promptText, contextObj = {}) {
 
 app.post('/api/ai/assistant', async (req, res) => {
   try {
-    const { prompt, context } = req.body || {};
+    const { prompt, context, aiSettings } = req.body || {};
     const userPrompt = String(prompt || 'Prüfe meine aktuelle Telemetrie, Wallbox-Einbindung und Sensoren.').trim();
     const safeContext = context && typeof context === 'object' ? context : {};
+    const safeSettings = aiSettings && typeof aiSettings === 'object' ? aiSettings : {};
+    const roleFocus = String(safeSettings.roleFocus || 'general');
+    const roleLabel = AI_ROLE_LABELS[roleFocus] || AI_ROLE_LABELS.general;
+    const rawThinking = String(safeSettings.thinkingLevel || 'HIGH').toUpperCase();
+    const thinkingLevelKey = ['LOW', 'HIGH', 'XHIGH'].includes(rawThinking) ? rawThinking : 'HIGH';
+
+    const contextStats = {
+      entityCount: Array.isArray(safeContext.availableEntities) ? safeContext.availableEntities.length : 0,
+      consumerCount: Array.isArray(safeContext.haConfigSummary?.customConsumers) ? safeContext.haConfigSummary.customConsumers.length : 0,
+      deviceCount: Array.isArray(safeContext.haConfigSummary?.monitoredDevices) ? safeContext.haConfigSummary.monitoredDevices.length : 0,
+      diagnosticCount: Array.isArray(safeContext.sensorDiagnostics) ? safeContext.sensorDiagnostics.length : 0,
+      hasWallbox: Boolean(safeContext.wallboxSummary?.hasWallbox)
+    };
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey || !String(apiKey).trim()) {
-      const fallback = buildLocalDiagnosticFallback(userPrompt, safeContext);
+      const fallback = buildLocalDiagnosticFallback(userPrompt, safeContext, { roleFocus, thinkingLevel: thinkingLevelKey });
       return res.json({
         success: true,
         mode: 'local-inspector',
+        engineLabel: 'Lokale Diagnose-Engine (System-Inspektor)',
+        thinkingLevel: thinkingLevelKey,
+        roleFocus,
+        contextStats,
         ...fallback
       });
     }
@@ -1731,28 +1827,45 @@ app.post('/api/ai/assistant', async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
     });
 
+    const mappedThinkingLevel = thinkingLevelKey === 'LOW'
+      ? ThinkingLevel.LOW
+      : (thinkingLevelKey === 'XHIGH' ? ThinkingLevel.XHIGH : ThinkingLevel.HIGH);
+
+    const roleSpecificDirective = {
+      general: 'Beantworte alle Fragen zu PV-Auslegung, Home-Assistant-Sensoren, Wallbox-Ladung und System-Einstellungen.',
+      sensor_finder: 'Fokussiere dich besonders auf das Durchsuchen von availableEntitiesSample, schlage passende Entitäten für PV, Hausverbrauch, Netz, Speicher und Wallbox vor und liefere 1-Klick-Zuweisungen in suggestedActions.',
+      telemetry_debugger: 'Fokussiere dich auf Zähler-Kalibrierung, kWh-Deltas (Heute/Monat), Zähler-Sprünge in sensorDiagnostics, Offline-Sensoren (15-Minuten-0W-Guard) und die Konsistenz von getUnifiedEnergyLedger().',
+      wallbox_optimizer: 'Fokussiere dich auf die hinter dem Smart Meter angeschlossene Wallbox, den Hybrid-Session-Tracker (kWh-Zähleranker + Live-Watt-Integral), den PV-Ladeanteil in % und die Euro-Ersparnis.',
+      architecture_inspector: 'Prüfe strikt die Einhaltung von AGENTS.md und DEVELOPMENT_GUIDELINES.md (Single Source of Truth, 0.1-Versionierung, Modul-Trennung, DIN VDE 0100-712).'
+    }[roleFocus] || '';
+
     const systemInstruction = `Du bist der integrierte KI-Systemassistent, Home-Assistant-Konfigurator und Telemetrie-Debugger von "PV-Planung Pro (v${APP_VERSION})".
+Aktive Fokus-Rolle: ${roleLabel} (${roleSpecificDirective})
+Gewählter Denkmodus (ThinkingLevel): ${thinkingLevelKey}.
 Du arbeitest strikt regelkonform nach AGENTS.md und DEVELOPMENT_GUIDELINES.md:
 1. Single Source of Truth (Keine Insellösungen): Alle Energiewerte (Heute, Monat, Jahr, Sankey, Autarkie, Wallbox) stammen konsistent aus getUnifiedEnergyLedger().
 2. Wallbox hinter Smart Meter: Die Wallbox ist regulär hinter dem Smart Meter angeschlossen und Teil des Hausverbrauchs. Die dedizierte Wallbox-Status-Kachel auf dem Live-Dashboard nutzt den Hybrid-Session-Tracker (exakter kWh-Zähleranker bei Ladebeginn + verzögerungsfreies Watt-Integral zwischen Zähler-Updates) und berechnet den Live- & Session-PV-Ladeanteil (%).
 3. Modulare Architektur: index.html (DOM & Liquid Glass UI), app.js (PVGIS & Physik), telemetry.js (HA Live-Telemetrie, Wallbox-Tracker, Sankey, Analyse), wiring.js (DC-Verkabelung), dossier.js (DIN VDE 0100-712 Print/PDF).
-4. Antworte immer auf Deutsch, präzise, technisch fundiert und übersichtlich formatiert (mit kurzen Absätzen oder Aufzählungen).
-5. Wenn der Nutzer Sensoren sucht, die Wallbox einrichten möchte, Gruppen zuordnen will oder Fehler/Zähler-Sprünge debuggt, liefere in "suggestedActions" direkt ausführbare 1-Klick-Aktionen mit gültigem JSON-String in "payloadJson".
+4. Antworte immer auf Deutsch, präzise, technisch fundiert und übersichtlich formatiert (mit kurzen Absätzen oder Aufzählungen). Wenn der Nutzer fragt, wer hinter der KI steckt, erkläre transparent, dass Google Gemini 4 (gemini-4-hydrogen) über das Server-Backend (@google/genai) mit dem angegebenen Denkmodus und Live-Telemetrie-Kontext arbeitet.
+5. Liefere in "suggestedActions" passende, direkt ausführbare 1-Klick-Aktionen mit gültigem JSON-String in "payloadJson".
 Erlaubte Werte für actionType in suggestedActions:
 - "assign_main_sensor": payloadJson = {"field": "pvPower|loadPower|gridPower|batteryPower|batterySoc|pvEnergyTotal|gridImportMonth|gridExportMonth|loadEnergyMonth|batteryChargeMonth|batteryDischargeMonth", "entityId": "sensor.xyz"}
 - "add_or_update_wallbox": payloadJson = {"name": "Wallbox", "type": "wallbox", "powerEntity": "sensor.wallbox_power", "energyEntity": "sensor.wallbox_energy", "group": ""}
 - "assign_consumer_group": payloadJson = {"consumerName": "Name", "group": "Gruppenname"}
 - "add_monitored_device": payloadJson = {"groupName": "Fronius Symo GEN24"}
 - "open_modal_tab": payloadJson = {"tab": "config|consumers|climate|devices|guide"}
-- "reset_wallbox_session": payloadJson = {}`;
+- "reset_wallbox_session": payloadJson = {}
+- "scan_ha_sensors": payloadJson = {}`;
 
     const compactContext = {
       appVersion: APP_VERSION,
+      roleFocus,
+      thinkingLevel: thinkingLevelKey,
       liveTelemetry: safeContext.liveTelemetry || {},
       wallboxSummary: safeContext.wallboxSummary || {},
       haConfigSummary: safeContext.haConfigSummary || {},
-      sensorDiagnostics: (safeContext.sensorDiagnostics || []).slice(0, 20),
-      availableEntitiesSample: (safeContext.availableEntities || []).slice(0, 120)
+      sensorDiagnostics: (safeContext.sensorDiagnostics || []).slice(0, 25),
+      availableEntitiesSample: (safeContext.availableEntities || []).slice(0, 150)
     };
 
     const response = await ai.models.generateContent({
@@ -1760,6 +1873,7 @@ Erlaubte Werte für actionType in suggestedActions:
       contents: `Nutzer-Anfrage: ${userPrompt}\n\nAktueller App- & Telemetrie-Kontext (JSON):\n${JSON.stringify(compactContext)}`,
       config: {
         systemInstruction,
+        thinkingConfig: { thinkingLevel: mappedThinkingLevel },
         responseMimeType: 'application/json',
         responseSchema: {
           type: Type.OBJECT,
@@ -1802,14 +1916,22 @@ Erlaubte Werte für actionType in suggestedActions:
     return res.json({
       success: true,
       mode: 'gemini-4-hydrogen',
+      engineLabel: `Google Gemini 4 (gemini-4-hydrogen · ${thinkingLevelKey})`,
+      thinkingLevel: thinkingLevelKey,
+      roleFocus,
+      contextStats,
       answerMarkdown: parsed.answerMarkdown || 'Diagnose abgeschlossen.',
       suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : []
     });
   } catch (err) {
-    const fallback = buildLocalDiagnosticFallback(req.body?.prompt || '', req.body?.context || {});
+    const safeSettings = req.body?.aiSettings || {};
+    const fallback = buildLocalDiagnosticFallback(req.body?.prompt || '', req.body?.context || {}, safeSettings);
     return res.json({
       success: true,
       mode: 'local-inspector-fallback',
+      engineLabel: 'Lokale Diagnose-Engine (Fallback)',
+      thinkingLevel: String(safeSettings.thinkingLevel || 'HIGH').toUpperCase(),
+      roleFocus: String(safeSettings.roleFocus || 'general'),
       ...fallback
     });
   }
