@@ -2450,9 +2450,11 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
                     id: cc.id,
                     name: cc.name,
                     group: String(cc.group || '').trim(),
+                    type: String(cc.type || '').trim(),
                     powerEntity: cc.powerEntity,
                     energyEntity: cc.energyEntity || '',
                     powerW: 0,
+                    rawCounterKwh: null,
                     energyKwh: null,
                     energyTodayKwh: null,
                     energyMonthKwh: null,
@@ -2463,9 +2465,11 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
                     id: cc.id,
                     name: cc.name,
                     group: String(cc.group || '').trim(),
+                    type: String(cc.type || '').trim(),
                     powerEntity: cc.powerEntity,
                     energyEntity: cc.energyEntity || '',
                     powerW: pW !== null ? Math.max(0, pW) : 0,
+                    rawCounterKwh: rawConsKwh !== null ? +rawConsKwh.toFixed(3) : null,
                     energyKwh: consEnergyKwh,
                     energyTodayKwh: consEnergyKwh,
                     energyMonthKwh: consEnergyMonthKwh,
@@ -2481,10 +2485,14 @@ function parseHaStatesInBrowser(statesArray, cfg, prebuiltStatesMap = null) {
         if (sumStrings > 0) finalPvPowerW = sumStrings;
     }
 
+    // Wallbox & consumers are connected behind the Smart Meter -> ensure household load W is at least the sum of active consumers
+    const sumConsumersW = consumersTelemetry.reduce((acc, c) => acc + (Number(c.powerW) || 0), 0);
+    const effectiveLoadPowerW = Math.max(Math.round(loadPowerW || 0), Math.round(sumConsumersW));
+
     return {
         updatedAt: new Date().toISOString(),
         pvPowerW: Math.round(finalPvPowerW || 0),
-        loadPowerW: Math.round(loadPowerW || 0),
+        loadPowerW: effectiveLoadPowerW,
         gridPowerW: Math.round(gridPowerW || 0),
         batteryPowerW: Math.round(batteryPowerW || 0),
         batteryChargePowerW: Math.round(batChgPowerW !== null ? Math.max(0, batChgPowerW) : Math.max(0, batteryPowerW || 0)),
@@ -3875,8 +3883,56 @@ function getUnifiedEnergyLedger(baseline = null) {
     const pvTodayFromCounter = (t.pvEnergyTodayKwh !== null && t.pvEnergyTodayKwh !== undefined && t.pvEnergyTodayKwh > 0) ? Number(t.pvEnergyTodayKwh) : null;
     const pvTodayRaw = pvTodayFromCounter ?? (Number(dayInt.pv_total) > 0 ? Number(dayInt.pv_total) : (strSumTodayKwh > 0 ? strSumTodayKwh : 0));
 
+    // Aggregate individual consumers & Wallbox (connected behind Smart Meter -> always part of household consumption)
+    const cfgConsumersMap = new Map((haConfigState.customConsumers || []).map(c => [String(c.id), c]));
+    let consumersTodaySumKwh = 0;
+    let consumersMonthSumKwh = 0;
+    let wallboxTodayKwh = 0;
+    let wallboxMonthKwh = 0;
+    let hasWallbox = false;
+    let primaryWallboxName = 'Wallbox';
+    let wallboxDayPvShareWeightedSum = 0;
+    let wallboxDayPvShareWeight = 0;
+
+    const rawConsList = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
+        ? t.consumersTelemetry
+        : (haConfigState.customConsumers || []);
+
+    rawConsList.forEach(c => {
+        if (!c) return;
+        const cfgItem = cfgConsumersMap.get(String(c.id)) || c;
+        const resolvedName = cfgItem?.name || c.name || '';
+        const rawType = String(cfgItem?.type || c.type || '').trim().toLowerCase();
+        const isWb = rawType === 'wallbox' || (!rawType && typeof isWallboxConsumerName === 'function' && isWallboxConsumerName(resolvedName));
+        const fromCounterToday = (c.energyTodayKwh !== null && c.energyTodayKwh !== undefined && !isNaN(c.energyTodayKwh))
+            ? Number(c.energyTodayKwh)
+            : ((c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null);
+        const fromIntToday = Number(dayInt[`consumer_${c.id}`] || 0);
+        const cTodayKwh = Math.max(0, fromCounterToday !== null ? Math.max(fromCounterToday, fromIntToday) : fromIntToday);
+        const fromCounterMonth = (c.energyMonthKwh !== null && c.energyMonthKwh !== undefined && !isNaN(c.energyMonthKwh))
+            ? Number(c.energyMonthKwh)
+            : cTodayKwh;
+        const cMonthKwh = Math.max(cTodayKwh, fromCounterMonth);
+
+        consumersTodaySumKwh += cTodayKwh;
+        consumersMonthSumKwh += cMonthKwh;
+        if (isWb) {
+            hasWallbox = true;
+            if (resolvedName) primaryWallboxName = resolvedName;
+            wallboxTodayKwh += cTodayKwh;
+            wallboxMonthKwh += cMonthKwh;
+            if (typeof getWallboxConsumerMetrics === 'function') {
+                const wbM = getWallboxConsumerMetrics({ ...c, name: resolvedName, type: 'wallbox', consKwh: cTodayKwh }, t);
+                const effPct = wbM.sessionPvSharePct ?? wbM.dayPvSharePct ?? wbM.livePvSharePct ?? 0;
+                const weight = Math.max(0.05, cTodayKwh, (Number(c.powerW) || 0) / 1000);
+                wallboxDayPvShareWeightedSum += effPct * weight;
+                wallboxDayPvShareWeight += weight;
+            }
+        }
+    });
+
     const loadTodayFromCounter = (t.loadEnergyTodayKwh !== null && t.loadEnergyTodayKwh !== undefined && t.loadEnergyTodayKwh > 0) ? Number(t.loadEnergyTodayKwh) : null;
-    const rawLoadToday = loadTodayFromCounter ?? Number(dayInt.house_load || 0);
+    const rawLoadToday = Math.max(loadTodayFromCounter ?? Number(dayInt.house_load || 0), consumersTodaySumKwh);
 
     const gridImpTodayFromCounter = (t.gridImportTodayKwh !== null && t.gridImportTodayKwh !== undefined && t.gridImportTodayKwh > 0) ? Number(t.gridImportTodayKwh) : null;
     const rawGridImpToday = gridImpTodayFromCounter ?? Number(dayInt.grid_power || 0);
@@ -3911,11 +3967,9 @@ function getUnifiedEnergyLedger(baseline = null) {
         ? +Math.max(0, rawGridImpToday).toFixed(2)
         : +Math.max(0, rawLoadToday - coveredToday).toFixed(2);
 
-    const houseTotalToday = +Math.max(0, coveredToday + gridImpToday, rawLoadToday).toFixed(2);
+    const houseTotalToday = +Math.max(0, coveredToday + gridImpToday, rawLoadToday, consumersTodaySumKwh).toFixed(2);
 
     // --- 2. CURRENT RUNNING MONTH (MONAT): Fuse Month Counter + 30d Month Watt Integral + Today (Monat >= Heute!) ---
-    // If the user manually calibrated/corrected the current month in the Monats-Logbuch (source === 'manual'),
-    // respect that manual calibration directly so old pre-tracking counter offsets never override the user's manual correction!
     const now = new Date();
     const curYearMonths = getCurrentYearMonthsData(now.getFullYear());
     const curMonthLogObj = curYearMonths?.[now.getMonth()];
@@ -3945,7 +3999,7 @@ function getUnifiedEnergyLedger(baseline = null) {
             : [batDisToday, Number(t.batteryDischargeMonthKwh) || 0, Number(monthInt.battery_discharge) || 0])
         : [0];
 
-    const loadMonthCandidates = [houseTotalToday, Number(t.loadEnergyMonthKwh) || 0, Number(monthInt.house_load) || 0];
+    const loadMonthCandidates = [houseTotalToday, Number(t.loadEnergyMonthKwh) || 0, Number(monthInt.house_load) || 0, consumersMonthSumKwh];
 
     let pvMonth = +Math.max(...pvMonthCandidates).toFixed(2);
     let batChgMonth = +Math.min(pvMonth, Math.max(...batChgMonthCandidates)).toFixed(2);
@@ -3957,15 +4011,12 @@ function getUnifiedEnergyLedger(baseline = null) {
     const rawExpMonth = Math.max(...gridExpMonthCandidates);
     let gridExpMonth = +Math.min(Math.max(0, pvMonth - batChgMonth), Math.max(gridExpToday, rawExpMonth)).toFixed(2);
 
-    // Reconcile PV Direct consumption using both PV-side balance (PV - BatChg - GridExp)
-    // and Load-side balance (Measured House Load - GridImp - BatDis) so multi-inverter setups never compress direct PV to ~2 kWh
     const directFromPvSide = Math.max(0, pvMonth - batChgMonth - gridExpMonth);
     const directFromLoadSide = rawLoadMonth > 0
         ? Math.min(Math.max(0, pvMonth - batChgMonth), Math.max(0, rawLoadMonth - gridImpMonth - batDisMonth))
         : 0;
     let pvDirectMonth = +Math.max(pvDirectToday, directFromPvSide, directFromLoadSide).toFixed(2);
 
-    // Ensure strict energy conservation on PV side: PV = Direkt + Akku-Ladung + Einspeisung
     if (pvDirectMonth + batChgMonth + gridExpMonth > pvMonth) {
         gridExpMonth = +Math.max(0, pvMonth - batChgMonth - pvDirectMonth).toFixed(2);
         if (pvDirectMonth + batChgMonth + gridExpMonth > pvMonth) {
@@ -3973,12 +4024,31 @@ function getUnifiedEnergyLedger(baseline = null) {
         }
     }
 
-    let houseTotalMonth = +Math.max(houseTotalToday, pvDirectMonth + batDisMonth + gridImpMonth, rawLoadMonth).toFixed(2);
+    let houseTotalMonth = +Math.max(houseTotalToday, pvDirectMonth + batDisMonth + gridImpMonth, rawLoadMonth, consumersMonthSumKwh).toFixed(2);
 
-    const hasAnyRealData = (pvMonth > 0 || gridImpMonth > 0 || batChgMonth > 0 || batDisMonth > 0);
+    // Wallbox solar share & grid share calculation (behind Smart Meter)
+    const todayAutarkyRatio = houseTotalToday > 0 ? Math.min(1, Math.max(0, (pvDirectToday + batDisToday) / houseTotalToday)) : 0;
+    const monthAutarkyRatio = houseTotalMonth > 0 ? Math.min(1, Math.max(0, (pvDirectMonth + batDisMonth) / houseTotalMonth)) : 0;
+    const wbTodayPvSharePct = wallboxDayPvShareWeight > 0
+        ? Math.min(100, Math.max(0, Math.round(wallboxDayPvShareWeightedSum / wallboxDayPvShareWeight)))
+        : Math.round(todayAutarkyRatio * 100);
+    const wbMonthPvSharePct = wallboxTodayKwh > 0 && Math.abs(wallboxMonthKwh - wallboxTodayKwh) < 0.05
+        ? wbTodayPvSharePct
+        : Math.round(((wbTodayPvSharePct / 100) * wallboxTodayKwh + monthAutarkyRatio * Math.max(0, wallboxMonthKwh - wallboxTodayKwh)) / Math.max(0.01, wallboxMonthKwh) * 100);
+
+    const wbTodayClean = +wallboxTodayKwh.toFixed(2);
+    const wbMonthClean = +Math.max(wbTodayClean, wallboxMonthKwh).toFixed(2);
+    const wbSolarTodayKwh = +(wbTodayClean * (wbTodayPvSharePct / 100)).toFixed(2);
+    const wbGridTodayKwh = +Math.max(0, wbTodayClean - wbSolarTodayKwh).toFixed(2);
+    const wbSolarMonthKwh = +(wbMonthClean * (wbMonthPvSharePct / 100)).toFixed(2);
+    const wbGridMonthKwh = +Math.max(0, wbMonthClean - wbSolarMonthKwh).toFixed(2);
+
+    const hasAnyRealData = (pvMonth > 0 || gridImpMonth > 0 || batChgMonth > 0 || batDisMonth > 0 || wbMonthClean > 0);
 
     return {
         hasBattery,
+        hasWallbox,
+        primaryWallboxName,
         hasAnyRealData,
         today: {
             pvTotal: pvToday,
@@ -3989,6 +4059,11 @@ function getUnifiedEnergyLedger(baseline = null) {
             pvDirect: pvDirectToday,
             batLoss: batLossToday,
             houseTotal: houseTotalToday,
+            wallboxKwh: wbTodayClean,
+            wallboxSolarKwh: wbSolarTodayKwh,
+            wallboxGridKwh: wbGridTodayKwh,
+            wallboxPvSharePct: wbTodayPvSharePct,
+            houseWithoutWallboxKwh: +Math.max(0, houseTotalToday - wbTodayClean).toFixed(2),
             sources: {
                 pv: pvTodayFromCounter !== null ? 'kWh-Zähler' : 'W-Integral',
                 load: loadTodayFromCounter !== null ? 'kWh-Zähler' : 'W-Integral',
@@ -4008,7 +4083,12 @@ function getUnifiedEnergyLedger(baseline = null) {
             batDis: batDisMonth,
             pvDirect: pvDirectMonth,
             batLoss: batLossMonth,
-            houseTotal: houseTotalMonth
+            houseTotal: houseTotalMonth,
+            wallboxKwh: wbMonthClean,
+            wallboxSolarKwh: wbSolarMonthKwh,
+            wallboxGridKwh: wbGridMonthKwh,
+            wallboxPvSharePct: wbMonthPvSharePct,
+            houseWithoutWallboxKwh: +Math.max(0, houseTotalMonth - wbMonthClean).toFixed(2)
         }
     };
 }
@@ -4280,6 +4360,9 @@ function renderLiveCockpitUI(baseline) {
             const fromCounterKwh = (c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null;
             const fromIntegralKwh = Number(dayInt[`consumer_${c.id}`] || 0);
             const consKwh = fromCounterKwh !== null ? Math.max(fromCounterKwh, fromIntegralKwh) : fromIntegralKwh;
+            const consMonthKwh = (c.energyMonthKwh !== null && c.energyMonthKwh !== undefined && !isNaN(c.energyMonthKwh))
+                ? Math.max(consKwh, Number(c.energyMonthKwh))
+                : consKwh;
             return {
                 ...c,
                 name: resolvedName,
@@ -4288,9 +4371,15 @@ function renderLiveCockpitUI(baseline) {
                 isWallbox,
                 powerW: pW,
                 consKwh: +Math.max(0, consKwh).toFixed(3),
+                consMonthKwh: +Math.max(0, consMonthKwh).toFixed(3),
                 isActive: pW > 5
             };
         });
+
+        // Render Dedicated Wallbox Live-Dashboard Status Card (PV-Ladeanteil % + Geladene kWh seit Ladebeginn via Hybrid Session Tracker)
+        try {
+            renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline);
+        } catch (wbErr) {}
 
         const sortConsItems = (a, b) => {
             if (consumerSortMode === 'kwh_first') {
@@ -7773,11 +7862,30 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
     const eigenQuotaPct = pvTotal > 0 ? Math.min(100, ((pvDirect + batChg) / pvTotal) * 100) : 0;
     const batEffPct = batChg > 0 ? Math.min(100, (batDis / batChg) * 100) : (hasBattery ? 91.0 : 0);
 
+    const hasWallbox = Boolean(ledger.hasWallbox);
+    const wallboxName = ledger.primaryWallboxName || 'Wallbox';
+    const wallboxKwh = horizon === 'today'
+        ? (ledger.today.wallboxKwh || 0)
+        : (horizon === 'month' ? (ledger.month.wallboxKwh || 0) : Math.max(ledger.month.wallboxKwh || 0, ledger.today.wallboxKwh || 0));
+    const wallboxPvSharePct = horizon === 'today'
+        ? (ledger.today.wallboxPvSharePct || 0)
+        : (ledger.month.wallboxPvSharePct || 0);
+    const wallboxSolarKwh = +(wallboxKwh * (wallboxPvSharePct / 100)).toFixed(decimals);
+    const wallboxGridKwh = +Math.max(0, wallboxKwh - wallboxSolarKwh).toFixed(decimals);
+    const houseWithoutWallboxKwh = +Math.max(0, houseTotal - wallboxKwh).toFixed(decimals);
+
     return {
         horizon,
         decimals,
         periodLabel,
         hasBattery,
+        hasWallbox,
+        wallboxName,
+        wallboxKwh,
+        wallboxPvSharePct,
+        wallboxSolarKwh,
+        wallboxGridKwh,
+        houseWithoutWallboxKwh,
         pvTotal,
         gridImp,
         gridExp,
@@ -8115,10 +8223,12 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
             eurText = `Direkt: ${fmt(d.pvDirect)} kWh · Akku: ${fmt(d.batChg)} kWh · Einspeisung: ${fmt(d.gridExp)} kWh`;
             badgeColor = 'border-teal-500/40 bg-teal-500/10 text-teal-700 dark:text-teal-300';
         } else if (sel === 'node_house') {
-            title = 'Hausverbrauch Gesamt';
+            title = d.hasWallbox ? `Hausverbrauch Gesamt (inkl. ${d.wallboxName})` : 'Hausverbrauch Gesamt';
             icon = 'home';
             kwhVal = d.houseTotal;
-            subText = `Autarkiegrad: ${d.autarkyPct.toFixed(1)} % durch PV + Batterie`;
+            subText = d.hasWallbox
+                ? `Autarkiegrad: ${d.autarkyPct.toFixed(1)} % · Haushalt: ${fmt(d.houseWithoutWallboxKwh)} kWh + ${d.wallboxName}: ${fmt(d.wallboxKwh)} kWh (☀️ ${d.wallboxPvSharePct}% PV-Anteil)`
+                : `Autarkiegrad: ${d.autarkyPct.toFixed(1)} % durch PV + Batterie`;
             eurText = `PV: ${houseShareDirectPct}% · Akku: ${houseShareBatPct}% · Netz: ${houseShareGridPct}%`;
             badgeColor = 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300';
         }
@@ -8146,7 +8256,7 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
         `;
     }
 
-    // 3. Render Summary Ribbon Below Sankey (including transparent kWh Sensor Diagnostics banner if any sensor is unavailable or has a jump info note)
+    // 3. Render Summary Ribbon Below Sankey (including transparent kWh Sensor Diagnostics banner and Wallbox breakdown if present)
     const ribbon = document.getElementById('sankeySummaryRibbon');
     if (ribbon) {
         const diagNotices = Object.values(sensorDiagnosticsByEntity || {}).filter(
@@ -8174,9 +8284,31 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
             </div>
         ` : '';
 
+        const wbRibbonHtml = d.hasWallbox ? `
+            <div class="col-span-full p-3 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/35 border border-emerald-500/30 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-lg">ev_station</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs font-extrabold text-slate-900 dark:text-white truncate">
+                            ${typeof escapeHtml === 'function' ? escapeHtml(d.wallboxName) : d.wallboxName} im Hausverbrauch enthalten (hinter Smart Meter)
+                        </p>
+                        <p class="text-[11px] text-slate-600 dark:text-slate-300 font-mono tabular-nums truncate">
+                            Haushalt: ${fmt(d.houseWithoutWallboxKwh)} kWh · Wallbox: ${fmt(d.wallboxKwh)} kWh (☀️ ${d.wallboxPvSharePct}% PV = ${fmt(d.wallboxSolarKwh)} kWh Solar / ${fmt(d.wallboxGridKwh)} kWh Netz)
+                        </p>
+                    </div>
+                </div>
+                <span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[11px] font-mono font-bold shrink-0">
+                    +${(d.wallboxSolarKwh * d.gridPriceEur).toFixed(2).replace('.', ',')} € Solar-Laden
+                </span>
+            </div>
+        ` : '';
+
         ribbon.innerHTML = `
             ${diagBannerHtml}
             ${flowDetailHtml}
+            ${wbRibbonHtml}
             <div class="p-2.5 rounded-xl bg-white/80 dark:bg-[#13232b]/85 border border-slate-200/80 dark:border-teal-500/20">
                 <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Zeitraum</span>
                 <span class="text-xs font-extrabold text-slate-800 dark:text-slate-100 truncate block mt-0.5" title="${d.periodLabel}">${d.periodLabel}</span>
@@ -8289,6 +8421,60 @@ function renderAutarkyBatteryPanel(baseline, metrics) {
     setElText('ana_bat_detail_discharged', `${Math.round(metrics.batDischargedSum).toLocaleString('de-DE')} kWh`);
     setElText('ana_bat_detail_grid_in', `${Math.round(metrics.gridImportSum).toLocaleString('de-DE')} kWh`);
     setElText('ana_bat_detail_loss', `${Math.round(metrics.batLossKwh).toLocaleString('de-DE')} kWh`);
+
+    const wbBox = document.getElementById('ana_wallbox_performance_box');
+    if (wbBox) {
+        const ledger = getUnifiedEnergyLedger(baseline);
+        if (ledger.hasWallbox) {
+            wbBox.classList.remove('hidden');
+            const wbM = ledger.month;
+            const wbShareOfHouse = wbM.houseTotal > 0 ? Math.min(100, Math.round((wbM.wallboxKwh / wbM.houseTotal) * 100)) : 0;
+            const savedEurMonth = (wbM.wallboxSolarKwh * baseline.gridPriceEur).toFixed(2).replace('.', ',');
+            wbBox.innerHTML = `
+                <div class="p-4 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/35 border border-emerald-500/30 space-y-3">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div class="flex items-center gap-2.5">
+                            <div class="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 flex items-center justify-center shrink-0">
+                                <span class="material-symbols-rounded text-xl">ev_station</span>
+                            </div>
+                            <div>
+                                <h5 class="text-sm font-black text-slate-900 dark:text-white">${typeof escapeHtml === 'function' ? escapeHtml(ledger.primaryWallboxName) : ledger.primaryWallboxName} · E-Mobility &amp; Hausverbrauch-Bilanz</h5>
+                                <p class="text-[11px] text-slate-500 dark:text-slate-400">Hinter Smart Meter angeschlossen · Voll im Hausverbrauch &amp; Autarkiegrad berücksichtigt</p>
+                            </div>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-xs font-mono font-bold self-start sm:self-auto">
+                            ☀️ ${wbM.wallboxPvSharePct}% PV-Ladeanteil
+                        </span>
+                    </div>
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono tabular-nums">
+                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
+                            <span class="text-[10px] text-slate-400 block">Wallbox (Monat)</span>
+                            <span class="text-sm font-extrabold text-slate-900 dark:text-white">${formatKwhDe(wbM.wallboxKwh, 2)}</span>
+                            <span class="text-[10px] text-slate-500 block">${wbShareOfHouse}% des Hausverbrauchs</span>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
+                            <span class="text-[10px] text-slate-400 block">Solar-Ladestrom</span>
+                            <span class="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">${formatKwhDe(wbM.wallboxSolarKwh, 2)}</span>
+                            <span class="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 block">+${savedEurMonth} € gespart</span>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
+                            <span class="text-[10px] text-slate-400 block">Netz-Ladestrom</span>
+                            <span class="text-sm font-extrabold text-blue-600 dark:text-blue-400">${formatKwhDe(wbM.wallboxGridKwh, 2)}</span>
+                            <span class="text-[10px] text-slate-500 block">Zukauf aus Netz</span>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
+                            <span class="text-[10px] text-slate-400 block">Haushalt (ohne WB)</span>
+                            <span class="text-sm font-extrabold text-amber-600 dark:text-amber-400">${formatKwhDe(wbM.houseWithoutWallboxKwh, 2)}</span>
+                            <span class="text-[10px] text-slate-500 block">Reine Hauslast</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } else {
+            wbBox.classList.add('hidden');
+            wbBox.innerHTML = '';
+        }
+    }
 
     const ctx = document.getElementById('realAutarkyBalanceChart');
     if (ctx && typeof Chart !== 'undefined') {
@@ -9134,15 +9320,77 @@ function isWallboxConsumer(c) {
     return isWallboxConsumerName(c.name);
 }
 
+const WALLBOX_SESSION_STORAGE_KEY = 'pvpro_wallbox_sessions_v11_9';
+let wallboxSessionStateById = null;
+
+function loadWallboxSessionsState() {
+    if (wallboxSessionStateById && typeof wallboxSessionStateById === 'object') {
+        return wallboxSessionStateById;
+    }
+    try {
+        const raw = localStorage.getItem(WALLBOX_SESSION_STORAGE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                wallboxSessionStateById = parsed;
+                return wallboxSessionStateById;
+            }
+        }
+    } catch (e) {}
+    wallboxSessionStateById = {};
+    return wallboxSessionStateById;
+}
+
+function saveWallboxSessionsState() {
+    try {
+        if (wallboxSessionStateById) {
+            localStorage.setItem(WALLBOX_SESSION_STORAGE_KEY, JSON.stringify(wallboxSessionStateById));
+        }
+    } catch (e) {}
+}
+
+function resetWallboxSessionNow(consumerId, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const sessions = loadWallboxSessionsState();
+    const idKey = String(consumerId || '');
+    const t = currentLiveTelemetry || {};
+    const teleCons = (t.consumersTelemetry || []).find(x => String(x.id) === idKey);
+    const dayInt = typeof getDayIntegratedKwh === 'function' ? getDayIntegratedKwh() : {};
+    const curCounter = (teleCons && teleCons.rawCounterKwh !== null && teleCons.rawCounterKwh !== undefined && !isNaN(teleCons.rawCounterKwh))
+        ? Number(teleCons.rawCounterKwh)
+        : ((teleCons && teleCons.energyKwh !== null && teleCons.energyKwh !== undefined && !isNaN(teleCons.energyKwh))
+            ? Number(teleCons.energyKwh)
+            : Number(dayInt[`consumer_${idKey}`] || 0));
+
+    sessions[idKey] = {
+        sessionStartedAt: new Date().toISOString(),
+        lastActiveMs: (teleCons && Number(teleCons.powerW) > 45) ? Date.now() : 0,
+        lastTickMs: Date.now(),
+        startCounterKwh: curCounter,
+        integralKwh: 0,
+        solarIntegralKwh: 0,
+        sessionChargedKwh: 0,
+        sessionSolarKwh: 0,
+        isCharging: Boolean(teleCons && Number(teleCons.powerW) > 45)
+    };
+    saveWallboxSessionsState();
+    renderLiveCockpitUI();
+    if (typeof showToastNotification === 'function') {
+        showToastNotification('Wallbox-Ladesession auf 0,00 kWh zurückgesetzt (aktueller Zählerstand verankert).', 'success');
+    }
+}
+
 function getWallboxConsumerMetrics(c, telemetryObj) {
-    const t = telemetryObj || liveTelemetryState || {};
+    const t = telemetryObj || currentLiveTelemetry || {};
     const wbW = Math.max(0, Number(c?.powerW) || 0);
     const totalLoadW = Math.max(wbW, Number(t.loadPowerW) || 0);
-    const gridImpW = Math.max(0, Number(t.gridImportPowerW) || 0);
+    const gridImpW = Math.max(0, Number(t.gridPowerW) || 0);
     const ownSupplyW = Math.max(0, totalLoadW - gridImpW);
     const livePvSharePct = totalLoadW > 10
         ? Math.min(100, Math.max(0, Math.round((ownSupplyW / totalLoadW) * 100)))
-        : 0;
+        : (Number(t.pvPowerW) > 50 ? 100 : 0);
     const livePvPowerW = Math.round(wbW * (livePvSharePct / 100));
     const liveGridPowerW = Math.max(0, Math.round(wbW - livePvPowerW));
 
@@ -9150,8 +9398,8 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
     let dayPvSharePct = null;
     const cKey = `consumer_${c?.id}`;
     const wbSeries = intradaySeriesState?.series?.[cKey];
-    const loadSeries = intradaySeriesState?.series?.load;
-    const gridImpSeries = intradaySeriesState?.series?.grid_imp;
+    const loadSeries = intradaySeriesState?.series?.house_load || intradaySeriesState?.series?.load;
+    const gridImpSeries = intradaySeriesState?.series?.grid_power || intradaySeriesState?.series?.grid_imp;
     if (Array.isArray(wbSeries) && wbSeries.length > 0) {
         let totalWbWeight = 0;
         let solarWbWeight = 0;
@@ -9170,12 +9418,249 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
         }
     }
 
+    // Hybrid Session Tracker: Anchor kWh counter at session start + live Watt integral between counter ticks
+    const sessions = loadWallboxSessionsState();
+    const idKey = String(c?.id || 'default_wb');
+    const nowMs = Date.now();
+    const isChargingNow = wbW > 45;
+    const curCounterReading = (c?.rawCounterKwh !== null && c?.rawCounterKwh !== undefined && !isNaN(c.rawCounterKwh))
+        ? Number(c.rawCounterKwh)
+        : ((c?.energyKwh !== null && c?.energyKwh !== undefined && !isNaN(c.energyKwh))
+            ? Number(c.energyKwh)
+            : ((c?.consKwh !== null && c?.consKwh !== undefined && !isNaN(c.consKwh)) ? Number(c.consKwh) : null));
+
+    let sess = sessions[idKey];
+    if (!sess) {
+        sess = {
+            sessionStartedAt: isChargingNow ? new Date(nowMs).toISOString() : null,
+            lastActiveMs: isChargingNow ? nowMs : 0,
+            lastTickMs: nowMs,
+            startCounterKwh: curCounterReading,
+            integralKwh: 0,
+            solarIntegralKwh: 0,
+            sessionChargedKwh: Number(c?.consKwh) || 0,
+            sessionSolarKwh: (Number(c?.consKwh) || 0) * ((dayPvSharePct ?? livePvSharePct) / 100),
+            isCharging: isChargingNow
+        };
+        sessions[idKey] = sess;
+    } else {
+        // Detect new charging session after > 20 minutes of idle pause
+        const idlePauseMs = sess.lastActiveMs > 0 ? (nowMs - sess.lastActiveMs) : 99999999;
+        if (isChargingNow && !sess.isCharging && idlePauseMs > 20 * 60 * 1000) {
+            sess.sessionStartedAt = new Date(nowMs).toISOString();
+            sess.startCounterKwh = curCounterReading;
+            sess.integralKwh = 0;
+            sess.solarIntegralKwh = 0;
+            sess.sessionChargedKwh = 0;
+            sess.sessionSolarKwh = 0;
+        }
+
+        const dtHours = Math.min(0.25, Math.max(0, (nowMs - (sess.lastTickMs || nowMs)) / 3600000));
+        if (isChargingNow && dtHours > 0) {
+            const stepKwh = (wbW * dtHours) / 1000;
+            const stepSolarKwh = (livePvPowerW * dtHours) / 1000;
+            sess.integralKwh = +(Number(sess.integralKwh || 0) + stepKwh).toFixed(4);
+            sess.solarIntegralKwh = +(Number(sess.solarIntegralKwh || 0) + stepSolarKwh).toFixed(4);
+            sess.lastActiveMs = nowMs;
+            if (!sess.sessionStartedAt) sess.sessionStartedAt = new Date(nowMs).toISOString();
+        }
+
+        if (curCounterReading !== null) {
+            if (sess.startCounterKwh === null || sess.startCounterKwh === undefined || curCounterReading < sess.startCounterKwh - 0.05) {
+                sess.startCounterKwh = curCounterReading;
+            }
+            const counterDeltaKwh = Math.max(0, curCounterReading - sess.startCounterKwh);
+            // Hybrid fusion: if the kWh counter ticked up past our integral, snap integral up; otherwise keep smooth integral between counter ticks
+            if (counterDeltaKwh > (sess.integralKwh || 0)) {
+                const diff = counterDeltaKwh - (sess.integralKwh || 0);
+                sess.integralKwh = +counterDeltaKwh.toFixed(4);
+                sess.solarIntegralKwh = +((sess.solarIntegralKwh || 0) + diff * (livePvSharePct / 100)).toFixed(4);
+            }
+            sess.sessionChargedKwh = +Math.max(counterDeltaKwh, sess.integralKwh || 0).toFixed(3);
+        } else {
+            sess.sessionChargedKwh = +Math.max(sess.integralKwh || 0, Number(c?.consKwh) || 0).toFixed(3);
+        }
+
+        // If no session delta accumulated yet today but today's counter has kWh, show today's charged kWh as session value
+        if (sess.sessionChargedKwh < 0.005 && (Number(c?.consKwh) || 0) > 0.005 && sess.integralKwh === 0) {
+            sess.sessionChargedKwh = +(Number(c.consKwh) || 0).toFixed(3);
+            sess.sessionSolarKwh = +(sess.sessionChargedKwh * ((dayPvSharePct ?? livePvSharePct) / 100)).toFixed(3);
+        } else {
+            sess.sessionSolarKwh = +Math.min(sess.sessionChargedKwh, Math.max(0, sess.solarIntegralKwh || 0)).toFixed(3);
+        }
+
+        sess.isCharging = isChargingNow;
+        sess.lastTickMs = nowMs;
+    }
+    saveWallboxSessionsState();
+
+    const sessionChargedKwh = +(sess.sessionChargedKwh || 0).toFixed(2);
+    const sessionSolarKwh = +(Math.min(sessionChargedKwh, sess.sessionSolarKwh || 0)).toFixed(2);
+    const sessionGridKwh = +Math.max(0, sessionChargedKwh - sessionSolarKwh).toFixed(2);
+    const sessionPvSharePct = sessionChargedKwh > 0.01
+        ? Math.min(100, Math.max(0, Math.round((sessionSolarKwh / sessionChargedKwh) * 100)))
+        : (dayPvSharePct ?? livePvSharePct);
+
     return {
         livePvSharePct,
         livePvPowerW,
         liveGridPowerW,
-        dayPvSharePct
+        dayPvSharePct,
+        sessionChargedKwh,
+        sessionSolarKwh,
+        sessionGridKwh,
+        sessionPvSharePct,
+        sessionStartedAt: sess.sessionStartedAt,
+        hasCounterSensor: Boolean(c?.energyEntity)
     };
+}
+
+function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
+    const container = document.getElementById('dash_wallbox_status_card_container');
+    if (!container) return;
+
+    const wallboxes = (Array.isArray(consumers) ? consumers : []).filter(
+        c => c && (c.isWallbox || c.type === 'wallbox' || isWallboxConsumer(c))
+    );
+
+    if (wallboxes.length === 0) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('hidden');
+    const gridPrice = baseline?.gridPriceEur || 0.32;
+
+    container.innerHTML = wallboxes.map(wb => {
+        const wbM = getWallboxConsumerMetrics(wb, t);
+        const safeName = typeof escapeHtml === 'function' ? escapeHtml(wb.name || 'Wallbox') : (wb.name || 'Wallbox');
+        const safeIdJs = String(wb.id || '').replace(/'/g, "\\'");
+        const isCharging = wb.powerW > 45;
+        const powerStr = formatPowerDe(wb.powerW, wb.powerW < 1000);
+        const todayKwh = Number(wb.consKwh || 0);
+        const monthKwh = Math.max(todayKwh, Number(wb.consMonthKwh || ledger?.month?.wallboxKwh || 0));
+
+        // Primary displayed PV share % (live when charging, session/day average when idle)
+        const displayPvSharePct = isCharging
+            ? wbM.livePvSharePct
+            : (wbM.sessionChargedKwh > 0.01 ? wbM.sessionPvSharePct : (wbM.dayPvSharePct ?? wbM.livePvSharePct));
+
+        const pvBarWidth = Math.min(100, Math.max(0, displayPvSharePct));
+        const gridBarWidth = Math.max(0, 100 - pvBarWidth);
+
+        const sessionTimeHint = wbM.sessionStartedAt
+            ? `Seit ${new Date(wbM.sessionStartedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
+            : (wbM.hasCounterSensor ? 'Hybrid: kWh-Zähler + Live-W' : 'Berechnet aus Live-Watt');
+
+        const savedSessionEur = (wbM.sessionSolarKwh * gridPrice).toFixed(2).replace('.', ',');
+        const statusBadgeHtml = isCharging
+            ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/18 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35 text-xs font-extrabold tabular-nums">
+                 <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                 <span>Lädt aktiv · ${powerStr}</span>
+               </span>`
+            : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-500/12 text-teal-800 dark:text-teal-300 border border-teal-500/25 text-xs font-bold tabular-nums">
+                 <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+                 <span>Bereit · ${powerStr}</span>
+               </span>`;
+
+        return `
+        <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')" role="button" tabindex="0"
+            title="Tippen für 24h-Wallbox-Ladekurve (${safeName})"
+            class="rounded-[24px] p-4 sm:p-5 border transition-all cursor-pointer group ${
+                isCharging
+                    ? 'border-emerald-500/50 dark:border-emerald-400/45 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-sky-500/10 shadow-sm'
+                    : 'border-teal-500/30 dark:border-teal-500/25 bg-white/85 dark:bg-slate-900/75 hover:border-teal-500/50'
+            }">
+            <!-- Top Row: Icon + Name + Live Status Badge + Session Reset Button -->
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl ${isCharging ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40' : 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25'} flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-2xl">ev_station</span>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight truncate">${safeName}</h3>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300">Wallbox · Hinter Smart Meter</span>
+                        </div>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            ${wbM.hasCounterSensor ? 'Hybrid-Tracking: kWh-Zähler verankert + verzögerungsfreies Live-Watt-Integral' : 'Echtzeit-Integration aus Leistungssensor (W)'}
+                        </p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    ${statusBadgeHtml}
+                    <button type="button" onclick="resetWallboxSessionNow('${safeIdJs}', event)"
+                        class="px-2.5 py-1 rounded-xl bg-white/80 hover:bg-white dark:bg-white/10 dark:hover:bg-white/20 border border-slate-200/90 dark:border-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                        title="Geladene kWh seit Ladebeginn für neuen Ladevorgang auf 0,00 kWh zurücksetzen">
+                        <span class="material-symbols-rounded text-xs text-teal-600 dark:text-teal-400">restart_alt</span>
+                        <span class="hidden sm:inline">Session Reset</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Middle Row: 3 Dynamic Wallbox KPIs (PV-Ladeanteil % | Geladen seit Ladebeginn kWh | Heute & Monat Bilanz) -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <!-- KPI 1: Aktueller PV-Ladeanteil (%) -->
+                <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-emerald-500/25 flex flex-col justify-between">
+                    <div class="flex items-center justify-between gap-1">
+                        <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${isCharging ? 'Aktueller PV-Ladeanteil' : 'PV-Ladeanteil (Session)'}</span>
+                        <span class="material-symbols-rounded text-sm text-emerald-500">wb_sunny</span>
+                    </div>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <span class="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">${displayPvSharePct} %</span>
+                        <span class="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">Ø Session: ${wbM.sessionPvSharePct}%</span>
+                    </div>
+                    <p class="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-1 truncate">
+                        ${isCharging
+                            ? `☀️ ${formatPowerDe(wbM.livePvPowerW, true)} PV · ⚡ ${formatPowerDe(wbM.liveGridPowerW, true)} Netz`
+                            : `☀️ ${formatKwhDe(wbM.sessionSolarKwh, 2)} Solar · ⚡ ${formatKwhDe(wbM.sessionGridKwh, 2)} Netz`}
+                    </p>
+                </div>
+
+                <!-- KPI 2: Geladene kWh seit Ladebeginn (Hybrid Session Counter) -->
+                <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-teal-500/25 flex flex-col justify-between">
+                    <div class="flex items-center justify-between gap-1">
+                        <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Geladen seit Ladebeginn</span>
+                        <span class="material-symbols-rounded text-sm text-teal-500">battery_charging_full</span>
+                    </div>
+                    <div class="flex items-baseline gap-2 mt-1">
+                        <span class="text-xl sm:text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</span>
+                    </div>
+                    <p class="text-[11px] text-teal-700 dark:text-teal-300 tabular-nums mt-1 truncate">
+                        ${sessionTimeHint} · +${savedSessionEur} € PV-Vorteil
+                    </p>
+                </div>
+
+                <!-- KPI 3: Tages- & Monatsbilanz (im Hausverbrauch enthalten) -->
+                <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
+                    <div class="flex items-center justify-between gap-1">
+                        <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Wallbox Heute / Monat</span>
+                        <span class="material-symbols-rounded text-sm text-sky-500">electric_meter</span>
+                    </div>
+                    <div class="flex items-baseline gap-1.5 mt-1">
+                        <span class="text-lg sm:text-xl font-black font-mono tabular-nums text-slate-900 dark:text-white">${formatKwhDe(todayKwh, 2)}</span>
+                        <span class="text-[11px] font-mono tabular-nums text-slate-400">/ ${formatKwhDe(monthKwh, 1)} M</span>
+                    </div>
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-1 truncate">
+                        Im Hausverbrauch (${formatKwhDe(td?.houseTotal || 0, 2)}) berücksichtigt
+                    </p>
+                </div>
+            </div>
+
+            <!-- Bottom: Visual Solar vs. Grid Split Bar -->
+            <div class="mt-3 space-y-1">
+                <div class="flex items-center justify-between text-[10.5px] font-semibold tabular-nums">
+                    <span class="text-emerald-700 dark:text-emerald-300">☀️ Solar-Anteil: ${pvBarWidth}% (${formatKwhDe(wbM.sessionSolarKwh, 2)})</span>
+                    <span class="text-blue-700 dark:text-blue-300">⚡ Netz-Anteil: ${gridBarWidth}% (${formatKwhDe(wbM.sessionGridKwh, 2)})</span>
+                </div>
+                <div class="w-full h-2 rounded-full bg-blue-500/25 dark:bg-blue-950/70 overflow-hidden flex">
+                    <div class="h-full bg-gradient-to-r from-teal-500 to-emerald-500 transition-all duration-500" style="width: ${pvBarWidth}%"></div>
+                    <div class="h-full bg-blue-500/75 transition-all duration-500" style="width: ${gridBarWidth}%"></div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
 }
 
 function updateHaCustomConsumerField(idx, field, val) {
@@ -12275,6 +12760,299 @@ function selectDiscoveredHaDevice(groupName) {
     }
 }
 
+// =========================================================================
+// IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V11.9)
+// =========================================================================
+let aiAssistantConversationHistory = [];
+let aiAssistantBusy = false;
+
+function formatAiMarkdownToSafeHtml(mdText) {
+    const safe = typeof escapeHtml === 'function'
+        ? escapeHtml(String(mdText || ''))
+        : String(mdText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return safe
+        .replace(/^####\s+(.+)$/gm, '<h5 class="text-xs font-black text-indigo-700 dark:text-indigo-300 uppercase tracking-wider mt-3 mb-1">$1</h5>')
+        .replace(/^###\s+(.+)$/gm, '<h4 class="text-sm font-black text-slate-900 dark:text-white mt-2 mb-1.5">$1</h4>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
+        .replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 font-mono text-[11px] text-teal-800 dark:text-teal-300">$1</code>')
+        .replace(/^- (.+)$/gm, '<div class="flex items-start gap-1.5 ml-1 my-0.5"><span class="text-indigo-500 font-bold">•</span><span class="flex-1">$1</span></div>')
+        .replace(/\n\n/g, '<div class="h-2"></div>')
+        .replace(/\n/g, '<br>');
+}
+
+function collectAiAssistantContext() {
+    const baseline = getPlannedSystemBaseline();
+    const ledger = getUnifiedEnergyLedger(baseline);
+    const t = currentLiveTelemetry || {};
+    const availableEntities = (Array.isArray(haDiscoveredEntities) ? haDiscoveredEntities : []).slice(0, 140).map(e => ({
+        entity_id: e.entity_id,
+        name: e.name || '',
+        state: e.state,
+        unit: e.unit || ''
+    }));
+    const sensorDiagnostics = Object.values(sensorDiagnosticsByEntity || {});
+
+    return {
+        liveTelemetry: {
+            connectionOk: Boolean(t.connectionOk),
+            pvPowerW: t.pvPowerW || 0,
+            loadPowerW: t.loadPowerW || 0,
+            gridPowerW: t.gridPowerW || 0,
+            batteryPowerW: t.batteryPowerW || 0,
+            batterySocPct: t.batterySocPct,
+            todayLedger: ledger.today,
+            monthLedger: ledger.month
+        },
+        wallboxSummary: {
+            hasWallbox: ledger.hasWallbox,
+            primaryWallboxName: ledger.primaryWallboxName,
+            wallboxTodayKwh: ledger.today.wallboxKwh,
+            wallboxMonthKwh: ledger.month.wallboxKwh,
+            wallboxPvSharePct: ledger.today.wallboxPvSharePct
+        },
+        haConfigSummary: {
+            hasBaseUrl: Boolean(haConfigState.baseUrl),
+            hasToken: Boolean(haConfigState.accessToken),
+            trackingStartDate: haConfigState.trackingStartDate || '',
+            entities: haConfigState.entities || {},
+            customStrings: (haConfigState.customStrings || []).map(s => ({ name: s.name, powerEntity: s.powerEntity, energyEntity: s.energyEntity })),
+            customConsumers: (haConfigState.customConsumers || []).map(c => ({ id: c.id, name: c.name, type: c.type || 'standard', group: c.group || '', powerEntity: c.powerEntity, energyEntity: c.energyEntity })),
+            monitoredDevices: (haConfigState.monitoredDevices || []).map(d => ({ name: d.name, entityCount: (d.entityIds || []).length }))
+        },
+        sensorDiagnostics,
+        availableEntities
+    };
+}
+
+function renderAiAssistantConversation() {
+    const container = document.getElementById('aiAssistantMessagesContainer');
+    if (!container) return;
+
+    if (aiAssistantConversationHistory.length === 0) {
+        container.innerHTML = `
+            <div class="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 text-xs text-slate-700 dark:text-slate-200 space-y-2">
+                <div class="flex items-center gap-2 font-black text-indigo-800 dark:text-indigo-200 text-sm">
+                    <span class="material-symbols-rounded text-lg">auto_awesome</span>
+                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v11.9)</span>
+                </div>
+                <p class="leading-relaxed">
+                    Ich kenne deine komplette PV-Auslegung, deine Home-Assistant-Sensoren, den neuen <strong>Wallbox-Hybrid-Tracker</strong> sowie das Architektur-Regelwerk aus <code>AGENTS.md</code> und <code>DEVELOPMENT_GUIDELINES.md</code>.
+                </p>
+                <p class="leading-relaxed text-[11px] text-slate-500 dark:text-slate-400">
+                    Tippe oben auf einen der 4 Schnell-Buttons oder stelle unten deine Frage – vorgeschlagene Sensor-Zuweisungen und Einstellungen kannst du direkt per <strong>1-Klick-Button</strong> ausführen.
+                </p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = aiAssistantConversationHistory.map((msg, msgIdx) => {
+        if (msg.role === 'user') {
+            return `
+                <div class="flex justify-end">
+                    <div class="max-w-[85%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-indigo-600 text-white text-xs sm:text-sm font-medium shadow-xs">
+                        ${typeof escapeHtml === 'function' ? escapeHtml(msg.text) : msg.text}
+                    </div>
+                </div>
+            `;
+        }
+
+        const actions = Array.isArray(msg.suggestedActions) ? msg.suggestedActions : [];
+        const actionsHtml = actions.length > 0 ? `
+            <div class="mt-3 pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-2">
+                <p class="text-[10.5px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 flex items-center gap-1">
+                    <span class="material-symbols-rounded text-sm">bolt</span>
+                    <span>Direkt ausführbare Einstellungen &amp; Aktionen (${actions.length}):</span>
+                </p>
+                <div class="grid grid-cols-1 gap-2">
+                    ${actions.map((act, actIdx) => {
+                        const safeTitle = typeof escapeHtml === 'function' ? escapeHtml(act.title || 'Aktion ausführen') : (act.title || 'Aktion ausführen');
+                        const safeDesc = typeof escapeHtml === 'function' ? escapeHtml(act.description || '') : (act.description || '');
+                        return `
+                        <div class="p-2.5 rounded-xl bg-indigo-500/8 dark:bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-extrabold text-slate-900 dark:text-white truncate">${safeTitle}</p>
+                                ${safeDesc ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">${safeDesc}</p>` : ''}
+                            </div>
+                            <button type="button" onclick="executeAiSuggestedAction(${msgIdx}, ${actIdx})"
+                                class="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer shadow-2xs transition-all">
+                                <span class="material-symbols-rounded text-sm">check_circle</span>
+                                <span>Jetzt anwenden</span>
+                            </button>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>
+        ` : '';
+
+        return `
+            <div class="flex justify-start">
+                <div class="w-full rounded-2xl rounded-tl-sm p-4 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 leading-relaxed shadow-xs">
+                    ${formatAiMarkdownToSafeHtml(msg.text)}
+                    ${actionsHtml}
+                </div>
+            </div>
+        `;
+    }).join('') + (aiAssistantBusy ? `
+        <div class="flex items-center gap-2 text-xs text-indigo-600 dark:text-indigo-300 font-semibold px-2 py-1">
+            <span class="material-symbols-rounded text-base animate-spin">progress_activity</span>
+            <span>KI-Assistent analysiert Sensoren, Telemetrie &amp; AGENTS.md Regeln…</span>
+        </div>
+    ` : '');
+
+    container.scrollTop = container.scrollHeight;
+}
+
+async function openAiAssistantModal(initialPrompt = '') {
+    const modal = document.getElementById('modal-ai-assistant');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    // If HA entities haven't been loaded into memory yet and credentials exist, load them silently for sensor search
+    if ((!Array.isArray(haDiscoveredEntities) || haDiscoveredEntities.length === 0) && haConfigState.baseUrl && haConfigState.accessToken) {
+        try {
+            fetchHaEntitiesForAutocomplete(false);
+        } catch (e) {}
+    }
+
+    renderAiAssistantConversation();
+    if (initialPrompt) {
+        await sendAiAssistantPrompt(initialPrompt);
+    } else if (aiAssistantConversationHistory.length === 0) {
+        await sendAiAssistantPrompt('Prüfe meine aktuelle Telemetrie, meinen Wallbox-Verbraucher und meine Sensoren auf Optimierungen.');
+    }
+}
+
+function closeAiAssistantModal() {
+    const modal = document.getElementById('modal-ai-assistant');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function runAiQuickPrompt(promptText) {
+    await sendAiAssistantPrompt(promptText);
+}
+
+async function submitAiAssistantForm(event) {
+    if (event && typeof event.preventDefault === 'function') event.preventDefault();
+    const input = document.getElementById('aiAssistantInput');
+    if (!input) return;
+    const text = String(input.value || '').trim();
+    if (!text) return;
+    input.value = '';
+    await sendAiAssistantPrompt(text);
+}
+
+async function sendAiAssistantPrompt(promptText) {
+    if (aiAssistantBusy) return;
+    const cleanPrompt = String(promptText || '').trim();
+    if (!cleanPrompt) return;
+
+    aiAssistantConversationHistory.push({ role: 'user', text: cleanPrompt });
+    aiAssistantBusy = true;
+    renderAiAssistantConversation();
+
+    try {
+        const context = collectAiAssistantContext();
+        const res = await fetch('/api/ai/assistant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: cleanPrompt, context })
+        });
+        const data = await res.json();
+        const modeBadge = document.getElementById('aiAssistantModeBadge');
+        if (modeBadge && data.mode) {
+            modeBadge.innerText = data.mode === 'gemini-4-hydrogen' ? 'Gemini 4 KI · Aktiv' : 'System-Inspektor · Aktiv';
+        }
+        aiAssistantConversationHistory.push({
+            role: 'assistant',
+            text: data.answerMarkdown || 'Diagnose abgeschlossen.',
+            suggestedActions: Array.isArray(data.suggestedActions) ? data.suggestedActions : []
+        });
+    } catch (err) {
+        aiAssistantConversationHistory.push({
+            role: 'assistant',
+            text: `### ⚠️ Hinweis bei der Abfrage\nDie lokale Telemetrie-Diagnose ist weiterhin aktiv (${err.message || 'Verbindungsfehler'}).`,
+            suggestedActions: []
+        });
+    } finally {
+        aiAssistantBusy = false;
+        renderAiAssistantConversation();
+    }
+}
+
+function executeAiSuggestedAction(msgIdx, actIdx) {
+    const msg = aiAssistantConversationHistory[msgIdx];
+    const act = msg?.suggestedActions?.[actIdx];
+    if (!act) return;
+
+    let payload = {};
+    try {
+        payload = act.payloadJson ? JSON.parse(act.payloadJson) : {};
+    } catch (e) {}
+
+    const type = String(act.actionType || '').trim();
+    if (type === 'assign_main_sensor' && payload.field && payload.entityId) {
+        if (!haConfigState.entities) haConfigState.entities = {};
+        haConfigState.entities[payload.field] = payload.entityId;
+        persistMonitoredDevicesConfigImmediate();
+        pollLiveTelemetry();
+        if (typeof showToastNotification === 'function') {
+            showToastNotification(`Sensor „${payload.entityId}“ wurde für ${payload.field} gespeichert!`, 'success');
+        }
+    } else if (type === 'add_or_update_wallbox') {
+        if (!Array.isArray(haConfigState.customConsumers)) haConfigState.customConsumers = [];
+        const existingWb = haConfigState.customConsumers.find(c => isWallboxConsumer(c));
+        if (existingWb) {
+            existingWb.type = 'wallbox';
+            if (payload.name) existingWb.name = payload.name;
+            if (payload.powerEntity) existingWb.powerEntity = payload.powerEntity;
+            if (payload.energyEntity) existingWb.energyEntity = payload.energyEntity;
+        } else {
+            haConfigState.customConsumers.push({
+                id: 'cons_wb_' + Date.now(),
+                name: payload.name || 'Wallbox',
+                type: 'wallbox',
+                powerEntity: payload.powerEntity || '',
+                energyEntity: payload.energyEntity || '',
+                group: payload.group || ''
+            });
+        }
+        persistMonitoredDevicesConfigImmediate();
+        pollLiveTelemetry();
+        renderLiveCockpitUI();
+        if (typeof showToastNotification === 'function') {
+            showToastNotification('Wallbox-Konfiguration übernommen und Status-Kachel aktiviert!', 'success');
+        }
+    } else if (type === 'assign_consumer_group' && payload.consumerName && payload.group) {
+        const target = (haConfigState.customConsumers || []).find(
+            c => String(c.name || '').toLowerCase().includes(String(payload.consumerName).toLowerCase())
+        );
+        if (target) {
+            target.group = payload.group;
+            persistMonitoredDevicesConfigImmediate();
+            renderLiveCockpitUI();
+            if (typeof showToastNotification === 'function') {
+                showToastNotification(`„${target.name}“ wurde der Gruppe „${payload.group}“ zugeordnet!`, 'success');
+            }
+        }
+    } else if (type === 'add_monitored_device' && payload.groupName) {
+        selectDiscoveredHaDevice(payload.groupName);
+    } else if (type === 'reset_wallbox_session') {
+        const wb = (haConfigState.customConsumers || []).find(c => isWallboxConsumer(c));
+        if (wb) resetWallboxSessionNow(wb.id);
+    } else if (type === 'open_modal_tab') {
+        closeAiAssistantModal();
+        openHaConfigModal(payload.tab || 'config');
+    }
+}
+
+window.resetWallboxSessionNow = resetWallboxSessionNow;
+window.renderWallboxLiveStatusCard = renderWallboxLiveStatusCard;
+window.openAiAssistantModal = openAiAssistantModal;
+window.closeAiAssistantModal = closeAiAssistantModal;
+window.runAiQuickPrompt = runAiQuickPrompt;
+window.submitAiAssistantForm = submitAiAssistantForm;
+window.executeAiSuggestedAction = executeAiSuggestedAction;
 window.confirmHaDeviceDiscoverySelection = confirmHaDeviceDiscoverySelection;
 window.renderHomeTab = renderHomeTab;
 window.refreshHomeWeatherAndSensors = refreshHomeWeatherAndSensors;

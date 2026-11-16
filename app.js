@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '11.8';
+const APP_VERSION = '11.9';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }

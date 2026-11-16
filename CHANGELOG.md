@@ -4,6 +4,34 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 11.9] – 2026-11-16
+
+### ✨ Dedizierte Wallbox-Status-Kachel auf dem Live-Dashboard (Hybrid-Session-Tracker), Wallbox-Integration in Analyse & Sankey sowie integrierter KI-Assistent & System-Debugger
+
+#### 1. Spezifische Status-Kachel für den Wallbox-Verbraucher auf dem Live-Dashboard (`index.html`, `telemetry.js`)
+* **Dedizierte Wallbox-Status-Kachel (`#dash_wallbox_status_card_container` / `renderWallboxLiveStatusCard`):**
+  - Direkt unterhalb der 2x2 Hauptkacheln in *Energie · jetzt* zeigt das Live-Dashboard automatisch eine eigene, hochpräzise Status-Kachel für konfigurierte Wallbox-Verbraucher an.
+  - **Aktueller PV-Ladeanteil in Prozent (%):** Zeigt live während des Ladevorgangs den solaren Eigenstromanteil (`☀️ X %`, aufgeschlüsselt in `W PV` vs. `W Netz`) sowie den gewichteten **Durchschnitts-PV-Anteil der gesamten Ladesession (`Ø Session: Y %`)** samt zweifarbigem Solar-/Netz-Fortschrittsbalken.
+* **Hybrid-Session-Tracker für geladene kWh seit Ladebeginn (`getWallboxConsumerMetrics`, `resetWallboxSessionNow`):**
+  - Kombiniert das Beste aus beiden Sensoren: Bei Ladebeginn (`> 45 W` nach Pause oder per manuellem **`Session Reset`**-Button) wird der exakte Stand des Home-Assistant-`kWh`-Zählers (`startCounterKwh`) als eichgenauer Ankerpunkt gespeichert.
+  - Zwischen den (oft verzögerten) Updates des `kWh`-Zählers integriert die App verzögerungsfrei die Echtzeit-Leistung in Wattsekunden (`integralKwh`) und synchronisiert sich bei jedem Zähler-Tick automatisch mit `Math.max(counterDeltaKwh, integralKwh)`.
+
+#### 2. Berücksichtigung der Wallbox in Hausverbrauch, Sankey & Analyse-Performance (`telemetry.js`, `index.html`)
+* **Hinter Smart Meter im Hausverbrauch integriert (`getUnifiedEnergyLedger`):**
+  - Da die Wallbox regulär hinter dem Smart Meter angeschlossen ist, stellt `getUnifiedEnergyLedger` als *Single Source of Truth* sicher, dass `loadPowerW`, `houseTotalToday` und `houseTotalMonth` niemals kleiner als die Summe aller erfassten Verbraucher inkl. Wallbox sind.
+* **Sankey-Energiefluss & E-Mobility-Bilanz in der Analyse (`renderSankeyDiagram`, `renderAutarkyBatteryPanel`):**
+  - Im Sankey-Diagramm und im Knoten *Hausverbrauch Gesamt* wird transparent ausgewiesen, wie viel Energie auf den **Haushalt (ohne Wallbox)** und wie viel auf die **Wallbox (E-Auto)** entfällt (`☀️ X% PV-Anteil` + direkte Euro-Ersparnis durch Solar-Ladestrom).
+  - Im Analyse-Bereich *Autarkie & Speicher* zeigt die neue Karte **`#ana_wallbox_performance_box`** den Wallbox-Monatsverbrauch, den Anteil am gesamten Hausverbrauch, den Solar- vs. Netz-Ladestrom in `kWh` sowie die reale Kostenersparnis in `€`.
+
+#### 3. Integrierter KI-Assistent, Sensor-Konfigurator & Telemetrie-Debugger (`server.js`, `telemetry.js`, `index.html`)
+* **Server-seitige Gemini-Integration (`/api/ai/assistant` mit `@google/genai`):**
+  - Neuer Backend-Endpunkt mit `gemini-4-hydrogen` und strukturiertem JSON-Output (`answerMarkdown` + `suggestedActions`), kombiniert mit einem deterministischen lokalen Diagnose-Inspektor.
+  - Arbeitet strikt regelkonform nach `AGENTS.md` und `DEVELOPMENT_GUIDELINES.md` (*Single Source of Truth*, keine Insellösungen, Wallbox hinter Smart Meter).
+* **Direkt ausführbare 1-Klick-Aktionen im KI-Dialog (`#modal-ai-assistant`):**
+  - Über den Button **`✨ KI-Hilfe`** in der Kopfzeile oder im Menü lassen sich Home-Assistant-Sensoren durchsuchen, Wallbox- und Hauptsensoren per 1-Klick-Button (`Jetzt anwenden`) direkt zuweisen sowie Zähler-Sprünge, Offline-Sensoren und Telemetrie-Bilanzen debuggen.
+
+---
+
 ## [Version 11.8] – 2026-11-16
 
 ### ✨ Eigener Verbraucher-Typ „Wallbox / E-Auto“ mit Live-PV-Ladeanteil & geladenen kWh, Fix der Geräte-Diagnoseseite & Bestätigungs-Button im Geräte-Picker

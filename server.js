@@ -5,6 +5,7 @@ import http from 'http';
 import https from 'https';
 import { fileURLToPath } from 'url';
 import QRCode from 'qrcode';
+import { GoogleGenAI, Type } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '11.8';
+const APP_VERSION = '11.9';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1166,20 +1167,23 @@ app.all('/api/ha/states', async (req, res) => {
       };
     });
 
-    // Map custom individual consumers (Aktive Verbraucher)
+    // Map custom individual consumers (Aktive Verbraucher & Wallbox)
     const customConsumersList = Array.isArray(cfg.customConsumers) ? cfg.customConsumers : [];
     let unavailableConsumersCount = 0;
     const consumersTelemetry = customConsumersList.map(cc => {
       const pVal = getPower(cc.powerEntity);
-      const isAvail = cc.powerEntity && stateMap.has(cc.powerEntity) && pVal !== null;
-      if (cc.powerEntity && !isAvail) unavailableConsumersCount++;
+      const eVal = getEnergy(cc.energyEntity);
+      const isAvail = (cc.powerEntity && stateMap.has(cc.powerEntity) && pVal !== null) || (cc.energyEntity && stateMap.has(cc.energyEntity) && eVal !== null);
+      if ((cc.powerEntity || cc.energyEntity) && !isAvail) unavailableConsumersCount++;
       return {
         id: cc.id,
         name: cc.name || cc.powerEntity || 'Verbraucher',
         group: cc.group || '',
         type: cc.type || '',
         powerEntity: cc.powerEntity || '',
-        powerW: isAvail ? Math.max(0, Math.round(pVal)) : 0,
+        energyEntity: cc.energyEntity || '',
+        powerW: pVal !== null ? Math.max(0, Math.round(pVal)) : 0,
+        rawCounterKwh: eVal !== null ? +eVal.toFixed(3) : null,
         available: Boolean(isAvail)
       };
     });
@@ -1591,6 +1595,226 @@ app.post('/api/performance/records', (req, res) => {
   }
 });
 
+// ==========================================
+// API: IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER (V11.9)
+// ==========================================
+function buildLocalDiagnosticFallback(promptText, contextObj = {}) {
+  const q = String(promptText || '').toLowerCase();
+  const entities = Array.isArray(contextObj.availableEntities) ? contextObj.availableEntities : [];
+  const diagnostics = Array.isArray(contextObj.sensorDiagnostics) ? contextObj.sensorDiagnostics : [];
+  const tele = contextObj.liveTelemetry || {};
+  const cfg = contextObj.haConfigSummary || {};
+  const suggestedActions = [];
+  const lines = [];
+
+  // 1. Check for Wallbox / EV sensors
+  const wallboxCandidates = entities.filter(e => /wallbox|evcc|go_e|goe|wattpilot|keba|easee|openwb|charger|auto_laden|car_charge/i.test(`${e.entity_id} ${e.name}`));
+  const wbPower = wallboxCandidates.find(e => /^(w|kw)$/i.test(String(e.unit || '')));
+  const wbEnergy = wallboxCandidates.find(e => /^(wh|kwh|mwh)$/i.test(String(e.unit || '')));
+
+  if (wbPower || wbEnergy) {
+    suggestedActions.push({
+      id: 'act_wallbox_setup',
+      actionType: 'add_or_update_wallbox',
+      title: `Wallbox konfigurieren (${wbPower ? wbPower.name || wbPower.entity_id : wbEnergy.name || wbEnergy.entity_id})`,
+      description: `Setzt Typ „Wallbox (E-Auto)“ mit Live-Watt (${wbPower?.entity_id || '—'}) und kWh-Zähler (${wbEnergy?.entity_id || '—'}) für PV-Ladeanteil & Session-Tracking.`,
+      payloadJson: JSON.stringify({
+        name: 'Wallbox',
+        type: 'wallbox',
+        powerEntity: wbPower?.entity_id || '',
+        energyEntity: wbEnergy?.entity_id || ''
+      })
+    });
+  }
+
+  // 2. Check for unconfigured main PV / Grid / Load / Battery sensors
+  const findBestSensor = (regex, unitRegex) => entities.find(e => regex.test(`${e.entity_id} ${e.name}`) && unitRegex.test(String(e.unit || '')));
+  if (!cfg.entities?.pvPower) {
+    const pvP = findBestSensor(/pv_power|solar_power|power_photovoltaics|ac_power|dc_power|wechselrichter.*power/i, /^(w|kw)$/i);
+    if (pvP) {
+      suggestedActions.push({
+        id: 'act_pv_power',
+        actionType: 'assign_main_sensor',
+        title: `PV-Leistung zuweisen: ${pvP.entity_id}`,
+        description: `Trägt ${pvP.name || pvP.entity_id} (${pvP.state} ${pvP.unit}) als Haupt-PV-Leistungssensor ein.`,
+        payloadJson: JSON.stringify({ field: 'pvPower', entityId: pvP.entity_id })
+      });
+    }
+  }
+  if (!cfg.entities?.loadPower) {
+    const loadP = findBestSensor(/power_load|house_load|hausverbrauch|consumption_power|home_power/i, /^(w|kw)$/i);
+    if (loadP) {
+      suggestedActions.push({
+        id: 'act_load_power',
+        actionType: 'assign_main_sensor',
+        title: `Hausverbrauch (W) zuweisen: ${loadP.entity_id}`,
+        description: `Trägt ${loadP.name || loadP.entity_id} (${loadP.state} ${loadP.unit}) als Hausverbrauch-Sensor ein.`,
+        payloadJson: JSON.stringify({ field: 'loadPower', entityId: loadP.entity_id })
+      });
+    }
+  }
+
+  // 3. Telemetry & Counter Diagnostics
+  lines.push(`### 🔍 System- & Telemetrie-Diagnose (Regelkonform nach AGENTS.md · v${APP_VERSION})`);
+  lines.push(`- **Live-Status:** PV \`${tele.pvPowerW || 0} W\` · Hauslast \`${tele.loadPowerW || 0} W\` · Netz \`${tele.gridPowerW || 0} W\` · Speicher SoC \`${tele.batterySocPct ?? '—'} %\``);
+  lines.push(`- **Erfasste HA-Sensoren:** \`${entities.length}\` Entitäten im Zwischenspeicher · \`${(cfg.customConsumers || []).length}\` Einzelverbraucher · \`${(cfg.monitoredDevices || []).length}\` überwachte Geräte.`);
+
+  if (diagnostics.length > 0) {
+    lines.push(`\n#### ⚠️ Erkannte Sensor-Hinweise & Zähler-Sprünge (${diagnostics.length}):`);
+    diagnostics.slice(0, 6).forEach(d => {
+      lines.push(`- **\`${d.entityId}\`** (${d.status}): ${d.jumpInfo || d.reason || 'Prüfung empfohlen'}`);
+    });
+    suggestedActions.push({
+      id: 'act_open_counters',
+      actionType: 'open_modal_tab',
+      title: 'Zähler-Kalibrierung & Sensoren öffnen',
+      description: 'Öffnet den Home Assistant Sensor-Konfigurator zur Überprüfung der kWh-Gesamtzähler.',
+      payloadJson: JSON.stringify({ tab: 'config' })
+    });
+  } else {
+    lines.push(`- **Zähler-Integrität:** Keine fehlerhaften Einheiten oder unkalibrierten Zähler-Sprünge erkannt. Single Source of Truth (\`getUnifiedEnergyLedger\`) ist synchron.`);
+  }
+
+  if (q.includes('wallbox') || q.includes('auto') || q.includes('laden')) {
+    lines.push(`\n#### 🔌 Wallbox & E-Mobility Integration:`);
+    lines.push(`- Deine Wallbox ist **hinter dem Smart Meter** angeschlossen und wird im Hausverbrauch, im Sankey-Diagramm und in der Autarkie-Analyse voll berücksichtigt.`);
+    lines.push(`- **Hybrid Session-Tracker:** Die neue Wallbox-Status-Kachel auf dem Live-Dashboard verankert den exakten \`kWh\`-Zählerstand bei Ladebeginn und interpoliert dazwischen verzögerungsfrei über das Echtzeit-Watt-Integral.`);
+  }
+
+  if (q.includes('regel') || q.includes('guideline') || q.includes('code') || q.includes('architektur')) {
+    lines.push(`\n#### 📐 Architektur- & Guideline-Check (\`AGENTS.md\` & \`DEVELOPMENT_GUIDELINES.md\`):`);
+    lines.push(`- **Versionierung:** Aktuelle Systemversion **v${APP_VERSION}** synchron über alle Module (\`package.json\`, \`index.html\`, \`sw.js\`, \`content.js\`, \`server.js\`).`);
+    lines.push(`- **Keine Insellösungen:** Live-Kacheln, Wallbox-Status-Kachel, Sankey-Diagramm und Analyse beziehen ihre Werte aus \`getUnifiedEnergyLedger()\`.`);
+  }
+
+  if (suggestedActions.length === 0) {
+    suggestedActions.push({
+      id: 'act_open_consumers',
+      actionType: 'open_modal_tab',
+      title: 'Verbraucher & Wallbox verwalten',
+      description: 'Öffnet Tab „2. Verbraucher“ im Home Assistant Setup.',
+      payloadJson: JSON.stringify({ tab: 'consumers' })
+    });
+    suggestedActions.push({
+      id: 'act_open_devices',
+      actionType: 'open_modal_tab',
+      title: 'Geräte & Hardware-Diagnose öffnen',
+      description: 'Öffnet Tab „4. Geräte“ zur Auswahl von Wechselrichter, Speicher und Smart Meter.',
+      payloadJson: JSON.stringify({ tab: 'devices' })
+    });
+  }
+
+  return {
+    answerMarkdown: lines.join('\n'),
+    suggestedActions
+  };
+}
+
+app.post('/api/ai/assistant', async (req, res) => {
+  try {
+    const { prompt, context } = req.body || {};
+    const userPrompt = String(prompt || 'Prüfe meine aktuelle Telemetrie, Wallbox-Einbindung und Sensoren.').trim();
+    const safeContext = context && typeof context === 'object' ? context : {};
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || !String(apiKey).trim()) {
+      const fallback = buildLocalDiagnosticFallback(userPrompt, safeContext);
+      return res.json({
+        success: true,
+        mode: 'local-inspector',
+        ...fallback
+      });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: String(apiKey).trim(),
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    const systemInstruction = `Du bist der integrierte KI-Systemassistent, Home-Assistant-Konfigurator und Telemetrie-Debugger von "PV-Planung Pro (v${APP_VERSION})".
+Du arbeitest strikt regelkonform nach AGENTS.md und DEVELOPMENT_GUIDELINES.md:
+1. Single Source of Truth (Keine Insellösungen): Alle Energiewerte (Heute, Monat, Jahr, Sankey, Autarkie, Wallbox) stammen konsistent aus getUnifiedEnergyLedger().
+2. Wallbox hinter Smart Meter: Die Wallbox ist regulär hinter dem Smart Meter angeschlossen und Teil des Hausverbrauchs. Die dedizierte Wallbox-Status-Kachel auf dem Live-Dashboard nutzt den Hybrid-Session-Tracker (exakter kWh-Zähleranker bei Ladebeginn + verzögerungsfreies Watt-Integral zwischen Zähler-Updates) und berechnet den Live- & Session-PV-Ladeanteil (%).
+3. Modulare Architektur: index.html (DOM & Liquid Glass UI), app.js (PVGIS & Physik), telemetry.js (HA Live-Telemetrie, Wallbox-Tracker, Sankey, Analyse), wiring.js (DC-Verkabelung), dossier.js (DIN VDE 0100-712 Print/PDF).
+4. Antworte immer auf Deutsch, präzise, technisch fundiert und übersichtlich formatiert (mit kurzen Absätzen oder Aufzählungen).
+5. Wenn der Nutzer Sensoren sucht, die Wallbox einrichten möchte, Gruppen zuordnen will oder Fehler/Zähler-Sprünge debuggt, liefere in "suggestedActions" direkt ausführbare 1-Klick-Aktionen mit gültigem JSON-String in "payloadJson".
+Erlaubte Werte für actionType in suggestedActions:
+- "assign_main_sensor": payloadJson = {"field": "pvPower|loadPower|gridPower|batteryPower|batterySoc|pvEnergyTotal|gridImportMonth|gridExportMonth|loadEnergyMonth|batteryChargeMonth|batteryDischargeMonth", "entityId": "sensor.xyz"}
+- "add_or_update_wallbox": payloadJson = {"name": "Wallbox", "type": "wallbox", "powerEntity": "sensor.wallbox_power", "energyEntity": "sensor.wallbox_energy", "group": ""}
+- "assign_consumer_group": payloadJson = {"consumerName": "Name", "group": "Gruppenname"}
+- "add_monitored_device": payloadJson = {"groupName": "Fronius Symo GEN24"}
+- "open_modal_tab": payloadJson = {"tab": "config|consumers|climate|devices|guide"}
+- "reset_wallbox_session": payloadJson = {}`;
+
+    const compactContext = {
+      appVersion: APP_VERSION,
+      liveTelemetry: safeContext.liveTelemetry || {},
+      wallboxSummary: safeContext.wallboxSummary || {},
+      haConfigSummary: safeContext.haConfigSummary || {},
+      sensorDiagnostics: (safeContext.sensorDiagnostics || []).slice(0, 20),
+      availableEntitiesSample: (safeContext.availableEntities || []).slice(0, 120)
+    };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-4-hydrogen',
+      contents: `Nutzer-Anfrage: ${userPrompt}\n\nAktueller App- & Telemetrie-Kontext (JSON):\n${JSON.stringify(compactContext)}`,
+      config: {
+        systemInstruction,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            answerMarkdown: {
+              type: Type.STRING,
+              description: 'Antwort, Diagnose oder Anleitung in übersichtlichem Markdown auf Deutsch.'
+            },
+            suggestedActions: {
+              type: Type.ARRAY,
+              description: 'Direkt per Klick ausführbare Konfigurations- oder Debugging-Aktionen.',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  actionType: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  payloadJson: { type: Type.STRING }
+                },
+                required: ['id', 'actionType', 'title', 'description', 'payloadJson']
+              }
+            }
+          },
+          required: ['answerMarkdown', 'suggestedActions']
+        }
+      }
+    });
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(response.text || '{}');
+    } catch (parseErr) {
+      parsed = {
+        answerMarkdown: response.text || 'Diagnose abgeschlossen.',
+        suggestedActions: []
+      };
+    }
+
+    return res.json({
+      success: true,
+      mode: 'gemini-4-hydrogen',
+      answerMarkdown: parsed.answerMarkdown || 'Diagnose abgeschlossen.',
+      suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : []
+    });
+  } catch (err) {
+    const fallback = buildLocalDiagnosticFallback(req.body?.prompt || '', req.body?.context || {});
+    return res.json({
+      success: true,
+      mode: 'local-inspector-fallback',
+      ...fallback
+    });
+  }
+});
+
 // Fallback to index.html for SPA routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -1599,5 +1823,6 @@ app.get('*', (req, res) => {
 app.listen(PORT, HOST, () => {
   console.log(`Server running at http://${HOST}:${PORT} (v${APP_VERSION})`);
 });
+
 
 

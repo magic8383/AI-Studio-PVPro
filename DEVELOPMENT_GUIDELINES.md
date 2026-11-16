@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 11.8 (Eigener Verbraucher-Typ „Wallbox / E-Auto“ mit Live-PV-Ladeanteil und geladenen kWh im Live-Dashboard, reparierte Geräte-Diagnoseseite `#tab-devices` inkl. automatischer Sensor-Hydrierung sowie prominenter Bestätigungs-Button „✓ Auswahl übernehmen“ im Home-Assistant-Geräte-Picker)  
+**Aktuelle Version:** 11.9 (Dedizierte Wallbox-Status-Kachel auf dem Live-Dashboard mit Echtzeit-PV-Ladeanteil in % und geladenen kWh seit Ladebeginn via Hybrid-Session-Tracker, vollständige Berücksichtigung der hinter dem Smart Meter angeschlossenen Wallbox im Hausverbrauch, Sankey & Autarkie-Analyse sowie integrierter KI-Assistent & Telemetrie-Debugger nach `AGENTS.md`)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

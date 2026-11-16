@@ -1,6 +1,6 @@
 {
   "name": "pv-planung-pro",
-  "version": "11.8",
+  "version": "11.9",
   "description": "Photovoltaik-Planung, Auslegung und Wirtschaftlichkeitsberechnung",
   "type": "module",
   "scripts": {
@@ -10,6 +10,7 @@
     "lint": "node -e \"console.log('No lint errors')\""
   },
   "dependencies": {
+    "@google/genai": "^3.3.0",
     "express": "^4.21.2",
     "qrcode": "^1.5.4"
   }

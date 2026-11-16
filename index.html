@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 11.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 11.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 11.8 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 11.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=11.8">
+    <link rel="manifest" href="manifest.json?v=11.9">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.8">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.8">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.8">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.8">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=11.9">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=11.9">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=11.9">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=11.9">
     <script>
-        // V11.8: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V11.9: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v11.8') {
+                            if (key !== 'pvpro-cache-v11.9') {
                                 caches.delete(key);
                             }
                         });
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=11.8" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=11.9" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.8</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 11.9</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -698,6 +698,12 @@
                     <button onclick="openProjectFileFromDisk()" class="flex items-center gap-1 px-2 py-1 rounded-xl bg-white/75 dark:bg-white/10 hover:bg-white dark:hover:bg-white/15 text-slate-800 dark:text-slate-100 border border-white/80 dark:border-white/15 text-xs font-semibold transition-all cursor-pointer shrink-0" title="Datei öffnen... (Gespeicherte .pvpro.json Datei vom NAS oder Gerät einspielen)">
                         <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-400 text-sm">upload_file</span>
                         <span class="hidden lg:inline">Öffnen…</span>
+                    </button>
+
+                    <!-- In-App KI-Assistent, Sensor-Suche & System-Debugger -->
+                    <button onclick="openAiAssistantModal()" class="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-800 dark:text-indigo-200 border border-indigo-500/30 text-xs font-bold transition-all cursor-pointer shrink-0" title="KI-Assistent, HA-Sensor-Suche & Telemetrie-Debugger öffnen">
+                        <span class="material-symbols-rounded text-indigo-600 dark:text-indigo-300 text-sm">auto_awesome</span>
+                        <span class="hidden sm:inline">KI-Hilfe</span>
                     </button>
 
                     <!-- Quick Home Assistant Sensor & Reverse-Proxy Setup Button -->
@@ -1832,6 +1838,11 @@
                         </div>
                     </div>
 
+                    <!-- NEU V11.9: DEDIZIERTE WALLBOX & E-MOBILITY STATUS-KACHEL (PV-LADEANTEIL % + GELADENE KWH SEIT LADEBEGINN) -->
+                    <div id="dash_wallbox_status_card_container" class="hidden mt-4">
+                        <!-- Dynamisch gerendert durch renderWallboxLiveStatusCard() in telemetry.js -->
+                    </div>
+
                     <!-- Sektion: Aktive Verbraucher (Ruhige, helle Karten im Referenz-Design) -->
                     <div class="mt-5">
                         <div class="flex items-center justify-between gap-2 mb-2.5">
@@ -2462,6 +2473,11 @@
                             <canvas id="realAutarkyBalanceChart"></canvas>
                         </div>
                     </div>
+
+                    <!-- NEU V11.9: WALLBOX & E-MOBILITY BILANZ IN DER ANALYSE (HINTER SMART METER IM HAUSVERBRAUCH ENTHALTEN) -->
+                    <div id="ana_wallbox_performance_box" class="hidden">
+                        <!-- Dynamisch gerendert durch renderAutarkyBatteryPanel() in telemetry.js -->
+                    </div>
                 </div>
 
                 <!-- SUB-PANEL 3: REALE AMORTISATIONS- & EURO-ERSPARNIS-RECHNUNG -->
@@ -2922,6 +2938,23 @@
                 <span class="material-symbols-rounded text-slate-400 group-hover:text-primary transition-colors shrink-0">chevron_right</span>
             </button>
 
+            <!-- 2c. Integrierter KI-Assistent, Sensor-Konfigurator & Telemetrie-Debugger (V11.9) -->
+            <button onclick="closeMoreSheet(); openAiAssistantModal();" class="w-full flex items-center justify-between gap-3 p-3.5 rounded-[20px] dash-sub-tile text-left transition-all cursor-pointer group border border-indigo-500/25 bg-indigo-500/5 dark:bg-indigo-500/10">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-indigo-500/15 dark:bg-indigo-500/25 text-indigo-600 dark:text-indigo-300 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[20px]">auto_awesome</span>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5">
+                            <p class="text-[14px] font-semibold text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-300 transition-colors truncate">KI-Assistent &amp; System-Debugger</p>
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 shrink-0">Neu</span>
+                        </div>
+                        <p class="text-[12px] text-slate-500 dark:text-slate-400 truncate">HA-Sensoren suchen, per Klick einstellen &amp; Telemetrie debuggen</p>
+                    </div>
+                </div>
+                <span class="material-symbols-rounded text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0">chevron_right</span>
+            </button>
+
             <!-- 3. Speichern unter (NAS / Datei inkl. Token) & Gesamtpakete -->
             <div class="p-3.5 rounded-[20px] dash-sub-tile space-y-2.5">
                 <button onclick="closeMoreSheet(); openProjectManagerModal('list');" class="w-full flex items-center justify-between gap-3 text-left transition-all cursor-pointer group">
@@ -2965,7 +2998,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.8</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v11.9</p>
                     </div>
                 </button>
             </div>
@@ -4260,16 +4293,78 @@
         </div>
     </div>
 
+    <!-- ========================================================================= -->
+    <!-- MODAL: IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER     -->
+    <!-- ========================================================================= -->
+    <div id="modal-ai-assistant" class="fixed inset-0 z-[138] flex items-center justify-center p-2.5 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeAiAssistantModal()">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- Header -->
+            <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-950 shrink-0">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-2xl">auto_awesome</span>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">KI-Assistent &amp; System-Debugger</h3>
+                            <span id="aiAssistantModeBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 shrink-0">AGENTS.md Regelwerk</span>
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate">HA-Sensoren suchen, Einstellungen per Klick übernehmen &amp; Telemetrie/Zähler debuggen</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeAiAssistantModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0">
+                    <span class="material-symbols-rounded text-lg">close</span>
+                </button>
+            </div>
+
+            <!-- Quick-Action Chips -->
+            <div class="px-4 sm:px-5 py-2.5 border-b border-slate-200/80 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/75 flex items-center gap-1.5 overflow-x-auto hide-scroll shrink-0">
+                <button type="button" onclick="runAiQuickPrompt('Suche in meinen Home Assistant Sensoren nach meiner Wallbox (Leistung W und Energie kWh) sowie fehlenden Hauptsensoren und schlage die direkte Zuweisung vor.')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer transition-all">
+                    <span class="material-symbols-rounded text-sm text-emerald-500">ev_station</span>
+                    <span>Wallbox- &amp; PV-Sensoren suchen</span>
+                </button>
+                <button type="button" onclick="runAiQuickPrompt('Prüfe meine aktuelle Telemetrie, kWh-Gesamtzähler, eventuelle Zähler-Sprünge, Offline-Sensoren und die Hausverbrauch-Bilanz inkl. Wallbox.')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer transition-all">
+                    <span class="material-symbols-rounded text-sm text-amber-500">bug_report</span>
+                    <span>Telemetrie &amp; Zähler debuggen</span>
+                </button>
+                <button type="button" onclick="runAiQuickPrompt('Analysiere meine angelegten Einzelverbraucher und schlage sinnvolle Verbraucher-Gruppen oder Wallbox-Typisierungen vor.')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer transition-all">
+                    <span class="material-symbols-rounded text-sm text-indigo-500">folder_Copy</span>
+                    <span>Verbraucher &amp; Gruppen prüfen</span>
+                </button>
+                <button type="button" onclick="runAiQuickPrompt('Führe einen Regel- und Architektur-Check nach AGENTS.md und DEVELOPMENT_GUIDELINES.md durch (Single Source of Truth, Wallbox im Hausverbrauch, Versionierung).')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer transition-all">
+                    <span class="material-symbols-rounded text-sm text-teal-500">fact_check</span>
+                    <span>AGENTS.md Regel-Check</span>
+                </button>
+            </div>
+
+            <!-- Scrollable Conversation & Action Cards Body -->
+            <div id="aiAssistantMessagesContainer" class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/50 dark:bg-slate-950/40">
+                <!-- Dynamically populated by renderAiAssistantConversation() in telemetry.js -->
+            </div>
+
+            <!-- Input Footer -->
+            <div class="p-3.5 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+                <form onsubmit="submitAiAssistantForm(event)" class="flex items-center gap-2">
+                    <input type="text" id="aiAssistantInput" placeholder="Frage stellen, Sensor suchen oder Einstellung per KI ändern lassen…" class="flex-1 min-w-0 px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500">
+                    <button type="submit" id="btnAiAssistantSend" class="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0">
+                        <span class="material-symbols-rounded text-base">send</span>
+                        <span>Analysieren</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V11.8 (Wallbox-Verbrauchertyp mit PV-Ladeanteil, Geräte-Diagnose-Fix & Bestätigungs-Button) -->
-    <script src="qrcode.client.js?v=11.8"></script>
-    <script src="database.js?v=11.8"></script>
-    <script src="content.js?v=11.8"></script>
-    <script src="app.js?v=11.8"></script>
-    <script src="wiring.js?v=11.8"></script>
-    <script src="dossier.js?v=11.8"></script>
-    <script src="telemetry.js?v=11.8"></script>
+    <!-- MODULARE ARCHITEKTUR V11.9 (Dedizierte Wallbox-Status-Kachel mit Hybrid-Session-Tracker, Analyse-Integration & KI-Assistent) -->
+    <script src="qrcode.client.js?v=11.9"></script>
+    <script src="database.js?v=11.9"></script>
+    <script src="content.js?v=11.9"></script>
+    <script src="app.js?v=11.9"></script>
+    <script src="wiring.js?v=11.9"></script>
+    <script src="dossier.js?v=11.9"></script>
+    <script src="telemetry.js?v=11.9"></script>
 </body>
 </html>
