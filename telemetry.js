@@ -480,6 +480,10 @@ async function hydrateFromPersistentIndexedDB() {
                 localDeviceSecretsState.openRouterModel = String(idbLocalSecrets.openRouterModel).trim();
                 aiAssistantSettings.openRouterModel = localDeviceSecretsState.openRouterModel;
             }
+            if (Array.isArray(idbLocalSecrets.favoriteAiModels) && idbLocalSecrets.favoriteAiModels.length > 0) {
+                localDeviceSecretsState.favoriteAiModels = [...new Set(idbLocalSecrets.favoriteAiModels.map(x => String(x).trim()).filter(Boolean))];
+                aiAssistantSettings.favoriteAiModels = [...localDeviceSecretsState.favoriteAiModels];
+            }
             if (!localDeviceSecretsState.haAccessToken && idbLocalSecrets.haAccessToken) {
                 localDeviceSecretsState.haAccessToken = String(idbLocalSecrets.haAccessToken).trim();
             }
@@ -12793,17 +12797,206 @@ function selectDiscoveredHaDevice(groupName) {
 }
 
 // =========================================================================
-// IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & LOKALE BACKUP-SCHLÜSSEL (V12.1)
+// IN-APP KI-ASSISTENT, LIVE-MODELL-KATALOG & LOKALE BACKUP-SCHLÜSSEL (V12.2)
 // =========================================================================
-const AI_SETTINGS_STORAGE_KEY = 'pv_pro_ai_settings_v121';
+const AI_SETTINGS_STORAGE_KEY = 'pv_pro_ai_settings_v122';
 const LOCAL_SECRETS_STORAGE_KEY = 'pvpro_local_device_secrets';
+const AI_MODEL_CATALOG_CACHE_KEY = 'pvpro_ai_models_catalog_cache_v122';
+
+const DEFAULT_FAVORITE_AI_MODELS = [
+    'google/gemini-2.5-flash',
+    'deepseek/deepseek-chat-v3-0324:free',
+    'google/gemini-2.5-pro',
+    'anthropic/claude-3.7-sonnet',
+    'google-direct/gemini-4-hydrogen'
+];
+
+const GOOGLE_DIRECT_MODELS_CATALOG = [
+    {
+        id: 'google-direct/gemini-4-hydrogen',
+        name: 'Google Gemini 4 Flash (gemini-4-hydrogen · Direkt)',
+        provider: 'google',
+        source: 'google-direct',
+        contextLength: 1048576,
+        inputCostPer1M: 0.10,
+        outputCostPer1M: 0.40,
+        isFree: false,
+        description: 'Schnelles & präzises Standard-Modell über direkten Gemini-Key oder Server-Secret.'
+    },
+    {
+        id: 'google-direct/gemini-3.1-flash-lite',
+        name: 'Google Gemini 3.1 Flash Lite (Direkt)',
+        provider: 'google',
+        source: 'google-direct',
+        contextLength: 1048576,
+        inputCostPer1M: 0.075,
+        outputCostPer1M: 0.30,
+        isFree: false,
+        description: 'Besonders sparsames Leichtgewichts-Modell über direkten Gemini-Key.'
+    },
+    {
+        id: 'google-direct/gemini-4-argon',
+        name: 'Google Gemini 4 Pro (gemini-4-argon · Direkt)',
+        provider: 'google',
+        source: 'google-direct',
+        contextLength: 2097152,
+        inputCostPer1M: 1.25,
+        outputCostPer1M: 5.00,
+        isFree: false,
+        description: 'Komplexes Ingenieurs- & Mathematik-Reasoning über direkten Gemini-Key.'
+    },
+    {
+        id: 'google-direct/gemini-4-carbon',
+        name: 'Google Gemini 4 Ultra/Carbon (gemini-4-carbon · Direkt)',
+        provider: 'google',
+        source: 'google-direct',
+        contextLength: 2097152,
+        inputCostPer1M: 2.50,
+        outputCostPer1M: 10.00,
+        isFree: false,
+        description: 'Maximale Tiefen-Analyse & Architektur-Prüfung über direkten Gemini-Key.'
+    }
+];
+
+const CURATED_OPENROUTER_MODELS_FALLBACK = [
+    {
+        id: 'google/gemini-2.5-flash',
+        name: 'Google: Gemini 2.5 Flash',
+        provider: 'google',
+        source: 'openrouter',
+        contextLength: 1048576,
+        inputCostPer1M: 0.10,
+        outputCostPer1M: 0.40,
+        isFree: false
+    },
+    {
+        id: 'deepseek/deepseek-chat-v3-0324:free',
+        name: 'DeepSeek: DeepSeek V3 0324 (free)',
+        provider: 'deepseek',
+        source: 'openrouter',
+        contextLength: 163840,
+        inputCostPer1M: 0,
+        outputCostPer1M: 0,
+        isFree: true
+    },
+    {
+        id: 'deepseek/deepseek-r1:free',
+        name: 'DeepSeek: DeepSeek R1 Reasoning (free)',
+        provider: 'deepseek',
+        source: 'openrouter',
+        contextLength: 163840,
+        inputCostPer1M: 0,
+        outputCostPer1M: 0,
+        isFree: true
+    },
+    {
+        id: 'google/gemini-2.0-flash-exp:free',
+        name: 'Google: Gemini 2.0 Flash Exp (free)',
+        provider: 'google',
+        source: 'openrouter',
+        contextLength: 1048576,
+        inputCostPer1M: 0,
+        outputCostPer1M: 0,
+        isFree: true
+    },
+    {
+        id: 'meta-llama/llama-3.3-70b-instruct:free',
+        name: 'Meta: Llama 3.3 70B Instruct (free)',
+        provider: 'meta',
+        source: 'openrouter',
+        contextLength: 131072,
+        inputCostPer1M: 0,
+        outputCostPer1M: 0,
+        isFree: true
+    },
+    {
+        id: 'qwen/qwen-2.5-72b-instruct:free',
+        name: 'Qwen: Qwen 2.5 72B Instruct (free)',
+        provider: 'qwen',
+        source: 'openrouter',
+        contextLength: 32768,
+        inputCostPer1M: 0,
+        outputCostPer1M: 0,
+        isFree: true
+    },
+    {
+        id: 'google/gemini-2.5-pro',
+        name: 'Google: Gemini 2.5 Pro',
+        provider: 'google',
+        source: 'openrouter',
+        contextLength: 1048576,
+        inputCostPer1M: 1.25,
+        outputCostPer1M: 10.00,
+        isFree: false
+    },
+    {
+        id: 'deepseek/deepseek-chat-v3-0324',
+        name: 'DeepSeek: DeepSeek V3 0324',
+        provider: 'deepseek',
+        source: 'openrouter',
+        contextLength: 163840,
+        inputCostPer1M: 0.27,
+        outputCostPer1M: 1.10,
+        isFree: false
+    },
+    {
+        id: 'openai/gpt-4o-mini',
+        name: 'OpenAI: GPT-4o-mini',
+        provider: 'openai',
+        source: 'openrouter',
+        contextLength: 128000,
+        inputCostPer1M: 0.15,
+        outputCostPer1M: 0.60,
+        isFree: false
+    },
+    {
+        id: 'openai/gpt-4.1-mini',
+        name: 'OpenAI: GPT-4.1 Mini',
+        provider: 'openai',
+        source: 'openrouter',
+        contextLength: 1047576,
+        inputCostPer1M: 0.40,
+        outputCostPer1M: 1.60,
+        isFree: false
+    },
+    {
+        id: 'anthropic/claude-3.7-sonnet',
+        name: 'Anthropic: Claude 3.7 Sonnet',
+        provider: 'anthropic',
+        source: 'openrouter',
+        contextLength: 200000,
+        inputCostPer1M: 3.00,
+        outputCostPer1M: 15.00,
+        isFree: false
+    },
+    {
+        id: 'anthropic/claude-3.5-haiku',
+        name: 'Anthropic: Claude 3.5 Haiku',
+        provider: 'anthropic',
+        source: 'openrouter',
+        contextLength: 200000,
+        inputCostPer1M: 0.80,
+        outputCostPer1M: 4.00,
+        isFree: false
+    }
+];
 
 let localDeviceSecretsState = {
     openRouterApiKey: '',
     geminiApiKey: '',
     aiProvider: 'auto', // 'auto' | 'openrouter' | 'gemini'
     openRouterModel: 'google/gemini-2.5-flash',
+    favoriteAiModels: [...DEFAULT_FAVORITE_AI_MODELS],
     haAccessToken: ''
+};
+
+let aiModelCatalogState = {
+    models: [...GOOGLE_DIRECT_MODELS_CATALOG, ...CURATED_OPENROUTER_MODELS_FALLBACK],
+    lastFetchedMs: 0,
+    isFetching: false,
+    filterCategory: 'all', // 'all' | 'favorites' | 'free' | 'google' | 'anthropic' | 'openai' | 'deepseek'
+    sortBy: 'popular',     // 'popular' | 'price_asc' | 'price_desc' | 'context_desc' | 'name_asc'
+    searchQuery: ''
 };
 
 let aiAssistantConversationHistory = [];
@@ -12819,8 +13012,428 @@ let aiAssistantSettings = {
     thinkingLevel: 'HIGH', // 'LOW' | 'HIGH' | 'XHIGH'
     roleFocus: 'general',  // 'general' | 'sensor_finder' | 'telemetry_debugger' | 'wallbox_optimizer' | 'architecture_inspector'
     openRouterModel: 'google/gemini-2.5-flash',
+    favoriteAiModels: [...DEFAULT_FAVORITE_AI_MODELS],
     settingsOpen: false
 };
+
+function detectModelProviderCategory(modelId, modelName = '') {
+    const combined = `${String(modelId || '')} ${String(modelName || '')}`.toLowerCase();
+    if (combined.includes('google') || combined.includes('gemini') || combined.includes('gemma')) return 'google';
+    if (combined.includes('anthropic') || combined.includes('claude')) return 'anthropic';
+    if (combined.includes('openai') || combined.includes('gpt-') || combined.includes('o1') || combined.includes('o3') || combined.includes('o4')) return 'openai';
+    if (combined.includes('deepseek')) return 'deepseek';
+    if (combined.includes('meta-llama') || combined.includes('llama')) return 'meta';
+    if (combined.includes('qwen')) return 'qwen';
+    if (combined.includes('mistral') || combined.includes('codestral')) return 'mistral';
+    return 'other';
+}
+
+function formatUsdPer1M(costVal) {
+    const num = Number(costVal) || 0;
+    if (num <= 0) return '$0.00';
+    if (num < 0.01) return `$${num.toFixed(4)}`;
+    if (num < 0.1) return `$${num.toFixed(3).replace(/0$/, '')}`;
+    return `$${num.toFixed(2)}`;
+}
+
+function formatModelCostSummary(modelObj) {
+    if (!modelObj) return 'Preis wird beim Katalog-Abruf geladen';
+    if (modelObj.isFree || (Number(modelObj.inputCostPer1M) === 0 && Number(modelObj.outputCostPer1M) === 0)) {
+        return 'KOSTENLOS ($0.00 / 1M Tokens)';
+    }
+    return `In: ${formatUsdPer1M(modelObj.inputCostPer1M)} · Out: ${formatUsdPer1M(modelObj.outputCostPer1M)} / 1M`;
+}
+
+function formatContextWindowShort(ctxLen) {
+    const n = Number(ctxLen) || 0;
+    if (n <= 0) return '—';
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1).replace('.0', '')}M Kontext`;
+    return `${Math.round(n / 1000)}k Kontext`;
+}
+
+function getModelObjectFromCatalog(modelId) {
+    const cleanId = String(modelId || '').trim();
+    const found = aiModelCatalogState.models.find(m => m.id === cleanId);
+    if (found) return found;
+    const isFree = cleanId.endsWith(':free');
+    return {
+        id: cleanId,
+        name: cleanId.split('/').pop() || cleanId,
+        provider: detectModelProviderCategory(cleanId),
+        source: cleanId.startsWith('google-direct/') ? 'google-direct' : 'openrouter',
+        contextLength: 128000,
+        inputCostPer1M: 0,
+        outputCostPer1M: 0,
+        isFree,
+        isCustomUnknown: !isFree
+    };
+}
+
+function loadCachedAiModelsCatalog() {
+    try {
+        const raw = localStorage.getItem(AI_MODEL_CATALOG_CACHE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.models) && parsed.models.length > 10) {
+                aiModelCatalogState.models = parsed.models;
+                aiModelCatalogState.lastFetchedMs = Number(parsed.savedAtMs) || 0;
+            }
+        }
+    } catch (e) {}
+}
+
+async function fetchLiveAiModelsCatalog(forceRefresh = false) {
+    loadCachedAiModelsCatalog();
+    const ageMs = Date.now() - (aiModelCatalogState.lastFetchedMs || 0);
+    if (!forceRefresh && aiModelCatalogState.models.length > 25 && ageMs < 6 * 3600 * 1000) {
+        renderAiModelCatalogList();
+        syncAiSettingsControlsUI();
+        return;
+    }
+    if (aiModelCatalogState.isFetching) return;
+
+    aiModelCatalogState.isFetching = true;
+    const refreshIcon = document.getElementById('aiModelCatalogRefreshIcon');
+    const statusText = document.getElementById('aiModelCatalogStatusText');
+    if (refreshIcon) refreshIcon.classList.add('animate-spin');
+    if (statusText) statusText.innerText = 'Lade aktuelle Modelle & Live-Preise von OpenRouter & Google…';
+
+    try {
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+            method: 'GET',
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+        const rawList = Array.isArray(json?.data) ? json.data : [];
+
+        if (rawList.length > 0) {
+            const parsedOpenRouterModels = rawList
+                .filter(m => m && m.id)
+                .map(m => {
+                    const promptPerToken = parseFloat(m.pricing?.prompt);
+                    const completionPerToken = parseFloat(m.pricing?.completion);
+                    const in1M = !isNaN(promptPerToken) && promptPerToken > 0 ? +(promptPerToken * 1000000).toFixed(4) : 0;
+                    const out1M = !isNaN(completionPerToken) && completionPerToken > 0 ? +(completionPerToken * 1000000).toFixed(4) : 0;
+                    const isFree = (in1M === 0 && out1M === 0 && (!isNaN(promptPerToken) || String(m.id).endsWith(':free'))) || String(m.id).endsWith(':free');
+                    return {
+                        id: String(m.id).trim(),
+                        name: String(m.name || m.id).trim(),
+                        provider: detectModelProviderCategory(m.id, m.name),
+                        source: 'openrouter',
+                        contextLength: Number(m.context_length || m.top_provider?.context_length) || 128000,
+                        inputCostPer1M: in1M,
+                        outputCostPer1M: out1M,
+                        isFree
+                    };
+                });
+
+            const mergedMap = new Map();
+            GOOGLE_DIRECT_MODELS_CATALOG.forEach(gm => mergedMap.set(gm.id, gm));
+            parsedOpenRouterModels.forEach(om => mergedMap.set(om.id, om));
+
+            aiModelCatalogState.models = [...mergedMap.values()];
+            aiModelCatalogState.lastFetchedMs = Date.now();
+            try {
+                localStorage.setItem(AI_MODEL_CATALOG_CACHE_KEY, JSON.stringify({
+                    savedAtMs: aiModelCatalogState.lastFetchedMs,
+                    models: aiModelCatalogState.models
+                }));
+            } catch (e) {}
+
+            if (forceRefresh && typeof showToastNotification === 'function') {
+                const freeCount = aiModelCatalogState.models.filter(m => m.isFree).length;
+                showToastNotification(`${aiModelCatalogState.models.length} KI-Modelle (davon ${freeCount} kostenlos) live geladen!`, 'success');
+            }
+        }
+    } catch (err) {
+        if (forceRefresh && typeof showToastNotification === 'function') {
+            showToastNotification('Live-Abruf nicht erreichbar – nutze gespeicherten Modell-Katalog.', 'info');
+        }
+    } finally {
+        aiModelCatalogState.isFetching = false;
+        if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+        renderAiModelCatalogList();
+        syncAiSettingsControlsUI();
+    }
+}
+
+function getFavoriteAiModelIds() {
+    const list = Array.isArray(localDeviceSecretsState.favoriteAiModels) && localDeviceSecretsState.favoriteAiModels.length > 0
+        ? localDeviceSecretsState.favoriteAiModels
+        : (Array.isArray(aiAssistantSettings.favoriteAiModels) && aiAssistantSettings.favoriteAiModels.length > 0
+            ? aiAssistantSettings.favoriteAiModels
+            : DEFAULT_FAVORITE_AI_MODELS);
+    return [...new Set(list.map(x => String(x).trim()).filter(Boolean))];
+}
+
+function toggleAiModelFavorite(modelId, event) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    const cleanId = String(modelId || '').trim();
+    if (!cleanId) return;
+
+    const currentFavs = new Set(getFavoriteAiModelIds());
+    let added = false;
+    if (currentFavs.has(cleanId)) {
+        currentFavs.delete(cleanId);
+    } else {
+        currentFavs.add(cleanId);
+        added = true;
+    }
+
+    const updatedArr = [...currentFavs];
+    localDeviceSecretsState.favoriteAiModels = updatedArr;
+    aiAssistantSettings.favoriteAiModels = updatedArr;
+    saveLocalDeviceSecrets();
+    saveAiAssistantSettings();
+
+    renderAiFavoriteModelsQuickBar();
+    renderAiModelCatalogList();
+
+    if (typeof showToastNotification === 'function') {
+        showToastNotification(
+            added ? `„${cleanId}“ zu deinen Favoriten hinzugefügt!` : `„${cleanId}“ aus Favoriten entfernt.`,
+            'info'
+        );
+    }
+}
+
+function renderAiFavoriteModelsQuickBar() {
+    const bar = document.getElementById('aiFavoriteModelsQuickBar');
+    if (!bar) return;
+
+    loadCachedAiModelsCatalog();
+    const favIds = getFavoriteAiModelIds();
+    const activeModelId = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+
+    // Ensure the currently active model is also visible in the quick bar if not already in favorites
+    const displayIds = favIds.includes(activeModelId) ? favIds : [activeModelId, ...favIds];
+
+    if (displayIds.length === 0) {
+        bar.innerHTML = `<span class="text-[11px] text-slate-400">Noch keine Favoriten markiert – öffne den Katalog und tippe auf ★.</span>`;
+        return;
+    }
+
+    bar.innerHTML = displayIds.map(mId => {
+        const mObj = getModelObjectFromCatalog(mId);
+        const isSelected = mId === activeModelId;
+        const isFav = favIds.includes(mId);
+        const shortName = String(mObj.name || mId)
+            .replace(/^Google:\s*/i, '')
+            .replace(/^Anthropic:\s*/i, '')
+            .replace(/^OpenAI:\s*/i, '')
+            .replace(/^DeepSeek:\s*/i, '')
+            .replace(/^Meta:\s*/i, '')
+            .replace(/\s*\(Direkt\)/i, '');
+
+        const priceTag = mObj.isFree
+            ? 'KOSTENLOS'
+            : (mObj.isCustomUnknown ? 'Custom' : `${formatUsdPer1M(mObj.inputCostPer1M)}/${formatUsdPer1M(mObj.outputCostPer1M)}`);
+
+        const safeIdAttr = typeof escapeHtml === 'function' ? escapeHtml(mId) : mId;
+        const safeShort = typeof escapeHtml === 'function' ? escapeHtml(shortName) : shortName;
+        const safePrice = typeof escapeHtml === 'function' ? escapeHtml(priceTag) : priceTag;
+
+        const btnClass = isSelected
+            ? 'px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white border border-indigo-500 text-[11px] font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer whitespace-nowrap shrink-0 transition-all'
+            : 'px-2.5 py-1.5 rounded-xl bg-white dark:bg-slate-900 hover:bg-indigo-500/10 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-all';
+
+        const priceSpanClass = isSelected
+            ? 'font-mono tabular-nums text-[10px] text-indigo-100'
+            : (mObj.isFree ? 'font-mono tabular-nums text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400' : 'font-mono tabular-nums text-[10px] text-slate-400');
+
+        return `
+            <button type="button" onclick="setAiOpenRouterModel('${safeIdAttr.replace(/'/g, "\\'")}')" class="${btnClass}" title="${safeIdAttr} · ${formatModelCostSummary(mObj)}">
+                <span class="material-symbols-rounded text-xs ${isFav ? 'text-amber-400' : 'text-slate-400'}">${isFav ? 'star' : 'smart_toy'}</span>
+                <span>${safeShort}</span>
+                <span aria-hidden="true">·</span>
+                <span class="${priceSpanClass}">${safePrice}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function openAiModelPickerModal(initialFilter = '') {
+    loadCachedAiModelsCatalog();
+    if (initialFilter && ['all', 'favorites', 'free', 'google', 'anthropic', 'openai', 'deepseek'].includes(initialFilter)) {
+        aiModelCatalogState.filterCategory = initialFilter;
+    }
+    const modal = document.getElementById('modal-ai-model-picker');
+    if (modal) modal.classList.remove('hidden');
+
+    updateAiModelFilterButtonsUI();
+    renderAiModelCatalogList();
+    fetchLiveAiModelsCatalog(false);
+}
+
+function closeAiModelPickerModal() {
+    const modal = document.getElementById('modal-ai-model-picker');
+    if (modal) modal.classList.add('hidden');
+}
+
+function onAiModelCatalogSearch(query) {
+    aiModelCatalogState.searchQuery = String(query || '').trim();
+    renderAiModelCatalogList();
+}
+
+function setAiModelCatalogFilter(category) {
+    aiModelCatalogState.filterCategory = String(category || 'all');
+    updateAiModelFilterButtonsUI();
+    renderAiModelCatalogList();
+}
+
+function setAiModelCatalogSort(sortMode) {
+    aiModelCatalogState.sortBy = String(sortMode || 'popular');
+    renderAiModelCatalogList();
+}
+
+function updateAiModelFilterButtonsUI() {
+    const categories = ['all', 'favorites', 'free', 'google', 'anthropic', 'openai', 'deepseek'];
+    categories.forEach(cat => {
+        const btn = document.getElementById(`btnAiModCat_${cat}`);
+        if (!btn) return;
+        const isActive = aiModelCatalogState.filterCategory === cat;
+        if (isActive) {
+            btn.className = 'px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs';
+        } else if (cat === 'free') {
+            btn.className = 'px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-slate-200 dark:border-slate-700 text-xs font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0';
+        } else {
+            btn.className = 'px-2.5 py-1 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0';
+        }
+    });
+}
+
+function selectAiModelFromCatalog(modelId) {
+    setAiOpenRouterModel(modelId);
+    closeAiModelPickerModal();
+}
+
+function renderAiModelCatalogList() {
+    const container = document.getElementById('aiModelCatalogListContainer');
+    const statusText = document.getElementById('aiModelCatalogStatusText');
+    if (!container) return;
+
+    const favSet = new Set(getFavoriteAiModelIds());
+    const activeModelId = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+    const q = (aiModelCatalogState.searchQuery || '').toLowerCase();
+    const cat = aiModelCatalogState.filterCategory || 'all';
+    const sortBy = aiModelCatalogState.sortBy || 'popular';
+
+    const allModels = aiModelCatalogState.models || [];
+    const freeTotalCount = allModels.filter(m => m.isFree).length;
+    if (statusText && !aiModelCatalogState.isFetching) {
+        statusText.innerText = `${allModels.length} Modelle verfügbar (davon ${freeTotalCount} kostenlos) · Preise pro 1 Mio. Tokens`;
+    }
+
+    let filtered = allModels.filter(m => {
+        if (cat === 'favorites' && !favSet.has(m.id)) return false;
+        if (cat === 'free' && !m.isFree) return false;
+        if (['google', 'anthropic', 'openai', 'deepseek'].includes(cat) && m.provider !== cat) return false;
+        if (q) {
+            const hay = `${m.name} ${m.id} ${m.provider}`.toLowerCase();
+            if (!hay.includes(q)) return false;
+        }
+        return true;
+    });
+
+    filtered.sort((a, b) => {
+        if (sortBy === 'price_asc') {
+            const costA = (Number(a.inputCostPer1M) || 0) + (Number(a.outputCostPer1M) || 0);
+            const costB = (Number(b.inputCostPer1M) || 0) + (Number(b.outputCostPer1M) || 0);
+            if (costA !== costB) return costA - costB;
+            return String(a.name).localeCompare(String(b.name));
+        }
+        if (sortBy === 'price_desc') {
+            const costA = (Number(a.inputCostPer1M) || 0) + (Number(a.outputCostPer1M) || 0);
+            const costB = (Number(b.inputCostPer1M) || 0) + (Number(b.outputCostPer1M) || 0);
+            if (costA !== costB) return costB - costA;
+            return String(a.name).localeCompare(String(b.name));
+        }
+        if (sortBy === 'context_desc') {
+            return (Number(b.contextLength) || 0) - (Number(a.contextLength) || 0);
+        }
+        if (sortBy === 'name_asc') {
+            return String(a.name).localeCompare(String(b.name));
+        }
+        // Default 'popular': Active first, then Favorites, then Google/Free/Popular
+        if (a.id === activeModelId && b.id !== activeModelId) return -1;
+        if (b.id === activeModelId && a.id !== activeModelId) return 1;
+        const aFav = favSet.has(a.id) ? 1 : 0;
+        const bFav = favSet.has(b.id) ? 1 : 0;
+        if (aFav !== bFav) return bFav - aFav;
+        return 0;
+    });
+
+    if (filtered.length === 0) {
+        container.innerHTML = `
+            <div class="p-6 text-center rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
+                <p class="text-sm font-bold text-slate-700 dark:text-slate-200">Keine Modelle für diesen Filter gefunden</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Setze den Suchbegriff zurück oder wähle die Kategorie „Alle“.</p>
+                <button type="button" onclick="setAiModelCatalogFilter('all'); document.getElementById('aiModelSearchInput').value=''; onAiModelCatalogSearch('');" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white text-xs font-bold cursor-pointer">
+                    Alle Modelle anzeigen
+                </button>
+            </div>
+        `;
+        return;
+    }
+
+    const displayList = filtered.slice(0, 140);
+    container.innerHTML = displayList.map(m => {
+        const isSelected = m.id === activeModelId;
+        const isFav = favSet.has(m.id);
+        const safeId = typeof escapeHtml === 'function' ? escapeHtml(m.id) : m.id;
+        const safeName = typeof escapeHtml === 'function' ? escapeHtml(m.name || m.id) : (m.name || m.id);
+        const jsIdArg = safeId.replace(/'/g, "\\'");
+        const ctxText = formatContextWindowShort(m.contextLength);
+        const sourceText = m.source === 'google-direct' ? 'Google Direkt-API' : 'OpenRouter';
+
+        const priceHtml = m.isFree
+            ? `<div class="text-right font-mono tabular-nums">
+                   <span class="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">KOSTENLOS</span>
+                   <p class="text-[10.5px] text-slate-400">$0.00 / 1M Tokens</p>
+               </div>`
+            : `<div class="text-right font-mono tabular-nums">
+                   <p class="text-xs font-bold text-slate-900 dark:text-white">In: ${formatUsdPer1M(m.inputCostPer1M)} <span class="text-slate-400">·</span> Out: ${formatUsdPer1M(m.outputCostPer1M)}</p>
+                   <p class="text-[10.5px] text-slate-400">pro 1 Mio. Tokens</p>
+               </div>`;
+
+        const rowBorder = isSelected
+            ? 'border-indigo-500 bg-indigo-500/10 dark:bg-indigo-950/50'
+            : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/50';
+
+        return `
+            <div onclick="selectAiModelFromCatalog('${jsIdArg}')" class="p-3 rounded-2xl border ${rowBorder} flex items-center justify-between gap-2.5 transition-all cursor-pointer group">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                    <button type="button" onclick="toggleAiModelFavorite('${jsIdArg}', event)" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-500/15 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="${isFav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren (★)'}">
+                        <span class="material-symbols-rounded text-lg ${isFav ? 'text-amber-400' : 'text-slate-400'}">${isFav ? 'star' : 'star_outline'}</span>
+                    </button>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5">
+                            <p class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">${safeName}</p>
+                            ${isSelected ? `<span class="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 shrink-0">✓ Aktiv</span>` : ''}
+                        </div>
+                        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
+                            <span class="truncate max-w-[190px] sm:max-w-[260px]">${safeId}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>${ctxText}</span>
+                            <span aria-hidden="true">·</span>
+                            <span>${sourceText}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    ${priceHtml}
+                    <span class="material-symbols-rounded text-base ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-indigo-400'}">
+                        ${isSelected ? 'check_circle' : 'chevron_right'}
+                    </span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
 
 function loadLocalDeviceSecrets() {
     try {
@@ -12840,6 +13453,10 @@ function loadLocalDeviceSecrets() {
                 if (typeof parsed.openRouterModel === 'string' && parsed.openRouterModel.trim()) {
                     localDeviceSecretsState.openRouterModel = parsed.openRouterModel.trim();
                     aiAssistantSettings.openRouterModel = localDeviceSecretsState.openRouterModel;
+                }
+                if (Array.isArray(parsed.favoriteAiModels) && parsed.favoriteAiModels.length > 0) {
+                    localDeviceSecretsState.favoriteAiModels = [...new Set(parsed.favoriteAiModels.map(x => String(x).trim()).filter(Boolean))];
+                    aiAssistantSettings.favoriteAiModels = [...localDeviceSecretsState.favoriteAiModels];
                 }
                 if (typeof parsed.haAccessToken === 'string' && parsed.haAccessToken.trim()) {
                     localDeviceSecretsState.haAccessToken = parsed.haAccessToken.trim();
@@ -12873,6 +13490,7 @@ function getLocalDeviceSecretsForBackup() {
         geminiApiKey: String(localDeviceSecretsState.geminiApiKey || '').trim(),
         aiProvider: String(localDeviceSecretsState.aiProvider || 'auto').trim(),
         openRouterModel: String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim(),
+        favoriteAiModels: getFavoriteAiModelIds(),
         haAccessToken: haToken
     };
 }
@@ -12889,6 +13507,7 @@ function applyLocalDeviceSecretsFromBackup(rawObj) {
     const inGemini = String(src.geminiApiKey ?? rawObj.geminiApiKey ?? '').trim();
     const inProvider = String(src.aiProvider ?? rawObj.aiProvider ?? '').trim();
     const inModel = String(src.openRouterModel ?? rawObj.openRouterModel ?? '').trim();
+    const inFavs = Array.isArray(src.favoriteAiModels) ? src.favoriteAiModels : (Array.isArray(rawObj.favoriteAiModels) ? rawObj.favoriteAiModels : null);
     const inHaToken = String(src.haAccessToken ?? rawObj.haAccessToken ?? rawObj.haConfigFull?.accessToken ?? '').trim();
 
     if (inOpenRouter) localDeviceSecretsState.openRouterApiKey = inOpenRouter;
@@ -12897,6 +13516,11 @@ function applyLocalDeviceSecretsFromBackup(rawObj) {
     if (inModel) {
         localDeviceSecretsState.openRouterModel = inModel;
         aiAssistantSettings.openRouterModel = inModel;
+        saveAiAssistantSettings();
+    }
+    if (inFavs && inFavs.length > 0) {
+        localDeviceSecretsState.favoriteAiModels = [...new Set(inFavs.map(x => String(x).trim()).filter(Boolean))];
+        aiAssistantSettings.favoriteAiModels = [...localDeviceSecretsState.favoriteAiModels];
         saveAiAssistantSettings();
     }
     if (inHaToken) {
@@ -12914,8 +13538,11 @@ function applyLocalDeviceSecretsFromBackup(rawObj) {
 
 function loadAiAssistantSettings() {
     loadLocalDeviceSecrets();
+    loadCachedAiModelsCatalog();
     try {
-        const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY) || localStorage.getItem('pv_pro_ai_settings_v120');
+        const raw = localStorage.getItem(AI_SETTINGS_STORAGE_KEY)
+            || localStorage.getItem('pv_pro_ai_settings_v121')
+            || localStorage.getItem('pv_pro_ai_settings_v120');
         if (raw) {
             const parsed = JSON.parse(raw);
             if (parsed && typeof parsed === 'object') {
@@ -12927,6 +13554,9 @@ function loadAiAssistantSettings() {
                 }
                 if (typeof parsed.openRouterModel === 'string' && parsed.openRouterModel.trim()) {
                     aiAssistantSettings.openRouterModel = parsed.openRouterModel.trim();
+                }
+                if (Array.isArray(parsed.favoriteAiModels) && parsed.favoriteAiModels.length > 0) {
+                    aiAssistantSettings.favoriteAiModels = [...new Set(parsed.favoriteAiModels.map(x => String(x).trim()).filter(Boolean))];
                 }
                 if (typeof parsed.settingsOpen === 'boolean') {
                     aiAssistantSettings.settingsOpen = parsed.settingsOpen;
@@ -12994,6 +13624,7 @@ function getCombinedAiAvailableEntities() {
 }
 
 function syncAiSettingsControlsUI() {
+    loadCachedAiModelsCatalog();
     const panel = document.getElementById('aiAssistantSettingsPanel');
     const toggleBtn = document.getElementById('btnToggleAiSettings');
     if (panel) {
@@ -13030,19 +13661,27 @@ function syncAiSettingsControlsUI() {
         roleSelect.value = aiAssistantSettings.roleFocus || 'general';
     }
 
-    const modelSelect = document.getElementById('aiOpenRouterModelSelect');
-    if (modelSelect) {
-        const activeModel = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
-        const exists = Array.from(modelSelect.options).some(opt => opt.value === activeModel);
-        if (!exists && activeModel) {
-            const customOpt = document.createElement('option');
-            customOpt.value = activeModel;
-            customOpt.textContent = `${activeModel} (aus JSON-Backup)`;
-            modelSelect.appendChild(customOpt);
-        }
-        modelSelect.value = activeModel;
+    const activeModelId = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+    const activeModelObj = getModelObjectFromCatalog(activeModelId);
+    const titleEl = document.getElementById('aiActiveModelDisplayTitle');
+    const priceSubEl = document.getElementById('aiActiveModelPriceSub');
+    const countLabelEl = document.getElementById('aiCatalogCountLabel');
+
+    if (titleEl) {
+        titleEl.innerText = activeModelObj.name || activeModelId;
+    }
+    if (priceSubEl) {
+        priceSubEl.innerText = formatModelCostSummary(activeModelObj);
+        priceSubEl.className = activeModelObj.isFree
+            ? 'text-[10.5px] font-mono tabular-nums font-extrabold text-emerald-600 dark:text-emerald-400 truncate'
+            : 'text-[10.5px] font-mono tabular-nums text-slate-500 dark:text-slate-400 truncate';
+    }
+    if (countLabelEl) {
+        const total = Array.isArray(aiModelCatalogState.models) ? aiModelCatalogState.models.length : 0;
+        countLabelEl.innerText = total > 20 ? `${total} Modelle` : 'Live-Katalog';
     }
 
+    renderAiFavoriteModelsQuickBar();
     updateAiTransparencyBarUI();
 }
 
@@ -13061,12 +13700,14 @@ function updateAiTransparencyBarUI() {
     const hasLocalOpenRouter = Boolean(localDeviceSecretsState.openRouterApiKey && localDeviceSecretsState.openRouterApiKey.length > 8);
     const hasLocalGemini = Boolean(localDeviceSecretsState.geminiApiKey && localDeviceSecretsState.geminiApiKey.length > 8);
     const activeOrModel = localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash';
+    const mObj = getModelObjectFromCatalog(activeOrModel);
+    const shortCost = mObj.isFree ? 'KOSTENLOS' : `In ${formatUsdPer1M(mObj.inputCostPer1M)} / Out ${formatUsdPer1M(mObj.outputCostPer1M)}`;
 
     if (engineEl) {
-        if (hasLocalOpenRouter) {
-            engineEl.innerText = `Modell: OpenRouter (${activeOrModel} · ${thinkLvl})`;
-        } else if (hasLocalGemini) {
-            engineEl.innerText = `Modell: Google Gemini 4 (gemini-4-hydrogen · ${thinkLvl})`;
+        if (hasLocalOpenRouter && !activeOrModel.startsWith('google-direct/')) {
+            engineEl.innerText = `Modell: ${mObj.name || activeOrModel} (${shortCost} · ${thinkLvl})`;
+        } else if (hasLocalGemini || activeOrModel.startsWith('google-direct/')) {
+            engineEl.innerText = `Modell: ${mObj.name || 'Google Gemini 4'} (${shortCost} · ${thinkLvl})`;
         } else if (aiServerStatusCache.hasApiKey) {
             engineEl.innerText = `Modell: ${aiServerStatusCache.engineLabel || 'Google Gemini 4'} (${thinkLvl})`;
         } else {
@@ -13075,24 +13716,22 @@ function updateAiTransparencyBarUI() {
     }
     if (connEl) {
         if (hasLocalOpenRouter) {
-            connEl.innerText = 'Lokaler OpenRouter-Key aktiv (Handy-Speicher)';
+            connEl.innerText = 'Lokaler OpenRouter-Key aktiv (Handy)';
         } else if (hasLocalGemini) {
-            connEl.innerText = 'Lokaler Gemini-Key aktiv (Handy-Speicher)';
+            connEl.innerText = 'Lokaler Gemini-Key aktiv (Handy)';
         } else if (aiServerStatusCache.hasApiKey) {
             connEl.innerText = 'Server-Key aktiv';
         } else {
-            connEl.innerText = 'Lokal-Inspektor aktiv (Key in Backup-Datei eintragbar)';
+            connEl.innerText = 'Lokal-Inspektor aktiv';
         }
     }
     if (ctxEl) {
         ctxEl.innerText = `Kontext: ${entitiesCount} HA-Sensoren · ${consumersCount} Verbraucher${hasWb ? ' · Wallbox aktiv' : ''}`;
     }
     if (badgeEl) {
-        if (hasLocalOpenRouter) {
-            const shortMod = activeOrModel.split('/').pop() || activeOrModel;
-            badgeEl.innerText = `OpenRouter (${shortMod}) · ${thinkLvl}`;
-        } else if (hasLocalGemini || aiServerStatusCache.hasApiKey) {
-            badgeEl.innerText = `Gemini 4 · ${thinkLvl}`;
+        const shortMod = activeOrModel.split('/').pop() || activeOrModel;
+        if (hasLocalOpenRouter || hasLocalGemini || aiServerStatusCache.hasApiKey) {
+            badgeEl.innerText = `${shortMod} · ${thinkLvl}`;
         } else {
             badgeEl.innerText = `System-Inspektor · ${thinkLvl}`;
         }
@@ -13152,8 +13791,10 @@ function setAiOpenRouterModel(modelId) {
     saveAiAssistantSettings();
     saveLocalDeviceSecrets();
     syncAiSettingsControlsUI();
+    renderAiModelCatalogList();
+    const mObj = getModelObjectFromCatalog(clean);
     if (typeof showToastNotification === 'function') {
-        showToastNotification(`KI-Modell auf „${clean}“ gesetzt (wird auch im Backup gespeichert).`, 'info');
+        showToastNotification(`Modell „${mObj.name || clean}“ (${formatModelCostSummary(mObj)}) aktiviert!`, 'success');
     }
 }
 
@@ -13268,13 +13909,10 @@ function renderAiAssistantConversation() {
             <div class="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 text-xs text-slate-700 dark:text-slate-200 space-y-2">
                 <div class="flex items-center gap-2 font-black text-indigo-800 dark:text-indigo-200 text-sm">
                     <span class="material-symbols-rounded text-lg">auto_awesome</span>
-                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v12.1)</span>
+                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v12.2)</span>
                 </div>
                 <p class="leading-relaxed">
-                    Ich arbeite wahlweise mit deinem persönlichen <strong>OpenRouter-Key</strong> (z. B. <code>google/gemini-2.5-flash</code>, <code>claude-3.7-sonnet</code>, <code>deepseek</code>), <strong>Google Gemini 4 (<code>gemini-4-hydrogen</code>)</strong> sowie dem <strong>lokalen System-Inspektor</strong> und kenne deine PV-Auslegung, deine Home-Assistant-Sensoren und deinen <strong>Wallbox-Hybrid-Tracker</strong>.
-                </p>
-                <p class="leading-relaxed text-[11px] text-slate-500 dark:text-slate-400">
-                    Deine Keys (<code>openRouterApiKey</code>, <code>geminiApiKey</code>, <code>openRouterModel</code>, <code>haAccessToken</code>) stehen ganz oben in den ersten Zeilen deiner <strong>„Speichern unter…“</strong>-Backup-Datei und bleiben zu 100 % lokal auf deinem Handy.
+                    Über <strong>„Einstellungen &rarr; Katalog“</strong> kannst du live alle Modelle von <strong>OpenRouter</strong> und <strong>Google Gemini</strong> samt aktuellen <strong>Input-/Output-Preisen pro 1 Mio. Tokens</strong> (inkl. <code>KOSTENLOS</code>-Modellen) prüfen und deine Favoriten mit einem Stern <strong>★</strong> für die 1-Klick-Schnellwahl anpinnen.
                 </p>
             </div>
         `;
@@ -13346,6 +13984,7 @@ async function openAiAssistantModal(initialPrompt = '') {
 
     syncAiSettingsControlsUI();
     fetchAndRenderAiStatusBar();
+    fetchLiveAiModelsCatalog(false);
 
     // Ensure HA states/sensors are loaded in background if credentials exist
     if (getCombinedAiAvailableEntities().length < 10 && haConfigState.baseUrl && haConfigState.accessToken) {
@@ -13387,10 +14026,12 @@ async function callOpenRouterDirectFromBrowser(promptText, contextObj) {
     if (!apiKey) return null;
 
     const modelId = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+    if (modelId.startsWith('google-direct/')) return null;
+
     const thinkingLevel = aiAssistantSettings.thinkingLevel || 'HIGH';
     const roleFocus = aiAssistantSettings.roleFocus || 'general';
 
-    const systemPrompt = `Du bist der integrierte System-Ingenieur, Konfigurator und Telemetrie-Debugger von "PV-Planung Pro 12.1".
+    const systemPrompt = `Du bist der integrierte System-Ingenieur, Konfigurator und Telemetrie-Debugger von "PV-Planung Pro 12.2".
 Du hältst dich strikt an AGENTS.md und DEVELOPMENT_GUIDELINES.md:
 - Single Source of Truth: Alle Energiebilanzen laufen über getUnifiedEnergyLedger in telemetry.js.
 - Die Wallbox ist physisch hinter dem Smart Meter angeschlossen und bereits im Hausverbrauch enthalten (nicht doppelt auf den Hausverbrauch addieren).
@@ -13404,7 +14045,7 @@ Erlaubte actionType: "assign_main_sensor", "add_or_update_wallbox", "assign_cons
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
             'HTTP-Referer': window.location.origin || 'https://pvpro.local',
-            'X-Title': 'PV-Planung Pro 12.1'
+            'X-Title': 'PV-Planung Pro 12.2'
         },
         body: JSON.stringify({
             model: modelId,
@@ -13455,8 +14096,9 @@ async function sendAiAssistantPrompt(promptText) {
         const context = collectAiAssistantContext();
         updateAiTransparencyBarUI();
 
+        const activeModelId = String(localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
         const hasOpenRouterKey = Boolean(localDeviceSecretsState.openRouterApiKey && localDeviceSecretsState.openRouterApiKey.length > 8);
-        const wantsOpenRouter = hasOpenRouterKey && (localDeviceSecretsState.aiProvider !== 'gemini');
+        const wantsOpenRouter = hasOpenRouterKey && (localDeviceSecretsState.aiProvider !== 'gemini') && !activeModelId.startsWith('google-direct/');
 
         // 1. Direct autonomous OpenRouter execution in the browser (works on static GitHub Pages & mobile without Node backend)
         if (wantsOpenRouter) {
@@ -13485,18 +14127,18 @@ async function sendAiAssistantPrompt(promptText) {
                 aiSettings: {
                     thinkingLevel: aiAssistantSettings.thinkingLevel || 'HIGH',
                     roleFocus: aiAssistantSettings.roleFocus || 'general',
-                    openRouterModel: localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash'
+                    openRouterModel: activeModelId
                 },
                 localSecrets: {
                     openRouterApiKey: localDeviceSecretsState.openRouterApiKey || '',
                     geminiApiKey: localDeviceSecretsState.geminiApiKey || '',
                     aiProvider: localDeviceSecretsState.aiProvider || 'auto',
-                    openRouterModel: localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash'
+                    openRouterModel: activeModelId
                 }
             })
         });
         const data = await res.json();
-        if (data.mode === 'gemini-4-hydrogen' || data.mode === 'openrouter') {
+        if (data.mode && data.mode !== 'local-inspector' && data.mode !== 'local-inspector-fallback') {
             aiServerStatusCache.hasApiKey = true;
             aiServerStatusCache.activeEngine = data.mode;
         }
@@ -13591,6 +14233,14 @@ function executeAiSuggestedAction(msgIdx, actIdx) {
 window.getLocalDeviceSecretsForBackup = getLocalDeviceSecretsForBackup;
 window.applyLocalDeviceSecretsFromBackup = applyLocalDeviceSecretsFromBackup;
 window.setAiOpenRouterModel = setAiOpenRouterModel;
+window.openAiModelPickerModal = openAiModelPickerModal;
+window.closeAiModelPickerModal = closeAiModelPickerModal;
+window.fetchLiveAiModelsCatalog = fetchLiveAiModelsCatalog;
+window.onAiModelCatalogSearch = onAiModelCatalogSearch;
+window.setAiModelCatalogFilter = setAiModelCatalogFilter;
+window.setAiModelCatalogSort = setAiModelCatalogSort;
+window.toggleAiModelFavorite = toggleAiModelFavorite;
+window.selectAiModelFromCatalog = selectAiModelFromCatalog;
 window.resetWallboxSessionNow = resetWallboxSessionNow;
 window.renderWallboxLiveStatusCard = renderWallboxLiveStatusCard;
 window.openAiAssistantModal = openAiAssistantModal;

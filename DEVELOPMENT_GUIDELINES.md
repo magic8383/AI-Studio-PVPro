@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.1 (Lokale Schlüssel-Konfiguration `localDeviceSecrets` ganz oben in den ersten Zeilen der „Speichern unter…“-Backup-Datei für `openRouterApiKey`, `geminiApiKey`, `openRouterModel` und `haAccessToken`, volle OpenRouter-Unterstützung mit Modell-Auswahl im KI-Fenster + freiem Modell-Feld in JSON, 100 % lokale Gerätespeicherung ohne GitHub-Leakage sowie Bereinigung aller hochgeladenen Screenshots)  
+**Aktuelle Version:** 12.2 (Interaktiver Live-KI-Modellkatalog & Preis-Browser für OpenRouter + Google Gemini mit Live-Abruf von `https://openrouter.ai/api/v1/models`, Preis pro 1 Mio Input-/Output-Tokens inkl. `KOSTENLOS`-Label sowie `⭐`-Favoriten-System mit 1-Tap Schnell-Buttons im KI-Fenster, Sortierung oben im Katalog & Persistenz in Backup-Datei/IndexedDB)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

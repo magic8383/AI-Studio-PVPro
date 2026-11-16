@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.2] – 2026-11-16
+
+### ✨ Interaktiver Live-KI-Modellkatalog & Preis-Browser (`OpenRouter` + `Google Gemini`), Kosten pro 1 Mio. Input-/Output-Tokens + `KOSTENLOS`-Label & `⭐`-Favoriten mit Schnell-Buttons im KI-Fenster
+
+#### 1. Live-Modellkatalog für OpenRouter & Google Gemini (`index.html`, `telemetry.js`, `server.js`)
+* **Automatischer Live-Abruf aller OpenRouter-Modelle (`fetchLiveAiModelsCatalog`):**
+  - Ruft direkt im Browser die öffentliche OpenRouter-Schnittstelle `GET https://openrouter.ai/api/v1/models` ab und lädt sämtliche verfügbaren Sprachmodelle (200+ Modelle von Google, Anthropic, OpenAI, DeepSeek, Meta Llama, Mistral, Qwen u. v. m.) inklusive Echtzeit-Preisen und Kontextfenstergröße (`1M ctx`, `200k ctx`, `128k ctx`).
+  - Kombiniert diese nahtlos mit den direkten Google-Gemini-Modellen (`google-direct/gemini-4-hydrogen`, `google-direct/gemini-3.1-flash-lite`, `google-direct/gemini-4-argon`, `google-direct/gemini-4-carbon`).
+  - Kein manuelles Eintragen von Modell-IDs in der JSON-Backup-Datei erforderlich.
+* **Echtzeit-Suche, Kategorie-Filter & Preis-Sortierung (`#modal-ai-model-picker`):**
+  - Sofort-Suche nach Modellname, Anbieter oder ID (`gemini`, `claude`, `deepseek`, `gpt`, `free`).
+  - Schnellfilter-Buttons für **Alle**, **⭐ Favoriten**, **Kostenlos (Free)**, **Google / Gemini**, **Anthropic Claude**, **OpenAI GPT** und **DeepSeek**.
+  - Sortierung nach **Favoriten & Empfohlen**, **Günstigste zuerst (Input-Preis)**, **Teuerste / High-End zuerst** oder **Name (A–Z)**.
+
+#### 2. Preis-Anzeige pro 1 Mio. Input-/Output-Tokens & `KOSTENLOS`-Label (`telemetry.js`)
+* **Transparente Token-Preise auf einen Blick (`formatUsdPer1M` / `formatModelCostSummary`):**
+  - Jedes Modell im Katalog sowie die aktive Modell-Anzeige im KI-Fenster zeigt die exakten Kosten pro **1 Million Input-Tokens** und **1 Million Output-Tokens** (z. B. `In: $0.15 / 1M · Out: $0.60 / 1M`).
+  - Komplett kostenlose Modelle (`$0.00 / 1M` bzw. `:free`-Endung oder kostenloses AI-Studio-Kontingent) werden prominent mit einem grünen **`KOSTENLOS`**-Badge hervorgehoben.
+
+#### 3. Persönliches `⭐`-Favoriten-System: Schnell-Buttons im KI-Fenster & oben im Katalog (`index.html`, `telemetry.js`)
+* **1-Tap Favoriten-Schnellleiste im KI-Fenster (`#aiFavoriteModelsQuickBar`):**
+  - Jedes Modell im Katalog lässt sich per Tipp auf den Stern (`⭐`) als Favorit markieren oder entfernen (`toggleAiModelFavorite`).
+  - Alle markierten Favoriten erscheinen sofort als **Schnell-Buttons direkt im KI-Einstellungsbereich** (inkl. Modellname und Kurzpreis wie `$0.15/$0.60` oder `KOSTENLOS`) für den 1-Klick-Modellwechsel ohne Öffnen des Katalogs.
+  - Zusätzlich werden alle Favoriten im Modellkatalog automatisch **ganz oben** einsortiert.
+* **Dauerhafte Speicherung auf dem Gerät & in der „Speichern unter…“-Backup-Datei:**
+  - Sowohl das gewählte Modell (`openRouterModel`) als auch die Favoritenliste (`favoriteAiModels`) werden automatisch in `localStorage`, `IndexedDB` (`PVProPersistentDB`) sowie im Block `localDeviceSecrets` ganz oben in der „Speichern unter…“-Backup-Datei gesichert.
+
+---
+
 ## [Version 12.1] – 2026-11-16
 
 ### ✨ Lokale Schlüssel-Konfiguration (`localDeviceSecrets`) ganz oben in der „Speichern unter…“-Backup-Datei, OpenRouter-Unterstützung (Modell-Auswahl im KI-Fenster + JSON), 100 % GitHub-freier Geheimnisschutz & Bereinigung aller Screenshots

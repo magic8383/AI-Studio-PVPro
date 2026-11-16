@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '12.1';
+const APP_VERSION = '12.2';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1853,13 +1853,18 @@ Erlaubte Werte für actionType in suggestedActions:
     const rawOrKey = String(safeSecrets.openRouterApiKey || '').trim();
     const rawGemKey = String(safeSecrets.geminiApiKey || '').trim();
     const prefProvider = String(safeSecrets.aiProvider || 'auto').toLowerCase();
-    const openRouterModel = String(safeSecrets.openRouterModel || safeSettings.openRouterModel || 'google/gemini-2.5-flash').trim() || 'google/gemini-2.5-flash';
+    const selectedModelId = String(safeSecrets.openRouterModel || safeSettings.openRouterModel || 'google/gemini-2.5-flash').trim() || 'google/gemini-2.5-flash';
+    const isGoogleDirectModel = selectedModelId.startsWith('google-direct/');
 
     // Auto-detect if user pasted an OpenRouter key (sk-or-...) into either field
     const effectiveOpenRouterKey = rawOrKey || (rawGemKey.startsWith('sk-or-') ? rawGemKey : '');
     const effectiveGeminiKey = (!rawGemKey.startsWith('sk-or-') && rawGemKey) ? rawGemKey : String(process.env.GEMINI_API_KEY || '').trim();
 
-    const shouldUseOpenRouter = Boolean(effectiveOpenRouterKey && (prefProvider === 'openrouter' || prefProvider === 'auto' || !effectiveGeminiKey));
+    const shouldUseOpenRouter = Boolean(
+      effectiveOpenRouterKey &&
+      !isGoogleDirectModel &&
+      (prefProvider === 'openrouter' || prefProvider === 'auto' || !effectiveGeminiKey)
+    );
 
     if (shouldUseOpenRouter) {
       const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -1871,7 +1876,7 @@ Erlaubte Werte für actionType in suggestedActions:
           'X-Title': `PV-Planung Pro v${APP_VERSION}`
         },
         body: JSON.stringify({
-          model: openRouterModel,
+          model: selectedModelId,
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -1903,7 +1908,7 @@ Erlaubte Werte für actionType in suggestedActions:
       return res.json({
         success: true,
         mode: 'openrouter',
-        engineLabel: `OpenRouter (${openRouterModel})`,
+        engineLabel: `OpenRouter (${selectedModelId})`,
         thinkingLevel: thinkingLevelKey,
         roleFocus,
         contextStats,
@@ -1934,8 +1939,12 @@ Erlaubte Werte für actionType in suggestedActions:
       ? ThinkingLevel.LOW
       : (thinkingLevelKey === 'XHIGH' ? ThinkingLevel.XHIGH : ThinkingLevel.HIGH);
 
+    const allowedDirectGemini = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite', 'gemini-4-argon', 'gemini-4-carbon'];
+    const rawDirectName = isGoogleDirectModel ? selectedModelId.replace('google-direct/', '') : 'gemini-4-hydrogen';
+    const targetGeminiModel = allowedDirectGemini.includes(rawDirectName) ? rawDirectName : 'gemini-4-hydrogen';
+
     const response = await ai.models.generateContent({
-      model: 'gemini-4-hydrogen',
+      model: targetGeminiModel,
       contents: `Nutzer-Anfrage: ${userPrompt}\n\nAktueller App- & Telemetrie-Kontext (JSON):\n${JSON.stringify(compactContext)}`,
       config: {
         systemInstruction,
@@ -1981,8 +1990,8 @@ Erlaubte Werte für actionType in suggestedActions:
 
     return res.json({
       success: true,
-      mode: 'gemini-4-hydrogen',
-      engineLabel: `Google Gemini 4 (gemini-4-hydrogen · ${thinkingLevelKey})`,
+      mode: targetGeminiModel,
+      engineLabel: `Google (${targetGeminiModel} · ${thinkingLevelKey})`,
       thinkingLevel: thinkingLevelKey,
       roleFocus,
       contextStats,

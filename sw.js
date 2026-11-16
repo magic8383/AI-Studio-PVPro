@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pvpro-cache-v12.1';
+const CACHE_NAME = 'pvpro-cache-v12.2';
 const STATIC_ASSETS = [
     './',
     './index.html',
