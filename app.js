@@ -1,7 +1,7 @@
 // ==========================================
 // ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
 // ==========================================
-const APP_VERSION = '12.2';
+const APP_VERSION = '12.3';
 if (typeof window !== 'undefined') {
     window.APP_VERSION = APP_VERSION;
 }
@@ -2789,6 +2789,196 @@ function pushAppNavHistoryState(section, level, detailId = '', fromPopState = fa
     } catch (e) {}
 }
 
+let _modalHistoryGuardActive = false;
+let _handlingModalPopState = false;
+
+function getTopmostOpenModalEntry() {
+    const isVisible = (id) => {
+        const el = document.getElementById(id);
+        return Boolean(el && !el.classList.contains('hidden'));
+    };
+
+    // Priority stack ordered from highest Z-index / nested picker down to base modals & sheets
+    if (isVisible('modal-wiring-fullscreen')) {
+        return {
+            id: 'modal-wiring-fullscreen',
+            close: () => {
+                if (typeof closeWiringFullscreen === 'function') closeWiringFullscreen();
+                else document.getElementById('modal-wiring-fullscreen')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-ai-model-picker')) {
+        return {
+            id: 'modal-ai-model-picker',
+            close: () => {
+                if (typeof closeAiModelPickerModal === 'function') closeAiModelPickerModal();
+                else document.getElementById('modal-ai-model-picker')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-ai-assistant')) {
+        return {
+            id: 'modal-ai-assistant',
+            close: () => {
+                if (typeof closeAiAssistantModal === 'function') closeAiAssistantModal();
+                else document.getElementById('modal-ai-assistant')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-ha-entity-picker')) {
+        return {
+            id: 'modal-ha-entity-picker',
+            close: () => {
+                if (typeof closeHaEntityPicker === 'function') closeHaEntityPicker();
+                else document.getElementById('modal-ha-entity-picker')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-design-studio')) {
+        return {
+            id: 'modal-design-studio',
+            close: () => {
+                if (typeof closeDesignStudioModal === 'function') closeDesignStudioModal();
+                else document.getElementById('modal-design-studio')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-climate-curve')) {
+        return {
+            id: 'modal-climate-curve',
+            close: () => {
+                if (typeof closeClimateHistoryModal === 'function') closeClimateHistoryModal();
+                else document.getElementById('modal-climate-curve')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-intraday-fullscreen')) {
+        return {
+            id: 'modal-intraday-fullscreen',
+            close: () => {
+                if (typeof closeIntradayFullscreenModal === 'function') closeIntradayFullscreenModal();
+                else if (typeof closeIntradayFullscreen === 'function') closeIntradayFullscreen();
+                else document.getElementById('modal-intraday-fullscreen')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-device-datasheet')) {
+        return {
+            id: 'modal-device-datasheet',
+            close: () => {
+                if (typeof closeDeviceDatasheetModal === 'function') closeDeviceDatasheetModal();
+                else document.getElementById('modal-device-datasheet')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-hardware-docs')) {
+        return {
+            id: 'modal-hardware-docs',
+            close: () => {
+                if (typeof closeHardwareDocModal === 'function') closeHardwareDocModal();
+                else document.getElementById('modal-hardware-docs')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-ha-config')) {
+        const devPickerBox = document.getElementById('haDiscoveredDevicesPickerBox');
+        const devSection = document.getElementById('haModalTabSection_devices');
+        if (devPickerBox && !devPickerBox.classList.contains('hidden') && devSection && !devSection.classList.contains('hidden')) {
+            return {
+                id: 'haDiscoveredDevicesPickerBox',
+                close: () => {
+                    if (typeof confirmHaDeviceDiscoverySelection === 'function') confirmHaDeviceDiscoverySelection();
+                    else devPickerBox.classList.add('hidden');
+                }
+            };
+        }
+        return {
+            id: 'modal-ha-config',
+            close: () => {
+                if (typeof closeHaConfigModal === 'function') closeHaConfigModal();
+                else document.getElementById('modal-ha-config')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-hardware-editor')) {
+        return {
+            id: 'modal-hardware-editor',
+            close: () => {
+                if (typeof closeHardwareEditModal === 'function') closeHardwareEditModal();
+                else document.getElementById('modal-hardware-editor')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-save-system-plan')) {
+        return {
+            id: 'modal-save-system-plan',
+            close: () => {
+                if (typeof closeSaveSystemPlanModal === 'function') closeSaveSystemPlanModal();
+                else document.getElementById('modal-save-system-plan')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-project-manager')) {
+        return {
+            id: 'modal-project-manager',
+            close: () => {
+                if (typeof closeProjectManagerModal === 'function') closeProjectManagerModal();
+                else document.getElementById('modal-project-manager')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-share-device')) {
+        return {
+            id: 'modal-share-device',
+            close: () => {
+                if (typeof closeShareModal === 'function') closeShareModal();
+                else document.getElementById('modal-share-device')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('modal-dossier')) {
+        return {
+            id: 'modal-dossier',
+            close: () => {
+                if (typeof closeDossierModal === 'function') closeDossierModal();
+                else document.getElementById('modal-dossier')?.classList.add('hidden');
+            }
+        };
+    }
+    if (isVisible('m3SheetBackdrop')) {
+        return {
+            id: 'm3MoreSheet',
+            close: () => {
+                if (typeof closeMoreSheet === 'function') closeMoreSheet();
+                else document.getElementById('m3SheetBackdrop')?.classList.add('hidden');
+            }
+        };
+    }
+    return null;
+}
+
+function syncModalHistoryGuardState() {
+    if (_handlingModalPopState || _ignoreProgrammaticPopState) return;
+    try {
+        const hasOpenModal = getTopmostOpenModalEntry() !== null;
+        if (hasOpenModal && !_modalHistoryGuardActive) {
+            _modalHistoryGuardActive = true;
+            const curState = (history.state && typeof history.state === 'object') ? history.state : { pvproSection: 'home', pvproLevel: currentNavLevel, pvproDepth: _browserHistoryDepth };
+            history.pushState({ ...curState, pvproModalGuard: true }, '');
+        } else if (!hasOpenModal && _modalHistoryGuardActive) {
+            _modalHistoryGuardActive = false;
+            if (history.state && history.state.pvproModalGuard) {
+                _ignoreProgrammaticPopState = true;
+                history.back();
+                setTimeout(() => {
+                    _ignoreProgrammaticPopState = false;
+                }, 140);
+            }
+        }
+    } catch (e) {}
+}
+
 function closeAllTransientOverlaysOnBack() {
     try {
         const fsModal = document.getElementById('modal-intraday-fullscreen');
@@ -2804,20 +2994,47 @@ function closeAllTransientOverlaysOnBack() {
 }
 
 if (typeof window !== 'undefined') {
+    window.getTopmostOpenModalEntry = getTopmostOpenModalEntry;
+    window.syncModalHistoryGuardState = syncModalHistoryGuardState;
+
     // Beim initialen Laden sicherstellen, dass Start (Ebene 0) auf Tiefe 0 liegt
     try {
         const initialDepth = (history.state && typeof history.state.pvproDepth === 'number') ? history.state.pvproDepth : 0;
-        if (initialDepth > 0) {
+        const hadModalGuard = Boolean(history.state && history.state.pvproModalGuard);
+        const totalBackSteps = initialDepth + (hadModalGuard ? 1 : 0);
+        if (totalBackSteps > 0) {
             _browserHistoryDepth = 0;
+            _modalHistoryGuardActive = false;
             _pendingHistoryReplaceState = { pvproSection: 'home', pvproLevel: 0, pvproDepth: 0, pvproDetail: '' };
             _ignoreProgrammaticPopState = true;
-            history.go(-initialDepth);
+            history.go(-totalBackSteps);
             setTimeout(() => { _ignoreProgrammaticPopState = false; }, 150);
         } else {
             _browserHistoryDepth = 0;
+            _modalHistoryGuardActive = false;
             history.replaceState({ pvproSection: 'home', pvproLevel: 0, pvproDepth: 0, pvproDetail: '' }, '');
         }
     } catch (e) {}
+
+    // Automatische Überwachung aller Einstellungsfenster, Picker & Sheets für die Zurück-Wischgeste
+    const setupModalHistoryObserver = () => {
+        try {
+            if (!document.body || typeof MutationObserver === 'undefined') return;
+            const obs = new MutationObserver(() => {
+                syncModalHistoryGuardState();
+            });
+            obs.observe(document.body, {
+                attributes: true,
+                attributeFilter: ['class'],
+                subtree: true
+            });
+        } catch (e) {}
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupModalHistoryObserver);
+    } else {
+        setupModalHistoryObserver();
+    }
 
     window.addEventListener('popstate', () => {
         if (_ignoreProgrammaticPopState) {
@@ -2829,9 +3046,37 @@ if (typeof window !== 'undefined') {
             return;
         }
 
+        // 0. ZUERST geöffnete Einstellungsfenster, Dialoge, Picker oder Menüs schließen (oberstes Fenster zuerst!),
+        //    ohne die darunterliegende App-Ebene zu verlassen:
+        const topOpenModal = getTopmostOpenModalEntry();
+        if (topOpenModal) {
+            _handlingModalPopState = true;
+            try {
+                topOpenModal.close();
+            } catch (e) {}
+            _handlingModalPopState = false;
+
+            const remainingModal = getTopmostOpenModalEntry();
+            if (remainingModal) {
+                // Es ist noch ein weiteres Fenster darunter offen (z.B. Sensoren-Fenster unter dem Sensor-Picker):
+                // History-Guard direkt wieder setzen, damit das nächste Zurück-Wischen auch dieses Fenster schließt.
+                _modalHistoryGuardActive = true;
+                try {
+                    const curState = (history.state && typeof history.state === 'object')
+                        ? history.state
+                        : { pvproSection: 'home', pvproLevel: currentNavLevel, pvproDepth: _browserHistoryDepth };
+                    history.pushState({ ...curState, pvproModalGuard: true }, '');
+                } catch (e) {}
+            } else {
+                _modalHistoryGuardActive = false;
+            }
+            return;
+        }
+
+        _modalHistoryGuardActive = false;
         closeAllTransientOverlaysOnBack();
 
-        // Strikte Ebenen-Hierarchie beim Zurück-Wischen:
+        // Strikte Ebenen-Hierarchie beim Zurück-Wischen (wenn kein Fenster offen ist):
         // 1. Von Ebene 2 (Detail) -> 1 Ebene hoch auf Ebene 1 (Übersicht der aktuellen Sektion)
         if (currentNavLevel === 2) {
             _browserHistoryDepth = 1;

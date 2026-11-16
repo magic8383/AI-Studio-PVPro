@@ -13307,7 +13307,7 @@ function updateAiModelFilterButtonsUI() {
 }
 
 function selectAiModelFromCatalog(modelId) {
-    setAiOpenRouterModel(modelId);
+    setAiOpenRouterModel(modelId, true);
     closeAiModelPickerModal();
 }
 
@@ -13325,7 +13325,7 @@ function renderAiModelCatalogList() {
     const allModels = aiModelCatalogState.models || [];
     const freeTotalCount = allModels.filter(m => m.isFree).length;
     if (statusText && !aiModelCatalogState.isFetching) {
-        statusText.innerText = `${allModels.length} Modelle verfügbar (davon ${freeTotalCount} kostenlos) · Preise pro 1 Mio. Tokens`;
+        statusText.innerText = `${allModels.length} Modelle verfügbar (${freeTotalCount} kostenlos) · Preise pro 1 Mio. Tokens`;
     }
 
     let filtered = allModels.filter(m => {
@@ -13388,47 +13388,52 @@ function renderAiModelCatalogList() {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(m.name || m.id) : (m.name || m.id);
         const jsIdArg = safeId.replace(/'/g, "\\'");
         const ctxText = formatContextWindowShort(m.contextLength);
-        const sourceText = m.source === 'google-direct' ? 'Google Direkt-API' : 'OpenRouter';
+        const sourceText = m.source === 'google-direct' ? 'Google Direkt' : 'OpenRouter';
 
-        const priceHtml = m.isFree
-            ? `<div class="text-right font-mono tabular-nums">
+        const priceRowLeft = m.isFree
+            ? `<div class="flex flex-wrap items-center gap-1.5 font-mono tabular-nums">
                    <span class="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">KOSTENLOS</span>
-                   <p class="text-[10.5px] text-slate-400">$0.00 / 1M Tokens</p>
+                   <span class="text-[11px] text-slate-400">($0.00 / 1M Tokens)</span>
                </div>`
-            : `<div class="text-right font-mono tabular-nums">
-                   <p class="text-xs font-bold text-slate-900 dark:text-white">In: ${formatUsdPer1M(m.inputCostPer1M)} <span class="text-slate-400">·</span> Out: ${formatUsdPer1M(m.outputCostPer1M)}</p>
-                   <p class="text-[10.5px] text-slate-400">pro 1 Mio. Tokens</p>
+            : `<div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono tabular-nums text-xs">
+                   <span class="font-bold text-slate-900 dark:text-white">In: ${formatUsdPer1M(m.inputCostPer1M)}</span>
+                   <span class="text-slate-400">·</span>
+                   <span class="font-bold text-slate-900 dark:text-white">Out: ${formatUsdPer1M(m.outputCostPer1M)}</span>
+                   <span class="text-[11px] text-slate-400">/ 1M Tokens</span>
                </div>`;
 
         const rowBorder = isSelected
             ? 'border-indigo-500 bg-indigo-500/10 dark:bg-indigo-950/50'
             : 'border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500/50';
 
+        // Two-row full-width layout: Row 1 = Star + Complete unclipped Model Name & ID; Row 2 = Price per 1M + Context & Source
         return `
-            <div onclick="selectAiModelFromCatalog('${jsIdArg}')" class="p-3 rounded-2xl border ${rowBorder} flex items-center justify-between gap-2.5 transition-all cursor-pointer group">
-                <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                    <button type="button" onclick="toggleAiModelFavorite('${jsIdArg}', event)" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-500/15 flex items-center justify-center shrink-0 transition-all cursor-pointer" title="${isFav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren (★)'}">
-                        <span class="material-symbols-rounded text-lg ${isFav ? 'text-amber-400' : 'text-slate-400'}">${isFav ? 'star' : 'star_outline'}</span>
-                    </button>
-                    <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-1.5">
-                            <p class="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white truncate">${safeName}</p>
-                            ${isSelected ? `<span class="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 shrink-0">✓ Aktiv</span>` : ''}
-                        </div>
-                        <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums mt-0.5">
-                            <span class="truncate max-w-[190px] sm:max-w-[260px]">${safeId}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>${ctxText}</span>
-                            <span aria-hidden="true">·</span>
-                            <span>${sourceText}</span>
+            <div onclick="selectAiModelFromCatalog('${jsIdArg}')" class="p-3 sm:p-3.5 rounded-2xl border ${rowBorder} flex flex-col gap-2 transition-all cursor-pointer group">
+                <div class="flex items-start justify-between gap-2.5">
+                    <div class="flex items-start gap-2.5 min-w-0 flex-1">
+                        <button type="button" onclick="toggleAiModelFavorite('${jsIdArg}', event)" class="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-amber-500/15 flex items-center justify-center shrink-0 transition-all cursor-pointer mt-0.5" title="${isFav ? 'Aus Favoriten entfernen' : 'Als Favorit markieren (★)'}">
+                            <span class="material-symbols-rounded text-lg ${isFav ? 'text-amber-400' : 'text-slate-400'}">${isFav ? 'star' : 'star_outline'}</span>
+                        </button>
+                        <div class="min-w-0 flex-1">
+                            <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                <p class="text-[13px] sm:text-sm font-extrabold text-slate-900 dark:text-white leading-snug break-words">${safeName}</p>
+                                ${isSelected ? `<span class="text-[11px] font-extrabold text-indigo-600 dark:text-indigo-400 shrink-0">✓ Aktiv</span>` : ''}
+                            </div>
+                            <p class="text-[11px] text-slate-500 dark:text-slate-400 font-mono break-all leading-snug mt-0.5">${safeId}</p>
                         </div>
                     </div>
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    ${priceHtml}
-                    <span class="material-symbols-rounded text-base ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-indigo-400'}">
+                    <span class="material-symbols-rounded text-base shrink-0 mt-1 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600 group-hover:text-indigo-400'}">
                         ${isSelected ? 'check_circle' : 'chevron_right'}
                     </span>
+                </div>
+
+                <div class="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    ${priceRowLeft}
+                    <div class="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono tabular-nums">
+                        <span>${ctxText}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>${sourceText}</span>
+                    </div>
                 </div>
             </div>
         `;
@@ -13683,6 +13688,104 @@ function syncAiSettingsControlsUI() {
 
     renderAiFavoriteModelsQuickBar();
     updateAiTransparencyBarUI();
+    updateAiSessionUsageSummaryUI();
+}
+
+function formatExactResponseCostText(costUsd, isFreeModel = false) {
+    const val = Number(costUsd) || 0;
+    if (isFreeModel || val <= 0) {
+        return 'KOSTENLOS ($0.00)';
+    }
+    const cents = val * 100;
+    const centsStr = cents < 0.01
+        ? '< 0,01 ct'
+        : `${cents.toFixed(cents < 0.1 ? 3 : 2).replace('.', ',')} ct`;
+    const usdStr = val < 0.001
+        ? `$${val.toFixed(5)}`
+        : (val < 0.01 ? `$${val.toFixed(4)}` : `$${val.toFixed(3)}`);
+    return `${usdStr} (~${centsStr})`;
+}
+
+function calculateAiResponseUsageAndCost(modelId, rawUsage = null, promptCharsLen = 0, answerCharsLen = 0) {
+    const cleanModelId = String(modelId || localDeviceSecretsState.openRouterModel || aiAssistantSettings.openRouterModel || 'google/gemini-2.5-flash').trim();
+    const mObj = getModelObjectFromCatalog(cleanModelId);
+
+    let promptTokens = Number(rawUsage?.promptTokens ?? rawUsage?.prompt_tokens) || 0;
+    let completionTokens = Number(rawUsage?.completionTokens ?? rawUsage?.completion_tokens) || 0;
+    const reasoningTokens = Number(rawUsage?.reasoningTokens ?? rawUsage?.completion_tokens_details?.reasoning_tokens) || 0;
+    let isEstimated = false;
+
+    if (promptTokens <= 0 && promptCharsLen > 0) {
+        promptTokens = Math.max(1, Math.ceil(promptCharsLen / 3.8));
+        isEstimated = true;
+    }
+    if (completionTokens <= 0 && answerCharsLen > 0) {
+        completionTokens = Math.max(1, Math.ceil(answerCharsLen / 3.8));
+        isEstimated = true;
+    }
+    const totalTokens = Number(rawUsage?.totalTokens ?? rawUsage?.total_tokens) || (promptTokens + completionTokens);
+
+    const inPer1M = Number(mObj.inputCostPer1M) || 0;
+    const outPer1M = Number(mObj.outputCostPer1M) || 0;
+    const isFree = Boolean(mObj.isFree || (inPer1M === 0 && outPer1M === 0 && cleanModelId.endsWith(':free')) || cleanModelId === 'local-inspector');
+
+    let costUsd = 0;
+    if (!isFree) {
+        const nativeCost = rawUsage?.nativeCostUsd ?? rawUsage?.cost;
+        if (typeof nativeCost === 'number' && isFinite(nativeCost) && nativeCost > 0) {
+            costUsd = nativeCost;
+        } else {
+            costUsd = ((promptTokens / 1000000) * inPer1M) + ((completionTokens / 1000000) * outPer1M);
+        }
+    }
+
+    return {
+        modelId: cleanModelId,
+        modelName: mObj.name || cleanModelId,
+        promptTokens,
+        completionTokens,
+        reasoningTokens,
+        totalTokens,
+        inputCostPer1M: inPer1M,
+        outputCostPer1M: outPer1M,
+        costUsd,
+        isFree,
+        isEstimated
+    };
+}
+
+function updateAiSessionUsageSummaryUI() {
+    const el = document.getElementById('aiSessionUsageSummaryText');
+    if (!el) return;
+
+    let sumPrompt = 0;
+    let sumCompletion = 0;
+    let sumTotal = 0;
+    let sumCostUsd = 0;
+    let replyCount = 0;
+
+    (aiAssistantConversationHistory || []).forEach(msg => {
+        if (msg && msg.role === 'assistant' && msg.usage) {
+            replyCount++;
+            sumPrompt += Number(msg.usage.promptTokens) || 0;
+            sumCompletion += Number(msg.usage.completionTokens) || 0;
+            sumTotal += Number(msg.usage.totalTokens) || 0;
+            sumCostUsd += Number(msg.usage.costUsd) || 0;
+        }
+    });
+
+    if (replyCount === 0 || sumTotal === 0) {
+        el.innerText = 'Chat gesamt: 0 Tok · $0.0000';
+        el.title = 'Kumulierter Tokenverbrauch und berechnete Gesamtkosten in diesem Chat';
+        return;
+    }
+
+    const costLabel = sumCostUsd <= 0
+        ? '$0.00 (Kostenlos)'
+        : `${sumCostUsd < 0.01 ? '$' + sumCostUsd.toFixed(4) : '$' + sumCostUsd.toFixed(3)} (~${(sumCostUsd * 100).toFixed(2).replace('.', ',')} ct)`;
+
+    el.innerText = `Chat gesamt: ${sumTotal.toLocaleString('de-DE')} Tok (${sumPrompt.toLocaleString('de-DE')} In / ${sumCompletion.toLocaleString('de-DE')} Out) · ${costLabel}`;
+    el.title = `${replyCount} KI-Antwort(en) in diesem Chat · Input: ${sumPrompt.toLocaleString('de-DE')} Tokens · Output: ${sumCompletion.toLocaleString('de-DE')} Tokens`;
 }
 
 function updateAiTransparencyBarUI() {
@@ -13705,37 +13808,38 @@ function updateAiTransparencyBarUI() {
 
     if (engineEl) {
         if (hasLocalOpenRouter && !activeOrModel.startsWith('google-direct/')) {
-            engineEl.innerText = `Modell: ${mObj.name || activeOrModel} (${shortCost} · ${thinkLvl})`;
+            engineEl.innerText = `Modell: ${mObj.name || activeOrModel} (${shortCost})`;
         } else if (hasLocalGemini || activeOrModel.startsWith('google-direct/')) {
-            engineEl.innerText = `Modell: ${mObj.name || 'Google Gemini 4'} (${shortCost} · ${thinkLvl})`;
+            engineEl.innerText = `Modell: ${mObj.name || 'Google Gemini 4'} (${shortCost})`;
         } else if (aiServerStatusCache.hasApiKey) {
-            engineEl.innerText = `Modell: ${aiServerStatusCache.engineLabel || 'Google Gemini 4'} (${thinkLvl})`;
+            engineEl.innerText = `Modell: ${aiServerStatusCache.engineLabel || 'Google Gemini 4'}`;
         } else {
-            engineEl.innerText = `Modell: Lokale Diagnose-Engine (${thinkLvl})`;
+            engineEl.innerText = `Modell: Lokale Diagnose-Engine`;
         }
     }
     if (connEl) {
         if (hasLocalOpenRouter) {
-            connEl.innerText = 'Lokaler OpenRouter-Key aktiv (Handy)';
+            connEl.innerText = 'OpenRouter-Key aktiv';
         } else if (hasLocalGemini) {
-            connEl.innerText = 'Lokaler Gemini-Key aktiv (Handy)';
+            connEl.innerText = 'Gemini-Key aktiv';
         } else if (aiServerStatusCache.hasApiKey) {
             connEl.innerText = 'Server-Key aktiv';
         } else {
-            connEl.innerText = 'Lokal-Inspektor aktiv';
+            connEl.innerText = 'Lokal-Inspektor';
         }
     }
     if (ctxEl) {
-        ctxEl.innerText = `Kontext: ${entitiesCount} HA-Sensoren · ${consumersCount} Verbraucher${hasWb ? ' · Wallbox aktiv' : ''}`;
+        ctxEl.innerText = `${entitiesCount} HA-Sensoren · ${consumersCount} Verbr.${hasWb ? ' · Wallbox' : ''}`;
     }
     if (badgeEl) {
         const shortMod = activeOrModel.split('/').pop() || activeOrModel;
         if (hasLocalOpenRouter || hasLocalGemini || aiServerStatusCache.hasApiKey) {
             badgeEl.innerText = `${shortMod} · ${thinkLvl}`;
         } else {
-            badgeEl.innerText = `System-Inspektor · ${thinkLvl}`;
+            badgeEl.innerText = `Inspektor · ${thinkLvl}`;
         }
     }
+    updateAiSessionUsageSummaryUI();
 }
 
 async function fetchAndRenderAiStatusBar() {
@@ -13761,6 +13865,14 @@ function toggleAiSettingsPanel() {
     syncAiSettingsControlsUI();
 }
 
+function collapseAiSettingsPanelForChat() {
+    if (aiAssistantSettings.settingsOpen) {
+        aiAssistantSettings.settingsOpen = false;
+        saveAiAssistantSettings();
+        syncAiSettingsControlsUI();
+    }
+}
+
 function setAiThinkingLevel(level) {
     const clean = String(level || 'HIGH').toUpperCase();
     if (!['LOW', 'HIGH', 'XHIGH'].includes(clean)) return;
@@ -13783,11 +13895,14 @@ function setAiRoleFocus(role) {
     }
 }
 
-function setAiOpenRouterModel(modelId) {
+function setAiOpenRouterModel(modelId, autoCollapseSettings = true) {
     const clean = String(modelId || 'google/gemini-2.5-flash').trim();
     if (!clean) return;
     aiAssistantSettings.openRouterModel = clean;
     localDeviceSecretsState.openRouterModel = clean;
+    if (autoCollapseSettings) {
+        aiAssistantSettings.settingsOpen = false;
+    }
     saveAiAssistantSettings();
     saveLocalDeviceSecrets();
     syncAiSettingsControlsUI();
@@ -13798,9 +13913,26 @@ function setAiOpenRouterModel(modelId) {
     }
 }
 
-function clearAiAssistantConversation() {
+function startNewAiChat() {
     aiAssistantConversationHistory = [];
+    aiAssistantBusy = false;
+    collapseAiSettingsPanelForChat();
     renderAiAssistantConversation();
+    updateAiSessionUsageSummaryUI();
+    const input = document.getElementById('aiAssistantInput');
+    if (input) {
+        input.value = '';
+        setTimeout(() => {
+            try { input.focus(); } catch (e) {}
+        }, 50);
+    }
+    if (typeof showToastNotification === 'function') {
+        showToastNotification('Neuer Chat gestartet.', 'info');
+    }
+}
+
+function clearAiAssistantConversation() {
+    startNewAiChat();
 }
 
 async function refreshAiSensorContextNow() {
@@ -13904,15 +14036,17 @@ function renderAiAssistantConversation() {
     const container = document.getElementById('aiAssistantMessagesContainer');
     if (!container) return;
 
+    updateAiSessionUsageSummaryUI();
+
     if (aiAssistantConversationHistory.length === 0) {
         container.innerHTML = `
             <div class="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 text-xs text-slate-700 dark:text-slate-200 space-y-2">
                 <div class="flex items-center gap-2 font-black text-indigo-800 dark:text-indigo-200 text-sm">
                     <span class="material-symbols-rounded text-lg">auto_awesome</span>
-                    <span>Willkommen beim integrierten KI-Systemassistenten &amp; Telemetrie-Debugger (v12.2)</span>
+                    <span>Neuer Chat bereit · KI-Systemassistent &amp; Telemetrie-Debugger (v12.3)</span>
                 </div>
                 <p class="leading-relaxed">
-                    Über <strong>„Einstellungen &rarr; Katalog“</strong> kannst du live alle Modelle von <strong>OpenRouter</strong> und <strong>Google Gemini</strong> samt aktuellen <strong>Input-/Output-Preisen pro 1 Mio. Tokens</strong> (inkl. <code>KOSTENLOS</code>-Modellen) prüfen und deine Favoriten mit einem Stern <strong>★</strong> für die 1-Klick-Schnellwahl anpinnen.
+                    Wähle oben in der <strong>★ Favoriten-Schnellleiste</strong> oder über <strong>„Katalog“</strong> dein gewünschtes Modell und gib unten deine Frage ein (oder tippe auf einen der Schnell-Buttons). Unter jeder Antwort werden der <strong>tatsächliche Tokenverbrauch</strong> und die <strong>berechneten Kosten</strong> ausgewiesen.
                 </p>
             </div>
         `;
@@ -13944,7 +14078,7 @@ function renderAiAssistantConversation() {
                         return `
                         <div class="p-2.5 rounded-xl bg-indigo-500/8 dark:bg-indigo-950/40 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs font-extrabold text-slate-900 dark:text-white truncate">${safeTitle}</p>
+                                <p class="text-xs font-extrabold text-slate-900 dark:text-white break-words">${safeTitle}</p>
                                 ${safeDesc ? `<p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">${safeDesc}</p>` : ''}
                             </div>
                             <button type="button" onclick="executeAiSuggestedAction(${msgIdx}, ${actIdx})"
@@ -13958,11 +14092,39 @@ function renderAiAssistantConversation() {
             </div>
         ` : '';
 
+        const u = msg.usage || null;
+        let usageFooterHtml = '';
+        if (u) {
+            const safeMod = typeof escapeHtml === 'function' ? escapeHtml(u.modelName || u.modelId || '') : (u.modelName || u.modelId || '');
+            const inTok = (Number(u.promptTokens) || 0).toLocaleString('de-DE');
+            const outTok = (Number(u.completionTokens) || 0).toLocaleString('de-DE');
+            const totTok = (Number(u.totalTokens) || 0).toLocaleString('de-DE');
+            const costText = formatExactResponseCostText(u.costUsd, u.isFree);
+            const costColor = (u.isFree || Number(u.costUsd) <= 0)
+                ? 'text-emerald-600 dark:text-emerald-400 font-extrabold'
+                : 'text-indigo-600 dark:text-indigo-300 font-bold';
+
+            usageFooterHtml = `
+                <div class="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/90 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">
+                    <div class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                        <span class="font-bold text-slate-700 dark:text-slate-200">${safeMod}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>Tokens: <strong>${inTok}</strong> In + <strong>${outTok}</strong> Out = <strong>${totTok}</strong></span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <span>Kosten:</span>
+                        <span class="${costColor}">${costText}</span>
+                    </div>
+                </div>
+            `;
+        }
+
         return `
             <div class="flex justify-start">
-                <div class="w-full rounded-2xl rounded-tl-sm p-4 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 leading-relaxed shadow-xs">
+                <div class="w-full rounded-2xl rounded-tl-sm p-3.5 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 text-xs sm:text-[13px] text-slate-700 dark:text-slate-200 leading-relaxed shadow-xs">
                     ${formatAiMarkdownToSafeHtml(msg.text)}
                     ${actionsHtml}
+                    ${usageFooterHtml}
                 </div>
             </div>
         `;
@@ -13996,8 +14158,6 @@ async function openAiAssistantModal(initialPrompt = '') {
     renderAiAssistantConversation();
     if (initialPrompt) {
         await sendAiAssistantPrompt(initialPrompt);
-    } else if (aiAssistantConversationHistory.length === 0) {
-        await sendAiAssistantPrompt('Prüfe meine aktuelle Telemetrie, meinen Wallbox-Verbraucher und meine Sensoren auf Optimierungen.');
     }
 }
 
@@ -14007,6 +14167,7 @@ function closeAiAssistantModal() {
 }
 
 async function runAiQuickPrompt(promptText) {
+    collapseAiSettingsPanelForChat();
     await sendAiAssistantPrompt(promptText);
 }
 
@@ -14017,6 +14178,7 @@ async function submitAiAssistantForm(event) {
     const text = String(input.value || '').trim();
     if (!text) return;
     input.value = '';
+    collapseAiSettingsPanelForChat();
     await sendAiAssistantPrompt(text);
 }
 
@@ -14031,7 +14193,7 @@ async function callOpenRouterDirectFromBrowser(promptText, contextObj) {
     const thinkingLevel = aiAssistantSettings.thinkingLevel || 'HIGH';
     const roleFocus = aiAssistantSettings.roleFocus || 'general';
 
-    const systemPrompt = `Du bist der integrierte System-Ingenieur, Konfigurator und Telemetrie-Debugger von "PV-Planung Pro 12.2".
+    const systemPrompt = `Du bist der integrierte System-Ingenieur, Konfigurator und Telemetrie-Debugger von "PV-Planung Pro 12.3".
 Du hältst dich strikt an AGENTS.md und DEVELOPMENT_GUIDELINES.md:
 - Single Source of Truth: Alle Energiebilanzen laufen über getUnifiedEnergyLedger in telemetry.js.
 - Die Wallbox ist physisch hinter dem Smart Meter angeschlossen und bereits im Hausverbrauch enthalten (nicht doppelt auf den Hausverbrauch addieren).
@@ -14039,19 +14201,21 @@ Du hältst dich strikt an AGENTS.md und DEVELOPMENT_GUIDELINES.md:
 Antworte auf Deutsch und gib valides JSON im Format {"answerMarkdown": "...", "suggestedActions": [{"actionType": "...", "title": "...", "description": "...", "payloadJson": "..."}]} zurück.
 Erlaubte actionType: "assign_main_sensor", "add_or_update_wallbox", "assign_consumer_group", "add_monitored_device", "reset_wallbox_session", "open_modal_tab", "scan_ha_sensors".`;
 
+    const userMsgContent = `Nutzer-Anfrage: ${promptText}\n\nAktueller App- & Home-Assistant-Kontext:\n${JSON.stringify(contextObj)}`;
+
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
             'HTTP-Referer': window.location.origin || 'https://pvpro.local',
-            'X-Title': 'PV-Planung Pro 12.2'
+            'X-Title': 'PV-Planung Pro 12.3'
         },
         body: JSON.stringify({
             model: modelId,
             messages: [
                 { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Nutzer-Anfrage: ${promptText}\n\nAktueller App- & Home-Assistant-Kontext:\n${JSON.stringify(contextObj)}` }
+                { role: 'user', content: userMsgContent }
             ]
         })
     });
@@ -14064,11 +14228,15 @@ Erlaubte actionType: "assign_main_sensor", "add_or_update_wallbox", "assign_cons
     const data = await res.json();
     const rawContent = String(data?.choices?.[0]?.message?.content || '').trim();
     const cleanedJson = rawContent.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+    const promptCharsLen = systemPrompt.length + userMsgContent.length;
+    const usageInfo = calculateAiResponseUsageAndCost(modelId, data?.usage || null, promptCharsLen, rawContent.length);
+
     try {
         const parsed = JSON.parse(cleanedJson);
         return {
             mode: 'openrouter',
             model: modelId,
+            usage: usageInfo,
             answerMarkdown: parsed.answerMarkdown || rawContent,
             suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : []
         };
@@ -14076,6 +14244,7 @@ Erlaubte actionType: "assign_main_sensor", "add_or_update_wallbox", "assign_cons
         return {
             mode: 'openrouter',
             model: modelId,
+            usage: usageInfo,
             answerMarkdown: rawContent || 'Antwort von OpenRouter erhalten.',
             suggestedActions: []
         };
@@ -14087,6 +14256,7 @@ async function sendAiAssistantPrompt(promptText) {
     const cleanPrompt = String(promptText || '').trim();
     if (!cleanPrompt) return;
 
+    collapseAiSettingsPanelForChat();
     aiAssistantConversationHistory.push({ role: 'user', text: cleanPrompt });
     aiAssistantBusy = true;
     renderAiAssistantConversation();
@@ -14108,6 +14278,7 @@ async function sendAiAssistantPrompt(promptText) {
                     aiAssistantConversationHistory.push({
                         role: 'assistant',
                         text: directOrResult.answerMarkdown,
+                        usage: directOrResult.usage,
                         suggestedActions: Array.isArray(directOrResult.suggestedActions) ? directOrResult.suggestedActions : []
                     });
                     return;
@@ -14142,13 +14313,18 @@ async function sendAiAssistantPrompt(promptText) {
             aiServerStatusCache.hasApiKey = true;
             aiServerStatusCache.activeEngine = data.mode;
         }
-        updateAiTransparencyBarUI();
+        const effectiveRespModelId = data.modelId || (data.mode === 'openrouter' ? activeModelId : (data.mode && data.mode.startsWith('gemini-') ? `google-direct/${data.mode}` : 'local-inspector'));
+        const promptApproxLen = cleanPrompt.length + JSON.stringify(context).length;
+        const answerText = data.answerMarkdown || 'Diagnose abgeschlossen.';
+        const usageInfo = calculateAiResponseUsageAndCost(effectiveRespModelId, data.usage || null, promptApproxLen, answerText.length);
 
         aiAssistantConversationHistory.push({
             role: 'assistant',
-            text: data.answerMarkdown || 'Diagnose abgeschlossen.',
+            text: answerText,
+            usage: usageInfo,
             suggestedActions: Array.isArray(data.suggestedActions) ? data.suggestedActions : []
         });
+        updateAiTransparencyBarUI();
     } catch (err) {
         aiAssistantConversationHistory.push({
             role: 'assistant',
@@ -14248,6 +14424,7 @@ window.closeAiAssistantModal = closeAiAssistantModal;
 window.toggleAiSettingsPanel = toggleAiSettingsPanel;
 window.setAiThinkingLevel = setAiThinkingLevel;
 window.setAiRoleFocus = setAiRoleFocus;
+window.startNewAiChat = startNewAiChat;
 window.clearAiAssistantConversation = clearAiAssistantConversation;
 window.refreshAiSensorContextNow = refreshAiSensorContextNow;
 window.runAiQuickPrompt = runAiQuickPrompt;

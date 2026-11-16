@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 12.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 12.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 12.2 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 12.3 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=12.2">
+    <link rel="manifest" href="manifest.json?v=12.3">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.2">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.2">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.2">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.2">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.3">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.3">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.3">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.3">
     <script>
-        // V12.2: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V12.3: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v12.2') {
+                            if (key !== 'pvpro-cache-v12.3') {
                                 caches.delete(key);
                             }
                         });
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=12.2" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=12.3" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.2</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.3</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -2998,7 +2998,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.2</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.3</p>
                     </div>
                 </button>
             </div>
@@ -4296,50 +4296,64 @@
     <!-- ========================================================================= -->
     <!-- MODAL: IN-APP KI-ASSISTENT, SENSOR-KONFIGURATOR & TELEMETRIE-DEBUGGER     -->
     <!-- ========================================================================= -->
-    <div id="modal-ai-assistant" class="fixed inset-0 z-[138] flex items-center justify-center p-2.5 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeAiAssistantModal()">
-        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+    <div id="modal-ai-assistant" class="fixed inset-0 z-[138] flex items-center justify-center p-2 sm:p-6 bg-slate-950/80 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeAiAssistantModal()">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[94vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
             <!-- Header -->
-            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950 shrink-0">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-2xl">auto_awesome</span>
+            <div class="px-3.5 sm:px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950 shrink-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl">auto_awesome</span>
                     </div>
                     <div class="min-w-0">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">KI-Assistent &amp; Debugger</h3>
-                            <span id="aiAssistantModeBadge" class="text-[10.5px] font-semibold text-indigo-700 dark:text-indigo-300 shrink-0 whitespace-nowrap">Gemini 4 / Lokal</span>
+                        <div class="flex items-center gap-1.5">
+                            <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-tight truncate">KI-Assistent</h3>
+                            <span id="aiAssistantModeBadge" class="text-[10.5px] font-semibold text-indigo-700 dark:text-indigo-300 shrink-0 whitespace-nowrap">Bereit</span>
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 truncate">HA-Sensoren suchen, Einstellungen per Klick übernehmen &amp; Zähler debuggen</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Sensoren suchen, Einstellungen &amp; Live-Diagnose</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" id="btnToggleAiSettings" onclick="toggleAiSettingsPanel()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0" title="Analyse-Tiefe (Denkmodus), Fokus-Rolle und Sensor-Kontext einstellen">
+                    <button type="button" onclick="startNewAiChat()" class="px-2.5 py-1.5 rounded-xl bg-emerald-500/14 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 text-xs font-extrabold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0" title="Neuen Chat starten (Verlauf leeren &amp; Eingabefeld fokussieren)">
+                        <span class="material-symbols-rounded text-sm">add_comment</span>
+                        <span>+ Neuer Chat</span>
+                    </button>
+                    <button type="button" id="btnToggleAiSettings" onclick="toggleAiSettingsPanel()" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0" title="Analyse-Tiefe, Rolle &amp; Modell-Einstellungen ein-/ausklappen">
                         <span class="material-symbols-rounded text-sm">tune</span>
-                        <span>Einstellungen</span>
+                        <span class="hidden sm:inline">Einstellungen</span>
                     </button>
-                    <button type="button" onclick="clearAiAssistantConversation()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 flex items-center justify-center transition-all cursor-pointer shrink-0" title="Gesprächsverlauf leeren">
-                        <span class="material-symbols-rounded text-base">delete_sweep</span>
-                    </button>
-                    <button type="button" onclick="closeAiAssistantModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0">
+                    <button type="button" onclick="closeAiAssistantModal()" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0" title="Schließen">
                         <span class="material-symbols-rounded text-lg">close</span>
                     </button>
                 </div>
             </div>
 
-            <!-- Transparent Model, Connection & Context Status Bar -->
-            <div id="aiAssistantTransparencyBar" class="px-4 sm:px-5 py-2 border-b border-slate-200/80 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/90 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
+            <!-- Transparent Model, Connection, Context & Cumulative Session Token/Cost Bar -->
+            <div id="aiAssistantTransparencyBar" class="px-3.5 sm:px-5 py-2 border-b border-slate-200/80 dark:border-slate-800 bg-slate-100/90 dark:bg-slate-900/90 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300 tabular-nums shrink-0">
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
                     <span class="font-bold text-slate-800 dark:text-slate-100" id="aiStatusEngineText">Modell: wird geprüft…</span>
                     <span aria-hidden="true">·</span>
                     <span id="aiStatusConnectionText" class="text-slate-500 dark:text-slate-400">Status: Verbinde…</span>
                 </div>
-                <div class="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                    <span id="aiStatusContextText">Kontext: — Sensoren</span>
+                <div class="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-slate-600 dark:text-slate-300 font-mono tabular-nums">
+                    <span id="aiSessionUsageSummaryText" class="font-extrabold text-indigo-700 dark:text-indigo-300">Chat gesamt: 0 Tok · $0.0000</span>
+                    <span aria-hidden="true">·</span>
+                    <span id="aiStatusContextText" class="text-slate-500 dark:text-slate-400 font-sans">Kontext: — Sensoren</span>
                 </div>
             </div>
 
-            <!-- Collapsible AI Settings Panel (Thinking Level + Focus Role + Live Model Picker + Favorites Quick-Bar) -->
-            <div id="aiAssistantSettingsPanel" class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/90 space-y-3 shrink-0">
+            <!-- Persistent Compact Favorites & Model Catalog Bar (Always visible even when settings fold up) -->
+            <div class="px-3.5 sm:px-5 py-2 border-b border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between gap-2 shrink-0">
+                <div id="aiFavoriteModelsQuickBar" class="flex items-center gap-1.5 overflow-x-auto hide-scroll py-0.5 flex-1 min-w-0">
+                    <!-- Dynamically rendered by renderAiFavoriteModelsQuickBar() in telemetry.js -->
+                </div>
+                <button type="button" onclick="openAiModelPickerModal()" class="px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-all whitespace-nowrap shadow-2xs" title="Alle Modelle &amp; Preise im Live-Katalog durchsuchen">
+                    <span class="material-symbols-rounded text-xs">manage_search</span>
+                    <span>Katalog</span>
+                </button>
+            </div>
+
+            <!-- Collapsible AI Settings Panel (Auto-collapses when chatting or picking a model) -->
+            <div id="aiAssistantSettingsPanel" class="px-3.5 sm:px-5 py-3 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/90 space-y-3 shrink-0 hidden">
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <!-- 1. Analyse-Tiefe & Denkmodus -->
                     <div class="space-y-1.5">
@@ -4394,24 +4408,7 @@
                     </div>
                 </div>
 
-                <!-- 4. Favoriten-Schnellwahl-Leiste (1-Tap Modellwechsel direkt im KI-Fenster) -->
-                <div class="pt-2 border-t border-slate-200/70 dark:border-slate-800/80 space-y-1.5">
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1">
-                            <span class="material-symbols-rounded text-sm text-amber-500">star</span>
-                            <span>Meine Favoriten-Modelle (1-Klick-Schnellwahl):</span>
-                        </span>
-                        <button type="button" onclick="openAiModelPickerModal('favorites')" class="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0">
-                            <span class="material-symbols-rounded text-xs">tune</span>
-                            <span>Alle Modelle &amp; Preise durchsuchen</span>
-                        </button>
-                    </div>
-                    <div id="aiFavoriteModelsQuickBar" class="flex items-center gap-1.5 overflow-x-auto hide-scroll py-0.5">
-                        <!-- Dynamically rendered by renderAiFavoriteModelsQuickBar() in telemetry.js -->
-                    </div>
-                </div>
-
-                <!-- 5. Info & Live Sensor Sync Row -->
+                <!-- 4. Info & Live Sensor Sync Row -->
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1.5 border-t border-slate-200/70 dark:border-slate-800/80 text-[11px] text-slate-500 dark:text-slate-400">
                     <span>Keys (<code>openRouterApiKey</code>, <code>geminiApiKey</code>) &amp; Favoriten werden lokal auf dem Handy und ganz oben in deiner <em>„Speichern unter…“</em>-Datei gesichert.</span>
                     <button type="button" onclick="refreshAiSensorContextNow()" class="px-2.5 py-1 rounded-lg bg-slate-200/80 dark:bg-slate-800 hover:bg-indigo-500/15 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 shrink-0 cursor-pointer transition-all self-start sm:self-auto whitespace-nowrap">
@@ -4422,7 +4419,7 @@
             </div>
 
             <!-- Quick-Action Chips -->
-            <div class="px-4 sm:px-5 py-2.5 border-b border-slate-200/80 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/75 flex items-center gap-1.5 overflow-x-auto hide-scroll shrink-0">
+            <div class="px-3.5 sm:px-5 py-2 border-b border-slate-200/80 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-900/75 flex items-center gap-1.5 overflow-x-auto hide-scroll shrink-0">
                 <button type="button" onclick="runAiQuickPrompt('Suche in meinen Home Assistant Sensoren nach meiner Wallbox (Leistung W und Energie kWh) sowie fehlenden Hauptsensoren und schlage die direkte Zuweisung vor.')" class="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-500/10 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 shrink-0 cursor-pointer transition-all whitespace-nowrap">
                     <span class="material-symbols-rounded text-sm text-emerald-500">ev_station</span>
                     <span>Wallbox- &amp; PV-Sensoren suchen</span>
@@ -4442,12 +4439,12 @@
             </div>
 
             <!-- Scrollable Conversation & Action Cards Body -->
-            <div id="aiAssistantMessagesContainer" class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/50 dark:bg-slate-950/40">
+            <div id="aiAssistantMessagesContainer" class="flex-1 min-h-0 overflow-y-auto p-3.5 sm:p-5 space-y-3.5 bg-slate-50/50 dark:bg-slate-950/40">
                 <!-- Dynamically populated by renderAiAssistantConversation() in telemetry.js -->
             </div>
 
             <!-- Input Footer -->
-            <div class="p-3.5 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+            <div class="p-3 sm:p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
                 <form onsubmit="submitAiAssistantForm(event)" class="flex items-center gap-2">
                     <input type="text" id="aiAssistantInput" placeholder="Frage stellen, Sensor suchen (z. B. Fronius / Wallbox) oder Einstellung ändern…" class="flex-1 min-w-0 px-3.5 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500">
                     <button type="submit" id="btnAiAssistantSend" class="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer shrink-0 whitespace-nowrap">
@@ -4462,36 +4459,37 @@
     <!-- ========================================================================= -->
     <!-- MODAL: LIVE KI-MODELL-KATALOG & PREIS-BROWSER (OPENROUTER & GOOGLE)        -->
     <!-- ========================================================================= -->
-    <div id="modal-ai-model-picker" class="fixed inset-0 z-[142] flex items-center justify-center p-2.5 sm:p-6 bg-slate-950/85 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeAiModelPickerModal()">
-        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-            <!-- Header -->
-            <div class="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950 shrink-0">
-                <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-xl">model_training</span>
+    <div id="modal-ai-model-picker" class="fixed inset-0 z-[142] flex items-center justify-center p-2 sm:p-6 bg-slate-950/85 backdrop-blur-md hidden no-print" onclick="if(event.target===this) closeAiModelPickerModal()">
+        <div class="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <!-- Header (Compact so Title & Model Count never truncate on narrow Smartphone screens) -->
+            <div class="px-3.5 sm:px-5 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-950 shrink-0">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div class="w-9 h-9 rounded-2xl bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-lg">model_training</span>
                     </div>
-                    <div class="min-w-0">
-                        <h3 class="text-base sm:text-lg font-black text-slate-900 dark:text-white leading-tight truncate">KI-Modell-Katalog &amp; Live-Preise</h3>
-                        <p id="aiModelCatalogStatusText" class="text-xs text-slate-500 dark:text-slate-400 truncate">OpenRouter &amp; Google Gemini · Preise pro 1 Mio. Tokens (Input / Output)</p>
+                    <div class="min-w-0 flex-1">
+                        <h3 class="text-sm sm:text-base font-black text-slate-900 dark:text-white leading-tight">KI-Modell-Katalog &amp; Preise</h3>
+                        <p id="aiModelCatalogStatusText" class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">OpenRouter &amp; Google Gemini · Preise pro 1 Mio. Tokens</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
                     <button type="button" onclick="fetchLiveAiModelsCatalog(true)" class="px-2.5 py-1.5 rounded-xl bg-indigo-500/12 hover:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border border-indigo-500/25 text-xs font-bold flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap shrink-0" title="Aktuelle Modelle und Live-Preise von OpenRouter neu abrufen">
                         <span id="aiModelCatalogRefreshIcon" class="material-symbols-rounded text-sm">sync</span>
-                        <span>Preise aktualisieren</span>
+                        <span class="hidden sm:inline">Preise aktualisieren</span>
+                        <span class="sm:hidden">Sync</span>
                     </button>
-                    <button type="button" onclick="closeAiModelPickerModal()" class="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0">
+                    <button type="button" onclick="closeAiModelPickerModal()" class="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 flex items-center justify-center transition-all cursor-pointer shrink-0">
                         <span class="material-symbols-rounded text-lg">close</span>
                     </button>
                 </div>
             </div>
 
             <!-- Search, Provider Filter Tabs & Sort Bar -->
-            <div class="p-3.5 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 space-y-2.5 shrink-0">
+            <div class="p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/60 space-y-2 shrink-0">
                 <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                     <div class="relative flex-1 min-w-0">
                         <span class="material-symbols-rounded text-base text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">search</span>
-                        <input type="text" id="aiModelSearchInput" oninput="onAiModelCatalogSearch(this.value)" placeholder="Modell suchen (z. B. gemini, claude, deepseek, gpt-4o, free, qwen)…" class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500">
+                        <input type="text" id="aiModelSearchInput" oninput="onAiModelCatalogSearch(this.value)" placeholder="Modell suchen (z. B. gemini, claude, deepseek, gpt, free)…" class="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs sm:text-sm text-slate-900 dark:text-white outline-none focus:border-indigo-500">
                     </div>
                     <select id="aiModelSortSelect" onchange="setAiModelCatalogSort(this.value)" class="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-indigo-500 cursor-pointer shrink-0">
                         <option value="popular">Sortierung: Favoriten &amp; Empfohlen</option>
@@ -4517,14 +4515,14 @@
                 </div>
             </div>
 
-            <!-- Scrollable Model List with Input/Output Prices & Favorite Stars -->
-            <div id="aiModelCatalogListContainer" class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2 bg-slate-50/40 dark:bg-slate-950/40">
+            <!-- Scrollable Model List with Full-Width Unclipped Model Names & Input/Output Prices -->
+            <div id="aiModelCatalogListContainer" class="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2.5 bg-slate-50/40 dark:bg-slate-950/40">
                 <!-- Dynamically rendered by renderAiModelCatalogList() in telemetry.js -->
             </div>
 
             <!-- Footer -->
-            <div class="px-4 sm:px-5 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 shrink-0">
-                <span>Tippe auf den Stern <strong>★</strong>, um Modelle als Favorit für die Schnellwahl im KI-Fenster anzupinnen.</span>
+            <div class="px-3.5 sm:px-5 py-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400 shrink-0">
+                <span>Tippe auf <strong>★</strong> für deine Schnellwahl im KI-Fenster.</span>
                 <button type="button" onclick="closeAiModelPickerModal()" class="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold cursor-pointer whitespace-nowrap shrink-0">
                     Fertig
                 </button>
@@ -4535,13 +4533,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V12.2 (Live-KI-Modell-Katalog mit Input-/Output-Preisen pro 1M Tokens, Kostenlos-Filter & Favoriten-Schnellwahl) -->
-    <script src="qrcode.client.js?v=12.2"></script>
-    <script src="database.js?v=12.2"></script>
-    <script src="content.js?v=12.2"></script>
-    <script src="app.js?v=12.2"></script>
-    <script src="wiring.js?v=12.2"></script>
-    <script src="dossier.js?v=12.2"></script>
-    <script src="telemetry.js?v=12.2"></script>
+    <!-- MODULARE ARCHITEKTUR V12.3 (Volllesbarer KI-Modellkatalog, + Neuer Chat, Token-/Kosten-Rechner & Smarter Zurück-Wischen-Schutz) -->
+    <script src="qrcode.client.js?v=12.3"></script>
+    <script src="database.js?v=12.3"></script>
+    <script src="content.js?v=12.3"></script>
+    <script src="app.js?v=12.3"></script>
+    <script src="wiring.js?v=12.3"></script>
+    <script src="dossier.js?v=12.3"></script>
+    <script src="telemetry.js?v=12.3"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.2 (Interaktiver Live-KI-Modellkatalog & Preis-Browser für OpenRouter + Google Gemini mit Live-Abruf von `https://openrouter.ai/api/v1/models`, Preis pro 1 Mio Input-/Output-Tokens inkl. `KOSTENLOS`-Label sowie `⭐`-Favoriten-System mit 1-Tap Schnell-Buttons im KI-Fenster, Sortierung oben im Katalog & Persistenz in Backup-Datei/IndexedDB)  
+**Aktuelle Version:** 12.3 (Volllesbare 2-Zeilen-Modellkarten ohne Abschneiden im KI-Katalog, prominenter „+ Neuer Chat“-Button mit automatischem Einklappen der Einstellungen beim Chatten, Live-Tokenverbrauch & Kosten-Rechner unter jeder KI-Antwort plus Gesamtsumme im Header sowie intelligenter Zurück-Wischen-Schutz für geöffnete Einstellungsfenster)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

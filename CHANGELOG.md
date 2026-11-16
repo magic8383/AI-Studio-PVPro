@@ -4,6 +4,39 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.3] – 2026-11-16
+
+### ✨ Volllesbare 2-Zeilen-Modellkarten im Katalog, „+ Neuer Chat“-Button mit Auto-Einklappen, Live-Token- & Kosten-Rechner pro Antwort + Gesamtsumme & Smarter Zurück-Wischen-Schutz für Fenster
+
+#### 1. 100 % lesbare Modell-Karten ohne `...`-Abschneiden im Katalog (`index.html`, `telemetry.js`)
+* **Zweizeiliges Vollbreiten-Layout für Smartphones (`renderAiModelCatalogList`):**
+  - Behebt das Problem auf schmalen Handy-Displays, bei dem Modellnamen (`OpenAI: GPT-6...`) und technische IDs (`openai/gpt-6.1...`) durch den danebenliegenden Preisblock abgeschnitten wurden.
+  - **Zeile 1** nutzt nun die gesamte Kartenbreite für den Favoriten-Stern (`★`), den vollständigen Modellnamen (`break-words`) und die komplette technische Modell-ID (`break-all`).
+  - **Zeile 2** zeigt sauber darunter getrennt die Token-Preise (`In: $X.XX · Out: $Y.YY / 1M Tokens` bzw. `KOSTENLOS ($0.00 / 1M Tokens)`), das Kontextfenster (`1.1M Kontext`) und die Quelle (`OpenRouter` / `Google Direkt`).
+  - Auch die Kopfzeile des Modell-Katalogs wurde für Smartphones verschlankt (`Sync`-Button), sodass Titel und Modellanzahl vollständig lesbar bleiben.
+
+#### 2. Prominenter „+ Neuer Chat“-Button & Automatisches Einklappen der Einstellungen (`index.html`, `telemetry.js`)
+* **Direkter Button „+ Neuer Chat“ (`startNewAiChat`):**
+  - Oben im Header des KI-Assistenten befindet sich ab sofort ein klar beschrifteter grüner Button **`+ Neuer Chat`**, der den Gesprächsverlauf leert, den Sitzungs-Tokenzähler zurücksetzt und direkt das Eingabefeld fokussiert (ohne beim Öffnen ungefragt eine automatische Diagnose abzusenden).
+* **Mehr Platz für den Chat durch Auto-Collapse (`collapseAiSettingsPanelForChat`):**
+  - Sobald du eine Frage absendest, einen Schnell-Button antippst oder ein Modell auswählst, klappt der Einstellungsbereich automatisch ein, damit der Chat-Verlauf auf dem Smartphone maximalen Platz erhält.
+  - Deine **`★`-Favoriten-Schnellleiste** und der **`Katalog`**-Button bleiben als schmale Direktleiste immer oberhalb des Chats erreichbar.
+
+#### 3. Tatsächlicher Tokenverbrauch & Berechnete Kosten unter jeder Antwort + Gesamtsumme (`telemetry.js`, `server.js`)
+* **Exakte Auswertung pro Antwort (`calculateAiResponseUsageAndCost`):**
+  - Sowohl bei direktem Browser-Aufruf von OpenRouter als auch über `/api/ai/assistant` (OpenRouter & Google Gemini `usageMetadata`) werden die tatsächlichen `Input-Tokens`, `Output-Tokens` und `Gesamt-Tokens` erfasst und mit dem jeweiligen Modellpreis (`$/1M Input` & `$/1M Output`) verrechnet.
+  - Unter jeder einzelnen KI-Antwort erscheint eine präzise Nachweis-Zeile:
+    `Modell · Tokens: X In + Y Out = Z · Kosten: $0.00042 (~0,04 ct)` (bzw. `KOSTENLOS ($0.00)`).
+* **Laufende Gesamtsumme oben im KI-Fenster (`#aiSessionUsageSummaryText`):**
+  - In der oberen Statusleiste des KI-Fensters werden alle Tokens und Kosten des aktuellen Chats live aufsummiert (`Chat gesamt: X.XXX Tok (In / Out) · $Y.YYYY (~Z,ZZ ct)`).
+
+#### 4. Intelligenter Zurück-Wischen-Schutz (`popstate`) für offene Einstellungsfenster (`app.js`)
+* **Fenster zuerst schließen statt Ebenen wechseln (`getTopmostOpenModalEntry` & `syncModalHistoryGuardState`):**
+  - Ist ein Einstellungsfenster oder Dialog geöffnet (z. B. *Home Assistant & Sensoren* `#modal-ha-config`, *Sensor-Picker* `#modal-ha-entity-picker`, *KI-Modell-Katalog* `#modal-ai-model-picker`, *KI-Assistent* `#modal-ai-assistant`, *Design-Studio*, *Projekte*, *Dossier* oder das *Menü* `#m3MoreSheet`), legt die App automatisch einen modalen History-Guard an.
+  - Ein Zurück-Wischen auf dem Smartphone schließt **immer zuerst das oberste geöffnete Fenster** (z. B. erst den Sensor-Picker, beim nächsten Wischen das Sensoren-Fenster) und lässt die darunterliegende App-Ebene (`Live`, `Analyse`, `Planung`, `Start`) unberührt.
+
+---
+
 ## [Version 12.2] – 2026-11-16
 
 ### ✨ Interaktiver Live-KI-Modellkatalog & Preis-Browser (`OpenRouter` + `Google Gemini`), Kosten pro 1 Mio. Input-/Output-Tokens + `KOSTENLOS`-Label & `⭐`-Favoriten mit Schnell-Buttons im KI-Fenster

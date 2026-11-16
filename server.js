@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '12.2';
+const APP_VERSION = '12.3';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1905,13 +1905,28 @@ Erlaubte Werte für actionType in suggestedActions:
         parsedOr = { answerMarkdown: rawContent || 'Antwort von OpenRouter erhalten.', suggestedActions: [] };
       }
 
+      const orUsage = orData?.usage || {};
+      const promptTokens = Number(orUsage.prompt_tokens) || 0;
+      const completionTokens = Number(orUsage.completion_tokens) || 0;
+      const reasoningTokens = Number(orUsage.completion_tokens_details?.reasoning_tokens) || 0;
+      const totalTokens = Number(orUsage.total_tokens) || (promptTokens + completionTokens);
+      const nativeCostUsd = (typeof orUsage.cost === 'number' && isFinite(orUsage.cost)) ? orUsage.cost : null;
+
       return res.json({
         success: true,
         mode: 'openrouter',
+        modelId: selectedModelId,
         engineLabel: `OpenRouter (${selectedModelId})`,
         thinkingLevel: thinkingLevelKey,
         roleFocus,
         contextStats,
+        usage: {
+          promptTokens,
+          completionTokens,
+          reasoningTokens,
+          totalTokens,
+          nativeCostUsd
+        },
         answerMarkdown: parsedOr.answerMarkdown || rawContent || 'Diagnose abgeschlossen.',
         suggestedActions: Array.isArray(parsedOr.suggestedActions) ? parsedOr.suggestedActions : []
       });
@@ -1988,13 +2003,28 @@ Erlaubte Werte für actionType in suggestedActions:
       };
     }
 
+    const gemMeta = response?.usageMetadata || {};
+    const promptTokens = Number(gemMeta.promptTokenCount) || 0;
+    const candidatesTokens = Number(gemMeta.candidatesTokenCount) || 0;
+    const thoughtsTokens = Number(gemMeta.thoughtsTokenCount) || 0;
+    const completionTokens = candidatesTokens + thoughtsTokens;
+    const totalTokens = Number(gemMeta.totalTokenCount) || (promptTokens + completionTokens);
+
     return res.json({
       success: true,
       mode: targetGeminiModel,
+      modelId: `google-direct/${targetGeminiModel}`,
       engineLabel: `Google (${targetGeminiModel} · ${thinkingLevelKey})`,
       thinkingLevel: thinkingLevelKey,
       roleFocus,
       contextStats,
+      usage: {
+        promptTokens,
+        completionTokens,
+        reasoningTokens: thoughtsTokens,
+        totalTokens,
+        nativeCostUsd: 0
+      },
       answerMarkdown: parsed.answerMarkdown || 'Diagnose abgeschlossen.',
       suggestedActions: Array.isArray(parsed.suggestedActions) ? parsed.suggestedActions : []
     });
