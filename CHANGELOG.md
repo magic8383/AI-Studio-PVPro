@@ -4,6 +4,27 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.5] – 2026-11-17
+
+### ✨ Vollständige Single-Source-of-Truth-Zentralisierung (`PVProCore`), Identische Monats- & Tagesdiagramme, Echte Live-Finanzwerte im PDF-Dossier & Code-Bereinigung
+
+#### 1. Zentrale Single-Source-of-Truth-Engine `window.PVProCore` (`app.js`, `telemetry.js`, `dossier.js`, `wiring.js`)
+* **Beseitigung aller mehrfach gepflegten Konstanten, Helfer & Schemata:**
+  - Alle Kalender- und Simulationskonstanten (`MONTH_START_HOURS`, `DAYS_IN_MONTH`, `MONTH_START_DAYS`, `MONTH_NAMES_DE`, `MONTH_SHORT_DE`), das zentrale Diagramm-Farbsystem (`PVPRO_CHART_COLORS`) sowie der globale HTML-Escaper (`escapeHtml`) sind nun einmalig in `PVProCore` definiert (keine mehrfach kopierten `mStart`-Arrays oder doppelten `escapeHtml`-Funktionen mehr in `telemetry.js` oder `dossier.js`).
+  - **Einheitlicher Home-Assistant-Schema-Normalisierer (`createDefaultHaConfigSchema` & `normalizeHaConfigSchema`):** Alle 5 Lade- und Merge-Pfade (`localStorage`, `IndexedDB` Self-Healing, `/api/ha/config` Server-Sync, GitHub-Projekt-Sync und `.pvpro.json` Voll-Backup) nutzen ab sofort dieselbe zentrale Normalisierungsfunktion. Dadurch gehen weder `homeCameras`, `monitoredDevices`, `customWeatherSensors` noch lokale Zugangs-Tokens bei einem Sync verloren.
+
+#### 2. Identischer Aufbau von Monats- & Tagesdiagrammen in der Planung (`app.js`, `index.html`)
+* **Gemeinsame 8.760h-Aggregations- & Chart-Engine (`getMonthlySimulationBreakdown`, `getDailySimulationBreakdown`, `buildPlanningGenAndConsChartConfigs`):**
+  - Sowohl die Monatsübersicht (`#autarkyGenChart` & `#autarkyConsChart`) als auch die *Tagesgenaue Auflösung* (`#detailGenChart` & `#detailConsChart`) sowie die PVGIS-Tages-Sollkurven im Analyse-Explorer (`getDailyPvgisSollForMonth`) beziehen ihre Daten aus derselben zentralen 8.760h-Quelle.
+  - **100 % konsistente Darstellung:** In beiden Ansichten (Monat & Tag) steht **oben/zuerst** die **echte PV-Erzeugung** (`PV Direktverbrauch` + `Bat-Ladung` + `Einspeisung` inkl. Gesamterzeugungs-Tooltip) und **unten/danach** der **reine Hausverbrauch nach Verbrauchergruppen** (`Grundlast`, `IT/Server`, `BWWP`, `Wärmepumpe`, `Klima`, `E-Auto` ohne beigemischte Einspeisung oder Akkuladung).
+
+#### 3. Echte Simulations-, ROI- & LCOE-Werte im DIN-VDE-0100-712-Dossier (`app.js`, `dossier.js`)
+* **Zentrale Finanz- & Amortisations-Engine (`getUnifiedFinanceAndRoiSummary`):**
+  - Bisher nutzte `dossier.js` an mehreren Stellen statische Schätzwerte (`totalKwp * 980 kWh`, `estYieldKwh * 0.22 €/a`, `≈ 8 - 10 Jahre`, `≈ 7,8 ct/kWh`) sowie eine eigene Kopie der Investitionskosten-Summierung.
+  - Ab sofort berechnet `getUnifiedFinanceAndRoiSummary()` zentral für die Planungs-UI **und** das PDF-Dossier den echten simulierten PVGIS-Jahresertrag, den spezifischen Ertrag (`kWh/kWp`), die Netto-Gesamtinvestition, die jährliche Euro-Ersparnis (`€/a`), den exakten Break-Even-Point in Jahren sowie die realen Stromgestehungskosten (`LCOE in ct/kWh` über 20 Jahre inkl. Degradation).
+
+---
+
 ## [Version 12.4] – 2026-11-17
 
 ### ✨ Hauskameras-Sektion auf der Startseite (2er-Kacheln, Vollbreiten-Stapelansicht & Querformat-Vollbild) + Echte stunden-/tagesgenaue PVGIS-Sollwerte & Korrigierte Planungs-Diagramme

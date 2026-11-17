@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.4 (Hauskameras-Sektion auf der Startseite mit 2-Spalten-Raster, gestapelter Vollbreiten-Ansicht und Querformat-Vollbildmodus sowie echte stunden-/tagesgenaue PVGIS-Sollwerte in Analyse & Planung mit sauber getrennter Tages-PV-Erzeugung oben und reinem Hausverbrauch unten)  
+**Aktuelle Version:** 12.5 (Vollständige Single-Source-of-Truth-Zentralisierung `PVProCore` über alle Module hinweg: Zentrale 8.760h-Monats-/Tages-Breakdown-Engine, identisch aufgebaute Monats- & Tagesdiagramme in der Planung, zentrale Finanz-/ROI-/LCOE-Berechnung für Planung & PDF-Dossier sowie einheitliche HA-Schema-Normalisierung)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

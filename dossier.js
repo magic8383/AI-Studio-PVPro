@@ -1,6 +1,6 @@
 // ==========================================
 // PV PRO STUDIO – DOSSIER & PDF EXPORT ENGINE
-// Version 7.0.0
+// Version 12.5 (Single Source of Truth via PVProCore)
 // Normkonforme Projektdokumentation nach DIN VDE 0100-712
 // ==========================================
 
@@ -1171,21 +1171,29 @@ function buildDossierHtmlContent(isPrintOnly = false) {
     const locLat = (typeof LocationData !== 'undefined' && LocationData.lat) ? LocationData.lat.toFixed(2) : '48.06';
     const locLon = (typeof LocationData !== 'undefined' && LocationData.lon) ? LocationData.lon.toFixed(2) : '8.46';
     
-    // Aggregation der Anlagendaten
+    // Zentrale Aggregation der Anlagendaten & Finanzen aus PVProCore (Single Source of Truth)
     const strList = (typeof strings !== 'undefined' && Array.isArray(strings)) ? strings : [];
-    let totalPanels = 0;
-    let totalKwp = 0;
-    
-    strList.forEach(s => {
-        (s.fields || []).forEach(f => {
-            const count = parseInt(f.count) || 0;
-            totalPanels += count;
-            const pModel = (typeof flatPanels !== 'undefined') ? flatPanels.find(x => x.id === parseInt(f.panelId)) : null;
-            const wp = pModel?.pmax || f.power || 440;
-            totalKwp += (count * wp);
+    const sysSummary = typeof getSystemHardwareAndConsSummary === 'function'
+        ? getSystemHardwareAndConsSummary()
+        : null;
+    const finSummary = typeof getUnifiedFinanceAndRoiSummary === 'function'
+        ? getUnifiedFinanceAndRoiSummary()
+        : null;
+
+    let totalPanels = sysSummary ? sysSummary.panelCount : 0;
+    let totalKwp = sysSummary ? sysSummary.kwp : 0;
+    if (!sysSummary) {
+        strList.forEach(s => {
+            (s.fields || []).forEach(f => {
+                const count = parseInt(f.count) || 0;
+                totalPanels += count;
+                const pModel = (typeof flatPanels !== 'undefined') ? flatPanels.find(x => x.id === parseInt(f.panelId)) : null;
+                const wp = pModel?.pmax || f.power || 440;
+                totalKwp += (count * wp);
+            });
         });
-    });
-    totalKwp = totalKwp / 1000;
+        totalKwp = totalKwp / 1000;
+    }
 
     // Wechselrichter
     let invNames = [];
@@ -1198,51 +1206,30 @@ function buildDossierHtmlContent(isPrintOnly = false) {
     }
     const invLabel = invNames.length > 0 ? invNames.join(', ') : 'Standard Hybrid-Wechselrichter';
 
-    // Batterie
-    let batLabel = 'Kein Speicher konfiguriert';
-    let batCap = 0;
-    try {
-        const batEl = document.getElementById('batterySelect');
-        if (batEl && batEl.value && typeof flatBatteries !== 'undefined') {
-            const b = flatBatteries.find(x => x.id === parseInt(batEl.value));
-            if (b) {
-                batLabel = `${b.name} (${b.capacity || b.cap} kWh)`;
-                batCap = b.capacity || b.cap || 0;
-            }
-        }
-    } catch(e) {}
+    // Batterie (aus zentraler Hardware-Zusammenfassung)
+    let batCap = sysSummary ? (sysSummary.batteryKwh || 0) : 0;
+    let batLabel = (sysSummary && batCap > 0)
+        ? `${sysSummary.batteryName} (${batCap} kWh)`
+        : 'Kein Speicher konfiguriert';
 
-    // Ertrag & Kennzahlen
-    const estYieldKwh = Math.round(totalKwp * 980);
-    const estYieldSpec = 980;
-    
-    // Investitionskosten aus Speicher / Konfiguration
-    let totalInvestSum = 0;
+    // Echter simulierter PVGIS-Jahresertrag & Finanzkennzahlen aus Single Source of Truth
+    const estYieldKwh = finSummary ? finSummary.annualYieldKwh : Math.round(totalKwp * 980);
+    const estYieldSpec = finSummary ? finSummary.specificYieldKwhPerKwp : 980;
+    const totalInvestSum = finSummary ? finSummary.totalInvestEur : (parseFloat(document.getElementById('fin_sys_cost')?.value) || 15000);
+    const annualSavingsEur = finSummary ? Math.round(finSummary.annualSavingsEur) : Math.round(estYieldKwh * 0.22);
+    const amortDisplay = (finSummary && Number.isFinite(finSummary.amortYearsNum))
+        ? `${finSummary.amortYearsLabel} Jahre`
+        : '8 - 10 Jahre';
+    const lcoeDisplay = finSummary
+        ? `${finSummary.lcoeCtPerKwh.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ct/kWh`
+        : '7,8 ct/kWh';
+
     let investDetails = null;
     try {
-        if (typeof getInvestConfig === 'function') {
-            investDetails = getInvestConfig();
-        } else {
-            investDetails = JSON.parse(localStorage.getItem('pvpro_invest') || '{}');
-        }
-        if (investDetails) {
-            const custom = investDetails.customItems || {};
-            const c1 = (custom[1] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
-            const c2 = (custom[2] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
-            const c3 = (custom[3] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
-            const c4 = (custom[4] || []).reduce((s, i) => s + (parseFloat(i.cost) || 0), 0);
-
-            const sum = (investDetails.panels || 0) + (investDetails.mounting || 0) + c1 +
-                        (investDetails.inverter || 0) + (investDetails.battery || 0) + (investDetails.smartmeter || 0) + c2 +
-                        (investDetails.cables || 0) + (investDetails.gak || 0) + (investDetails.acmat || 0) + c3 +
-                        (investDetails.scaffold || 0) + (investDetails.electrician || 0) + (investDetails.misc || 0) + c4;
-            if (sum > 0) totalInvestSum = sum;
-        }
-    } catch(e) {}
-    if (!totalInvestSum) {
-        const finCost = parseFloat(document.getElementById('fin_sys_cost')?.value) || 0;
-        if (finCost > 0) totalInvestSum = finCost;
-    }
+        investDetails = typeof getInvestConfig === 'function'
+            ? getInvestConfig()
+            : JSON.parse(localStorage.getItem('pvpro_invest') || '{}');
+    } catch (e) {}
 
     // Hardware-Daten für Anhänge / Tabellen
     const hardwareData = getUsedHardwareData();
@@ -1673,7 +1660,7 @@ function buildDossierHtmlContent(isPrintOnly = false) {
                 <div class="p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
                     <span class="text-[10px] font-bold uppercase text-slate-400 block">Jährliche Ersparnis</span>
                     <span class="text-xl font-black text-emerald-600 block mt-0.5">
-                        &approx; ${(Math.round(estYieldKwh * 0.22)).toLocaleString('de-DE')} €/a
+                        &approx; ${annualSavingsEur.toLocaleString('de-DE')} €/a
                     </span>
                     <span class="text-[11px] text-slate-500">Eigenverbrauch + Einspeisung</span>
                 </div>
@@ -1681,7 +1668,7 @@ function buildDossierHtmlContent(isPrintOnly = false) {
                 <div class="p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
                     <span class="text-[10px] font-bold uppercase text-slate-400 block">Amortisationszeit</span>
                     <span class="text-xl font-black text-primary block mt-0.5">
-                        &approx; 8 - 10 Jahre
+                        &approx; ${amortDisplay}
                     </span>
                     <span class="text-[11px] text-slate-500">Break-Even-Point</span>
                 </div>
@@ -1689,7 +1676,7 @@ function buildDossierHtmlContent(isPrintOnly = false) {
                 <div class="p-3.5 rounded-xl border border-slate-200 bg-white shadow-2xs">
                     <span class="text-[10px] font-bold uppercase text-slate-400 block">Stromgestehungskosten (LCOE)</span>
                     <span class="text-xl font-black text-slate-900 block mt-0.5">
-                        &approx; 7,8 ct/kWh
+                        &approx; ${lcoeDisplay}
                     </span>
                     <span class="text-[11px] text-slate-500">über 20 Jahre Betrieb</span>
                 </div>
@@ -1851,22 +1838,11 @@ function buildDossierHtmlContent(isPrintOnly = false) {
 
         <!-- DOKUMENTEN-FUSSZEILE -->
         <footer class="mt-8 pt-4 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between">
-            <span>PV Pro Studio v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '10.1'} • Dokumentation nach DIN VDE 0100-712</span>
+            <span>PV Pro Studio v${typeof APP_VERSION !== 'undefined' ? APP_VERSION : '12.5'} • Dokumentation nach DIN VDE 0100-712</span>
             <span>Erstellt am: ${escapeHtml(dossierOptions.projectDate)} • Seite 1 von 1</span>
         </footer>
     </div>
     `;
-}
-
-// Sichere HTML-Escaping-Funktion
-function escapeHtml(str) {
-    if (str === null || str === undefined) return '';
-    return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
 }
 
 // Global registrieren

@@ -1,10 +1,26 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: APP_VERSION & GLOBALER ESCAPER
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V12.5)
+// Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '12.4';
-if (typeof window !== 'undefined') {
-    window.APP_VERSION = APP_VERSION;
-}
+const APP_VERSION = '12.5';
+const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
+const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
+const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);
+const MONTH_NAMES_DE = Object.freeze(["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"]);
+const MONTH_SHORT_DE = Object.freeze(["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"]);
+const PVPRO_CHART_COLORS = Object.freeze({
+    pvDirect: '#3b82f6',
+    batCharge: '#10b981',
+    gridExport: '#f59e0b',
+    batDischarge: '#a855f7',
+    gridImport: '#f43f5e',
+    base: '#94a3b8',
+    it: '#3b82f6',
+    bw: '#f43f5e',
+    wp: '#ef4444',
+    ac: '#0ea5e9',
+    ev: '#84cc16'
+});
 
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
@@ -15,8 +31,128 @@ function escapeHtml(str) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+
+function createDefaultHaConfigSchema() {
+    return {
+        mode: 'poll',
+        baseUrl: 'https://home.mb10.org',
+        accessToken: '',
+        pollIntervalSec: 10,
+        autoSyncMonthly: true,
+        trackingStartDate: '2026-11-01',
+        batteryName: 'BYD HVS+',
+        entities: {
+            pvPower: 'sensor.pv_power_total',
+            loadPower: 'sensor.house_consumption_power',
+            gridPower: 'sensor.grid_power',
+            gridImportPower: '',
+            gridExportPower: '',
+            batteryChargePower: '',
+            batteryDischargePower: '',
+            batteryPower: 'sensor.battery_power',
+            batterySoc: 'sensor.battery_soc',
+            pvEnergyToday: '',
+            pvEnergyMonth: 'sensor.pv_energy_monthly',
+            pvEnergyTotal: 'sensor.pv_energy_total',
+            loadEnergyMonth: '',
+            gridImportMonth: 'sensor.grid_import_monthly',
+            gridExportMonth: 'sensor.grid_export_monthly',
+            batteryChargeMonth: 'sensor.battery_charge_monthly',
+            batteryDischargeMonth: 'sensor.battery_discharge_monthly'
+        },
+        pvEnergyExtraEntities: [],
+        weatherEntity: '',
+        outdoorTempEntity: '',
+        customWeatherSensors: [],
+        monitoredDevices: [],
+        homeCameras: [],
+        customStrings: [
+            { id: 'str_fronius_1', name: 'Fronius · String 1 DC', powerEntity: 'sensor.fronius_string_1_power', energyEntity: 'sensor.fronius_string_1_energy_today', color: '#14b8a6' },
+            { id: 'str_fronius_2', name: 'Fronius · String 2 DC', powerEntity: 'sensor.fronius_string_2_power', energyEntity: 'sensor.fronius_string_2_energy_today', color: '#f59e0b' },
+            { id: 'str_hoymiles', name: 'Hoymiles · gesamt DC', powerEntity: 'sensor.hoymiles_power_dc', energyEntity: '', color: '#22c55e' }
+        ],
+        customConsumers: [
+            { id: 'cons_1', name: 'Trockner', group: '', powerEntity: 'sensor.trockner_power', energyEntity: '' },
+            { id: 'cons_2', name: 'TV-Verstärker', group: '', powerEntity: 'sensor.tv_verstaerker_power', energyEntity: '' },
+            { id: 'cons_3', name: 'Esszimmer Licht', group: '', powerEntity: 'sensor.esszimmer_licht_power', energyEntity: '' },
+            { id: 'cons_4', name: 'Küche Licht', group: '', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
+        ]
+    };
+}
+
+function normalizeHaConfigSchema(incoming = {}, current = null, options = {}) {
+    const def = createDefaultHaConfigSchema();
+    const base = (current && typeof current === 'object') ? current : def;
+    const src = (incoming && typeof incoming === 'object') ? incoming : {};
+    const preserveLocalToken = Boolean(options.preserveLocalToken);
+    const cloneArr = (val, fallback) => Array.isArray(val) ? JSON.parse(JSON.stringify(val)) : (Array.isArray(fallback) ? JSON.parse(JSON.stringify(fallback)) : []);
+    const cloneNonEmptyArr = (val, fallback) => (Array.isArray(val) && val.length > 0) ? JSON.parse(JSON.stringify(val)) : cloneArr(fallback, []);
+
+    const resolvedToken = preserveLocalToken
+        ? (base.accessToken || '')
+        : (String(src.accessToken || '').trim() || base.accessToken || '');
+
+    const rawMode = src.mode || base.mode || def.mode;
+    return {
+        ...def,
+        ...base,
+        ...src,
+        mode: rawMode === 'demo' ? 'poll' : rawMode,
+        baseUrl: src.baseUrl || base.baseUrl || def.baseUrl,
+        accessToken: resolvedToken,
+        pollIntervalSec: Number(src.pollIntervalSec) || Number(base.pollIntervalSec) || def.pollIntervalSec,
+        autoSyncMonthly: src.autoSyncMonthly !== undefined ? Boolean(src.autoSyncMonthly) : (base.autoSyncMonthly !== undefined ? Boolean(base.autoSyncMonthly) : true),
+        trackingStartDate: src.trackingStartDate || base.trackingStartDate || def.trackingStartDate,
+        batteryName: src.batteryName || base.batteryName || def.batteryName,
+        entities: { ...def.entities, ...(base.entities || {}), ...(src.entities || {}) },
+        pvEnergyExtraEntities: Array.isArray(src.pvEnergyExtraEntities)
+            ? cloneArr(src.pvEnergyExtraEntities, base.pvEnergyExtraEntities)
+            : cloneArr(base.pvEnergyExtraEntities, def.pvEnergyExtraEntities),
+        weatherEntity: (typeof src.weatherEntity === 'string' && (src.weatherEntity || options.allowEmptyStrings)) ? src.weatherEntity : (base.weatherEntity || ''),
+        outdoorTempEntity: (typeof src.outdoorTempEntity === 'string' && (src.outdoorTempEntity || options.allowEmptyStrings)) ? src.outdoorTempEntity : (base.outdoorTempEntity || ''),
+        customWeatherSensors: options.allowEmptyArrays
+            ? cloneArr(src.customWeatherSensors, base.customWeatherSensors)
+            : cloneNonEmptyArr(src.customWeatherSensors, base.customWeatherSensors),
+        monitoredDevices: options.allowEmptyArrays
+            ? cloneArr(src.monitoredDevices, base.monitoredDevices)
+            : cloneNonEmptyArr(src.monitoredDevices, base.monitoredDevices),
+        homeCameras: options.allowEmptyArrays
+            ? cloneArr(src.homeCameras, base.homeCameras)
+            : (Array.isArray(src.homeCameras) && (src.homeCameras.length > 0 || !Array.isArray(base.homeCameras) || base.homeCameras.length === 0)
+                ? cloneArr(src.homeCameras, [])
+                : cloneArr(base.homeCameras, [])),
+        customStrings: cloneNonEmptyArr(src.customStrings, base.customStrings || def.customStrings),
+        customConsumers: Array.isArray(src.customConsumers) && (src.customConsumers.length > 0 || options.allowEmptyArrays)
+            ? cloneArr(src.customConsumers, base.customConsumers)
+            : cloneArr(base.customConsumers, def.customConsumers)
+    };
+}
+
+const PVProCore = {
+    APP_VERSION,
+    MONTH_START_HOURS,
+    DAYS_IN_MONTH,
+    MONTH_START_DAYS,
+    MONTH_NAMES_DE,
+    MONTH_SHORT_DE,
+    CHART_COLORS: PVPRO_CHART_COLORS,
+    escapeHtml,
+    createDefaultHaConfigSchema,
+    normalizeHaConfigSchema
+};
+
 if (typeof window !== 'undefined') {
+    window.APP_VERSION = APP_VERSION;
+    window.MONTH_START_HOURS = MONTH_START_HOURS;
+    window.DAYS_IN_MONTH = DAYS_IN_MONTH;
+    window.MONTH_START_DAYS = MONTH_START_DAYS;
+    window.MONTH_NAMES_DE = MONTH_NAMES_DE;
+    window.MONTH_SHORT_DE = MONTH_SHORT_DE;
+    window.PVPRO_CHART_COLORS = PVPRO_CHART_COLORS;
     window.escapeHtml = escapeHtml;
+    window.createDefaultHaConfigSchema = createDefaultHaConfigSchema;
+    window.normalizeHaConfigSchema = normalizeHaConfigSchema;
+    window.PVProCore = PVProCore;
 }
 
 let DB = {
@@ -1844,7 +1980,7 @@ function ensureFlowCacheHourlyPopulated(forceRebuild = false) {
 
     const safeLat = parseFloat(LocationData?.lat) || 48.06;
     const safeLon = parseFloat(LocationData?.lon) || 8.46;
-    const mStart = [0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016];
+    const mStart = MONTH_START_HOURS;
     const systemLossFactor = 0.95;
 
     const activeInvIds = [...new Set(strings.map(s => parseInt(s.inverterId)))];
@@ -4583,51 +4719,126 @@ function updateEEGPreview() {
     return finalEeg;
 }
 
+function getUnifiedFinanceAndRoiSummary() {
+    const gridP = parseFloat(document.getElementById('fin_grid_price')?.value) || 0.32;
+    const gasP = parseFloat(document.getElementById('fin_gas_price')?.value) || 1.10;
+    const petrolP = parseFloat(document.getElementById('fin_petrol_price')?.value) || 1.75;
+    const iceCons = parseFloat(document.getElementById('fin_ice_cons')?.value) || 7.0;
+    const jaz = parseFloat(document.getElementById('fin_wp_jaz')?.value) || 3.5;
+
+    let totalInvestEur = parseFloat(document.getElementById('fin_sys_cost')?.value) || 15000;
+    try {
+        const inv = typeof getInvestConfig === 'function' ? getInvestConfig() : JSON.parse(localStorage.getItem('pvpro_invest') || '{}');
+        if (inv && typeof inv === 'object') {
+            const custom = inv.customItems || {};
+            const cSum = [1, 2, 3, 4].reduce((acc, cat) => {
+                return acc + (Array.isArray(custom[cat]) ? custom[cat].reduce((s, i) => s + (parseFloat(i.cost) || 0), 0) : 0);
+            }, 0);
+            const sum = (Number(inv.panels) || 0) + (Number(inv.mounting) || 0) +
+                        (Number(inv.inverter) || 0) + (Number(inv.battery) || 0) + (Number(inv.smartmeter) || 0) +
+                        (Number(inv.cables) || 0) + (Number(inv.gak) || 0) + (Number(inv.acmat) || 0) +
+                        (Number(inv.scaffold) || 0) + (Number(inv.electrician) || 0) + (Number(inv.misc) || 0) + cSum;
+            if (sum > 0) totalInvestEur = sum;
+        }
+    } catch (e) {}
+
+    const finalEegCt = updateEEGPreview();
+    const finalEegEur = finalEegCt / 100;
+    const c = typeof getConsumptionConfig === 'function' ? getConsumptionConfig() : { baseKwh: 3500, it: 100, ac: 0, wp: 0, bw: 0, ev: 0 };
+
+    const costA_grid = ((c.baseKwh || 0) + ((c.it || 0) * 8.76) + (c.ac || 0)) * gridP;
+    const costA_heat = ((((c.wp || 0) + (c.bw || 0)) * jaz) / 10) * gasP;
+    const evKm = parseFloat(document.getElementById('cons_ev_km')?.value) || 0;
+    const costA_car = (c.ev > 0) ? (evKm / 100) * iceCons * petrolP : 0;
+    const costA_total = costA_grid + costA_heat + costA_car;
+
+    const sysSummary = getSystemHardwareAndConsSummary();
+    const annualYieldKwh = YieldDataCache && YieldDataCache.length > 0
+        ? YieldDataCache.reduce((acc, g) => acc + (Number(g.yield) || 0), 0)
+        : Math.round((sysSummary.kwp || 10) * 980);
+    const specificYieldKwhPerKwp = sysSummary.kwp > 0 ? Math.round(annualYieldKwh / sysSummary.kwp) : 980;
+
+    let costB_grid = 0;
+    let costB_rev = 0;
+    let costB_total = 0;
+    let annualSavingsEur = 0;
+
+    if (FlowCache) {
+        costB_grid = (FlowCache.fromGrid || 0) * gridP;
+        costB_rev = (FlowCache.toGrid || 0) * finalEegEur;
+        costB_total = costB_grid - costB_rev;
+        annualSavingsEur = costA_total - costB_total;
+    } else {
+        annualSavingsEur = annualYieldKwh * (gridP * 0.65 + finalEegEur * 0.35);
+    }
+
+    const amortYearsNum = annualSavingsEur > 0 ? (totalInvestEur / annualSavingsEur) : Infinity;
+    const amortYearsLabel = Number.isFinite(amortYearsNum) ? amortYearsNum.toFixed(1) : '∞';
+
+    // LCOE über 20 Jahre (inkl. 0.5% jährlicher Degradation -> Faktor ~19.07 Jahreserträge)
+    const lifetimeYield20Y = annualYieldKwh * 19.07;
+    const lcoeCtPerKwh = lifetimeYield20Y > 0 ? +((totalInvestEur / lifetimeYield20Y) * 100).toFixed(1) : 7.8;
+
+    return {
+        gridPriceEur: gridP,
+        gasPriceEur: gasP,
+        petrolPriceEur: petrolP,
+        iceConsL: iceCons,
+        jaz,
+        totalInvestEur,
+        finalEegCt,
+        finalEegEur,
+        annualYieldKwh: Math.round(annualYieldKwh),
+        specificYieldKwhPerKwp,
+        costA_grid,
+        costA_heat,
+        costA_car,
+        costA_total,
+        costB_grid,
+        costB_rev,
+        costB_total,
+        annualSavingsEur,
+        amortYearsNum,
+        amortYearsLabel,
+        lcoeCtPerKwh
+    };
+}
+if (typeof window !== 'undefined') {
+    window.getUnifiedFinanceAndRoiSummary = getUnifiedFinanceAndRoiSummary;
+    if (window.PVProCore) window.PVProCore.getUnifiedFinanceAndRoiSummary = getUnifiedFinanceAndRoiSummary;
+}
+
 function calculateFinances() {
-    let gridP = parseFloat(document.getElementById('fin_grid_price').value) || 0.32;
-    let gasP = parseFloat(document.getElementById('fin_gas_price').value) || 1.10; 
-    let petrolP = parseFloat(document.getElementById('fin_petrol_price').value) || 1.75;
-    let iceCons = parseFloat(document.getElementById('fin_ice_cons').value) || 7.0;
-    let jaz = parseFloat(document.getElementById('fin_wp_jaz').value) || 3.5;
-    let sysCost = parseFloat(document.getElementById('fin_sys_cost').value) || 15000;
+    const fin = getUnifiedFinanceAndRoiSummary();
+    const dateVal = document.getElementById('fin_eeg_date')?.value || '2024-05';
 
     localStorage.setItem('pvpro_finance', JSON.stringify({
-        grid: gridP, cost: sysCost, date: document.getElementById('fin_eeg_date').value, 
-        gas: gasP, jaz: jaz, petrol: petrolP, ice: iceCons
+        grid: fin.gridPriceEur,
+        cost: fin.totalInvestEur,
+        date: dateVal,
+        gas: fin.gasPriceEur,
+        jaz: fin.jaz,
+        petrol: fin.petrolPriceEur,
+        ice: fin.iceConsL
     }));
 
-    let finalEeg = updateEEGPreview();
-    let eegUi = document.getElementById('rep_b_eeg_rate');
-    if(eegUi) eegUi.innerText = finalEeg.toFixed(2);
+    const eegUi = document.getElementById('rep_b_eeg_rate');
+    if (eegUi) eegUi.innerText = fin.finalEegCt.toFixed(2);
 
-    if(!FlowCache) return;
+    if (!FlowCache) return;
 
-    let c = getConsumptionConfig();
-    
-    let costA_grid = (c.baseKwh + (c.it * 8.76) + c.ac) * gridP;
-    let costA_heat = (((c.wp + c.bw) * jaz) / 10) * gasP;
-    let costA_car = (c.ev > 0) ? ((parseFloat(document.getElementById('cons_ev_km').value) || 0) / 100) * iceCons * petrolP : 0;
-    let costA_total = costA_grid + costA_heat + costA_car;
+    const rAGrid = document.getElementById('rep_a_grid'); if (rAGrid) rAGrid.innerText = "+ " + fin.costA_grid.toFixed(2) + " €";
+    const rACar = document.getElementById('rep_a_car'); if (rACar) rACar.innerText = "+ " + fin.costA_car.toFixed(2) + " €";
+    const rAHeat = document.getElementById('rep_a_heat'); if (rAHeat) rAHeat.innerText = "+ " + fin.costA_heat.toFixed(2) + " €";
+    const rATotal = document.getElementById('rep_a_total'); if (rATotal) rATotal.innerText = fin.costA_total.toFixed(2) + " €";
 
-    let costB_grid = FlowCache.fromGrid * gridP;
-    let costB_rev = FlowCache.toGrid * (finalEeg / 100);
-    let costB_total = costB_grid - costB_rev;
+    const rBGrid = document.getElementById('rep_b_grid'); if (rBGrid) rBGrid.innerText = "+ " + fin.costB_grid.toFixed(2) + " €";
+    const rBRev = document.getElementById('rep_b_rev'); if (rBRev) rBRev.innerText = "- " + fin.costB_rev.toFixed(2) + " €";
+    const rBTotal = document.getElementById('rep_b_total'); if (rBTotal) rBTotal.innerText = fin.costB_total.toFixed(2) + " €";
 
-    let savings = costA_total - costB_total;
-    let amort = savings > 0 ? (sysCost / savings).toFixed(1) : "∞";
-
-    let rAGrid = document.getElementById('rep_a_grid'); if(rAGrid) rAGrid.innerText = "+ " + costA_grid.toFixed(2) + " €";
-    let rACar = document.getElementById('rep_a_car'); if(rACar) rACar.innerText = "+ " + costA_car.toFixed(2) + " €";
-    let rAHeat = document.getElementById('rep_a_heat'); if(rAHeat) rAHeat.innerText = "+ " + costA_heat.toFixed(2) + " €";
-    let rATotal = document.getElementById('rep_a_total'); if(rATotal) rATotal.innerText = costA_total.toFixed(2) + " €";
-
-    let rBGrid = document.getElementById('rep_b_grid'); if(rBGrid) rBGrid.innerText = "+ " + costB_grid.toFixed(2) + " €";
-    let rBRev = document.getElementById('rep_b_rev'); if(rBRev) rBRev.innerText = "- " + costB_rev.toFixed(2) + " €";
-    let rBTotal = document.getElementById('rep_b_total'); if(rBTotal) rBTotal.innerText = costB_total.toFixed(2) + " €";
-
-    let rDiff = document.getElementById('rep_diff'); if(rDiff) rDiff.innerText = Math.round(savings).toLocaleString() + " €";
-    let kpiSav = document.getElementById('kpi_savings'); if(kpiSav) kpiSav.innerText = Math.round(savings).toLocaleString() + " €";
-    let kpiRoi = document.getElementById('kpi_roi'); if(kpiRoi) kpiRoi.innerText = amort;
+    const rDiff = document.getElementById('rep_diff'); if (rDiff) rDiff.innerText = Math.round(fin.annualSavingsEur).toLocaleString() + " €";
+    const kpiSav = document.getElementById('kpi_savings'); if (kpiSav) kpiSav.innerText = Math.round(fin.annualSavingsEur).toLocaleString() + " €";
+    const kpiRoi = document.getElementById('kpi_roi'); if (kpiRoi) kpiRoi.innerText = fin.amortYearsLabel;
 }
 
 // ==========================================
@@ -4810,7 +5021,7 @@ async function calculateYieldAPI() {
         activeInvs.forEach(i => invH[i.id] = new Float32Array(8760));
 
         let sRes = strings.map(s => ({ id: s.id, name: s.name, color: s.color, kwp: 0, yield: 0, clip: 0, batYield: 0, mo: new Array(12).fill(0), hr: new Float32Array(8760) }));
-        const mStart = [0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016];
+        const mStart = MONTH_START_HOURS;
 
         let pvProfileRaw = new Float32Array(8760);
 
@@ -5004,146 +5215,238 @@ function renderDashboard() {
     let ga = document.getElementById('gauge-autarky'); if(ga) ga.setAttribute('stroke-dasharray', `${autarkyPct} 100`);
     let ge = document.getElementById('gauge-eigen'); if(ge) ge.setAttribute('stroke-dasharray', `${eigenPct} 100`);
 
-    let moBreakdown = { base: [], it: [], ac: [], wp: [], bw: [], ev: [], toGrid: [], pvTotal: [], clip: [], toBat: [] };
-    const mStart = [0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016];
-    for(let m=0; m<12; m++) {
-        let sumB=0, sumI=0, sumA=0, sumW=0, sumBw=0, sumE=0, sumTG=0, sumPV=0, sumC=0, sumTB=0;
-        for(let h=mStart[m]; h<(m===11?8760:mStart[m+1]); h++) { sumB+=ConsumptionCache.base[h]; sumI+=ConsumptionCache.it[h]; sumA+=ConsumptionCache.ac[h]; sumW+=ConsumptionCache.wp[h]; sumBw+=ConsumptionCache.bw[h]; sumE+=ConsumptionCache.ev[h]; sumTG+=FlowCache.hr.toGrid[h]; sumPV+=FlowCache.hr.pvTotal[h]; sumC+=FlowCache.hr.clip[h]; sumTB+=FlowCache.hr.toBat[h]; }
-        moBreakdown.base.push(sumB/1000); moBreakdown.it.push(sumI/1000); moBreakdown.ac.push(sumA/1000); moBreakdown.wp.push(sumW/1000); moBreakdown.bw.push(sumBw/1000); moBreakdown.ev.push(sumE/1000); moBreakdown.toGrid.push(sumTG/1000); moBreakdown.pvTotal.push(sumPV/1000); moBreakdown.clip.push(sumC/1000); moBreakdown.toBat.push(sumTB/1000);
-    }
-
-    const cOpts = { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true, grid: { color: 'rgba(255,255,255,0.05)' }, min: 0 } }, plugins: { legend: { position: 'bottom', labels: {color: '#cbd5e1', usePointStyle: true, boxWidth: 6} } } };
-    let aCCtx = document.getElementById('autarkyConsChart');
-    if(aCCtx) {
-        if(chartAutarkyCons) chartAutarkyCons.destroy();
-        chartAutarkyCons = new Chart(aCCtx.getContext('2d'), { type: 'bar', data: { labels: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"], datasets: [ { label: 'Einspeisung', data: moBreakdown.toGrid, backgroundColor: '#f59e0b', stack: '0' }, { label: 'Bat-Ladung', data: moBreakdown.toBat, backgroundColor: '#10b981', stack: '0' }, { label: 'E-Auto', data: moBreakdown.ev, backgroundColor: '#84cc16', stack: '0' }, { label: 'Klima', data: moBreakdown.ac, backgroundColor: '#0ea5e9', stack: '0' }, { label: 'Wärmepumpe', data: moBreakdown.wp, backgroundColor: '#ef4444', stack: '0' }, { label: 'BWWP', data: moBreakdown.bw, backgroundColor: '#f43f5e', stack: '0' }, { label: 'IT/Server', data: moBreakdown.it, backgroundColor: '#3b82f6', stack: '0' }, { label: 'Grundlast', data: moBreakdown.base, backgroundColor: '#94a3b8', stack: '0' } ]}, options: cOpts });
-    }
+    const moBreakdown = getMonthlySimulationBreakdown();
+    const moChartConfigs = buildPlanningGenAndConsChartConfigs(MONTH_SHORT_DE, moBreakdown, { isDarkCard: true });
 
     let aGCtx = document.getElementById('autarkyGenChart');
-    if(aGCtx) {
-        if(chartAutarkyGen) chartAutarkyGen.destroy();
-        chartAutarkyGen = new Chart(aGCtx.getContext('2d'), { type: 'bar', data: { labels: ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"], datasets: [ { label: 'PV Erzeugung', data: moBreakdown.pvTotal, borderColor: '#3b82f6', backgroundColor: 'transparent', type: 'line', borderWidth: 2, pointRadius: 2, tension: 0.3 }, { label: 'PV Direkt', data: FlowCache.moGen, backgroundColor: '#3b82f6', stack: '0' }, { label: 'Aus Batterie', data: FlowCache.moBat, backgroundColor: '#a855f7', stack: '0' }, { label: 'Netzbezug', data: moBreakdown.base.map((_,i) => FlowCache.moCons[i] - FlowCache.moGen[i] + moBreakdown.toGrid[i] - FlowCache.moBat[i]), backgroundColor: '#f43f5e', stack: '0' } ]}, options: cOpts });
+    if (aGCtx) {
+        if (chartAutarkyGen) chartAutarkyGen.destroy();
+        chartAutarkyGen = new Chart(aGCtx.getContext('2d'), moChartConfigs.genConfig);
+    }
+
+    let aCCtx = document.getElementById('autarkyConsChart');
+    if (aCCtx) {
+        if (chartAutarkyCons) chartAutarkyCons.destroy();
+        chartAutarkyCons = new Chart(aCCtx.getContext('2d'), moChartConfigs.consConfig);
     }
 
     calculateFinances();
-    if(currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
+    if (currentDetailMonth !== null) updateDetailCharts(currentDetailMonth);
 }
 
 // ==========================================
-// 9. EINZELTAGE (DETAIL)
+// 9. ZENTRALE MONATS- & TAGES-BREAKDOWN ENGINE (SINGLE SOURCE OF TRUTH)
 // ==========================================
+function getMonthlySimulationBreakdown() {
+    try { ensureFlowCacheHourlyPopulated(); } catch (e) {}
+    const out = {
+        labels: [...MONTH_SHORT_DE],
+        base: [], it: [], ac: [], wp: [], bw: [], ev: [],
+        toGrid: [], toBat: [], direct: [], fromBat: [], fromGrid: [], pvTotal: [], clip: []
+    };
+    if (!FlowCache || !ConsumptionCache) return out;
+
+    for (let m = 0; m < 12; m++) {
+        let sB = 0, sI = 0, sA = 0, sW = 0, sBw = 0, sE = 0, sTG = 0, sTB = 0, sDir = 0, sFB = 0, sFG = 0, sPV = 0, sClip = 0;
+        const hStart = MONTH_START_HOURS[m];
+        const hEnd = m === 11 ? 8760 : MONTH_START_HOURS[m + 1];
+        for (let h = hStart; h < hEnd; h++) {
+            sB += (ConsumptionCache.base?.[h] || 0);
+            sI += (ConsumptionCache.it?.[h] || 0);
+            sA += (ConsumptionCache.ac?.[h] || 0);
+            sW += (ConsumptionCache.wp?.[h] || 0);
+            sBw += (ConsumptionCache.bw?.[h] || 0);
+            sE += (ConsumptionCache.ev?.[h] || 0);
+            sTG += (FlowCache.hr?.toGrid?.[h] || 0);
+            sTB += (FlowCache.hr?.toBat?.[h] || 0);
+            sDir += (FlowCache.hr?.direct?.[h] || 0);
+            sFB += (FlowCache.hr?.fromBat?.[h] || 0);
+            sFG += (FlowCache.hr?.fromGrid?.[h] || 0);
+            sPV += (FlowCache.hr?.pvTotal?.[h] || 0);
+            sClip += (FlowCache.hr?.clip?.[h] || 0);
+        }
+        out.base.push(+(sB / 1000).toFixed(1));
+        out.it.push(+(sI / 1000).toFixed(1));
+        out.ac.push(+(sA / 1000).toFixed(1));
+        out.wp.push(+(sW / 1000).toFixed(1));
+        out.bw.push(+(sBw / 1000).toFixed(1));
+        out.ev.push(+(sE / 1000).toFixed(1));
+        out.toGrid.push(+(sTG / 1000).toFixed(1));
+        out.toBat.push(+(sTB / 1000).toFixed(1));
+        out.direct.push(+(sDir / 1000).toFixed(1));
+        out.fromBat.push(+(sFB / 1000).toFixed(1));
+        out.fromGrid.push(+(sFG / 1000).toFixed(1));
+        out.clip.push(+(sClip / 1000).toFixed(1));
+        const trueMoPvKwh = (sDir + sTB + sTG) > 0 ? ((sDir + sTB + sTG) / 1000) : (sPV / 1000);
+        out.pvTotal.push(+trueMoPvKwh.toFixed(1));
+    }
+    return out;
+}
+
+function getDailySimulationBreakdown(monthIdx) {
+    try { ensureFlowCacheHourlyPopulated(); } catch (e) {}
+    const mIdx = Math.max(0, Math.min(11, Number(monthIdx) || 0));
+    const numDays = DAYS_IN_MONTH[mIdx] || 30;
+    const startDay = MONTH_START_DAYS[mIdx] || 0;
+    const out = {
+        labels: [],
+        base: [], it: [], ac: [], wp: [], bw: [], ev: [],
+        toGrid: [], toBat: [], direct: [], fromBat: [], fromGrid: [], pvTotal: []
+    };
+    if (!FlowCache || !ConsumptionCache) return out;
+
+    for (let d = 0; d < numDays; d++) {
+        out.labels.push((d + 1) + ".");
+        let sB = 0, sI = 0, sA = 0, sW = 0, sBw = 0, sE = 0, sTG = 0, sTB = 0, sPV = 0, sDir = 0, sFB = 0, sFG = 0;
+        for (let h = 0; h < 24; h++) {
+            const absH = (startDay + d) * 24 + h;
+            sB += (ConsumptionCache.base?.[absH] || 0);
+            sI += (ConsumptionCache.it?.[absH] || 0);
+            sA += (ConsumptionCache.ac?.[absH] || 0);
+            sW += (ConsumptionCache.wp?.[absH] || 0);
+            sBw += (ConsumptionCache.bw?.[absH] || 0);
+            sE += (ConsumptionCache.ev?.[absH] || 0);
+            sTG += (FlowCache.hr?.toGrid?.[absH] || 0);
+            sTB += (FlowCache.hr?.toBat?.[absH] || 0);
+            sPV += (FlowCache.hr?.pvTotal?.[absH] || 0);
+            sDir += (FlowCache.hr?.direct?.[absH] || 0);
+            sFB += (FlowCache.hr?.fromBat?.[absH] || 0);
+            sFG += (FlowCache.hr?.fromGrid?.[absH] || 0);
+        }
+        out.base.push(+(sB / 1000).toFixed(2));
+        out.it.push(+(sI / 1000).toFixed(2));
+        out.ac.push(+(sA / 1000).toFixed(2));
+        out.wp.push(+(sW / 1000).toFixed(2));
+        out.bw.push(+(sBw / 1000).toFixed(2));
+        out.ev.push(+(sE / 1000).toFixed(2));
+        out.toGrid.push(+(sTG / 1000).toFixed(2));
+        out.toBat.push(+(sTB / 1000).toFixed(2));
+        out.direct.push(+(sDir / 1000).toFixed(2));
+        out.fromBat.push(+(sFB / 1000).toFixed(2));
+        out.fromGrid.push(+(sFG / 1000).toFixed(2));
+        const trueDailyPvKwh = (sDir + sTB + sTG) > 0 ? ((sDir + sTB + sTG) / 1000) : (sPV / 1000);
+        out.pvTotal.push(+trueDailyPvKwh.toFixed(2));
+    }
+    return out;
+}
+
+function buildPlanningGenAndConsChartConfigs(labels, bd, opts = {}) {
+    const isDarkCard = Boolean(opts.isDarkCard);
+    const legendTextColor = isDarkCard ? '#cbd5e1' : undefined;
+    const gridColor = isDarkCard ? 'rgba(255,255,255,0.06)' : undefined;
+
+    const genConfig = {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [
+                { label: 'PV Direktverbrauch', data: bd.direct, backgroundColor: PVPRO_CHART_COLORS.pvDirect, stack: 'pv', borderRadius: 2 },
+                { label: 'Bat-Ladung', data: bd.toBat, backgroundColor: PVPRO_CHART_COLORS.batCharge, stack: 'pv', borderRadius: 2 },
+                { label: 'Einspeisung', data: bd.toGrid, backgroundColor: PVPRO_CHART_COLORS.gridExport, stack: 'pv', borderRadius: 2 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { stacked: true, ticks: legendTextColor ? { color: legendTextColor } : {} },
+                y: { stacked: true, min: 0, grid: gridColor ? { color: gridColor } : {}, ticks: legendTextColor ? { color: legendTextColor } : {} }
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, ...(legendTextColor ? { color: legendTextColor } : {}) } },
+                tooltip: {
+                    callbacks: {
+                        footer: (items) => {
+                            const idx = items?.[0]?.dataIndex;
+                            if (idx === undefined) return '';
+                            const totalPv = bd.pvTotal[idx] || 0;
+                            return `☀️ PV-Erzeugung gesamt: ${totalPv.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kWh`;
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    const consDatasets = [
+        { label: 'Grundlast', data: bd.base, backgroundColor: PVPRO_CHART_COLORS.base, stack: 'cons', borderRadius: 2 },
+        { label: 'IT/Server', data: bd.it, backgroundColor: PVPRO_CHART_COLORS.it, stack: 'cons', borderRadius: 2 },
+        { label: 'BWWP', data: bd.bw, backgroundColor: PVPRO_CHART_COLORS.bw, stack: 'cons', borderRadius: 2 },
+        { label: 'Wärmepumpe', data: bd.wp, backgroundColor: PVPRO_CHART_COLORS.wp, stack: 'cons', borderRadius: 2 },
+        { label: 'Klima', data: bd.ac, backgroundColor: PVPRO_CHART_COLORS.ac, stack: 'cons', borderRadius: 2 },
+        { label: 'E-Auto', data: bd.ev, backgroundColor: PVPRO_CHART_COLORS.ev, stack: 'cons', borderRadius: 2 }
+    ].filter(ds => ds.label === 'Grundlast' || ds.data.some(v => v > 0.01));
+
+    const consConfig = {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: consDatasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+                x: { stacked: true, ticks: legendTextColor ? { color: legendTextColor } : {} },
+                y: { stacked: true, min: 0, grid: gridColor ? { color: gridColor } : {}, ticks: legendTextColor ? { color: legendTextColor } : {} }
+            },
+            plugins: {
+                legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8, ...(legendTextColor ? { color: legendTextColor } : {}) } },
+                tooltip: {
+                    callbacks: {
+                        footer: (items) => {
+                            const idx = items?.[0]?.dataIndex;
+                            if (idx === undefined) return '';
+                            const totalLoad = (bd.base[idx] || 0) + (bd.it[idx] || 0) + (bd.bw[idx] || 0) + (bd.wp[idx] || 0) + (bd.ac[idx] || 0) + (bd.ev[idx] || 0);
+                            const selfCov = (bd.direct[idx] || 0) + (bd.fromBat[idx] || 0);
+                            const gridImp = bd.fromGrid[idx] || 0;
+                            return `⚡ Hausverbrauch: ${totalLoad.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kWh (Eigen: ${selfCov.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · Netz: ${gridImp.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })})`;
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    return { genConfig, consConfig };
+}
+
+if (typeof window !== 'undefined') {
+    window.getMonthlySimulationBreakdown = getMonthlySimulationBreakdown;
+    window.getDailySimulationBreakdown = getDailySimulationBreakdown;
+    window.buildPlanningGenAndConsChartConfigs = buildPlanningGenAndConsChartConfigs;
+    if (window.PVProCore) {
+        window.PVProCore.getMonthlySimulationBreakdown = getMonthlySimulationBreakdown;
+        window.PVProCore.getDailySimulationBreakdown = getDailySimulationBreakdown;
+        window.PVProCore.buildPlanningGenAndConsChartConfigs = buildPlanningGenAndConsChartConfigs;
+    }
+}
+
 function changeDetailMonth(dir) { let newMonth = currentDetailMonth + dir; if(newMonth < 0) newMonth = 11; if(newMonth > 11) newMonth = 0; updateDetailCharts(newMonth); }
 
 function updateDetailCharts(monthIdx) {
     currentDetailMonth = monthIdx;
     try { ensureFlowCacheHourlyPopulated(); } catch (e) {}
-    if(!FlowCache || !ConsumptionCache) return;
-    const monthNames = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
-    let mNameUI = document.getElementById('detailMonthName'); if(mNameUI) mNameUI.innerText = monthNames[monthIdx];
-    
-    const daysInMonth = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let startDay = 0; for(let i=0; i<monthIdx; i++) startDay += daysInMonth[i];
-    let dailyLabels = [], dailyBase = [], dailyItLoad = [], dailyAc = [], dailyWp = [], dailyBw = [], dailyEv = [], dailyToGrid = [], dailyToBat = [], dailyPvTotal = [], dailyDirect = [], dailyFromBat = [], dailyFromGrid = [];
+    if (!FlowCache || !ConsumptionCache) return;
 
-    for(let d=0; d<daysInMonth[monthIdx]; d++) {
-        dailyLabels.push((d+1)+".");
-        let sB=0, sI=0, sA=0, sW=0, sBw=0, sE=0, sTG=0, sTB=0, sPV=0, sDir=0, sFB=0, sFG=0;
-        for(let h=0; h<24; h++) { 
-            let absH = (startDay + d)*24 + h; 
-            sB+=ConsumptionCache.base[absH]; sI+=ConsumptionCache.it[absH]; sA+=ConsumptionCache.ac[absH]; sW+=ConsumptionCache.wp[absH]; sBw+=ConsumptionCache.bw[absH]; sE+=ConsumptionCache.ev[absH]; sTG+=FlowCache.hr.toGrid[absH]; sTB+=FlowCache.hr.toBat[absH]; sPV+=FlowCache.hr.pvTotal[absH]; sDir+=FlowCache.hr.direct[absH]; sFB+=FlowCache.hr.fromBat[absH]; sFG+=FlowCache.hr.fromGrid[absH]; 
-        }
-        dailyBase.push(+(sB/1000).toFixed(2));
-        dailyItLoad.push(+(sI/1000).toFixed(2));
-        dailyAc.push(+(sA/1000).toFixed(2));
-        dailyWp.push(+(sW/1000).toFixed(2));
-        dailyBw.push(+(sBw/1000).toFixed(2));
-        dailyEv.push(+(sE/1000).toFixed(2));
-        dailyToGrid.push(+(sTG/1000).toFixed(2));
-        dailyToBat.push(+(sTB/1000).toFixed(2));
-        dailyDirect.push(+(sDir/1000).toFixed(2));
-        dailyFromBat.push(+(sFB/1000).toFixed(2));
-        dailyFromGrid.push(+(sFG/1000).toFixed(2));
-        const trueDailyPvKwh = (sDir + sTB + sTG) > 0 ? ((sDir + sTB + sTG) / 1000) : (sPV / 1000);
-        dailyPvTotal.push(+trueDailyPvKwh.toFixed(2));
+    const mNameUI = document.getElementById('detailMonthName');
+    if (mNameUI) mNameUI.innerText = MONTH_NAMES_DE[monthIdx] || 'Januar';
+
+    const dailyBreakdown = getDailySimulationBreakdown(monthIdx);
+    const dailyChartConfigs = buildPlanningGenAndConsChartConfigs(dailyBreakdown.labels, dailyBreakdown, { isDarkCard: false });
+
+    const dGCtx = document.getElementById('detailGenChart');
+    if (dGCtx) {
+        if (detailGenChart) detailGenChart.destroy();
+        detailGenChart = new Chart(dGCtx.getContext('2d'), dailyChartConfigs.genConfig);
     }
 
-    // Oben: Echte tägliche PV-Erzeugung (PV Direkt + Bat-Ladung + Einspeisung = Gesamte PV-Erzeugung je Tag)
-    let dGCtx = document.getElementById('detailGenChart');
-    if(dGCtx) {
-        if(detailGenChart) detailGenChart.destroy();
-        detailGenChart = new Chart(dGCtx.getContext('2d'), { 
-            type: 'bar', 
-            data: { 
-                labels: dailyLabels, 
-                datasets: [ 
-                    { label: 'PV Direktverbrauch', data: dailyDirect, backgroundColor: '#3b82f6', stack: 'pv', borderRadius: 2 }, 
-                    { label: 'Bat-Ladung', data: dailyToBat, backgroundColor: '#10b981', stack: 'pv', borderRadius: 2 }, 
-                    { label: 'Einspeisung', data: dailyToGrid, backgroundColor: '#f59e0b', stack: 'pv', borderRadius: 2 } 
-                ]
-            }, 
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                scales: { x: { stacked: true }, y: { stacked: true, min: 0 } },
-                plugins: {
-                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
-                    tooltip: {
-                        callbacks: {
-                            footer: (items) => {
-                                const idx = items?.[0]?.dataIndex;
-                                if (idx === undefined) return '';
-                                const totalPv = dailyPvTotal[idx] || 0;
-                                return `☀️ PV-Erzeugung gesamt: ${totalPv.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kWh`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Unten: Reiner Hausverbrauch pro Tag (ohne Einspeisung und ohne Bat-Ladung!)
-    let dCCtx = document.getElementById('detailConsChart');
-    if(dCCtx) {
-        if(detailConsChart) detailConsChart.destroy();
-        const consDatasets = [
-            { label: 'Grundlast', data: dailyBase, backgroundColor: '#94a3b8', stack: 'cons', borderRadius: 2 },
-            { label: 'IT', data: dailyItLoad, backgroundColor: '#3b82f6', stack: 'cons', borderRadius: 2 },
-            { label: 'BWWP', data: dailyBw, backgroundColor: '#f43f5e', stack: 'cons', borderRadius: 2 },
-            { label: 'WP', data: dailyWp, backgroundColor: '#ef4444', stack: 'cons', borderRadius: 2 },
-            { label: 'Klima', data: dailyAc, backgroundColor: '#0ea5e9', stack: 'cons', borderRadius: 2 },
-            { label: 'E-Auto', data: dailyEv, backgroundColor: '#84cc16', stack: 'cons', borderRadius: 2 }
-        ].filter(ds => ds.label === 'Grundlast' || ds.data.some(v => v > 0.01));
-
-        detailConsChart = new Chart(dCCtx.getContext('2d'), { 
-            type: 'bar', 
-            data: { 
-                labels: dailyLabels, 
-                datasets: consDatasets
-            }, 
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: { mode: 'index', intersect: false },
-                scales: { x: { stacked: true }, y: { stacked: true, min: 0 } },
-                plugins: {
-                    legend: { position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
-                    tooltip: {
-                        callbacks: {
-                            footer: (items) => {
-                                const idx = items?.[0]?.dataIndex;
-                                if (idx === undefined) return '';
-                                const totalLoad = (dailyBase[idx] || 0) + (dailyItLoad[idx] || 0) + (dailyBw[idx] || 0) + (dailyWp[idx] || 0) + (dailyAc[idx] || 0) + (dailyEv[idx] || 0);
-                                const selfCov = (dailyDirect[idx] || 0) + (dailyFromBat[idx] || 0);
-                                const gridImp = dailyFromGrid[idx] || 0;
-                                return `⚡ Hausverbrauch: ${totalLoad.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} kWh (Eigen: ${selfCov.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} · Netz: ${gridImp.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })})`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
+    const dCCtx = document.getElementById('detailConsChart');
+    if (dCCtx) {
+        if (detailConsChart) detailConsChart.destroy();
+        detailConsChart = new Chart(dCCtx.getContext('2d'), dailyChartConfigs.consConfig);
     }
 }
 

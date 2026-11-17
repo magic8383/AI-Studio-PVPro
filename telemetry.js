@@ -1,7 +1,7 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V11.6)
-// Zentrale Single Source of Truth (Stromausfall-0W-Guard, Verbraucher-Gruppen,
-// Geräte-Diagnose inkl. Direkt-IP, IndexedDB Persistent Storage & 24h-Klima)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.5)
+// Zentrale Single Source of Truth via PVProCore (Stromausfall-0W-Guard,
+// Verbraucher-Gruppen, Geräte-Diagnose, 3-Stufen Hauskameras & IndexedDB Sync)
 // ============================================================================
 
 const DEFAULT_CUSTOM_STRINGS = [
@@ -17,42 +17,44 @@ const DEFAULT_CUSTOM_CONSUMERS = [
     { id: 'cons_4', name: 'Küche Licht', group: '', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
 ];
 
-let haConfigState = {
-    mode: 'poll', // 'poll' | 'webhook'
-    baseUrl: 'https://home.mb10.org',
-    accessToken: '',
-    pollIntervalSec: 10,
-    autoSyncMonthly: true,
-    trackingStartDate: '2026-11-01',
-    batteryName: 'BYD HVS+',
-    entities: {
-        pvPower: 'sensor.pv_power_total',
-        loadPower: 'sensor.house_consumption_power',
-        gridPower: 'sensor.grid_power',
-        gridImportPower: '',
-        gridExportPower: '',
-        batteryChargePower: '',
-        batteryDischargePower: '',
-        batteryPower: 'sensor.battery_power',
-        batterySoc: 'sensor.battery_soc',
-        pvEnergyToday: '',
-        pvEnergyMonth: 'sensor.pv_energy_monthly',
-        pvEnergyTotal: 'sensor.pv_energy_total',
-        loadEnergyMonth: '',
-        gridImportMonth: 'sensor.grid_import_monthly',
-        gridExportMonth: 'sensor.grid_export_monthly',
-        batteryChargeMonth: 'sensor.battery_charge_monthly',
-        batteryDischargeMonth: 'sensor.battery_discharge_monthly'
-    },
-    pvEnergyExtraEntities: [],
-    weatherEntity: '',
-    outdoorTempEntity: '',
-    customWeatherSensors: [],
-    monitoredDevices: [],
-    homeCameras: [],
-    customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
-    customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS))
-};
+let haConfigState = typeof createDefaultHaConfigSchema === 'function'
+    ? createDefaultHaConfigSchema()
+    : {
+        mode: 'poll',
+        baseUrl: 'https://home.mb10.org',
+        accessToken: '',
+        pollIntervalSec: 10,
+        autoSyncMonthly: true,
+        trackingStartDate: '2026-11-01',
+        batteryName: 'BYD HVS+',
+        entities: {
+            pvPower: 'sensor.pv_power_total',
+            loadPower: 'sensor.house_consumption_power',
+            gridPower: 'sensor.grid_power',
+            gridImportPower: '',
+            gridExportPower: '',
+            batteryChargePower: '',
+            batteryDischargePower: '',
+            batteryPower: 'sensor.battery_power',
+            batterySoc: 'sensor.battery_soc',
+            pvEnergyToday: '',
+            pvEnergyMonth: 'sensor.pv_energy_monthly',
+            pvEnergyTotal: 'sensor.pv_energy_total',
+            loadEnergyMonth: '',
+            gridImportMonth: 'sensor.grid_import_monthly',
+            gridExportMonth: 'sensor.grid_export_monthly',
+            batteryChargeMonth: 'sensor.battery_charge_monthly',
+            batteryDischargeMonth: 'sensor.battery_discharge_monthly'
+        },
+        pvEnergyExtraEntities: [],
+        weatherEntity: '',
+        outdoorTempEntity: '',
+        customWeatherSensors: [],
+        monitoredDevices: [],
+        homeCameras: [],
+        customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
+        customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS))
+    };
 
 let discoveredHaSensors = [];
 let discoveredHaTemplateDeviceMap = {}; // entity_id -> { deviceName, areaName, manufacturer, model, swVersion, configUrl }
@@ -496,41 +498,24 @@ async function hydrateFromPersistentIndexedDB() {
 
         let needsUiRefresh = false;
 
-        // 1. Self-heal haConfigState if localStorage was evicted by Android OS
+        // 1. Self-heal haConfigState if localStorage was evicted by Android OS (via central normalizeHaConfigSchema)
         if (idbHaCfg && typeof idbHaCfg === 'object') {
             const hadTokenBefore = Boolean(haConfigState.accessToken);
             if (!hadTokenBefore && idbHaCfg.accessToken) {
-                haConfigState = {
-                    ...haConfigState,
-                    ...idbHaCfg,
-                    entities: { ...haConfigState.entities, ...(idbHaCfg.entities || {}) },
-                    customWeatherSensors: Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0
-                        ? idbHaCfg.customWeatherSensors
-                        : (haConfigState.customWeatherSensors || []),
-                    monitoredDevices: Array.isArray(idbHaCfg.monitoredDevices) && idbHaCfg.monitoredDevices.length > 0
-                        ? idbHaCfg.monitoredDevices
-                        : (haConfigState.monitoredDevices || []),
-                    customStrings: Array.isArray(idbHaCfg.customStrings) && idbHaCfg.customStrings.length > 0
-                        ? idbHaCfg.customStrings
-                        : haConfigState.customStrings,
-                    customConsumers: Array.isArray(idbHaCfg.customConsumers)
-                        ? idbHaCfg.customConsumers
-                        : haConfigState.customConsumers
-                };
+                haConfigState = typeof normalizeHaConfigSchema === 'function'
+                    ? normalizeHaConfigSchema(idbHaCfg, haConfigState)
+                    : { ...haConfigState, ...idbHaCfg };
                 try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
                 needsUiRefresh = true;
                 startLiveTelemetryLoop();
             } else {
-                if ((!Array.isArray(haConfigState.customWeatherSensors) || haConfigState.customWeatherSensors.length === 0) && Array.isArray(idbHaCfg.customWeatherSensors) && idbHaCfg.customWeatherSensors.length > 0) {
-                    haConfigState.customWeatherSensors = idbHaCfg.customWeatherSensors;
-                    needsUiRefresh = true;
-                }
-                if ((!Array.isArray(haConfigState.monitoredDevices) || haConfigState.monitoredDevices.length === 0) && Array.isArray(idbHaCfg.monitoredDevices) && idbHaCfg.monitoredDevices.length > 0) {
-                    haConfigState.monitoredDevices = idbHaCfg.monitoredDevices;
-                    needsUiRefresh = true;
-                }
-                if (needsUiRefresh) {
+                const mergedCfg = typeof normalizeHaConfigSchema === 'function'
+                    ? normalizeHaConfigSchema(haConfigState, idbHaCfg, { preserveLocalToken: true })
+                    : haConfigState;
+                if (JSON.stringify(mergedCfg) !== JSON.stringify(haConfigState)) {
+                    haConfigState = mergedCfg;
                     try { localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState)); } catch (e) {}
+                    needsUiRefresh = true;
                 }
             }
         } else if (haConfigState.accessToken) {
@@ -708,30 +693,14 @@ async function initTelemetryAndAnalysis() {
     loadEnergyCounterBaselines();
     loadLocalDeviceSecrets();
 
-    // 1. Load local cached HA config & performance records synchronously (0 ms)
+    // 1. Load local cached HA config & performance records synchronously (0 ms) via central schema normalizer
     try {
         const localHa = localStorage.getItem('pvpro_ha_config');
         if (localHa) {
             const parsed = JSON.parse(localHa);
-            haConfigState = {
-                ...haConfigState,
-                ...parsed,
-                entities: { ...haConfigState.entities, ...(parsed.entities || {}) },
-                pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : (haConfigState.pvEnergyExtraEntities || []),
-                weatherEntity: typeof parsed.weatherEntity === 'string' ? parsed.weatherEntity : (haConfigState.weatherEntity || ''),
-                outdoorTempEntity: typeof parsed.outdoorTempEntity === 'string' ? parsed.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-                customWeatherSensors: Array.isArray(parsed.customWeatherSensors) && parsed.customWeatherSensors.length > 0
-                    ? parsed.customWeatherSensors
-                    : (haConfigState.customWeatherSensors || []),
-                monitoredDevices: Array.isArray(parsed.monitoredDevices) && parsed.monitoredDevices.length > 0
-                    ? parsed.monitoredDevices
-                    : (haConfigState.monitoredDevices || []),
-                homeCameras: Array.isArray(parsed.homeCameras)
-                    ? parsed.homeCameras
-                    : (haConfigState.homeCameras || []),
-                customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : haConfigState.customStrings,
-                customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : haConfigState.customConsumers
-            };
+            haConfigState = typeof normalizeHaConfigSchema === 'function'
+                ? normalizeHaConfigSchema(parsed, haConfigState, { allowEmptyArrays: true, allowEmptyStrings: true })
+                : { ...haConfigState, ...parsed };
         }
     } catch (e) {}
 
@@ -767,28 +736,9 @@ async function initTelemetryAndAnalysis() {
 
         if (haRes.ok && haRes.data && haRes.data.success && haRes.data.config) {
             const srvCfg = haRes.data.config;
-            haConfigState = {
-                ...haConfigState,
-                ...srvCfg,
-                accessToken: srvCfg.accessToken || haConfigState.accessToken || '',
-                entities: { ...haConfigState.entities, ...(srvCfg.entities || {}) },
-                pvEnergyExtraEntities: Array.isArray(srvCfg.pvEnergyExtraEntities) && srvCfg.pvEnergyExtraEntities.length > 0
-                    ? srvCfg.pvEnergyExtraEntities
-                    : (haConfigState.pvEnergyExtraEntities || []),
-                weatherEntity: (typeof srvCfg.weatherEntity === 'string' && srvCfg.weatherEntity) ? srvCfg.weatherEntity : (haConfigState.weatherEntity || ''),
-                outdoorTempEntity: (typeof srvCfg.outdoorTempEntity === 'string' && srvCfg.outdoorTempEntity) ? srvCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-                customWeatherSensors: Array.isArray(srvCfg.customWeatherSensors) && srvCfg.customWeatherSensors.length > 0
-                    ? srvCfg.customWeatherSensors
-                    : (haConfigState.customWeatherSensors || []),
-                monitoredDevices: Array.isArray(srvCfg.monitoredDevices) && srvCfg.monitoredDevices.length > 0
-                    ? srvCfg.monitoredDevices
-                    : (haConfigState.monitoredDevices || []),
-                homeCameras: Array.isArray(srvCfg.homeCameras) && srvCfg.homeCameras.length > 0
-                    ? srvCfg.homeCameras
-                    : (haConfigState.homeCameras || []),
-                customStrings: Array.isArray(srvCfg.customStrings) && srvCfg.customStrings.length > 0 ? srvCfg.customStrings : haConfigState.customStrings,
-                customConsumers: Array.isArray(srvCfg.customConsumers) && srvCfg.customConsumers.length > 0 ? srvCfg.customConsumers : haConfigState.customConsumers
-            };
+            haConfigState = typeof normalizeHaConfigSchema === 'function'
+                ? normalizeHaConfigSchema(srvCfg, haConfigState)
+                : { ...haConfigState, ...srvCfg };
             localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
         }
 
@@ -926,7 +876,7 @@ function getPlannedSystemBaseline() {
 
                 if (!hasYieldCache && typeof generateSyntheticPVGISData === 'function') {
                     const synthHourly = generateSyntheticPVGISData(safeLat, f.tilt || 30, str.azimuth || 180, fKwp);
-                    const mStart = [0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016];
+                    const mStart = typeof MONTH_START_HOURS !== 'undefined' ? MONTH_START_HOURS : [0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016];
                     for (let m = 0; m < 12; m++) {
                         let mSumWh = 0;
                         const endH = m === 11 ? 8760 : mStart[m + 1];
@@ -1007,36 +957,25 @@ function getDailyPvgisSollForMonth(monthIdx, daysCount, baseline = null) {
     const numDays = Math.max(1, Number(daysCount) || 30);
     const targetMonthKwh = Math.max(0, Number(baseline.monthlySollTotal?.[mIdx] || 0));
 
-    if (typeof ensureFlowCacheHourlyPopulated === 'function') {
-        try { ensureFlowCacheHourlyPopulated(); } catch (e) {}
-    }
+    // Nutze die zentrale Tages-Breakdown-Engine aus app.js (PVProCore Single Source of Truth)
+    const dailyBd = typeof getDailySimulationBreakdown === 'function'
+        ? getDailySimulationBreakdown(mIdx)
+        : null;
 
-    const stdDaysInM = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const mStartDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    const stdDaysInM = typeof DAYS_IN_MONTH !== 'undefined' ? DAYS_IN_MONTH : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const mStartDays = typeof MONTH_START_DAYS !== 'undefined' ? MONTH_START_DAYS : [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     const startDayOfYear = mStartDays[mIdx] || 0;
     const rawDaily = new Array(numDays).fill(0);
     let rawSum = 0;
 
-    const hasFlowHr = typeof FlowCache !== 'undefined' && FlowCache && FlowCache.hr && FlowCache.hr.pvTotal && FlowCache.hr.pvTotal.length >= 8760;
-    if (hasFlowHr) {
+    if (dailyBd && Array.isArray(dailyBd.pvTotal) && dailyBd.pvTotal.length > 0) {
         for (let d = 0; d < numDays; d++) {
-            const simDayOffset = Math.min(stdDaysInM[mIdx] - 1, d);
-            const absDay = startDayOfYear + simDayOffset;
-            let dayWh = 0;
-            for (let h = 0; h < 24; h++) {
-                const absH = absDay * 24 + h;
-                const dirW = FlowCache.hr.direct?.[absH] || 0;
-                const tbW = FlowCache.hr.toBat?.[absH] || 0;
-                const tgW = FlowCache.hr.toGrid?.[absH] || 0;
-                const pvW = (dirW + tbW + tgW) > 0 ? (dirW + tbW + tgW) : (FlowCache.hr.pvTotal?.[absH] || 0);
-                dayWh += pvW;
-            }
-            rawDaily[d] = dayWh / 1000;
+            const simDayIdx = Math.min(dailyBd.pvTotal.length - 1, d);
+            rawDaily[d] = Number(dailyBd.pvTotal[simDayIdx]) || 0;
             rawSum += rawDaily[d];
         }
     }
 
-    // Check if rawDaily has real day-to-day variation; otherwise modulate with deterministic PVGIS weather profile
     const minVal = Math.min(...rawDaily);
     const maxVal = Math.max(...rawDaily);
     if (rawSum <= 0.01 || (maxVal - minVal) < (rawSum / numDays) * 0.03) {
@@ -1065,8 +1004,8 @@ function getHourlyPvgisSollForDate(dateObj, baseline = null) {
     const dailyArr = getDailyPvgisSollForMonth(mIdx, daysInM, baseline);
     const targetDayKwh = Math.max(0, Number(dailyArr[dayIdx] || 0));
 
-    const stdDaysInM = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    const mStartDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    const stdDaysInM = typeof DAYS_IN_MONTH !== 'undefined' ? DAYS_IN_MONTH : [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const mStartDays = typeof MONTH_START_DAYS !== 'undefined' ? MONTH_START_DAYS : [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     const simDayOffset = Math.min(stdDaysInM[mIdx] - 1, dayIdx);
     const absDay = (mStartDays[mIdx] || 0) + simDayOffset;
 
@@ -10748,39 +10687,9 @@ function getSanitizedHaConfigForProject() {
 
 function applySanitizedHaConfigFromProject(sanitizedCfg) {
     if (!sanitizedCfg || typeof sanitizedCfg !== 'object') return;
-    const existingLocalToken = haConfigState.accessToken || '';
-    haConfigState = {
-        ...haConfigState,
-        mode: sanitizedCfg.mode || haConfigState.mode || 'poll',
-        baseUrl: sanitizedCfg.baseUrl || haConfigState.baseUrl,
-        accessToken: existingLocalToken, // Keep only the local device's own token!
-        pollIntervalSec: sanitizedCfg.pollIntervalSec || haConfigState.pollIntervalSec || 10,
-        autoSyncMonthly: sanitizedCfg.autoSyncMonthly !== undefined ? sanitizedCfg.autoSyncMonthly : true,
-        trackingStartDate: sanitizedCfg.trackingStartDate || haConfigState.trackingStartDate || '2026-11-01',
-        batteryName: sanitizedCfg.batteryName || haConfigState.batteryName || 'BYD HVS+',
-        entities: { ...haConfigState.entities, ...(sanitizedCfg.entities || {}) },
-        pvEnergyExtraEntities: Array.isArray(sanitizedCfg.pvEnergyExtraEntities)
-            ? JSON.parse(JSON.stringify(sanitizedCfg.pvEnergyExtraEntities))
-            : (haConfigState.pvEnergyExtraEntities || []),
-        weatherEntity: typeof sanitizedCfg.weatherEntity === 'string' ? sanitizedCfg.weatherEntity : (haConfigState.weatherEntity || ''),
-        outdoorTempEntity: typeof sanitizedCfg.outdoorTempEntity === 'string' ? sanitizedCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-        customWeatherSensors: Array.isArray(sanitizedCfg.customWeatherSensors) && sanitizedCfg.customWeatherSensors.length > 0
-            ? JSON.parse(JSON.stringify(sanitizedCfg.customWeatherSensors))
-            : (haConfigState.customWeatherSensors || []),
-        customStrings: Array.isArray(sanitizedCfg.customStrings) && sanitizedCfg.customStrings.length > 0
-            ? JSON.parse(JSON.stringify(sanitizedCfg.customStrings))
-            : haConfigState.customStrings,
-        customConsumers: Array.isArray(sanitizedCfg.customConsumers)
-            ? JSON.parse(JSON.stringify(sanitizedCfg.customConsumers))
-            : haConfigState.customConsumers,
-        monitoredDevices: Array.isArray(sanitizedCfg.monitoredDevices)
-            ? JSON.parse(JSON.stringify(sanitizedCfg.monitoredDevices))
-            : (haConfigState.monitoredDevices || []),
-        homeCameras: Array.isArray(sanitizedCfg.homeCameras)
-            ? JSON.parse(JSON.stringify(sanitizedCfg.homeCameras))
-            : (haConfigState.homeCameras || []),
-        loadedFromSharedProject: true
-    };
+    haConfigState = typeof normalizeHaConfigSchema === 'function'
+        ? { ...normalizeHaConfigSchema(sanitizedCfg, haConfigState, { preserveLocalToken: true, allowEmptyArrays: true, allowEmptyStrings: true }), loadedFromSharedProject: true }
+        : { ...haConfigState, ...sanitizedCfg, accessToken: haConfigState.accessToken || '', loadedFromSharedProject: true };
     try {
         localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
     } catch (e) {}
@@ -10832,35 +10741,9 @@ function applyFullHaConfigWithTokenFromBackup(fullCfg) {
     if (!fullCfg || typeof fullCfg !== 'object') return;
     const incomingToken = String(fullCfg.accessToken || '').trim();
     const effectiveToken = incomingToken || haConfigState.accessToken || '';
-    haConfigState = {
-        ...haConfigState,
-        mode: fullCfg.mode || haConfigState.mode || 'poll',
-        baseUrl: fullCfg.baseUrl || haConfigState.baseUrl,
-        accessToken: effectiveToken,
-        pollIntervalSec: fullCfg.pollIntervalSec || haConfigState.pollIntervalSec || 10,
-        autoSyncMonthly: fullCfg.autoSyncMonthly !== undefined ? fullCfg.autoSyncMonthly : true,
-        trackingStartDate: fullCfg.trackingStartDate || haConfigState.trackingStartDate || '2026-11-01',
-        batteryName: fullCfg.batteryName || haConfigState.batteryName || 'BYD HVS+',
-        entities: { ...haConfigState.entities, ...(fullCfg.entities || {}) },
-        pvEnergyExtraEntities: Array.isArray(fullCfg.pvEnergyExtraEntities)
-            ? JSON.parse(JSON.stringify(fullCfg.pvEnergyExtraEntities))
-            : (haConfigState.pvEnergyExtraEntities || []),
-        weatherEntity: typeof fullCfg.weatherEntity === 'string' ? fullCfg.weatherEntity : (haConfigState.weatherEntity || ''),
-        outdoorTempEntity: typeof fullCfg.outdoorTempEntity === 'string' ? fullCfg.outdoorTempEntity : (haConfigState.outdoorTempEntity || ''),
-        customWeatherSensors: Array.isArray(fullCfg.customWeatherSensors) && fullCfg.customWeatherSensors.length > 0
-            ? JSON.parse(JSON.stringify(fullCfg.customWeatherSensors))
-            : (haConfigState.customWeatherSensors || []),
-        customStrings: Array.isArray(fullCfg.customStrings) && fullCfg.customStrings.length > 0
-            ? JSON.parse(JSON.stringify(fullCfg.customStrings))
-            : haConfigState.customStrings,
-        customConsumers: Array.isArray(fullCfg.customConsumers)
-            ? JSON.parse(JSON.stringify(fullCfg.customConsumers))
-            : haConfigState.customConsumers,
-        monitoredDevices: Array.isArray(fullCfg.monitoredDevices)
-            ? JSON.parse(JSON.stringify(fullCfg.monitoredDevices))
-            : (haConfigState.monitoredDevices || []),
-        loadedFromSharedProject: !effectiveToken
-    };
+    haConfigState = typeof normalizeHaConfigSchema === 'function'
+        ? { ...normalizeHaConfigSchema({ ...fullCfg, accessToken: effectiveToken }, haConfigState, { allowEmptyArrays: true, allowEmptyStrings: true }), loadedFromSharedProject: !effectiveToken }
+        : { ...haConfigState, ...fullCfg, accessToken: effectiveToken, loadedFromSharedProject: !effectiveToken };
     if (effectiveToken) {
         localDeviceSecretsState.haAccessToken = effectiveToken;
         saveLocalDeviceSecrets();

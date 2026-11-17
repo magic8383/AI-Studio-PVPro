@@ -1,11 +1,7 @@
 // ==========================================
 // 4. DC-VERKABELUNG & STRING-VISUALISIERUNG
-// Module: wiring.js (Version 7.0.0)
+// Module: wiring.js (Version 12.5 – Single Source of Truth)
 // DIN VDE 0100-712, DIN EN 62305 (VDE 0185-305)
-// ==========================================
-
-// ==========================================
-// 4. VERKABELUNG & STRING-VISUALISIERUNG
 // ==========================================
 
 let wiringSettings = {

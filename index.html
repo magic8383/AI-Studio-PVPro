@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 12.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 12.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 12.4 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 12.5 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=12.4">
+    <link rel="manifest" href="manifest.json?v=12.5">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.4">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.4">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.4">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.4">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.5">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.5">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.5">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.5">
     <script>
-        // V12.4: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V12.5: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -40,7 +40,7 @@
                 if ('caches' in window) {
                     caches.keys().then(function (keys) {
                         keys.forEach(function (key) {
-                            if (key !== 'pvpro-cache-v12.4') {
+                            if (key !== 'pvpro-cache-v12.5') {
                                 caches.delete(key);
                             }
                         });
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=12.4" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=12.5" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.4</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.5</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -1496,8 +1496,8 @@
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div class="glass-card rounded-2xl p-5"><h3 class="text-sm font-bold text-white mb-4">Verbrauchsanalyse (Wohin?)</h3><div class="relative h-64 w-full"><canvas id="autarkyConsChart"></canvas></div></div>
-                    <div class="glass-card rounded-2xl p-5"><h3 class="text-sm font-bold text-white mb-4">Deckungsanalyse (Woher?)</h3><div class="relative h-64 w-full"><canvas id="autarkyGenChart"></canvas></div></div>
+                    <div class="glass-card rounded-2xl p-5"><h3 class="text-sm font-bold text-white mb-4 flex items-center gap-1.5"><span class="material-symbols-rounded text-sm text-primary">wb_sunny</span> Erzeugung pro Monat (Direkt · Akku · Einspeisung)</h3><div class="relative h-64 w-full"><canvas id="autarkyGenChart"></canvas></div></div>
+                    <div class="glass-card rounded-2xl p-5"><h3 class="text-sm font-bold text-white mb-4 flex items-center gap-1.5"><span class="material-symbols-rounded text-sm text-accent">bolt</span> Hausverbrauch pro Monat (nach Verbrauchern)</h3><div class="relative h-64 w-full"><canvas id="autarkyConsChart"></canvas></div></div>
                 </div>
             </div>
 
@@ -3024,7 +3024,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.4</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.5</p>
                     </div>
                 </button>
             </div>
@@ -4670,13 +4670,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V12.4 (Hauskameras 2er-Grid / Vollbreite / Querformat-Vollbild & Echte stundengenaue PVGIS-Tageswerte) -->
-    <script src="qrcode.client.js?v=12.4"></script>
-    <script src="database.js?v=12.4"></script>
-    <script src="content.js?v=12.4"></script>
-    <script src="app.js?v=12.4"></script>
-    <script src="wiring.js?v=12.4"></script>
-    <script src="dossier.js?v=12.4"></script>
-    <script src="telemetry.js?v=12.4"></script>
+    <!-- MODULARE ARCHITEKTUR V12.5 (Zentrale Single Source of Truth PVProCore, einheitliche Monats-/Tagesdiagramme & Dossier-Live-ROI) -->
+    <script src="qrcode.client.js?v=12.5"></script>
+    <script src="database.js?v=12.5"></script>
+    <script src="content.js?v=12.5"></script>
+    <script src="app.js?v=12.5"></script>
+    <script src="wiring.js?v=12.5"></script>
+    <script src="dossier.js?v=12.5"></script>
+    <script src="telemetry.js?v=12.5"></script>
 </body>
 </html>
