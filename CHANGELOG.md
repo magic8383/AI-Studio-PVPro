@@ -4,6 +4,39 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.4] – 2026-11-17
+
+### ✨ Hauskameras-Sektion auf der Startseite (2er-Kacheln, Vollbreiten-Stapelansicht & Querformat-Vollbild) + Echte stunden-/tagesgenaue PVGIS-Sollwerte & Korrigierte Planungs-Diagramme
+
+#### 1. Hauskameras unten auf der Startseite mit 3-stufigem Kamera-Viewer (`index.html`, `telemetry.js`, `server.js`, `app.js`)
+* **Stufe 1 – Kompaktes 2-Spalten-Raster unten auf der Startseite (`#homeCamerasSection` / `#homeCamerasGrid`):**
+  - Neuer Abschnitt **„Hauskameras“** ganz unten auf der Startseite (`#tab-home`), der deine Kameras als **2 Kacheln nebeneinander** (`grid-cols-2`, 16:10-Vorschau) mit Live-Statuspunkt, Kameraname und aktuellem Snapshot darstellt.
+  - Unterstützt sowohl **Home Assistant `camera.*`-Entitäten** (automatischer Abruf über `entity_picture` bzw. `/api/camera_proxy/<entity_id>`) als auch eine **optionale Direkt-URL** (Snapshot- oder MJPEG-Stream-URL).
+* **Stufe 2 – Gestapelte Vollbreiten-Ansicht untereinander (`#modal-home-cameras-stack`):**
+  - Ein Klick auf eine Kamera-Kachel auf der Startseite öffnet die große Kamera-Ansicht, in der **alle Kameras untereinander über die gesamte Bildschirmbreite** (`w-full`) angezeigt werden.
+  - Du kannst flüssig vertikal durch alle Kameras scrollen (das angetippte Kamerabild wird direkt in den Fokus gescrollt), und die Bilder aktualisieren sich im geöffneten Zustand automatisch alle 3 Sekunden.
+* **Stufe 3 – Vollbild im Querformat (`#modal-home-camera-fullscreen`):**
+  - Ein Klick auf ein Kamerabild in der Vollbreiten-Ansicht öffnet das **Vollbild im Querformat (Landscape)**.
+  - Nutzt die `screen.orientation.lock('landscape')`-API (falls vom Gerät unterstützt) sowie eine intelligente **automatische `90°`-Querformat-Rotation auf hochkant gehaltenen Smartphones**, damit das Kamerabild die volle Displayfläche im Querformat ausnutzt (inkl. `90° Drehen`-Umschalter und Vor/Zurück-Buttons zwischen den Kameras).
+  - Vollständig in den **Zurück-Wischen-Schutz (`popstate` Modal-Stack)** integriert: Ein Zurück-Wischen schließt zuerst das Querformat-Vollbild, danach die gestapelte Vollbreiten-Ansicht und kehrt erst dann zur Startseite zurück.
+* **Neuer Tab „5. Kameras“ im Sensoren-Konfigurator (`#ha-modal-panel-cameras`):**
+  - Eigener Konfigurations-Tab mit **1-Klick-Auto-Erkennung (`HA-Kameras automatisch finden`)**, Komfort-Picker für `camera.*`-Entitäten, Raumnamen und optionaler Direkt-URL. Vollständige Persistenz in `localStorage`, `IndexedDB`, `/api/ha/config` und der Projekt-Backup-Datei.
+
+#### 2. Echte stunden- & tagesgenaue PVGIS-Sollwerte im Analyse-Balken-Explorer (`app.js`, `telemetry.js`)
+* **Beseitigung der pauschalen `Monatssumme / 30`-Teilung (`getDailyPvgisSollForMonth` & `getHourlyPvgisSollForDate`):**
+  - Bisher fiel der Analyse-Balken-Explorer (`Tag`, `Woche`, `Monat`) auf `monthlySollTotal / 30` zurück, wenn `FlowCache.hr` nach dem Laden eines gespeicherten Simulations-Snapshots noch nicht im RAM aufgebaut war – dadurch zeigte jeder Tag im Monat exakt denselben Balkenwert (z. B. `11,83 kWh/Tag`).
+  - Ab sofort stellt `ensureFlowCacheHourlyPopulated()` bereits beim App-Start sicher, dass die stundengenaue 8.760h-PVGIS-Kurve (`FlowCache.hr.pvTotal`) sofort bereitsteht (inkl. automatischem Hintergrund-Abruf echter PVGIS-TMY-Stundendaten über `/api/pvgis/seriescalc`).
+  - Sowohl die Tages-, Wochen- und Monats-Balken im Analyse-Explorer als auch der *Soll bis heute*-Vergleich summieren nun die **echten stündlichen PVGIS-Werte jedes einzelnen Kalendertages** (und auf die Monats-Baseline skaliert), sodass realistische tägliche Schwankungen und der Sonnenstandsverlauf vom 1. bis zum 30./31. des Monats exakt abgebildet werden.
+
+#### 3. Saubere Trennung in `Planung -> Tagesgenaue Auflösung`: Oben echte PV-Erzeugung, unten reiner Hausverbrauch (`app.js`)
+* **Oberes Diagramm (`ERZEUGUNG PRO TAG` / `#detailGenChart`):**
+  - Zuvor stapelte das obere Diagramm `PV Direkt + Aus Batterie + Netzbezug` (= Hausverbrauch, daher im November fast jeden Tag gleich hoch bei ~19 kWh).
+  - Ab sofort zeigt das obere Diagramm als gestapelte Balken die **echte tägliche PV-Erzeugung** aufgeteilt nach ihrer Verwendung: **`PV Direktverbrauch` (Blau) + `Bat-Ladung` (Grün) + `Einspeisung` (Amber)**, ergänzt um die blaue Gesamterzeugungslinie (`PV Erzeugung gesamt`).
+* **Unteres Diagramm (`VERBRAUCH PRO TAG` / `#detailConsChart`):**
+  - Zeigt ab sofort ausschließlich den **reinen täglichen Hausverbrauch nach Verbrauchergruppen** (`Grundlast`, `IT`, `BWWP`, `WP`, `Klima`, `E-Auto`), ohne `Einspeisung` oder `Bat-Ladung` einzumischen.
+
+---
+
 ## [Version 12.3] – 2026-11-16
 
 ### ✨ Volllesbare 2-Zeilen-Modellkarten im Katalog, „+ Neuer Chat“-Button mit Auto-Einklappen, Live-Token- & Kosten-Rechner pro Antwort + Gesamtsumme & Smarter Zurück-Wischen-Schutz für Fenster

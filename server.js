@@ -13,7 +13,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = '0.0.0.0';
-const APP_VERSION = '12.3';
+const APP_VERSION = '12.4';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -690,7 +690,9 @@ function createDefaultHaConfig() {
     pvEnergyExtraEntities: [],
     customStrings: getDefaultCustomStrings(),
     customConsumers: getDefaultCustomConsumers(),
-    monitoredDevices: []
+    customWeatherSensors: [],
+    monitoredDevices: [],
+    homeCameras: []
   };
 }
 
@@ -708,6 +710,8 @@ function loadHaConfig() {
         pollIntervalSec: parsed.pollIntervalSec || defaults.pollIntervalSec,
         autoSyncMonthly: parsed.autoSyncMonthly !== false,
         batteryName: parsed.batteryName || defaults.batteryName,
+        weatherEntity: parsed.weatherEntity || '',
+        outdoorTempEntity: parsed.outdoorTempEntity || '',
         entities: {
           ...defaults.entities,
           ...(parsed.entities || {})
@@ -715,7 +719,9 @@ function loadHaConfig() {
         pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : [],
         customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : defaults.customStrings,
         customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : defaults.customConsumers,
-        monitoredDevices: Array.isArray(parsed.monitoredDevices) ? parsed.monitoredDevices : []
+        customWeatherSensors: Array.isArray(parsed.customWeatherSensors) ? parsed.customWeatherSensors : [],
+        monitoredDevices: Array.isArray(parsed.monitoredDevices) ? parsed.monitoredDevices : [],
+        homeCameras: Array.isArray(parsed.homeCameras) ? parsed.homeCameras : []
       };
     }
   } catch (err) {

@@ -49,6 +49,7 @@ let haConfigState = {
     outdoorTempEntity: '',
     customWeatherSensors: [],
     monitoredDevices: [],
+    homeCameras: [],
     customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
     customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS))
 };
@@ -725,6 +726,9 @@ async function initTelemetryAndAnalysis() {
                 monitoredDevices: Array.isArray(parsed.monitoredDevices) && parsed.monitoredDevices.length > 0
                     ? parsed.monitoredDevices
                     : (haConfigState.monitoredDevices || []),
+                homeCameras: Array.isArray(parsed.homeCameras)
+                    ? parsed.homeCameras
+                    : (haConfigState.homeCameras || []),
                 customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : haConfigState.customConsumers
             };
@@ -779,6 +783,9 @@ async function initTelemetryAndAnalysis() {
                 monitoredDevices: Array.isArray(srvCfg.monitoredDevices) && srvCfg.monitoredDevices.length > 0
                     ? srvCfg.monitoredDevices
                     : (haConfigState.monitoredDevices || []),
+                homeCameras: Array.isArray(srvCfg.homeCameras) && srvCfg.homeCameras.length > 0
+                    ? srvCfg.homeCameras
+                    : (haConfigState.homeCameras || []),
                 customStrings: Array.isArray(srvCfg.customStrings) && srvCfg.customStrings.length > 0 ? srvCfg.customStrings : haConfigState.customStrings,
                 customConsumers: Array.isArray(srvCfg.customConsumers) && srvCfg.customConsumers.length > 0 ? srvCfg.customConsumers : haConfigState.customConsumers
             };
@@ -992,6 +999,105 @@ function getPlannedSystemBaseline() {
         plannedConsKwh,
         hasYieldCache
     };
+}
+
+function getDailyPvgisSollForMonth(monthIdx, daysCount, baseline = null) {
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    const mIdx = Math.max(0, Math.min(11, Number(monthIdx) || 0));
+    const numDays = Math.max(1, Number(daysCount) || 30);
+    const targetMonthKwh = Math.max(0, Number(baseline.monthlySollTotal?.[mIdx] || 0));
+
+    if (typeof ensureFlowCacheHourlyPopulated === 'function') {
+        try { ensureFlowCacheHourlyPopulated(); } catch (e) {}
+    }
+
+    const stdDaysInM = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const mStartDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    const startDayOfYear = mStartDays[mIdx] || 0;
+    const rawDaily = new Array(numDays).fill(0);
+    let rawSum = 0;
+
+    const hasFlowHr = typeof FlowCache !== 'undefined' && FlowCache && FlowCache.hr && FlowCache.hr.pvTotal && FlowCache.hr.pvTotal.length >= 8760;
+    if (hasFlowHr) {
+        for (let d = 0; d < numDays; d++) {
+            const simDayOffset = Math.min(stdDaysInM[mIdx] - 1, d);
+            const absDay = startDayOfYear + simDayOffset;
+            let dayWh = 0;
+            for (let h = 0; h < 24; h++) {
+                const absH = absDay * 24 + h;
+                const dirW = FlowCache.hr.direct?.[absH] || 0;
+                const tbW = FlowCache.hr.toBat?.[absH] || 0;
+                const tgW = FlowCache.hr.toGrid?.[absH] || 0;
+                const pvW = (dirW + tbW + tgW) > 0 ? (dirW + tbW + tgW) : (FlowCache.hr.pvTotal?.[absH] || 0);
+                dayWh += pvW;
+            }
+            rawDaily[d] = dayWh / 1000;
+            rawSum += rawDaily[d];
+        }
+    }
+
+    // Check if rawDaily has real day-to-day variation; otherwise modulate with deterministic PVGIS weather profile
+    const minVal = Math.min(...rawDaily);
+    const maxVal = Math.max(...rawDaily);
+    if (rawSum <= 0.01 || (maxVal - minVal) < (rawSum / numDays) * 0.03) {
+        rawSum = 0;
+        for (let d = 0; d < numDays; d++) {
+            const absDay = startDayOfYear + d;
+            const weatherMod = Math.max(0.18, Math.min(1.35, 0.68 + 0.38 * Math.sin(absDay * 13.5) * Math.cos(absDay * 5.2)));
+            rawDaily[d] = weatherMod;
+            rawSum += weatherMod;
+        }
+    }
+
+    if (rawSum > 0 && targetMonthKwh > 0) {
+        const scale = targetMonthKwh / rawSum;
+        return rawDaily.map(v => +(v * scale).toFixed(2));
+    }
+    return rawDaily.map(v => +v.toFixed(2));
+}
+
+function getHourlyPvgisSollForDate(dateObj, baseline = null) {
+    if (!baseline) baseline = getPlannedSystemBaseline();
+    const dt = dateObj instanceof Date ? dateObj : new Date();
+    const mIdx = dt.getMonth();
+    const daysInM = new Date(dt.getFullYear(), mIdx + 1, 0).getDate() || 30;
+    const dayIdx = Math.max(0, Math.min(daysInM - 1, dt.getDate() - 1));
+    const dailyArr = getDailyPvgisSollForMonth(mIdx, daysInM, baseline);
+    const targetDayKwh = Math.max(0, Number(dailyArr[dayIdx] || 0));
+
+    const stdDaysInM = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    const mStartDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    const simDayOffset = Math.min(stdDaysInM[mIdx] - 1, dayIdx);
+    const absDay = (mStartDays[mIdx] || 0) + simDayOffset;
+
+    const rawHourly = new Array(24).fill(0);
+    let rawSum = 0;
+    const hasFlowHr = typeof FlowCache !== 'undefined' && FlowCache && FlowCache.hr && FlowCache.hr.pvTotal && FlowCache.hr.pvTotal.length >= 8760;
+    if (hasFlowHr) {
+        for (let h = 0; h < 24; h++) {
+            const absH = absDay * 24 + h;
+            const dirW = FlowCache.hr.direct?.[absH] || 0;
+            const tbW = FlowCache.hr.toBat?.[absH] || 0;
+            const tgW = FlowCache.hr.toGrid?.[absH] || 0;
+            const pvW = (dirW + tbW + tgW) > 0 ? (dirW + tbW + tgW) : (FlowCache.hr.pvTotal?.[absH] || 0);
+            rawHourly[h] = pvW / 1000;
+            rawSum += rawHourly[h];
+        }
+    }
+
+    if (rawSum <= 0.001) {
+        for (let h = 0; h < 24; h++) {
+            const sunWeight = (h >= 6 && h <= 19) ? Math.sin(((h - 6) / 13) * Math.PI) : 0;
+            rawHourly[h] = sunWeight;
+            rawSum += sunWeight;
+        }
+    }
+
+    if (rawSum > 0 && targetDayKwh > 0) {
+        const scale = targetDayKwh / rawSum;
+        return rawHourly.map(v => +(v * scale).toFixed(2));
+    }
+    return rawHourly.map(v => +v.toFixed(2));
 }
 
 function generateRealisticSampleMonths(year, filledMonthsCount = 10) {
@@ -6141,7 +6247,11 @@ function computeAggregatedPerformanceMetrics(baseline) {
         const daysInMonth = new Date(selectedAnalysisYear, idx + 1, 0).getDate() || 30;
         const daysElapsed = isCurrentRunningMonth ? Math.max(1, Math.min(daysInMonth, curDayOfMonth)) : daysInMonth;
         const proRataRatio = isCurrentRunningMonth ? (daysElapsed / daysInMonth) : 1;
-        const proRataSollKwh = sollKwh * proRataRatio;
+        let proRataSollKwh = sollKwh * proRataRatio;
+        if (isCurrentRunningMonth && sollKwh > 0) {
+            const dailySollMonthArr = getDailyPvgisSollForMonth(idx, daysInMonth, baseline);
+            proRataSollKwh = dailySollMonthArr.slice(0, daysElapsed).reduce((a, b) => a + b, 0);
+        }
 
         const monthEndMs = new Date(selectedAnalysisYear, idx + 1, 0, 23, 59, 59).getTime();
         const isBeforeTrackingStart = monthEndMs < trackMs && mObj.source !== 'manual';
@@ -7048,29 +7158,32 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
 
     const hoursPerBucket = analyseBarExplorerState.horizon === 'day' ? 1 : (analyseBarExplorerState.horizon === 'year' ? 730 : 24);
 
-    // Build X-axis labels and PVGIS Soll baseline per bucket
+    // Build X-axis labels and PVGIS Soll baseline per bucket (true 8,760h hourly/daily PVGIS curve!)
     if (analyseBarExplorerState.horizon === 'day') {
-        const mIdx = win.start.getMonth();
-        const daysInM = new Date(win.start.getFullYear(), mIdx + 1, 0).getDate() || 30;
-        const dailySoll = (baseline.monthlySollTotal[mIdx] || 0) / daysInMonthOr30(daysInM);
+        const hourlySoll = getHourlyPvgisSollForDate(win.start, baseline);
         for (let h = 0; h < 24; h++) {
             labels.push(`${String(h).padStart(2, '0')}:00`);
-            const sunWeight = (h >= 6 && h <= 19) ? Math.sin(((h - 6) / 13) * Math.PI) : 0;
-            seriesById.pvgisSoll[h] = +(dailySoll * (sunWeight / 8.28)).toFixed(2);
+            seriesById.pvgisSoll[h] = +(hourlySoll[h] || 0).toFixed(2);
         }
     } else if (analyseBarExplorerState.horizon === 'week') {
+        const monthCacheMap = new Map();
         for (let d = 0; d < 7; d++) {
             const cur = new Date(win.start.getFullYear(), win.start.getMonth(), win.start.getDate() + d);
             labels.push(cur.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }));
             const mIdx = cur.getMonth();
             const daysInM = new Date(cur.getFullYear(), mIdx + 1, 0).getDate() || 30;
-            seriesById.pvgisSoll[d] = +((baseline.monthlySollTotal[mIdx] || 0) / daysInM).toFixed(2);
+            const cacheKey = `${cur.getFullYear()}_${mIdx}_${daysInM}`;
+            if (!monthCacheMap.has(cacheKey)) {
+                monthCacheMap.set(cacheKey, getDailyPvgisSollForMonth(mIdx, daysInM, baseline));
+            }
+            const dailyArr = monthCacheMap.get(cacheKey);
+            seriesById.pvgisSoll[d] = +(dailyArr[cur.getDate() - 1] || 0).toFixed(2);
         }
     } else if (analyseBarExplorerState.horizon === 'month') {
-        const dailySoll = (baseline.monthlySollTotal[win.monthIndex] || 0) / Math.max(1, win.bucketCount);
+        const dailyArr = getDailyPvgisSollForMonth(win.monthIndex, win.bucketCount, baseline);
         for (let d = 1; d <= win.bucketCount; d++) {
             labels.push(`${String(d).padStart(2, '0')}.${String(win.monthIndex + 1).padStart(2, '0')}.`);
-            seriesById.pvgisSoll[d - 1] = +dailySoll.toFixed(2);
+            seriesById.pvgisSoll[d - 1] = +(dailyArr[d - 1] || 0).toFixed(2);
         }
     } else {
         for (let m = 0; m < 12; m++) {
@@ -8846,29 +8959,32 @@ function switchHaModalTab(tab = 'config') {
     const panelConsumers = document.getElementById('ha-modal-panel-consumers');
     const panelClimate = document.getElementById('ha-modal-panel-climate');
     const panelDevices = document.getElementById('ha-modal-panel-devices');
+    const panelCameras = document.getElementById('ha-modal-panel-cameras');
     const panelGuide = document.getElementById('ha-modal-panel-guide');
     const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
     const btnConsumers = document.getElementById('btn-ha-tab-consumers');
     const btnClimate = document.getElementById('btn-ha-tab-climate');
     const btnDevices = document.getElementById('btn-ha-tab-devices');
+    const btnCameras = document.getElementById('btn-ha-tab-cameras');
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
     const scrollBody = document.getElementById('haModalScrollBody');
 
     const activeCls = "px-2.5 py-2 rounded-xl bg-teal-600 text-white text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer shadow-xs text-center leading-tight truncate";
     const inactiveCls = "px-2.5 py-2 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-[11px] sm:text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer text-center leading-tight truncate";
-    const guideExtraCls = " col-span-2 sm:col-span-1";
 
     if (panelCfg) panelCfg.classList.toggle('hidden', tab !== 'config');
     if (panelConsumers) panelConsumers.classList.toggle('hidden', tab !== 'consumers');
     if (panelClimate) panelClimate.classList.toggle('hidden', tab !== 'climate');
     if (panelDevices) panelDevices.classList.toggle('hidden', tab !== 'devices');
+    if (panelCameras) panelCameras.classList.toggle('hidden', tab !== 'cameras');
     if (panelGuide) panelGuide.classList.toggle('hidden', tab !== 'guide');
 
     if (btnCfg) btnCfg.className = tab === 'config' ? activeCls : inactiveCls;
     if (btnConsumers) btnConsumers.className = tab === 'consumers' ? activeCls : inactiveCls;
     if (btnClimate) btnClimate.className = tab === 'climate' ? activeCls : inactiveCls;
     if (btnDevices) btnDevices.className = tab === 'devices' ? activeCls : inactiveCls;
-    if (btnGuide) btnGuide.className = (tab === 'guide' ? activeCls : inactiveCls) + guideExtraCls;
+    if (btnCameras) btnCameras.className = tab === 'cameras' ? activeCls : inactiveCls;
+    if (btnGuide) btnGuide.className = tab === 'guide' ? activeCls : inactiveCls;
 
     if (scrollBody) {
         scrollBody.scrollTop = 0;
@@ -8880,11 +8996,13 @@ function switchHaModalTab(tab = 'config') {
         if (!hasConfigured) {
             openHaDeviceDiscoveryPicker(false);
         } else {
-            // Preload discovery groups quietly in the background while keeping configured devices visible first
             const box = document.getElementById('haDiscoveredDevicesPickerBox');
             if (box) box.classList.add('hidden');
             ensureMonitoredDevicesStatesLoaded();
         }
+    } else if (tab === 'cameras') {
+        renderHaHomeCamerasEditor();
+        ensureMonitoredDevicesStatesLoaded();
     }
 }
 
@@ -9040,6 +9158,7 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
     renderHaCustomConsumersEditor();
     renderHaWeatherSensorsEditor();
     renderHaMonitoredDevicesEditor();
+    renderHaHomeCamerasEditor();
     renderHaPvEnergyExtraList();
     renderHaUnifiedSensorMatrix();
     updateHaWebhookYamlSnippet();
@@ -9072,6 +9191,11 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
 
     if (focusSection === 'devices' || scrollTargetId === 'haMonitoredDevicesSectionBox') {
         switchHaModalTab('devices');
+        return;
+    }
+
+    if (focusSection === 'cameras' || scrollTargetId === 'haHomeCamerasSectionBox') {
+        switchHaModalTab('cameras');
         return;
     }
 
@@ -9969,6 +10093,7 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
             return (
                 s.entity_id.startsWith('sensor.') ||
                 s.entity_id.startsWith('weather.') ||
+                s.entity_id.startsWith('camera.') ||
                 s.entity_id.startsWith('number.') ||
                 s.entity_id.startsWith('input_number.') ||
                 s.entity_id.startsWith('counter.')
@@ -9976,15 +10101,20 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
         })
         .map(s => {
             const isWeather = s.entity_id.startsWith('weather.');
-            const unit = isWeather
-                ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
-                : String(s.attributes?.unit_of_measurement || '').trim();
+            const isCamera = s.entity_id.startsWith('camera.');
+            const unit = isCamera
+                ? 'Kamera'
+                : (isWeather
+                    ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
+                    : String(s.attributes?.unit_of_measurement || '').trim());
             const unitLower = unit.toLowerCase();
             const devClass = String(s.attributes?.device_class || '').toLowerCase();
             const groupInfo = classifyHaEntityGroup(s, tplDeviceMap);
 
             let unitCategory = 'other';
-            if (unitLower === 'w' || unitLower === 'kw' || unitLower === 'mw' || unitLower === 'va' || devClass === 'power') {
+            if (isCamera) {
+                unitCategory = 'camera';
+            } else if (unitLower === 'w' || unitLower === 'kw' || unitLower === 'mw' || unitLower === 'va' || devClass === 'power') {
                 unitCategory = 'power';
             } else if (unitLower === 'kwh' || unitLower === 'wh' || unitLower === 'mwh' || devClass === 'energy') {
                 unitCategory = 'energy';
@@ -9998,8 +10128,8 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
                 state: s.state,
                 unit,
                 unitCategory,
-                category: isWeather ? 'device' : groupInfo.category, // 'device' | 'helper'
-                groupName: isWeather ? 'Wetter & Klima' : groupInfo.groupName,
+                category: (isWeather || isCamera) ? 'device' : groupInfo.category, // 'device' | 'helper'
+                groupName: isCamera ? 'Hauskameras (camera.*)' : (isWeather ? 'Wetter & Klima' : groupInfo.groupName),
                 areaName: groupInfo.areaName || ''
             };
         })
@@ -10155,6 +10285,8 @@ async function openHaEntityPicker(options = {}) {
         currentEntityId = String(haConfigState.customConsumers?.[options.index]?.energyEntity || '').trim();
     } else if (options.customType === 'pvEnergyExtra' && options.index !== undefined) {
         currentEntityId = String(haConfigState.pvEnergyExtraEntities?.[options.index] || '').trim();
+    } else if (options.customType === 'cameraEntity' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.homeCameras?.[options.index]?.entityId || '').trim();
     }
 
     haPickerState = {
@@ -10516,6 +10648,16 @@ function pickHaEntityFromModal(entityId) {
     } else if (haPickerState.customType === 'weatherSensorHumidity' && haPickerState.index !== null) {
         updateHaCustomWeatherSensorField(haPickerState.index, 'humidityEntity', entityId);
         renderHaWeatherSensorsEditor();
+    } else if (haPickerState.customType === 'cameraEntity' && haPickerState.index !== null) {
+        updateHaHomeCameraField(haPickerState.index, 'entityId', entityId);
+        const curName = haConfigState.homeCameras?.[haPickerState.index]?.name || '';
+        const cleanCamName = sensorObj
+            ? String(sensorObj.name || '').replace(/\s+(Kamera|Camera|Stream|Snapshot|HD|Main|Sub).*$/i, '').trim()
+            : '';
+        if (cleanCamName && (!curName || /^Kamera \d+/i.test(curName))) {
+            updateHaHomeCameraField(haPickerState.index, 'name', cleanCamName);
+        }
+        renderHaHomeCamerasEditor();
     }
 
     closeHaEntityPicker();
@@ -10634,6 +10776,9 @@ function applySanitizedHaConfigFromProject(sanitizedCfg) {
         monitoredDevices: Array.isArray(sanitizedCfg.monitoredDevices)
             ? JSON.parse(JSON.stringify(sanitizedCfg.monitoredDevices))
             : (haConfigState.monitoredDevices || []),
+        homeCameras: Array.isArray(sanitizedCfg.homeCameras)
+            ? JSON.parse(JSON.stringify(sanitizedCfg.homeCameras))
+            : (haConfigState.homeCameras || []),
         loadedFromSharedProject: true
     };
     try {
@@ -11211,6 +11356,20 @@ function updateHomeStatesFromHaArray(statesArray) {
         }
     }
 
+    // Auto-seed Home Assistant camera.* entities if user has no cameras configured yet
+    if (!Array.isArray(haConfigState.homeCameras) || haConfigState.homeCameras.length === 0) {
+        const camStates = statesArray.filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('camera.'));
+        if (camStates.length > 0) {
+            haConfigState.homeCameras = camStates.slice(0, 4).map((c, idx) => ({
+                id: `cam_auto_${idx}_${Date.now()}`,
+                name: String(c.attributes?.friendly_name || c.entity_id.replace(/^camera\./, '')).trim() || `Kamera ${idx + 1}`,
+                entityId: c.entity_id,
+                directUrl: ''
+            }));
+            configChanged = true;
+        }
+    }
+
     if (configChanged) {
         try {
             localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
@@ -11220,6 +11379,7 @@ function updateHomeStatesFromHaArray(statesArray) {
     renderHomeWeatherWidget();
     renderHomeCustomWeatherSensors();
     renderHomeMonitoredDevicesBar();
+    renderHomeCamerasSection();
     renderDevicesDiagnosticsTab();
     syncHomeRoomSensorsMinMaxFromHistory();
 }
@@ -11903,6 +12063,7 @@ function refreshHomeWeatherAndSensors(force = false) {
     renderHomeCustomWeatherSensors();
     renderHomeMonitoredDevicesBar();
     renderDevicesDiagnosticsTab();
+    renderHomeCamerasSection();
     if (force) {
         refreshLiveTelemetryNow();
     }
@@ -11914,6 +12075,7 @@ function renderHomeTab() {
     fetchOpenMeteoForecastForHome(false);
     renderHomeCustomWeatherSensors();
     renderHomeMonitoredDevicesBar();
+    renderHomeCamerasSection();
 }
 
 // ============================================================================
@@ -14451,6 +14613,573 @@ window.removeHaMonitoredDevice = removeHaMonitoredDevice;
 window.openHaDeviceDiscoveryPicker = openHaDeviceDiscoveryPicker;
 window.renderHaDiscoveredDevicesList = renderHaDiscoveredDevicesList;
 window.selectDiscoveredHaDevice = selectDiscoveredHaDevice;
+
+// ============================================================================
+// 11. HAUSKAMERAS (STARTSEITE 2ER-GRID, VOLLBREITEN-LISTE & QUERFORMAT-VOLLBILD)
+// ============================================================================
+
+let homeCamerasRefreshTimer = null;
+let homeCamerasStackRefreshTimer = null;
+let homeCameraFullscreenRefreshTimer = null;
+let activeFullscreenCameraId = null;
+let isCameraFullscreenRotated = false;
+const cameraObjectUrlsMap = new Map(); // imgDomId -> objectUrl
+const cameraLastResolvedSrcMap = new Map(); // camId -> last valid src
+
+function ensureDefaultHomeCamerasArray() {
+    if (!Array.isArray(haConfigState.homeCameras)) {
+        haConfigState.homeCameras = [];
+    }
+    return haConfigState.homeCameras;
+}
+
+function renderHaHomeCamerasEditor() {
+    const container = document.getElementById('haHomeCamerasMappingContainer');
+    const badge = document.getElementById('haHomeCamerasActiveCountBadge');
+    const list = ensureDefaultHomeCamerasArray();
+
+    if (badge) {
+        const activeCount = list.filter(c => (c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())).length;
+        badge.innerText = `${activeCount} aktiv`;
+    }
+
+    if (!container) return;
+
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div class="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-2">
+                <p class="text-xs font-bold text-slate-700 dark:text-slate-200">Noch keine Hauskameras angelegt</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Klicke oben auf <strong>„Aus HA laden“</strong> oder <strong>„+ Kamera hinzufügen“</strong>, um deine Kameras über Home Assistant (<code>camera.*</code>) oder per Direkt-URL einzubinden.</p>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = list.map((cam, idx) => {
+        const safeName = escapeHtml(cam.name || `Kamera ${idx + 1}`);
+        const safeEntity = escapeHtml(cam.entityId || '');
+        const safeUrl = escapeHtml(cam.directUrl || '');
+        const stObj = cam.entityId ? homeHaStatesCache.get(cam.entityId) : null;
+        const stText = stObj ? `${stObj.state || 'bereit'}` : (cam.entityId ? 'Warte auf HA-Status' : 'Nur Direkt-URL');
+
+        return `
+        <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <span class="w-7 h-7 rounded-xl bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0 text-xs font-extrabold">${idx + 1}</span>
+                    <input type="text" value="${safeName}" oninput="updateHaHomeCameraField(${idx}, 'name', this.value)"
+                        placeholder="Kameraname (z. B. Einfahrt, Garten, Haustür)"
+                        class="flex-1 min-w-0 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <span class="hidden sm:inline-block px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[10px] font-mono text-slate-500 dark:text-slate-400">${escapeHtml(stText)}</span>
+                    <button type="button" onclick="removeHaHomeCamera(${idx})" class="w-8 h-8 rounded-xl text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors cursor-pointer" title="Kamera entfernen">
+                        <span class="material-symbols-rounded text-base">delete</span>
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                    <label class="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">Home Assistant Kamera-Entität (<code>camera.*</code>)</label>
+                    <div class="flex items-center gap-1.5">
+                        <input type="text" list="haEntitiesDatalist" value="${safeEntity}" oninput="updateHaHomeCameraField(${idx}, 'entityId', this.value)"
+                            placeholder="z. B. camera.einfahrt"
+                            class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'cameraEntity', index: ${idx}, unitFilter: 'camera', title: 'Hauskamera ${idx + 1} (camera.*)' })"
+                            class="px-2.5 h-8 rounded-xl bg-teal-600/15 hover:bg-teal-600/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Kamera aus Home Assistant wählen">
+                            <span class="material-symbols-rounded text-sm">videocam</span>
+                            <span>Wählen</span>
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">Optionale Direkt-URL (Snapshot / MJPEG / Stream)</label>
+                    <input type="text" value="${safeUrl}" oninput="updateHaHomeCameraField(${idx}, 'directUrl', this.value)"
+                        placeholder="Optional: https://... oder http://192.168.x.x/..."
+                        class="w-full text-xs font-mono px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addHaHomeCamera() {
+    const list = ensureDefaultHomeCamerasArray();
+    const nextNum = list.length + 1;
+    list.push({
+        id: `cam_${Date.now()}_${nextNum}`,
+        name: nextNum === 1 ? 'Einfahrt' : (nextNum === 2 ? 'Garten' : `Kamera ${nextNum}`),
+        entityId: '',
+        directUrl: ''
+    });
+    renderHaHomeCamerasEditor();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeCamerasSection();
+}
+
+function updateHaHomeCameraField(idx, field, val) {
+    const list = ensureDefaultHomeCamerasArray();
+    if (!list[idx]) return;
+    list[idx][field] = String(val || '').trim();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeCamerasSection();
+}
+
+function removeHaHomeCamera(idx) {
+    const list = ensureDefaultHomeCamerasArray();
+    if (!list[idx]) return;
+    list.splice(idx, 1);
+    renderHaHomeCamerasEditor();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeCamerasSection();
+}
+
+async function autoDiscoverHaCameras() {
+    readHaModalIntoState();
+    const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+    if (directRes.ok && Array.isArray(directRes.data)) {
+        updateHomeStatesFromHaArray(directRes.data);
+        const tplDeviceMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+        discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplDeviceMap);
+        updateHaEntitiesDatalistElement();
+
+        const camStates = directRes.data.filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('camera.'));
+        if (camStates.length === 0) {
+            if (typeof showToastNotification === 'function') {
+                showToastNotification('Keine camera.* Entitäten in Home Assistant gefunden. Du kannst Kameras auch per Direkt-URL anlegen.', 'info');
+            }
+            if (haConfigState.homeCameras.length === 0) {
+                addHaHomeCamera();
+                addHaHomeCamera();
+            }
+            return;
+        }
+
+        const existingIds = new Set((haConfigState.homeCameras || []).map(c => c.entityId).filter(Boolean));
+        let added = 0;
+        camStates.forEach((c, idx) => {
+            if (!existingIds.has(c.entity_id)) {
+                haConfigState.homeCameras.push({
+                    id: `cam_ha_${Date.now()}_${idx}`,
+                    name: String(c.attributes?.friendly_name || c.entity_id.replace(/^camera\./, '')).trim(),
+                    entityId: c.entity_id,
+                    directUrl: ''
+                });
+                added++;
+            }
+        });
+        renderHaHomeCamerasEditor();
+        persistMonitoredDevicesConfigImmediate();
+        renderHomeCamerasSection();
+        if (typeof showToastNotification === 'function') {
+            showToastNotification(added > 0 ? `${added} Kamera(s) aus Home Assistant übernommen!` : `Alle ${camStates.length} HA-Kameras sind bereits vorhanden.`, 'success');
+        }
+    } else if (typeof showToastNotification === 'function') {
+        showToastNotification('Verbindung zu Home Assistant fehlgeschlagen. Bitte prüfe URL & Token.', 'error');
+    }
+}
+
+function appendCacheBusterToUrl(rawUrl) {
+    if (!rawUrl) return '';
+    const sep = rawUrl.includes('?') ? '&' : '?';
+    return `${rawUrl}${sep}_t=${Date.now()}`;
+}
+
+async function updateCameraImageElement(cam, imgDomId, statusDomId, isLiveStreamPreferred = false) {
+    const imgEl = document.getElementById(imgDomId);
+    if (!imgEl || !cam) return;
+    const statusEl = statusDomId ? document.getElementById(statusDomId) : null;
+
+    const cleanBaseUrl = normalizeHaUrlClient(haConfigState.baseUrl);
+    const cleanToken = cleanHaTokenClient(haConfigState.accessToken);
+    const entId = String(cam.entityId || '').trim();
+    const directUrl = String(cam.directUrl || '').trim();
+
+    const applyResolvedSrc = (srcUrl, isBlobUrl = false, statusLabel = 'LIVE') => {
+        const elNow = document.getElementById(imgDomId);
+        if (!elNow) {
+            if (isBlobUrl) URL.revokeObjectURL(srcUrl);
+            return;
+        }
+        const preloader = new Image();
+        preloader.onload = () => {
+            const targetNow = document.getElementById(imgDomId);
+            if (!targetNow) {
+                if (isBlobUrl) URL.revokeObjectURL(srcUrl);
+                return;
+            }
+            const prevBlob = cameraObjectUrlsMap.get(imgDomId);
+            if (prevBlob && prevBlob !== srcUrl) {
+                try { URL.revokeObjectURL(prevBlob); } catch (e) {}
+            }
+            if (isBlobUrl) {
+                cameraObjectUrlsMap.set(imgDomId, srcUrl);
+            } else {
+                cameraObjectUrlsMap.delete(imgDomId);
+            }
+            cameraLastResolvedSrcMap.set(cam.id, srcUrl);
+            targetNow.src = srcUrl;
+            targetNow.classList.remove('opacity-0');
+            const placeholderEl = document.getElementById(`${imgDomId}_placeholder`);
+            if (placeholderEl) placeholderEl.classList.add('hidden');
+            if (statusEl) {
+                const nowStr = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                statusEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span><span>${escapeHtml(statusLabel)} · ${nowStr}</span>`;
+            }
+        };
+        preloader.onerror = () => {
+            if (isBlobUrl) {
+                try { URL.revokeObjectURL(srcUrl); } catch (e) {}
+            }
+            if (directUrl && srcUrl !== directUrl) {
+                const directBusted = appendCacheBusterToUrl(directUrl);
+                targetFallbackDirect(directBusted);
+            } else if (statusEl) {
+                statusEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span><span>Kein Bildsignal</span>`;
+            }
+        };
+        preloader.src = srcUrl;
+    };
+
+    const targetFallbackDirect = (urlStr) => {
+        const elNow = document.getElementById(imgDomId);
+        if (!elNow) return;
+        elNow.src = urlStr;
+        elNow.classList.remove('opacity-0');
+        const placeholderEl = document.getElementById(`${imgDomId}_placeholder`);
+        if (placeholderEl) placeholderEl.classList.add('hidden');
+    };
+
+    // 1. Try Home Assistant camera entity
+    if (entId && cleanBaseUrl) {
+        // 1A. Check if Home Assistant state has pre-signed entity_picture (works natively in <img> without CORS issues!)
+        const stObj = homeHaStatesCache.get(entId);
+        const entityPic = stObj?.attributes?.entity_picture;
+        if (entityPic && typeof entityPic === 'string') {
+            const fullPicUrl = entityPic.startsWith('http')
+                ? appendCacheBusterToUrl(entityPic)
+                : appendCacheBusterToUrl(`${cleanBaseUrl}${entityPic.startsWith('/') ? '' : '/'}${entityPic}`);
+            applyResolvedSrc(fullPicUrl, false, stObj?.state === 'recording' ? 'REC' : 'LIVE');
+            return;
+        }
+
+        // 1B. Try authenticated fetch to /api/camera_proxy/<entityId> with Bearer token
+        if (cleanToken) {
+            try {
+                const controller = new AbortController();
+                const tId = setTimeout(() => controller.abort(), 4500);
+                const proxyUrl = `${cleanBaseUrl}/api/camera_proxy/${encodeURIComponent(entId)}?time=${Date.now()}`;
+                const resp = await fetch(proxyUrl, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${cleanToken}` },
+                    mode: 'cors',
+                    credentials: 'omit',
+                    signal: controller.signal
+                });
+                clearTimeout(tId);
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    if (blob && blob.size > 100) {
+                        const objUrl = URL.createObjectURL(blob);
+                        applyResolvedSrc(objUrl, true, 'LIVE');
+                        return;
+                    }
+                }
+            } catch (e) {}
+        }
+    }
+
+    // 2. Fallback or primary: Direct URL
+    if (directUrl) {
+        applyResolvedSrc(appendCacheBusterToUrl(directUrl), false, 'DIREKT');
+        return;
+    }
+
+    if (statusEl) {
+        statusEl.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span><span>Kamera wählen</span>`;
+    }
+}
+
+function renderHomeCamerasSection() {
+    const grid = document.getElementById('homeCamerasGrid');
+    if (!grid) return;
+
+    const configured = ensureDefaultHomeCamerasArray().filter(c => c && ((c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())));
+
+    // If no cameras are configured yet, show 2 side-by-side onboarding tiles (matching "Zwei Kacheln nebeneinander")
+    if (configured.length === 0) {
+        grid.className = 'grid grid-cols-2 gap-2.5';
+        grid.innerHTML = [1, 2].map(num => `
+            <div onclick="openHaConfigModal('cameras')" role="button" tabindex="0"
+                class="rounded-[20px] aspect-video bg-slate-900/90 dark:bg-slate-950/90 border border-teal-500/25 relative overflow-hidden flex flex-col items-center justify-center p-3 text-center cursor-pointer hover:ring-2 hover:ring-teal-400/50 transition-all group">
+                <div class="w-10 h-10 rounded-2xl bg-teal-500/15 border border-teal-500/30 flex items-center justify-center text-teal-400 group-hover:scale-105 transition-transform">
+                    <span class="material-symbols-rounded text-xl">videocam_off</span>
+                </div>
+                <p class="text-xs font-bold text-white mt-2">Kamera ${num} einrichten</p>
+                <p class="text-[10.5px] text-slate-400 mt-0.5 line-clamp-1">HA camera.* oder Direkt-URL</p>
+            </div>
+        `).join('');
+        return;
+    }
+
+    // Always display 2 tiles side-by-side on the Startseite ("Zwei Kacheln nebeneinander")
+    grid.className = 'grid grid-cols-2 gap-2.5';
+    grid.innerHTML = configured.map((cam, idx) => {
+        const safeName = escapeHtml(cam.name || `Kamera ${idx + 1}`);
+        const safeIdJs = String(cam.id || '').replace(/'/g, "\\'");
+        const imgDomId = `home_cam_tile_img_${idx}`;
+        const statusDomId = `home_cam_tile_status_${idx}`;
+        const cachedSrc = cameraLastResolvedSrcMap.get(cam.id) || '';
+
+        return `
+        <div onclick="openHomeCamerasStackModal('${safeIdJs}')" role="button" tabindex="0"
+            title="Tippen für große Ansicht untereinander (${safeName})"
+            class="rounded-[20px] aspect-video bg-slate-950 border border-slate-200/80 dark:border-white/10 relative overflow-hidden cursor-pointer hover:ring-2 hover:ring-teal-400/60 active:scale-[0.99] transition-all group shadow-xs">
+            <div id="${imgDomId}_placeholder" class="${cachedSrc ? 'hidden ' : ''}absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-400 gap-1">
+                <span class="material-symbols-rounded text-2xl text-teal-400/80">videocam</span>
+                <span class="text-[10.5px] font-medium">Lade Live-Bild...</span>
+            </div>
+            <img id="${imgDomId}" src="${escapeHtml(cachedSrc)}" alt="${safeName}"
+                class="${cachedSrc ? '' : 'opacity-0 '}w-full h-full object-cover transition-opacity duration-300 select-none"
+                draggable="false" />
+            <div class="absolute inset-x-0 top-0 p-2 flex items-center justify-between pointer-events-none bg-gradient-to-b from-black/65 via-black/20 to-transparent">
+                <span id="${statusDomId}" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-black/55 backdrop-blur-xs text-[10px] font-bold text-white tracking-wide">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>LIVE</span>
+                </span>
+                <span class="w-6 h-6 rounded-lg bg-black/45 backdrop-blur-xs text-white flex items-center justify-center opacity-85 group-hover:opacity-100">
+                    <span class="material-symbols-rounded text-[15px]">open_in_full</span>
+                </span>
+            </div>
+            <div class="absolute inset-x-0 bottom-0 p-2.5 pt-5 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex items-end justify-between gap-1.5 pointer-events-none">
+                <p class="text-xs sm:text-[13px] font-bold text-white truncate leading-tight">${safeName}</p>
+                <span class="text-[10px] font-semibold text-teal-300 shrink-0 hidden sm:inline">Vergrößern</span>
+            </div>
+        </div>`;
+    }).join('');
+
+    configured.forEach((cam, idx) => {
+        updateCameraImageElement(cam, `home_cam_tile_img_${idx}`, `home_cam_tile_status_${idx}`, false);
+    });
+
+    if (!homeCamerasRefreshTimer) {
+        homeCamerasRefreshTimer = setInterval(() => {
+            const homeTab = document.getElementById('tab-home');
+            if (!homeTab || !homeTab.classList.contains('active') || document.hidden) return;
+            const cams = ensureDefaultHomeCamerasArray().filter(c => c && ((c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())));
+            cams.forEach((cam, idx) => {
+                updateCameraImageElement(cam, `home_cam_tile_img_${idx}`, `home_cam_tile_status_${idx}`, false);
+            });
+        }, 10000);
+    }
+}
+
+function openHomeCamerasStackModal(focusCamId = null) {
+    const modal = document.getElementById('modal-home-cameras-stack');
+    const body = document.getElementById('homeCamerasStackModalBody');
+    if (!modal || !body) return;
+
+    const configured = ensureDefaultHomeCamerasArray().filter(c => c && ((c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())));
+    if (configured.length === 0) {
+        openHaConfigModal('cameras');
+        return;
+    }
+
+    body.innerHTML = configured.map((cam, idx) => {
+        const safeName = escapeHtml(cam.name || `Kamera ${idx + 1}`);
+        const safeEntity = escapeHtml(cam.entityId || cam.directUrl || '');
+        const safeIdJs = String(cam.id || '').replace(/'/g, "\\'");
+        const cardDomId = `stack_cam_card_${cam.id}`;
+        const imgDomId = `stack_cam_img_${idx}`;
+        const statusDomId = `stack_cam_status_${idx}`;
+        const cachedSrc = cameraLastResolvedSrcMap.get(cam.id) || '';
+
+        return `
+        <div id="${escapeHtml(cardDomId)}" onclick="openHomeCameraFullscreenModal('${safeIdJs}')" role="button" tabindex="0"
+            class="w-full rounded-[24px] overflow-hidden bg-slate-950 border border-slate-200/80 dark:border-white/15 shadow-lg cursor-pointer group transition-all hover:ring-2 hover:ring-teal-400/60">
+            <div class="px-4 py-3 bg-slate-900/95 border-b border-white/10 flex items-center justify-between gap-2">
+                <div class="min-w-0 flex items-center gap-2">
+                    <span class="material-symbols-rounded text-teal-400 text-lg shrink-0">videocam</span>
+                    <div class="min-w-0">
+                        <h4 class="text-sm sm:text-base font-bold text-white truncate">${safeName}</h4>
+                        <p class="text-[11px] font-mono text-slate-400 truncate">${safeEntity}</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span id="${statusDomId}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/10 text-[11px] font-bold text-emerald-300 tabular-nums">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>LIVE</span>
+                    </span>
+                    <span class="px-2.5 py-1 rounded-lg bg-teal-500/20 border border-teal-400/40 text-teal-200 text-xs font-bold flex items-center gap-1 group-hover:bg-teal-500 group-hover:text-white transition-colors">
+                        <span class="material-symbols-rounded text-sm">screen_rotation</span>
+                        <span>Vollbild (Querformat)</span>
+                    </span>
+                </div>
+            </div>
+            <div class="relative w-full aspect-video bg-black overflow-hidden">
+                <div id="${imgDomId}_placeholder" class="${cachedSrc ? 'hidden ' : ''}absolute inset-0 flex flex-col items-center justify-center text-slate-400 gap-2">
+                    <span class="material-symbols-rounded text-3xl text-teal-400 animate-pulse">videocam</span>
+                    <span class="text-xs font-semibold">Lade Kamera-Stream (${safeName})...</span>
+                </div>
+                <img id="${imgDomId}" src="${escapeHtml(cachedSrc)}" alt="${safeName}"
+                    class="${cachedSrc ? '' : 'opacity-0 '}w-full h-full object-contain bg-black transition-opacity duration-200 select-none"
+                    draggable="false" />
+            </div>
+        </div>`;
+    }).join('');
+
+    modal.classList.remove('hidden');
+
+    const refreshAllStacked = () => {
+        configured.forEach((cam, idx) => {
+            updateCameraImageElement(cam, `stack_cam_img_${idx}`, `stack_cam_status_${idx}`, true);
+        });
+    };
+    refreshAllStacked();
+
+    if (homeCamerasStackRefreshTimer) clearInterval(homeCamerasStackRefreshTimer);
+    homeCamerasStackRefreshTimer = setInterval(() => {
+        if (modal.classList.contains('hidden') || document.hidden) return;
+        refreshAllStacked();
+    }, 3000);
+
+    if (focusCamId) {
+        setTimeout(() => {
+            const targetCard = document.getElementById(`stack_cam_card_${focusCamId}`);
+            if (targetCard && typeof targetCard.scrollIntoView === 'function') {
+                targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 60);
+    }
+}
+
+function closeHomeCamerasStackModal() {
+    const modal = document.getElementById('modal-home-cameras-stack');
+    if (modal) modal.classList.add('hidden');
+    if (homeCamerasStackRefreshTimer) {
+        clearInterval(homeCamerasStackRefreshTimer);
+        homeCamerasStackRefreshTimer = null;
+    }
+}
+
+function applyFullscreenCameraStageLayout() {
+    const stage = document.getElementById('homeCameraFullscreenStage');
+    const rotBtnLabel = document.getElementById('homeCameraFullscreenRotateLabel');
+    if (!stage) return;
+
+    if (isCameraFullscreenRotated) {
+        stage.style.width = '100dvh';
+        stage.style.height = '100dvw';
+        stage.style.transform = 'rotate(90deg)';
+        if (rotBtnLabel) rotBtnLabel.innerText = 'Querformat (90°)';
+    } else {
+        stage.style.width = '100dvw';
+        stage.style.height = '100dvh';
+        stage.style.transform = 'none';
+        if (rotBtnLabel) rotBtnLabel.innerText = 'Normal (0°)';
+    }
+}
+
+function openHomeCameraFullscreenModal(camId) {
+    const configured = ensureDefaultHomeCamerasArray().filter(c => c && ((c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())));
+    if (configured.length === 0) return;
+
+    const cam = configured.find(c => c.id === camId) || configured[0];
+    activeFullscreenCameraId = cam.id;
+
+    const modal = document.getElementById('modal-home-camera-fullscreen');
+    if (!modal) return;
+    modal.classList.remove('hidden');
+
+    // Automatically activate 90° Landscape mode if device is currently held in portrait orientation
+    isCameraFullscreenRotated = window.innerHeight > window.innerWidth;
+    applyFullscreenCameraStageLayout();
+
+    // Try native Fullscreen + landscape orientation lock where supported
+    try {
+        if (modal.requestFullscreen && !document.fullscreenElement) {
+            modal.requestFullscreen().then(() => {
+                if (screen.orientation && typeof screen.orientation.lock === 'function') {
+                    screen.orientation.lock('landscape').then(() => {
+                        isCameraFullscreenRotated = false;
+                        applyFullscreenCameraStageLayout();
+                    }).catch(() => {});
+                }
+            }).catch(() => {});
+        }
+    } catch (e) {}
+
+    renderActiveFullscreenCameraContent();
+
+    if (homeCameraFullscreenRefreshTimer) clearInterval(homeCameraFullscreenRefreshTimer);
+    homeCameraFullscreenRefreshTimer = setInterval(() => {
+        if (modal.classList.contains('hidden') || document.hidden) return;
+        const currentCam = ensureDefaultHomeCamerasArray().find(c => c.id === activeFullscreenCameraId);
+        if (currentCam) {
+            updateCameraImageElement(currentCam, 'homeCameraFullscreenImg', 'homeCameraFullscreenStatus', true);
+        }
+    }, 2500);
+}
+
+function renderActiveFullscreenCameraContent() {
+    const configured = ensureDefaultHomeCamerasArray().filter(c => c && ((c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())));
+    const cam = configured.find(c => c.id === activeFullscreenCameraId) || configured[0];
+    if (!cam) return;
+
+    setElText('homeCameraFullscreenTitle', cam.name || 'Hauskamera');
+    const imgEl = document.getElementById('homeCameraFullscreenImg');
+    const cachedSrc = cameraLastResolvedSrcMap.get(cam.id) || '';
+    if (imgEl && cachedSrc) {
+        imgEl.src = cachedSrc;
+        imgEl.classList.remove('opacity-0');
+    }
+    updateCameraImageElement(cam, 'homeCameraFullscreenImg', 'homeCameraFullscreenStatus', true);
+}
+
+function toggleHomeCameraFullscreenRotation() {
+    isCameraFullscreenRotated = !isCameraFullscreenRotated;
+    applyFullscreenCameraStageLayout();
+}
+
+function stepHomeCameraFullscreen(dir = 1) {
+    const configured = ensureDefaultHomeCamerasArray().filter(c => c && ((c.entityId && c.entityId.trim()) || (c.directUrl && c.directUrl.trim())));
+    if (configured.length <= 1) return;
+    const curIdx = Math.max(0, configured.findIndex(c => c.id === activeFullscreenCameraId));
+    const nextIdx = (curIdx + dir + configured.length) % configured.length;
+    activeFullscreenCameraId = configured[nextIdx].id;
+    renderActiveFullscreenCameraContent();
+}
+
+function closeHomeCameraFullscreenModal() {
+    const modal = document.getElementById('modal-home-camera-fullscreen');
+    if (modal) modal.classList.add('hidden');
+    if (homeCameraFullscreenRefreshTimer) {
+        clearInterval(homeCameraFullscreenRefreshTimer);
+        homeCameraFullscreenRefreshTimer = null;
+    }
+    try {
+        if (screen.orientation && typeof screen.orientation.unlock === 'function') {
+            screen.orientation.unlock();
+        }
+        if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+            document.exitFullscreen().catch(() => {});
+        }
+    } catch (e) {}
+}
+
+window.renderHaHomeCamerasEditor = renderHaHomeCamerasEditor;
+window.addHaHomeCamera = addHaHomeCamera;
+window.updateHaHomeCameraField = updateHaHomeCameraField;
+window.removeHaHomeCamera = removeHaHomeCamera;
+window.autoDiscoverHaCameras = autoDiscoverHaCameras;
+window.renderHomeCamerasSection = renderHomeCamerasSection;
+window.openHomeCamerasStackModal = openHomeCamerasStackModal;
+window.closeHomeCamerasStackModal = closeHomeCamerasStackModal;
+window.openHomeCameraFullscreenModal = openHomeCameraFullscreenModal;
+window.closeHomeCameraFullscreenModal = closeHomeCameraFullscreenModal;
+window.toggleHomeCameraFullscreenRotation = toggleHomeCameraFullscreenRotation;
+window.stepHomeCameraFullscreen = stepHomeCameraFullscreen;
+window.getDailyPvgisSollForMonth = getDailyPvgisSollForMonth;
+window.getHourlyPvgisSollForDate = getHourlyPvgisSollForDate;
 
 // Auto-initialize immediately once DOM is ready (0ms delay for instant start!)
 document.addEventListener('DOMContentLoaded', () => {

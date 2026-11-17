@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.3 (Volllesbare 2-Zeilen-Modellkarten ohne Abschneiden im KI-Katalog, prominenter „+ Neuer Chat“-Button mit automatischem Einklappen der Einstellungen beim Chatten, Live-Tokenverbrauch & Kosten-Rechner unter jeder KI-Antwort plus Gesamtsumme im Header sowie intelligenter Zurück-Wischen-Schutz für geöffnete Einstellungsfenster)  
+**Aktuelle Version:** 12.4 (Hauskameras-Sektion auf der Startseite mit 2-Spalten-Raster, gestapelter Vollbreiten-Ansicht und Querformat-Vollbildmodus sowie echte stunden-/tagesgenaue PVGIS-Sollwerte in Analyse & Planung mit sauber getrennter Tages-PV-Erzeugung oben und reinem Hausverbrauch unten)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
