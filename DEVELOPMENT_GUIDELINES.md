@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.6 (Dynamisch positionierte & eingeklappte Wallbox-Kachel auf dem Live-Dashboard, 2-Kanal-Vergleich Fläche + Balken & komplettes Abwählen in Analyse- & Live-Diagrammen, beseitigte Fehlalarme beim Wallbox-Startzählerstand & aufklappbare grüne Diagnose-Hinweise sowie rechtsbündige String-Performance in `%` & `kWh/kWp` auf den Diagramm-Kacheln)  
+**Aktuelle Version:** 12.7 (Historien-gestützte Wallbox-Session-Rekonstruktion ohne Diskrepanz zum Live-Diagramm, einsehbare vergangene Ladesessions direkt in der Wallbox-Kachel & im Session-Popup, kompakte 1-Zeilen-Wallbox-Leiste im Energie-Kurzüberblick auf der Startseite bei aktiver Ladung sowie kurze Prozent-Badges auf den String-Kacheln ohne Abschneiden der kWh-Werte)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

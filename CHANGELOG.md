@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.7] – 2026-11-18
+
+### ✨ Historien-gestützte Wallbox-Sessions (Exakter Abgleich mit Live-Diagramm), Vergangene Ladesessions (Aufklappbar + Session-Popup), Aktive Wallbox-Leiste im Startseiten-Kurzüberblick & Kompakte String-Prozentzahlen (`80%`)
+
+#### 1. Exakte Wallbox-Session-Rekonstruktion ohne Diskrepanz zur Live-Diagramm-Kachel (`telemetry.js`)
+* **Automatische Erkennung des echten Ladebeginns aus der Home-Assistant-Kurve (`extractSessionsFromCurveDataset`, `reconstructWallboxSessionsForConsumer`):**
+  - Bisher zählte der Session-Tracker erst ab dem Moment, in dem die App im Browser geöffnet wurde (z. B. `Seit 12:04 Uhr · 0,90 kWh`), obwohl der Ladevorgang laut Live-Diagramm schon seit `11:02 Uhr` (`10,83 kWh`) lief.
+  - Ab sofort analysiert die Session-Engine automatisch die 24h-, 7-Tage- und 30-Tage-Leistungskurve (`> 45 W`, inkl. Überbrückung kurzer Umschalt-/Regelpausen bis 25 Min.) und kalibriert heutige Ladesessions exakt auf den geeichten Tages-`kWh`-Zähler (`authoritativeTodayKwh`).
+  - Dadurch stimmen `Geladen seit Ladebeginn` (`10,83 kWh`) und die Startuhrzeit (`Seit 11:02 Uhr`) zu 100 % mit der Live-Diagramm-Kachel überein – selbst wenn die App erst mitten im Ladevorgang geöffnet wird. Zudem wird die Wallbox im Live-Tab während des Ladens nicht mehr doppelt unter *Aktive Verbraucher* wiederholt.
+
+#### 2. Vergangene Ladesessions anschauen: Direkt in der Wallbox-Kachel aufklappbar + Eigenes Session-Popup (`index.html`, `telemetry.js`, `app.js`)
+* **Persistentes Session-Archiv (`WALLBOX_SESSIONS_ARCHIVE_KEY` in `localStorage` & `IndexedDB`):**
+  - Alle laufenden und vergangenen Ladevorgänge werden mit Start-/Endzeit, Ladedauer, geladenen `kWh`, `☀️ % PV-Anteil` (Solar-kWh vs. Netz-kWh), Peak-Leistung (`kW`) und `€`-PV-Vorteil dauerhaft im lokalen Session-Archiv gespeichert.
+* **Direkt in der Wallbox-Kachel aufklappbar (`toggleWallboxHistoryInline`) & Eigenes Session-Popup (`#modal-wallbox-sessions`):**
+  - Über den Button **`Sessions (N)`** in der Wallbox-Kachel lassen sich die letzten Ladevorgänge direkt innerhalb der Kachel ein- und ausklappen.
+  - Ein Tipp auf das Popup-Symbol (oder auf den Historien-Button in der eingeklappten 1-Zeilen-Wallbox-Leiste) öffnet das Detail-Fenster **`Wallbox · Lade-Historie & Sessions`** mit Gesamtbilanz (Anzahl Sessions, Gesamt-kWh, Ø PV-Anteil, gesamte PV-Ersparnis in `€`), allen vergangenen Ladevorgängen und einem **`Historie scannen`**-Button für die 7-/30-Tage-Kurven.
+
+#### 3. Aktive Wallbox-Session direkt auf der Startseite im „Energie · Kurzüberblick“ (`index.html`, `telemetry.js`)
+* **Kompakte 1-Zeilen-Ansicht während einer laufenden Ladung (`#home_wallbox_active_strip`):**
+  - Sobald eine Wallbox aktiv lädt (`> 45 W`), erscheint direkt unten in der Karte *Energie · Kurzüberblick* auf der Startseite (`Home`) automatisch die kompakte einzeilige Wallbox-Leiste (im gleichen Stil wie die eingeklappte Live-Leiste: `Wallbox · 10,2 kW · ☀️ 9% PV · Session: 10,83 kWh · Seit 11:02`).
+  - Ist kein Ladevorgang aktiv, blendet sich die Zeile auf der Startseite automatisch aus.
+
+#### 4. Kompakte Prozentzahl (`80%`) bei der String-Leistung pro kWp ohne Abschneiden der kWh-Anzeige (`telemetry.js`)
+* **Kurzes Prozent-Badge rechts neben den `kWh` (`getAvailableCurveDefinitions`):**
+  - Auf den Live- und Analyse-Kacheln der PV-Strings (`Fronius · String 1 DC`, `String 2 DC`, `Hoymiles`, `PV gesamt · DC`) wird rechts neben dem Tagesertrag ab sofort **nur noch die kompakte Prozentzahl** (z. B. `29%`, `80%`, `220%`, `54%` statt `29% · 0,29/kWp`) angezeigt; auch auf der Wallbox-Diagrammkachel steht kompakt `10,67 kWh heute ✓`.
+  - Dadurch bleibt der `kWh`-Wert auf der linken Seite (`2,06 kWh heute ✓`) auf jedem Smartphone-Display vollständig sichtbar und wird nicht mehr abgeschnitten.
+
+---
+
 ## [Version 12.6] – 2026-11-18
 
 ### ✨ Dynamische Wallbox-Kachel (Oben beim Laden / Unten eingeklappt im Ruhezustand), 2-Kanal-Vergleich (Fläche + Balken) & Komplettes Abwählen, Bereinigter Wallbox-Zählerhinweis & Aufklappbare Diagnose-Infos sowie Rechtsbündige String-Performance (`%` & `kWh/kWp`)

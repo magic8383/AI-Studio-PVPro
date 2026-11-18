@@ -1,5 +1,5 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.6)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.7)
 // Zentrale Single Source of Truth via PVProCore (Stromausfall-0W-Guard,
 // Verbraucher-Gruppen, Geräte-Diagnose, 3-Stufen Hauskameras & IndexedDB Sync)
 // ============================================================================
@@ -4503,11 +4503,11 @@ function renderLiveCockpitUI(baseline) {
         };
 
         // Bundle consumers that belong to a group into a single expandable group item.
-        // Idle Wallboxes (!c.isActive && c.isWallbox) are shown in the dedicated 1-row card right below #dash_active_consumers_list so they are not duplicated.
+        // Wallboxes (c.isWallbox) always have their own dedicated status card (at the top when charging, or as a 1-row bar right below #dash_active_consumers_list when idle), so we never duplicate them inside the regular consumer bar list.
         const groupMap = new Map();
         const displayItems = [];
         consumers.forEach(c => {
-            if (c.isWallbox && !(c.powerW > 45)) {
+            if (c.isWallbox) {
                 return;
             }
             if (c.group) {
@@ -5078,7 +5078,7 @@ function getAvailableCurveDefinitions() {
             const specPct = Math.round(specYield * 100);
             const specYieldFmt = specYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const kwpFmt = strKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            rightBadgeLine1 = `${specPct}% · ${specYieldFmt}/kWp`;
+            rightBadgeLine1 = `${specPct}%`;
             rightBadgeLine2 = `${kwpFmt} kWp`;
             rightBadgeTitle = `Performance pro kWp: ${specYieldFmt} kWh/kWp (${specPct} % bei ${kwpFmt} kWp Nennleistung)`;
         }
@@ -5123,7 +5123,7 @@ function getAvailableCurveDefinitions() {
         const pvSpecPct = Math.round(pvSpecYield * 100);
         const pvSpecFmt = pvSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const totKwpFmt = totalSysKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        pvRightBadge1 = `${pvSpecPct}% · ${pvSpecFmt}/kWp`;
+        pvRightBadge1 = `${pvSpecPct}%`;
         pvRightBadge2 = `${totKwpFmt} kWp`;
         pvRightTitle = `Gesamt-Performance pro kWp: ${pvSpecFmt} kWh/kWp (${pvSpecPct} % bei ${totKwpFmt} kWp Gesamtleistung)`;
     }
@@ -5369,13 +5369,11 @@ function getAvailableCurveDefinitions() {
         const parentGroupSlug = rawGrpName ? normalizeConsumerGroupSlug(rawGrpName) : null;
 
         const isWb = isWallboxConsumer(cc);
-        const wbMetrics = isWb ? getWallboxConsumerMetrics({ ...cc, powerW: liveW }, t) : null;
+        const wbMetrics = isWb ? getWallboxConsumerMetrics({ ...cc, powerW: liveW, consKwh: cKwh }, t) : null;
         const wbPvShareToDisplay = isWb
             ? (liveW > 30 ? wbMetrics.livePvSharePct : wbMetrics.dayPvSharePct)
             : null;
-        const wbSubLine1 = isWb
-            ? `${formatKwhDe(cKwh, 2)} geladen (${periodSuffix})`
-            : `${formatKwhDe(cKwh, 2)} ${periodSuffix}`;
+        const wbSubLine1 = `${formatKwhDe(cKwh, 2)} ${periodSuffix}`;
         const wbSubLine2 = isWb && wbPvShareToDisplay !== null
             ? `☀️ ${wbPvShareToDisplay}% PV · ${formatPowerDe(cPeakW, true)} Max`
             : `${formatPowerDe(cPeakW, true)} Max`;
@@ -9689,7 +9687,11 @@ function isWallboxConsumer(c) {
 }
 
 const WALLBOX_SESSION_STORAGE_KEY = 'pvpro_wallbox_sessions_v11_9';
+const WALLBOX_SESSIONS_ARCHIVE_KEY = 'pvpro_wallbox_sessions_archive_v12_7';
 let wallboxSessionStateById = null;
+let wallboxSessionsArchiveById = null;
+const expandedWallboxHistoryIds = new Set();
+let activeWallboxSessionsModalWbId = null;
 
 function loadWallboxSessionsState() {
     if (wallboxSessionStateById && typeof wallboxSessionStateById === 'object') {
@@ -9717,6 +9719,263 @@ function saveWallboxSessionsState() {
     } catch (e) {}
 }
 
+function loadWallboxSessionsArchive() {
+    if (wallboxSessionsArchiveById && typeof wallboxSessionsArchiveById === 'object') {
+        return wallboxSessionsArchiveById;
+    }
+    try {
+        const raw = localStorage.getItem(WALLBOX_SESSIONS_ARCHIVE_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                wallboxSessionsArchiveById = parsed;
+                return wallboxSessionsArchiveById;
+            }
+        }
+    } catch (e) {}
+    wallboxSessionsArchiveById = {};
+    return wallboxSessionsArchiveById;
+}
+
+function saveWallboxSessionsArchive() {
+    try {
+        if (wallboxSessionsArchiveById) {
+            localStorage.setItem(WALLBOX_SESSIONS_ARCHIVE_KEY, JSON.stringify(wallboxSessionsArchiveById));
+            if (typeof idbPut === 'function') {
+                idbPut('telemetry', 'wallboxSessionsArchive', wallboxSessionsArchiveById).catch(() => {});
+            }
+        }
+    } catch (e) {}
+}
+
+/**
+ * Extracts contiguous charging sessions from a curve dataset (day 5-min, week 1-hr, or month)
+ * and calibrates today's sessions against the authoritative daily Wallbox kWh counter.
+ */
+function extractSessionsFromCurveDataset(ds, wbId, wbName, maxPauseMinutes = 25, sourceTag = 'day') {
+    if (!ds || !ds.series || !Array.isArray(ds.bucketTimes) || ds.bucketTimes.length === 0) return [];
+    const cKey = `consumer_${wbId}`;
+    const wbSeries = ds.series[cKey];
+    if (!Array.isArray(wbSeries) || wbSeries.length === 0) return [];
+
+    const loadSeries = ds.series.house_load || ds.series.load || [];
+    const gridImpSeries = ds.series.grid_power || ds.series.grid_imp || [];
+    const nReal = (sourceTag === 'day' && typeof intradayRealBucketsCount === 'number' && intradayRealBucketsCount > 0)
+        ? Math.min(wbSeries.length, ds.bucketTimes.length, intradayRealBucketsCount)
+        : Math.min(wbSeries.length, ds.bucketTimes.length);
+
+    if (nReal === 0) return [];
+
+    // Estimate median bucket interval in ms (e.g. 5 min = 300000 ms for day, 1 hr = 3600000 ms for week)
+    let bucketStepMs = sourceTag === 'day' ? 5 * 60 * 1000 : 60 * 60 * 1000;
+    if (nReal >= 2) {
+        const diffs = [];
+        for (let i = 1; i < Math.min(nReal, 25); i++) {
+            const d = Number(ds.bucketTimes[i]) - Number(ds.bucketTimes[i - 1]);
+            if (d >= 60 * 1000 && d <= 24 * 3600 * 1000) diffs.push(d);
+        }
+        if (diffs.length > 0) {
+            diffs.sort((a, b) => a - b);
+            bucketStepMs = diffs[Math.floor(diffs.length / 2)];
+        }
+    }
+    const bucketHours = bucketStepMs / 3600000;
+    const maxGapMs = Math.max(maxPauseMinutes * 60 * 1000, bucketStepMs * 2.2);
+
+    const segments = [];
+    let curSeg = null;
+
+    for (let i = 0; i < nReal; i++) {
+        const w = Math.max(0, Number(wbSeries[i]) || 0);
+        const ts = Number(ds.bucketTimes[i]) || 0;
+        if (ts <= 0) continue;
+
+        if (w > 45) {
+            if (!curSeg) {
+                curSeg = {
+                    startIdx: i,
+                    endIdx: i,
+                    startedAtMs: ts,
+                    lastActiveAtMs: ts,
+                    endedAtMs: ts + bucketStepMs,
+                    rawKwh: 0,
+                    rawSolarKwh: 0,
+                    peakPowerW: w,
+                    activeBucketCount: 0
+                };
+            } else if ((ts - curSeg.lastActiveAtMs) <= maxGapMs) {
+                curSeg.endIdx = i;
+                curSeg.lastActiveAtMs = ts;
+                curSeg.endedAtMs = ts + bucketStepMs;
+                if (w > curSeg.peakPowerW) curSeg.peakPowerW = w;
+            } else {
+                segments.push(curSeg);
+                curSeg = {
+                    startIdx: i,
+                    endIdx: i,
+                    startedAtMs: ts,
+                    lastActiveAtMs: ts,
+                    endedAtMs: ts + bucketStepMs,
+                    rawKwh: 0,
+                    rawSolarKwh: 0,
+                    peakPowerW: w,
+                    activeBucketCount: 0
+                };
+            }
+
+            const lW = Math.max(w, Number(loadSeries[i]) || w);
+            const gW = Math.max(0, Number(gridImpSeries[i]) || 0);
+            const ownRatio = lW > 0 ? Math.min(1, Math.max(0, (lW - gW) / lW)) : 0;
+            const stepKwh = (w * bucketHours) / 1000;
+            curSeg.rawKwh += stepKwh;
+            curSeg.rawSolarKwh += stepKwh * ownRatio;
+            curSeg.activeBucketCount++;
+        }
+    }
+    if (curSeg) segments.push(curSeg);
+
+    const nowMs = Date.now();
+    return segments
+        .filter(seg => seg.rawKwh >= 0.04 || (nowMs - seg.lastActiveAtMs < 25 * 60 * 1000 && seg.peakPowerW > 100))
+        .map(seg => {
+            const isOngoing = (nowMs - seg.lastActiveAtMs) <= Math.max(25 * 60 * 1000, bucketStepMs * 1.6);
+            const endedAtMs = isOngoing ? nowMs : seg.endedAtMs;
+            const durationMinutes = Math.max(1, Math.round((endedAtMs - seg.startedAtMs) / 60000));
+            const chargedKwh = +Math.max(0.01, seg.rawKwh).toFixed(3);
+            const solarKwh = +Math.min(chargedKwh, Math.max(0, seg.rawSolarKwh)).toFixed(3);
+            const gridKwh = +Math.max(0, chargedKwh - solarKwh).toFixed(3);
+            const pvSharePct = chargedKwh > 0.005
+                ? Math.min(100, Math.max(0, Math.round((solarKwh / chargedKwh) * 100)))
+                : 0;
+            return {
+                wbId: String(wbId),
+                wbName: String(wbName || 'Wallbox'),
+                startedAtMs: seg.startedAtMs,
+                endedAtMs,
+                lastActiveAtMs: seg.lastActiveAtMs,
+                durationMinutes,
+                isOngoing,
+                rawKwh: seg.rawKwh,
+                chargedKwh,
+                solarKwh,
+                gridKwh,
+                pvSharePct,
+                peakPowerW: Math.round(seg.peakPowerW || 0),
+                sourcePriority: sourceTag === 'day' ? 3 : (sourceTag === 'week' ? 2 : 1)
+            };
+        });
+}
+
+/**
+ * Reconstructs all charging sessions for a Wallbox consumer from 24h / 7d / 30d history,
+ * calibrates today's sessions to match the authoritative daily kWh counter without discrepancy,
+ * and persists the merged session list in the local archive.
+ */
+function reconstructWallboxSessionsForConsumer(c, telemetryObj, authoritativeTodayKwh) {
+    const idKey = String(c?.id || 'default_wb');
+    const wbName = c?.name || 'Wallbox';
+    const archive = loadWallboxSessionsArchive();
+    if (!Array.isArray(archive[idKey])) {
+        archive[idKey] = [];
+    }
+
+    const dayDs = (currentCurveTimeframe === 'day' && intradaySeriesState?.bucketTimes?.length > 0)
+        ? intradaySeriesState
+        : intradayHistoryCache?.day;
+    const weekDs = (currentCurveTimeframe === 'week' && intradaySeriesState?.bucketTimes?.length > 0)
+        ? intradaySeriesState
+        : intradayHistoryCache?.week;
+    const monthDs = (currentCurveTimeframe === 'month' && intradaySeriesState?.bucketTimes?.length > 0)
+        ? intradaySeriesState
+        : intradayHistoryCache?.month;
+
+    const daySessions = extractSessionsFromCurveDataset(dayDs, idKey, wbName, 25, 'day');
+    const weekSessions = extractSessionsFromCurveDataset(weekDs, idKey, wbName, 65, 'week');
+    const monthSessions = extractSessionsFromCurveDataset(monthDs, idKey, wbName, 90, 'month');
+
+    // Calibrate today's sessions from dayDs so their sum matches authoritativeTodayKwh 100%
+    const startOfTodayMs = new Date().setHours(0, 0, 0, 0);
+    const todayDaySessions = daySessions.filter(s => s.endedAtMs >= startOfTodayMs);
+    if (todayDaySessions.length > 0 && authoritativeTodayKwh > 0.01) {
+        if (todayDaySessions.length === 1) {
+            // Single charging session today: its energy is identically today's authoritative kWh (or higher if started before midnight)
+            const s0 = todayDaySessions[0];
+            const prevRatio = s0.chargedKwh > 0.005 ? (s0.solarKwh / s0.chargedKwh) : (s0.pvSharePct / 100);
+            s0.chargedKwh = +Math.max(s0.chargedKwh, authoritativeTodayKwh).toFixed(3);
+            s0.solarKwh = +Math.min(s0.chargedKwh, s0.chargedKwh * prevRatio).toFixed(3);
+            s0.gridKwh = +Math.max(0, s0.chargedKwh - s0.solarKwh).toFixed(3);
+            s0.pvSharePct = s0.chargedKwh > 0.005 ? Math.min(100, Math.max(0, Math.round((s0.solarKwh / s0.chargedKwh) * 100))) : 0;
+        } else {
+            // Multiple distinct sessions today: scale proportionally so their sum equals authoritativeTodayKwh
+            const sumRawToday = todayDaySessions.reduce((acc, s) => acc + (s.rawKwh || s.chargedKwh || 0), 0);
+            if (sumRawToday > 0.02) {
+                const scale = authoritativeTodayKwh / sumRawToday;
+                todayDaySessions.forEach(s => {
+                    const prevRatio = s.chargedKwh > 0.005 ? (s.solarKwh / s.chargedKwh) : (s.pvSharePct / 100);
+                    s.chargedKwh = +Math.max(0.01, (s.rawKwh || s.chargedKwh) * scale).toFixed(3);
+                    s.solarKwh = +Math.min(s.chargedKwh, s.chargedKwh * prevRatio).toFixed(3);
+                    s.gridKwh = +Math.max(0, s.chargedKwh - s.solarKwh).toFixed(3);
+                    s.pvSharePct = s.chargedKwh > 0.005 ? Math.min(100, Math.max(0, Math.round((s.solarKwh / s.chargedKwh) * 100))) : 0;
+                });
+            }
+        }
+    }
+
+    // Merge existing archived sessions + month + week + day (preferring higher resolution sourcePriority)
+    const combined = [...archive[idKey]];
+    const upsertSession = (incoming) => {
+        if (!incoming || !incoming.startedAtMs) return;
+        const matchIdx = combined.findIndex(existing => {
+            if (!existing || !existing.startedAtMs) return false;
+            const startDiff = Math.abs(existing.startedAtMs - incoming.startedAtMs);
+            if (startDiff <= 55 * 60 * 1000) return true;
+            // Also check temporal overlap
+            const overlapStart = Math.max(existing.startedAtMs, incoming.startedAtMs);
+            const overlapEnd = Math.min(existing.endedAtMs || existing.startedAtMs, incoming.endedAtMs || incoming.startedAtMs);
+            return overlapEnd >= overlapStart - 20 * 60 * 1000;
+        });
+
+        if (matchIdx === -1) {
+            combined.push({ ...incoming });
+        } else {
+            const ex = combined[matchIdx];
+            const incPrio = incoming.sourcePriority || 1;
+            const exPrio = ex.sourcePriority || 1;
+            if (incPrio >= exPrio) {
+                combined[matchIdx] = {
+                    ...ex,
+                    ...incoming,
+                    // Preserve earlier start timestamp if day curve started closely
+                    startedAtMs: incPrio > exPrio ? incoming.startedAtMs : Math.min(ex.startedAtMs, incoming.startedAtMs),
+                    endedAtMs: Math.max(ex.endedAtMs || 0, incoming.endedAtMs || 0),
+                    chargedKwh: incPrio > exPrio ? incoming.chargedKwh : Math.max(ex.chargedKwh || 0, incoming.chargedKwh || 0),
+                    peakPowerW: Math.max(ex.peakPowerW || 0, incoming.peakPowerW || 0),
+                    sourcePriority: Math.max(exPrio, incPrio)
+                };
+            }
+        }
+    };
+
+    monthSessions.forEach(upsertSession);
+    weekSessions.forEach(upsertSession);
+    daySessions.forEach(upsertSession);
+
+    const nowMs = Date.now();
+    const isChargingLive = Number(c?.powerW || 0) > 45;
+    combined.forEach(s => {
+        if ((nowMs - (s.endedAtMs || s.startedAtMs)) > 35 * 60 * 1000 && !isChargingLive) {
+            s.isOngoing = false;
+        }
+        s.durationMinutes = Math.max(1, Math.round(((s.endedAtMs || nowMs) - s.startedAtMs) / 60000));
+    });
+
+    combined.sort((a, b) => (b.startedAtMs || 0) - (a.startedAtMs || 0));
+    archive[idKey] = combined.slice(0, 60);
+    saveWallboxSessionsArchive();
+
+    return archive[idKey];
+}
+
 function resetWallboxSessionNow(consumerId, event = null) {
     if (event && typeof event.stopPropagation === 'function') {
         event.stopPropagation();
@@ -9732,10 +9991,13 @@ function resetWallboxSessionNow(consumerId, event = null) {
             ? Number(teleCons.energyKwh)
             : Number(dayInt[`consumer_${idKey}`] || 0));
 
+    const nowMs = Date.now();
     sessions[idKey] = {
-        sessionStartedAt: new Date().toISOString(),
-        lastActiveMs: (teleCons && Number(teleCons.powerW) > 45) ? Date.now() : 0,
-        lastTickMs: Date.now(),
+        sessionStartedAt: new Date(nowMs).toISOString(),
+        manualResetAtMs: nowMs,
+        manualResetCounterKwh: curCounter,
+        lastActiveMs: (teleCons && Number(teleCons.powerW) > 45) ? nowMs : 0,
+        lastTickMs: nowMs,
         startCounterKwh: curCounter,
         integralKwh: 0,
         solarIntegralKwh: 0,
@@ -9746,13 +10008,36 @@ function resetWallboxSessionNow(consumerId, event = null) {
     saveWallboxSessionsState();
     renderLiveCockpitUI();
     if (typeof showToastNotification === 'function') {
-        showToastNotification('Wallbox-Ladesession auf 0,00 kWh zurückgesetzt (aktueller Zählerstand verankert).', 'success');
+        showToastNotification('Wallbox-Ladesession ab jetzt auf 0,00 kWh zurückgesetzt.', 'success');
     }
+}
+
+function clearWallboxManualSessionReset(consumerId, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const sessions = loadWallboxSessionsState();
+    const idKey = String(consumerId || '');
+    if (sessions[idKey]) {
+        delete sessions[idKey].manualResetAtMs;
+        delete sessions[idKey].manualResetCounterKwh;
+        saveWallboxSessionsState();
+    }
+    renderLiveCockpitUI();
+    if (typeof showToastNotification === 'function') {
+        showToastNotification('Volle Ladesession seit tatsächlichem Ladebeginn wiederhergestellt.', 'success');
+    }
+}
+if (typeof window !== 'undefined') {
+    window.clearWallboxManualSessionReset = clearWallboxManualSessionReset;
 }
 
 function getWallboxConsumerMetrics(c, telemetryObj) {
     const t = telemetryObj || currentLiveTelemetry || {};
-    const wbW = Math.max(0, Number(c?.powerW) || 0);
+    const idKey = String(c?.id || 'default_wb');
+    const cKey = `consumer_${idKey}`;
+    const teleCons = (t.consumersTelemetry || []).find(x => String(x.id) === idKey);
+    const wbW = Math.max(0, Number(c?.powerW ?? teleCons?.powerW) || 0);
     const totalLoadW = Math.max(wbW, Number(t.loadPowerW) || 0);
     const gridImpW = Math.max(0, Number(t.gridPowerW) || 0);
     const ownSupplyW = Math.max(0, totalLoadW - gridImpW);
@@ -9762,12 +10047,20 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
     const livePvPowerW = Math.round(wbW * (livePvSharePct / 100));
     const liveGridPowerW = Math.max(0, Math.round(wbW - livePvPowerW));
 
+    // Resolve authoritative daily Wallbox energy (same Single Source of Truth as the Live diagram tile)
+    const dayIntCache = typeof getDayIntegratedKwh === 'function' ? getDayIntegratedKwh() : {};
+    const intKwh = intradaySeriesState?.integratedKwh || {};
+    const explicitTodayKwh = Number(c?.consKwh ?? teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? dayIntCache[cKey] ?? intKwh[cKey] ?? 0);
+    const authoritativeTodayKwh = +Math.max(0, explicitTodayKwh, Number(intKwh[cKey] || 0)).toFixed(3);
+
     // Calculate historical PV charging share across today's buckets if available
     let dayPvSharePct = null;
-    const cKey = `consumer_${c?.id}`;
-    const wbSeries = intradaySeriesState?.series?.[cKey];
-    const loadSeries = intradaySeriesState?.series?.house_load || intradaySeriesState?.series?.load;
-    const gridImpSeries = intradaySeriesState?.series?.grid_power || intradaySeriesState?.series?.grid_imp;
+    const dayDs = (currentCurveTimeframe === 'day' && intradaySeriesState?.bucketTimes?.length > 0)
+        ? intradaySeriesState
+        : (intradayHistoryCache?.day || intradaySeriesState);
+    const wbSeries = dayDs?.series?.[cKey];
+    const loadSeries = dayDs?.series?.house_load || dayDs?.series?.load;
+    const gridImpSeries = dayDs?.series?.grid_power || dayDs?.series?.grid_imp;
     if (Array.isArray(wbSeries) && wbSeries.length > 0) {
         let totalWbWeight = 0;
         let solarWbWeight = 0;
@@ -9786,43 +10079,43 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
         }
     }
 
+    // Reconstruct sessions from HA history & merge with persistent archive
+    const archivedSessions = reconstructWallboxSessionsForConsumer(c, t, authoritativeTodayKwh);
+    const startOfTodayMs = new Date().setHours(0, 0, 0, 0);
+    const latestHistSession = archivedSessions.length > 0 ? archivedSessions[0] : null;
+    const hasTodayHistSession = Boolean(latestHistSession && (latestHistSession.endedAtMs >= startOfTodayMs || latestHistSession.isOngoing));
+
     // Hybrid Session Tracker: Anchor kWh counter at session start + live Watt integral between counter ticks
     const sessions = loadWallboxSessionsState();
-    const idKey = String(c?.id || 'default_wb');
     const nowMs = Date.now();
     const isChargingNow = wbW > 45;
     const curCounterReading = (c?.rawCounterKwh !== null && c?.rawCounterKwh !== undefined && !isNaN(c.rawCounterKwh))
         ? Number(c.rawCounterKwh)
-        : ((c?.energyKwh !== null && c?.energyKwh !== undefined && !isNaN(c.energyKwh))
-            ? Number(c.energyKwh)
-            : ((c?.consKwh !== null && c?.consKwh !== undefined && !isNaN(c.consKwh)) ? Number(c.consKwh) : null));
+        : ((teleCons?.rawCounterKwh !== null && teleCons?.rawCounterKwh !== undefined && !isNaN(teleCons.rawCounterKwh))
+            ? Number(teleCons.rawCounterKwh)
+            : ((c?.energyKwh !== null && c?.energyKwh !== undefined && !isNaN(c.energyKwh))
+                ? Number(c.energyKwh)
+                : (authoritativeTodayKwh > 0 ? authoritativeTodayKwh : null)));
 
     let sess = sessions[idKey];
     if (!sess) {
         sess = {
-            sessionStartedAt: isChargingNow ? new Date(nowMs).toISOString() : null,
-            lastActiveMs: isChargingNow ? nowMs : 0,
+            sessionStartedAt: hasTodayHistSession
+                ? new Date(latestHistSession.startedAtMs).toISOString()
+                : (isChargingNow ? new Date(nowMs).toISOString() : null),
+            lastActiveMs: isChargingNow ? nowMs : (latestHistSession?.lastActiveAtMs || 0),
             lastTickMs: nowMs,
             startCounterKwh: curCounterReading,
             integralKwh: 0,
             solarIntegralKwh: 0,
-            sessionChargedKwh: Number(c?.consKwh) || 0,
-            sessionSolarKwh: (Number(c?.consKwh) || 0) * ((dayPvSharePct ?? livePvSharePct) / 100),
+            sessionChargedKwh: hasTodayHistSession ? latestHistSession.chargedKwh : authoritativeTodayKwh,
+            sessionSolarKwh: hasTodayHistSession
+                ? latestHistSession.solarKwh
+                : (authoritativeTodayKwh * ((dayPvSharePct ?? livePvSharePct) / 100)),
             isCharging: isChargingNow
         };
         sessions[idKey] = sess;
     } else {
-        // Detect new charging session after > 20 minutes of idle pause
-        const idlePauseMs = sess.lastActiveMs > 0 ? (nowMs - sess.lastActiveMs) : 99999999;
-        if (isChargingNow && !sess.isCharging && idlePauseMs > 20 * 60 * 1000) {
-            sess.sessionStartedAt = new Date(nowMs).toISOString();
-            sess.startCounterKwh = curCounterReading;
-            sess.integralKwh = 0;
-            sess.solarIntegralKwh = 0;
-            sess.sessionChargedKwh = 0;
-            sess.sessionSolarKwh = 0;
-        }
-
         const dtHours = Math.min(0.25, Math.max(0, (nowMs - (sess.lastTickMs || nowMs)) / 3600000));
         if (isChargingNow && dtHours > 0) {
             const stepKwh = (wbW * dtHours) / 1000;
@@ -9833,28 +10126,54 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
             if (!sess.sessionStartedAt) sess.sessionStartedAt = new Date(nowMs).toISOString();
         }
 
-        if (curCounterReading !== null) {
-            if (sess.startCounterKwh === null || sess.startCounterKwh === undefined || curCounterReading < sess.startCounterKwh - 0.05) {
-                sess.startCounterKwh = curCounterReading;
-            }
-            const counterDeltaKwh = Math.max(0, curCounterReading - sess.startCounterKwh);
-            // Hybrid fusion: if the kWh counter ticked up past our integral, snap integral up; otherwise keep smooth integral between counter ticks
-            if (counterDeltaKwh > (sess.integralKwh || 0)) {
-                const diff = counterDeltaKwh - (sess.integralKwh || 0);
-                sess.integralKwh = +counterDeltaKwh.toFixed(4);
-                sess.solarIntegralKwh = +((sess.solarIntegralKwh || 0) + diff * (livePvSharePct / 100)).toFixed(4);
-            }
-            sess.sessionChargedKwh = +Math.max(counterDeltaKwh, sess.integralKwh || 0).toFixed(3);
-        } else {
-            sess.sessionChargedKwh = +Math.max(sess.integralKwh || 0, Number(c?.consKwh) || 0).toFixed(3);
-        }
+        const hasActiveManualReset = Boolean(
+            sess.manualResetAtMs &&
+            (!hasTodayHistSession || sess.manualResetAtMs > latestHistSession.startedAtMs + 60 * 1000) &&
+            (nowMs - sess.manualResetAtMs < 18 * 3600 * 1000)
+        );
 
-        // If no session delta accumulated yet today but today's counter has kWh, show today's charged kWh as session value
-        if (sess.sessionChargedKwh < 0.005 && (Number(c?.consKwh) || 0) > 0.005 && sess.integralKwh === 0) {
-            sess.sessionChargedKwh = +(Number(c.consKwh) || 0).toFixed(3);
-            sess.sessionSolarKwh = +(sess.sessionChargedKwh * ((dayPvSharePct ?? livePvSharePct) / 100)).toFixed(3);
-        } else {
-            sess.sessionSolarKwh = +Math.min(sess.sessionChargedKwh, Math.max(0, sess.solarIntegralKwh || 0)).toFixed(3);
+        if (hasActiveManualReset) {
+            // User explicitly pressed "Session Reset" during this session: measure delta since reset
+            const resetBase = (sess.manualResetCounterKwh !== null && sess.manualResetCounterKwh !== undefined)
+                ? Number(sess.manualResetCounterKwh)
+                : Number(sess.startCounterKwh || 0);
+            const counterDeltaKwh = (curCounterReading !== null && curCounterReading >= resetBase)
+                ? Math.max(0, curCounterReading - resetBase)
+                : 0;
+            sess.sessionStartedAt = new Date(sess.manualResetAtMs).toISOString();
+            sess.sessionChargedKwh = +Math.max(counterDeltaKwh, sess.integralKwh || 0).toFixed(3);
+            sess.sessionSolarKwh = +Math.min(
+                sess.sessionChargedKwh,
+                Math.max(sess.solarIntegralKwh || 0, sess.sessionChargedKwh * (livePvSharePct / 100))
+            ).toFixed(3);
+        } else if (hasTodayHistSession) {
+            // Synchronize with the true history-reconstructed session so opening the app mid-charge shows the exact start time & kWh!
+            sess.sessionStartedAt = new Date(latestHistSession.startedAtMs).toISOString();
+            sess.sessionChargedKwh = +Math.max(
+                latestHistSession.chargedKwh || 0,
+                // If only 1 session today, never lag behind authoritativeTodayKwh
+                archivedSessions.filter(s => s.endedAtMs >= startOfTodayMs).length <= 1 ? authoritativeTodayKwh : 0
+            ).toFixed(3);
+            const histRatio = (latestHistSession.chargedKwh > 0.005)
+                ? (latestHistSession.solarKwh / latestHistSession.chargedKwh)
+                : ((dayPvSharePct ?? livePvSharePct) / 100);
+            sess.sessionSolarKwh = +Math.min(sess.sessionChargedKwh, sess.sessionChargedKwh * histRatio).toFixed(3);
+
+            // Also keep live integral synced for smooth ticks between 5-min history updates
+            if (isChargingNow && latestHistSession.isOngoing) {
+                latestHistSession.chargedKwh = sess.sessionChargedKwh;
+                latestHistSession.solarKwh = sess.sessionSolarKwh;
+                latestHistSession.gridKwh = +Math.max(0, sess.sessionChargedKwh - sess.sessionSolarKwh).toFixed(3);
+                latestHistSession.pvSharePct = sess.sessionChargedKwh > 0.005
+                    ? Math.min(100, Math.max(0, Math.round((sess.sessionSolarKwh / sess.sessionChargedKwh) * 100)))
+                    : livePvSharePct;
+                latestHistSession.endedAtMs = nowMs;
+                latestHistSession.durationMinutes = Math.max(1, Math.round((nowMs - latestHistSession.startedAtMs) / 60000));
+            }
+        } else if (authoritativeTodayKwh > 0.005) {
+            // Fallback when 24h curve is still loading on initial boot: immediately show today's authoritative kWh
+            sess.sessionChargedKwh = +authoritativeTodayKwh.toFixed(3);
+            sess.sessionSolarKwh = +(authoritativeTodayKwh * ((dayPvSharePct ?? livePvSharePct) / 100)).toFixed(3);
         }
 
         sess.isCharging = isChargingNow;
@@ -9869,18 +10188,256 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
         ? Math.min(100, Math.max(0, Math.round((sessionSolarKwh / sessionChargedKwh) * 100)))
         : (dayPvSharePct ?? livePvSharePct);
 
+    const hasManualResetActive = Boolean(
+        sess.manualResetAtMs &&
+        (!hasTodayHistSession || sess.manualResetAtMs > latestHistSession.startedAtMs + 60 * 1000) &&
+        (nowMs - sess.manualResetAtMs < 18 * 3600 * 1000)
+    );
+
     return {
         livePvSharePct,
         livePvPowerW,
         liveGridPowerW,
         dayPvSharePct,
+        authoritativeTodayKwh,
         sessionChargedKwh,
         sessionSolarKwh,
         sessionGridKwh,
         sessionPvSharePct,
         sessionStartedAt: sess.sessionStartedAt,
+        hasManualResetActive,
+        fullSessionKwhBeforeReset: hasTodayHistSession ? +(latestHistSession.chargedKwh || authoritativeTodayKwh).toFixed(2) : +authoritativeTodayKwh.toFixed(2),
+        trueSessionStartedAt: hasTodayHistSession ? new Date(latestHistSession.startedAtMs).toISOString() : sess.sessionStartedAt,
+        archivedSessions,
         hasCounterSensor: Boolean(c?.energyEntity)
     };
+}
+
+function formatWallboxSessionDuration(mins) {
+    const m = Math.max(1, Math.round(Number(mins) || 0));
+    if (m < 60) return `${m} Min.`;
+    const hrs = Math.floor(m / 60);
+    const rem = m % 60;
+    return rem > 0 ? `${hrs}h ${rem}m` : `${hrs} Std.`;
+}
+
+function formatWallboxSessionDateLabel(startMs, endMs, isOngoing = false) {
+    if (!startMs) return 'Ladesession';
+    const dStart = new Date(startMs);
+    const dEnd = new Date(endMs || Date.now());
+    const now = new Date();
+    const isToday = dStart.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const isYesterday = dStart.toDateString() === yesterday.toDateString();
+
+    const dayPrefix = isToday
+        ? 'Heute'
+        : (isYesterday
+            ? 'Gestern'
+            : dStart.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' }));
+    const tStart = dStart.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    const tEnd = isOngoing
+        ? 'läuft'
+        : dEnd.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    return `${dayPrefix} · ${tStart}–${tEnd} Uhr`;
+}
+
+function toggleWallboxHistoryInline(wbId, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const key = String(wbId || '');
+    if (!key) return;
+    if (expandedWallboxHistoryIds.has(key)) {
+        expandedWallboxHistoryIds.delete(key);
+    } else {
+        expandedWallboxHistoryIds.add(key);
+    }
+    renderLiveCockpitUI();
+}
+if (typeof window !== 'undefined') {
+    window.toggleWallboxHistoryInline = toggleWallboxHistoryInline;
+}
+
+function openWallboxSessionsModal(wbId = null, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const modal = document.getElementById('modal-wallbox-sessions');
+    if (!modal) return;
+
+    const customConsumers = Array.isArray(haConfigState?.customConsumers) ? haConfigState.customConsumers : [];
+    const wallboxes = customConsumers.filter(c => c && isWallboxConsumer(c));
+    const targetWb = (wbId ? wallboxes.find(w => String(w.id) === String(wbId)) : null) || wallboxes[0];
+    activeWallboxSessionsModalWbId = targetWb ? String(targetWb.id) : (wbId || 'default_wb');
+
+    renderWallboxSessionsModalContent();
+    modal.classList.remove('hidden');
+    if (typeof pushModalBackState === 'function') {
+        pushModalBackState('modal-wallbox-sessions');
+    }
+
+    // Proactively ensure 7d & 30d history is loaded in the background so older sessions appear too
+    if (!intradayHistoryCache?.week || !intradayHistoryCache?.month) {
+        rescanWallboxSessionsHistory(true);
+    }
+}
+
+function closeWallboxSessionsModal() {
+    const modal = document.getElementById('modal-wallbox-sessions');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function rescanWallboxSessionsHistory(silent = false) {
+    const btn = document.getElementById('btnWallboxSessionsRescan');
+    if (btn && !silent) {
+        btn.disabled = true;
+        btn.innerHTML = `<span class="material-symbols-rounded text-sm animate-spin">sync</span><span>Scanne...</span>`;
+    }
+    try {
+        if (typeof fetchAndRenderIntradayFromHa === 'function') {
+            if (!intradayHistoryCache?.day) await fetchAndRenderIntradayFromHa('day', true);
+            if (!intradayHistoryCache?.week) await fetchAndRenderIntradayFromHa('week', true);
+            if (!intradayHistoryCache?.month) await fetchAndRenderIntradayFromHa('month', true);
+        }
+        renderLiveCockpitUI();
+        renderWallboxSessionsModalContent();
+        if (!silent && typeof showToastNotification === 'function') {
+            showToastNotification('Wallbox-Ladehistorie aus 24h-, 7-Tage- & 30-Tage-Verlauf aktualisiert.', 'success');
+        }
+    } catch (e) {
+    } finally {
+        if (btn && !silent) {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-rounded text-sm">sync</span><span class="hidden sm:inline">Historie scannen</span>`;
+        }
+    }
+}
+
+function renderWallboxSessionsModalContent() {
+    const bodyEl = document.getElementById('wallboxSessionsModalBody');
+    const titleEl = document.getElementById('wallboxSessionsModalTitle');
+    if (!bodyEl) return;
+
+    const baseline = typeof getPlannedSystemBaseline === 'function' ? getPlannedSystemBaseline() : {};
+    const gridPrice = baseline?.gridPriceEur || 0.32;
+    const t = currentLiveTelemetry || {};
+    const customConsumers = Array.isArray(haConfigState?.customConsumers) ? haConfigState.customConsumers : [];
+    const wallboxes = customConsumers.filter(c => c && isWallboxConsumer(c));
+    const targetWb = wallboxes.find(w => String(w.id) === String(activeWallboxSessionsModalWbId)) || wallboxes[0];
+
+    if (!targetWb) {
+        bodyEl.innerHTML = `<div class="p-6 text-center text-sm text-slate-500 dark:text-slate-400">Keine Wallbox konfiguriert.</div>`;
+        return;
+    }
+
+    const teleCons = (t.consumersTelemetry || []).find(x => String(x.id) === String(targetWb.id));
+    const wbM = getWallboxConsumerMetrics({ ...targetWb, powerW: teleCons?.powerW || 0 }, t);
+    const sessionsList = Array.isArray(wbM.archivedSessions) ? wbM.archivedSessions : [];
+    const safeName = typeof escapeHtml === 'function' ? escapeHtml(targetWb.name || 'Wallbox') : (targetWb.name || 'Wallbox');
+    const safeIdJs = String(targetWb.id || '').replace(/'/g, "\\'");
+
+    if (titleEl) {
+        titleEl.textContent = `${targetWb.name || 'Wallbox'} · Lade-Historie (${sessionsList.length})`;
+    }
+
+    const totalKwh = sessionsList.reduce((acc, s) => acc + (Number(s.chargedKwh) || 0), 0);
+    const totalSolarKwh = sessionsList.reduce((acc, s) => acc + (Number(s.solarKwh) || 0), 0);
+    const totalGridKwh = Math.max(0, totalKwh - totalSolarKwh);
+    const avgPvPct = totalKwh > 0.01 ? Math.min(100, Math.max(0, Math.round((totalSolarKwh / totalKwh) * 100))) : 0;
+    const totalSavedEur = (totalSolarKwh * gridPrice).toFixed(2).replace('.', ',');
+
+    const summaryHtml = `
+        <div class="grid grid-cols-3 gap-2.5">
+            <div class="p-3 rounded-2xl bg-slate-100/85 dark:bg-slate-800/75 border border-slate-200/80 dark:border-white/10">
+                <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Erfasste Sessions</p>
+                <p class="text-lg sm:text-xl font-black tabular-nums text-slate-900 dark:text-white mt-0.5">${sessionsList.length}</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">Gesamt: ${formatKwhDe(totalKwh, 2)}</p>
+            </div>
+            <div class="p-3 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/25">
+                <p class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">Ø PV-Ladeanteil</p>
+                <p class="text-lg sm:text-xl font-black tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">☀️ ${avgPvPct} %</p>
+                <p class="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 tabular-nums mt-0.5">${formatKwhDe(totalSolarKwh, 2)} Solar</p>
+            </div>
+            <div class="p-3 rounded-2xl bg-teal-500/10 dark:bg-teal-500/15 border border-teal-500/25">
+                <p class="text-[11px] font-semibold text-teal-700 dark:text-teal-300">PV-Ersparnis</p>
+                <p class="text-lg sm:text-xl font-black tabular-nums text-teal-700 dark:text-teal-300 mt-0.5">+${totalSavedEur} €</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">Netz: ${formatKwhDe(totalGridKwh, 2)}</p>
+            </div>
+        </div>
+    `;
+
+    if (sessionsList.length === 0) {
+        bodyEl.innerHTML = `
+            ${summaryHtml}
+            <div class="p-6 rounded-2xl border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-2">
+                <span class="material-symbols-rounded text-3xl text-slate-400">history</span>
+                <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Noch keine abgeschlossenen oder laufenden Ladesessions im Verlauf gefunden.</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Tippe oben rechts auf „Historie scannen“, um die 7- und 30-Tage-Kurven aus Home Assistant auszuwerten.</p>
+            </div>
+        `;
+        return;
+    }
+
+    const rowsHtml = sessionsList.map((s, idx) => {
+        const label = formatWallboxSessionDateLabel(s.startedAtMs, s.endedAtMs, s.isOngoing);
+        const dur = formatWallboxSessionDuration(s.durationMinutes);
+        const pvPct = Math.min(100, Math.max(0, Number(s.pvSharePct) || 0));
+        const gridPct = Math.max(0, 100 - pvPct);
+        const savedEur = ((Number(s.solarKwh) || 0) * gridPrice).toFixed(2).replace('.', ',');
+        const peakStr = s.peakPowerW > 0 ? formatPowerDe(s.peakPowerW, s.peakPowerW < 1000) : '';
+
+        return `
+        <div class="p-3.5 rounded-2xl border ${s.isOngoing ? 'border-emerald-500/45 bg-emerald-500/[0.06] dark:bg-emerald-500/[0.10]' : 'border-slate-200/80 dark:border-white/10 bg-slate-50/80 dark:bg-slate-800/50'} space-y-2">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-6 h-6 rounded-lg ${s.isOngoing ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300' : 'bg-teal-500/15 text-teal-600 dark:text-teal-400'} flex items-center justify-center text-[11px] font-bold tabular-nums shrink-0">#${sessionsList.length - idx}</span>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="text-xs sm:text-[13px] font-bold text-slate-900 dark:text-white tabular-nums">${escapeHtml(label)}</span>
+                            ${s.isOngoing ? `<span class="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[10px] font-extrabold">Aktiv</span>` : ''}
+                        </div>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">Dauer: ${dur}${peakStr ? ` · Peak: ${peakStr}` : ''}</p>
+                    </div>
+                </div>
+                <div class="text-right shrink-0 tabular-nums">
+                    <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white">${formatKwhDe(s.chargedKwh, 2)}</p>
+                    <p class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">☀️ ${pvPct}% PV · +${savedEur} €</p>
+                </div>
+            </div>
+            <div class="space-y-1">
+                <div class="flex items-center justify-between text-[10.5px] text-slate-500 dark:text-slate-400 tabular-nums">
+                    <span>☀️ Solar: ${formatKwhDe(s.solarKwh, 2)} (${pvPct}%)</span>
+                    <span>⚡ Netz: ${formatKwhDe(s.gridKwh, 2)} (${gridPct}%)</span>
+                </div>
+                <div class="w-full h-1.5 rounded-full bg-blue-500/25 dark:bg-blue-950/70 overflow-hidden flex">
+                    <div class="h-full bg-gradient-to-r from-teal-500 to-emerald-500" style="width: ${pvPct}%"></div>
+                    <div class="h-full bg-blue-500/75" style="width: ${gridPct}%"></div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+
+    bodyEl.innerHTML = `
+        ${summaryHtml}
+        <div class="flex items-center justify-between pt-1">
+            <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Chronologische Ladevorgänge</h4>
+            <button type="button" onclick="closeWallboxSessionsModal(); openLiveCurveFocus('consumer:${safeIdJs}');" class="text-xs font-semibold text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-1 cursor-pointer">
+                <span class="material-symbols-rounded text-sm">show_chart</span>
+                <span>Ladekurve öffnen</span>
+            </button>
+        </div>
+        <div class="space-y-2.5">
+            ${rowsHtml}
+        </div>
+    `;
+}
+
+if (typeof window !== 'undefined') {
+    window.openWallboxSessionsModal = openWallboxSessionsModal;
+    window.closeWallboxSessionsModal = closeWallboxSessionsModal;
+    window.rescanWallboxSessionsHistory = rescanWallboxSessionsHistory;
 }
 
 const expandedIdleWallboxIds = new Set();
@@ -9927,9 +10484,11 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
         const safeIdJs = String(wb.id || '').replace(/'/g, "\\'");
         const isCharging = wb.powerW > 45;
         const isIdleExpanded = expandedIdleWallboxIds.has(String(wb.id || ''));
+        const isHistoryExpanded = expandedWallboxHistoryIds.has(String(wb.id || ''));
         const powerStr = formatPowerDe(wb.powerW, wb.powerW < 1000);
-        const todayKwh = Number(wb.consKwh || 0);
+        const todayKwh = Math.max(Number(wb.consKwh || 0), Number(wbM.authoritativeTodayKwh || 0));
         const monthKwh = Math.max(todayKwh, Number(wb.consMonthKwh || ledger?.month?.wallboxKwh || 0));
+        const archivedSessions = Array.isArray(wbM.archivedSessions) ? wbM.archivedSessions : [];
 
         const displayPvSharePct = isCharging
             ? wbM.livePvSharePct
@@ -9940,7 +10499,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
 
         const sessionTimeHint = wbM.sessionStartedAt
             ? `Seit ${new Date(wbM.sessionStartedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
-            : (wbM.hasCounterSensor ? 'Hybrid: kWh-Zähler + Live-W' : 'Berechnet aus Live-Watt');
+            : (wbM.hasCounterSensor ? 'Synchron mit kWh-Zähler' : 'Berechnet aus Live-Watt');
 
         const savedSessionEur = (wbM.sessionSolarKwh * gridPrice).toFixed(2).replace('.', ',');
 
@@ -9957,10 +10516,16 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     <span class="text-[13.5px] font-semibold text-slate-800 dark:text-slate-100 truncate">${safeName}</span>
                     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/75 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-semibold shrink-0">Bereit</span>
                 </div>
-                <div class="flex items-center gap-2 sm:gap-3 shrink-0 tabular-nums text-xs">
+                <div class="flex items-center gap-2 sm:gap-2.5 shrink-0 tabular-nums text-xs">
                     <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-bold text-[11px]" title="PV-Ladeanteil">☀️ ${displayPvSharePct}% PV</span>
-                    <span class="text-slate-600 dark:text-slate-300 font-medium hidden xs:inline" title="Geladen seit Ladebeginn">Session: <strong class="text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</strong></span>
+                    <span class="text-slate-600 dark:text-slate-300 font-medium hidden xs:inline" title="Geladen in letzter Session">Session: <strong class="text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</strong></span>
                     <span class="text-slate-600 dark:text-slate-300 font-medium" title="Heute geladen">Heute: <strong class="text-teal-700 dark:text-teal-300">${formatKwhDe(todayKwh, 2)}</strong></span>
+                    <button type="button" onclick="openWallboxSessionsModal('${safeIdJs}', event)"
+                        class="px-1.5 py-0.5 rounded-lg bg-slate-200/75 hover:bg-teal-500/20 dark:bg-white/10 dark:hover:bg-teal-500/25 text-slate-700 dark:text-slate-200 text-[10.5px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                        title="Vergangene Wallbox-Ladesessions anschauen (${archivedSessions.length})">
+                        <span class="material-symbols-rounded text-[13px]">history</span>
+                        <span>${archivedSessions.length}</span>
+                    </button>
                     <span class="material-symbols-rounded text-base text-slate-400 group-hover:text-teal-500 transition-colors">expand_more</span>
                 </div>
             </div>`);
@@ -9985,6 +10550,45 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                </button>`
             : '';
 
+        const undoResetHintHtml = wbM.hasManualResetActive
+            ? `<button type="button" onclick="clearWallboxManualSessionReset('${safeIdJs}', event)"
+                class="mt-1 inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-700 dark:text-amber-300 hover:underline cursor-pointer"
+                title="Manuellen Reset aufheben und volle Ladesession (${formatKwhDe(wbM.fullSessionKwhBeforeReset, 2)}) anzeigen">
+                <span class="material-symbols-rounded text-xs">undo</span>
+                <span>Gesamt-Session: ${formatKwhDe(wbM.fullSessionKwhBeforeReset, 2)} wiederherstellen</span>
+               </button>`
+            : '';
+
+        const recentSessionsPreview = archivedSessions.slice(0, 4);
+        const inlineHistoryHtml = isHistoryExpanded
+            ? `<div onclick="event.stopPropagation()" class="mt-3 pt-2.5 border-t border-slate-200/75 dark:border-white/10 space-y-1.5 cursor-default">
+                <div class="flex items-center justify-between text-[11px] font-bold text-slate-600 dark:text-slate-300 px-0.5">
+                    <span>Letzte Ladevorgänge (${archivedSessions.length})</span>
+                    <button type="button" onclick="openWallboxSessionsModal('${safeIdJs}', event)" class="text-teal-600 dark:text-teal-400 hover:underline flex items-center gap-0.5 cursor-pointer">
+                        <span>Alle im Vollfenster</span>
+                        <span class="material-symbols-rounded text-xs">open_in_new</span>
+                    </button>
+                </div>
+                ${recentSessionsPreview.length > 0 ? recentSessionsPreview.map(s => {
+                    const lbl = formatWallboxSessionDateLabel(s.startedAtMs, s.endedAtMs, s.isOngoing);
+                    const dur = formatWallboxSessionDuration(s.durationMinutes);
+                    const sEur = ((Number(s.solarKwh) || 0) * gridPrice).toFixed(2).replace('.', ',');
+                    return `
+                    <div class="px-3 py-2 rounded-xl bg-white/80 dark:bg-slate-950/60 border border-slate-200/75 dark:border-white/10 flex items-center justify-between gap-2 text-xs tabular-nums">
+                        <div class="min-w-0">
+                            <span class="font-bold text-slate-800 dark:text-slate-100">${escapeHtml(lbl)}</span>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400 ml-1.5">(${dur})</span>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 text-[10.5px] font-bold">☀️ ${s.pvSharePct}% PV</span>
+                            <span class="font-black text-slate-900 dark:text-white">${formatKwhDe(s.chargedKwh, 2)}</span>
+                            <span class="text-[11px] text-teal-700 dark:text-teal-300 font-semibold hidden sm:inline">+${sEur} €</span>
+                        </div>
+                    </div>`;
+                }).join('') : `<p class="text-xs text-slate-500 dark:text-slate-400 py-1">Noch keine Ladesessions im Verlauf erfasst.</p>`}
+               </div>`
+            : '';
+
         const fullCardHtml = `
         <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')" role="button" tabindex="0"
             title="Tippen für 24h-Wallbox-Ladekurve (${safeName})"
@@ -9993,7 +10597,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     ? 'border-emerald-500/50 dark:border-emerald-400/45 bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-sky-500/10 shadow-sm'
                     : 'border-teal-500/30 dark:border-teal-500/25 bg-white/85 dark:bg-slate-900/75 hover:border-teal-500/50'
             }">
-            <!-- Top Row: Icon + Name + Live Status Badge + Session Reset Button -->
+            <!-- Top Row: Icon + Name + Live Status Badge + Sessions & Reset Buttons -->
             <div class="flex flex-wrap items-center justify-between gap-2 mb-3.5">
                 <div class="flex items-center gap-2.5 min-w-0">
                     <div class="w-10 h-10 rounded-2xl ${isCharging ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40' : 'bg-teal-500/15 text-teal-600 dark:text-teal-400 border border-teal-500/25'} flex items-center justify-center shrink-0">
@@ -10005,17 +10609,28 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                             <span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300">Wallbox · Hinter Smart Meter</span>
                         </div>
                         <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                            ${wbM.hasCounterSensor ? 'Hybrid-Tracking: kWh-Zähler verankert + verzögerungsfreies Live-Watt-Integral' : 'Echtzeit-Integration aus Leistungssensor (W)'}
+                            Automatische Session-Erkennung aus HA-Verlauf &amp; kWh-Zähler
                         </p>
                     </div>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
                     ${statusBadgeHtml}
+                    <button type="button" onclick="toggleWallboxHistoryInline('${safeIdJs}', event)"
+                        class="px-2.5 py-1 rounded-xl ${isHistoryExpanded ? 'bg-teal-600 text-white border-teal-600' : 'bg-white/80 hover:bg-white dark:bg-white/10 dark:hover:bg-white/20 border-slate-200/90 dark:border-white/15 text-slate-700 dark:text-slate-200'} border text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                        title="Vergangene Ladesessions direkt hier aufklappen">
+                        <span class="material-symbols-rounded text-xs ${isHistoryExpanded ? 'text-white' : 'text-teal-600 dark:text-teal-400'}">history</span>
+                        <span>Sessions (${archivedSessions.length})</span>
+                    </button>
+                    <button type="button" onclick="openWallboxSessionsModal('${safeIdJs}', event)"
+                        class="w-7 h-7 rounded-xl bg-white/80 hover:bg-white dark:bg-white/10 dark:hover:bg-white/20 border border-slate-200/90 dark:border-white/15 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer"
+                        title="Alle vergangenen Wallbox-Sessions im Detail-Popup öffnen">
+                        <span class="material-symbols-rounded text-sm text-teal-600 dark:text-teal-400">open_in_new</span>
+                    </button>
                     <button type="button" onclick="resetWallboxSessionNow('${safeIdJs}', event)"
-                        class="px-2.5 py-1 rounded-xl bg-white/80 hover:bg-white dark:bg-white/10 dark:hover:bg-white/20 border border-slate-200/90 dark:border-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                        title="Geladene kWh seit Ladebeginn für neuen Ladevorgang auf 0,00 kWh zurücksetzen">
+                        class="px-2 py-1 rounded-xl bg-white/80 hover:bg-white dark:bg-white/10 dark:hover:bg-white/20 border border-slate-200/90 dark:border-white/15 text-slate-700 dark:text-slate-200 text-[11px] font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                        title="Geladene kWh ab jetzt für neuen Teil-Ladevorgang auf 0,00 kWh zurücksetzen">
                         <span class="material-symbols-rounded text-xs text-teal-600 dark:text-teal-400">restart_alt</span>
-                        <span class="hidden sm:inline">Session Reset</span>
+                        <span class="hidden sm:inline">Reset</span>
                     </button>
                     ${collapseBtnHtml}
                 </div>
@@ -10040,7 +10655,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     </p>
                 </div>
 
-                <!-- KPI 2: Geladene kWh seit Ladebeginn (Hybrid Session Counter) -->
+                <!-- KPI 2: Geladene kWh seit Ladebeginn (History-Synced Session Counter) -->
                 <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-teal-500/25 flex flex-col justify-between">
                     <div class="flex items-center justify-between gap-1">
                         <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Geladen seit Ladebeginn</span>
@@ -10052,6 +10667,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     <p class="text-[11px] text-teal-700 dark:text-teal-300 tabular-nums mt-1 truncate">
                         ${sessionTimeHint} · +${savedSessionEur} € PV-Vorteil
                     </p>
+                    ${undoResetHintHtml}
                 </div>
 
                 <!-- KPI 3: Tages- & Monatsbilanz (im Hausverbrauch enthalten) -->
@@ -10081,6 +10697,8 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     <div class="h-full bg-blue-500/75 transition-all duration-500" style="width: ${gridBarWidth}%"></div>
                 </div>
             </div>
+
+            ${inlineHistoryHtml}
         </div>`;
 
         if (isCharging) {
@@ -11468,6 +12086,63 @@ function updateHomeEnergyOverview(baseline) {
     if (batBar) batBar.style.width = `${batBarPct}%`;
     const gridBar = document.getElementById('home_grid_bar');
     if (gridBar) gridBar.style.width = `${gridBarPct}%`;
+
+    // 4. NEU V12.7: Active Wallbox Charging Strip in Home "Energie · Kurzüberblick" (compact 1-row bar when a session is running)
+    const homeWbStrip = document.getElementById('home_wallbox_active_strip');
+    if (homeWbStrip) {
+        const customConsumers = Array.isArray(haConfigState?.customConsumers) ? haConfigState.customConsumers : [];
+        const dayInt = typeof getDayIntegratedKwh === 'function' ? getDayIntegratedKwh() : {};
+        const activeWallboxes = customConsumers
+            .filter(cc => cc && isWallboxConsumer(cc))
+            .map(cc => {
+                const teleCons = (t.consumersTelemetry || []).find(x => String(x.id) === String(cc.id));
+                const pW = teleCons ? (Number(teleCons.powerW) || 0) : 0;
+                const consKwh = Number(teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? dayInt[`consumer_${cc.id}`] ?? 0);
+                return { ...cc, powerW: pW, consKwh };
+            })
+            .filter(wb => wb.powerW > 45);
+
+        if (activeWallboxes.length === 0) {
+            homeWbStrip.classList.add('hidden');
+            homeWbStrip.innerHTML = '';
+        } else {
+            homeWbStrip.classList.remove('hidden');
+            homeWbStrip.innerHTML = activeWallboxes.map(wb => {
+                const wbM = getWallboxConsumerMetrics(wb, t);
+                const safeName = typeof escapeHtml === 'function' ? escapeHtml(wb.name || 'Wallbox') : (wb.name || 'Wallbox');
+                const safeIdJs = String(wb.id || '').replace(/'/g, "\\'");
+                const pStr = formatPowerDe(wb.powerW, wb.powerW < 1000);
+                const startHint = wbM.sessionStartedAt
+                    ? `Seit ${new Date(wbM.sessionStartedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}`
+                    : '';
+                return `
+                <div onclick="event.stopPropagation(); switchTab('live');" role="button" tabindex="0"
+                    title="Aktive Wallbox-Ladesession (${safeName}) · Tippen für Live-Details"
+                    class="rounded-[16px] px-3 py-2 border border-emerald-500/40 dark:border-emerald-400/35 bg-emerald-500/[0.08] dark:bg-emerald-500/[0.14] hover:border-emerald-500/65 flex items-center justify-between gap-2 transition-all cursor-pointer">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <div class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border border-emerald-500/35 flex items-center justify-center shrink-0">
+                            <span class="material-symbols-rounded text-[15px]">ev_station</span>
+                        </div>
+                        <span class="text-xs sm:text-[13px] font-bold text-slate-900 dark:text-white truncate">${safeName}</span>
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 border border-emerald-500/35 text-[10.5px] font-extrabold tabular-nums shrink-0">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                            <span>${pStr}</span>
+                        </span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0 tabular-nums text-[11.5px]">
+                        <span class="px-1.5 py-0.5 rounded-md bg-white/80 dark:bg-slate-900/75 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-bold text-[10.5px]">☀️ ${wbM.livePvSharePct}% PV</span>
+                        <span class="text-slate-700 dark:text-slate-200 font-semibold">Session: <strong class="text-slate-950 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</strong></span>
+                        ${startHint ? `<span class="text-[10.5px] text-slate-500 dark:text-slate-400 hidden sm:inline">· ${startHint}</span>` : ''}
+                        <button type="button" onclick="openWallboxSessionsModal('${safeIdJs}', event)"
+                            class="w-6 h-6 rounded-lg bg-white/80 hover:bg-white dark:bg-slate-900/75 dark:hover:bg-slate-800 text-teal-600 dark:text-teal-300 border border-slate-200/80 dark:border-white/10 flex items-center justify-center transition-colors cursor-pointer"
+                            title="Ladesessions & Historie öffnen">
+                            <span class="material-symbols-rounded text-[14px]">history</span>
+                        </button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+    }
 }
 
 function updateHomeStatesFromHaArray(statesArray) {
