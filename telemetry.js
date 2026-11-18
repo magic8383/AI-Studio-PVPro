@@ -5369,9 +5369,9 @@ function getAvailableCurveDefinitions() {
         const parentGroupSlug = rawGrpName ? normalizeConsumerGroupSlug(rawGrpName) : null;
 
         const isWb = isWallboxConsumer(cc);
-        const wbMetrics = isWb ? getWallboxConsumerMetrics({ ...cc, powerW: liveW, consKwh: cKwh }, t) : null;
+        const wbMetrics = isWb ? getWallboxConsumerMetrics({ ...cc, powerW: liveW, consKwh: todayConsKwh }, t) : null;
         const wbPvShareToDisplay = isWb
-            ? (liveW > 30 ? wbMetrics.livePvSharePct : wbMetrics.dayPvSharePct)
+            ? (liveW > 30 ? wbMetrics.livePvSharePct : (wbMetrics.sessionPvSharePct ?? wbMetrics.dayPvSharePct))
             : null;
         const wbSubLine1 = `${formatKwhDe(cKwh, 2)} ${periodSuffix}`;
         const wbSubLine2 = isWb && wbPvShareToDisplay !== null
@@ -9953,16 +9953,36 @@ function extractSessionsFromCurveDataset(ds, wbId, wbName, maxPauseMinutes = 25,
 }
 
 /**
- * Reconstructs all charging sessions for a Wallbox consumer from 24h / 7d / 30d history,
- * calibrates today's sessions to match the authoritative daily kWh counter without discrepancy,
- * and persists the merged session list in the local archive.
+ * Reconstructs all charging sessions for a Wallbox consumer from 24h / 7d / 30d history
+ * using exclusively each session's own charging curve integral (without cross-scaling against daily or monthly totals),
+ * self-heals any previously inflated archive entries, and persists the merged session list in the local archive.
  */
-function reconstructWallboxSessionsForConsumer(c, telemetryObj, authoritativeTodayKwh) {
+function reconstructWallboxSessionsForConsumer(c, telemetryObj) {
     const idKey = String(c?.id || 'default_wb');
     const wbName = c?.name || 'Wallbox';
     const archive = loadWallboxSessionsArchive();
     if (!Array.isArray(archive[idKey])) {
         archive[idKey] = [];
+    } else {
+        // Self-heal any historical archive entries where chargedKwh was previously inflated by daily/monthly counter totals (e.g. 52.08 kWh while Solar + Grid = 35.27 kWh)
+        archive[idKey] = archive[idKey].map(s => {
+            if (!s || typeof s !== 'object') return s;
+            const sol = Math.max(0, Number(s.solarKwh) || 0);
+            const grd = Math.max(0, Number(s.gridKwh) || 0);
+            const splitSum = +(sol + grd).toFixed(3);
+            let chg = Math.max(0, Number(s.chargedKwh) || 0);
+            if (splitSum > 0.04 && Math.abs(chg - splitSum) > 0.03) {
+                chg = splitSum;
+            }
+            const pct = chg > 0.005 ? Math.min(100, Math.max(0, Math.round((sol / chg) * 100))) : 0;
+            return {
+                ...s,
+                chargedKwh: +chg.toFixed(3),
+                solarKwh: +Math.min(chg, sol).toFixed(3),
+                gridKwh: +Math.max(0, chg - Math.min(chg, sol)).toFixed(3),
+                pvSharePct: pct
+            };
+        });
     }
 
     const dayDs = (currentCurveTimeframe === 'day' && intradaySeriesState?.bucketTimes?.length > 0)
@@ -9979,35 +9999,7 @@ function reconstructWallboxSessionsForConsumer(c, telemetryObj, authoritativeTod
     const weekSessions = extractSessionsFromCurveDataset(weekDs, idKey, wbName, 65, 'week');
     const monthSessions = extractSessionsFromCurveDataset(monthDs, idKey, wbName, 90, 'month');
 
-    // Calibrate today's sessions from dayDs so their sum matches authoritativeTodayKwh 100%
-    const startOfTodayMs = new Date().setHours(0, 0, 0, 0);
-    const todayDaySessions = daySessions.filter(s => s.endedAtMs >= startOfTodayMs);
-    if (todayDaySessions.length > 0 && authoritativeTodayKwh > 0.01) {
-        if (todayDaySessions.length === 1) {
-            // Single charging session today: its energy is identically today's authoritative kWh (or higher if started before midnight)
-            const s0 = todayDaySessions[0];
-            const prevRatio = s0.chargedKwh > 0.005 ? (s0.solarKwh / s0.chargedKwh) : (s0.pvSharePct / 100);
-            s0.chargedKwh = +Math.max(s0.chargedKwh, authoritativeTodayKwh).toFixed(3);
-            s0.solarKwh = +Math.min(s0.chargedKwh, s0.chargedKwh * prevRatio).toFixed(3);
-            s0.gridKwh = +Math.max(0, s0.chargedKwh - s0.solarKwh).toFixed(3);
-            s0.pvSharePct = s0.chargedKwh > 0.005 ? Math.min(100, Math.max(0, Math.round((s0.solarKwh / s0.chargedKwh) * 100))) : 0;
-        } else {
-            // Multiple distinct sessions today: scale proportionally so their sum equals authoritativeTodayKwh
-            const sumRawToday = todayDaySessions.reduce((acc, s) => acc + (s.rawKwh || s.chargedKwh || 0), 0);
-            if (sumRawToday > 0.02) {
-                const scale = authoritativeTodayKwh / sumRawToday;
-                todayDaySessions.forEach(s => {
-                    const prevRatio = s.chargedKwh > 0.005 ? (s.solarKwh / s.chargedKwh) : (s.pvSharePct / 100);
-                    s.chargedKwh = +Math.max(0.01, (s.rawKwh || s.chargedKwh) * scale).toFixed(3);
-                    s.solarKwh = +Math.min(s.chargedKwh, s.chargedKwh * prevRatio).toFixed(3);
-                    s.gridKwh = +Math.max(0, s.chargedKwh - s.solarKwh).toFixed(3);
-                    s.pvSharePct = s.chargedKwh > 0.005 ? Math.min(100, Math.max(0, Math.round((s.solarKwh / s.chargedKwh) * 100))) : 0;
-                });
-            }
-        }
-    }
-
-    // Merge existing archived sessions + month + week + day (preferring higher resolution sourcePriority)
+    // Merge existing archived sessions + month + week + day (preferring higher or equal resolution sourcePriority without Math.max inflation)
     const combined = [...archive[idKey]];
     const upsertSession = (incoming) => {
         if (!incoming || !incoming.startedAtMs) return;
@@ -10031,10 +10023,12 @@ function reconstructWallboxSessionsForConsumer(c, telemetryObj, authoritativeTod
                 combined[matchIdx] = {
                     ...ex,
                     ...incoming,
-                    // Preserve earlier start timestamp if day curve started closely
                     startedAtMs: incPrio > exPrio ? incoming.startedAtMs : Math.min(ex.startedAtMs, incoming.startedAtMs),
                     endedAtMs: Math.max(ex.endedAtMs || 0, incoming.endedAtMs || 0),
-                    chargedKwh: incPrio > exPrio ? incoming.chargedKwh : Math.max(ex.chargedKwh || 0, incoming.chargedKwh || 0),
+                    chargedKwh: incoming.chargedKwh,
+                    solarKwh: incoming.solarKwh,
+                    gridKwh: incoming.gridKwh,
+                    pvSharePct: incoming.pvSharePct,
                     peakPowerW: Math.max(ex.peakPowerW || 0, incoming.peakPowerW || 0),
                     sourcePriority: Math.max(exPrio, incPrio)
                 };
@@ -10133,17 +10127,30 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
     const livePvPowerW = Math.round(wbW * (livePvSharePct / 100));
     const liveGridPowerW = Math.max(0, Math.round(wbW - livePvPowerW));
 
-    // Resolve authoritative daily Wallbox energy (same Single Source of Truth as the Live diagram tile)
+    // Resolve authoritative daily Wallbox energy strictly from 24h sources (never from 7d/30d chart timeframe)
     const dayIntCache = typeof getDayIntegratedKwh === 'function' ? getDayIntegratedKwh() : {};
-    const intKwh = intradaySeriesState?.integratedKwh || {};
-    const explicitTodayKwh = Number(c?.consKwh ?? teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? dayIntCache[cKey] ?? intKwh[cKey] ?? 0);
-    const authoritativeTodayKwh = +Math.max(0, explicitTodayKwh, Number(intKwh[cKey] || 0)).toFixed(3);
+    const daySeriesIntKwh = (currentCurveTimeframe === 'day'
+        ? intradaySeriesState?.integratedKwh
+        : intradayHistoryCache?.day?.integratedKwh) || {};
+    const explicitTodayKwh = Number(
+        teleCons?.energyTodayKwh ??
+        c?.consKwh ??
+        dayIntCache[cKey] ??
+        daySeriesIntKwh[cKey] ??
+        0
+    );
+    const authoritativeTodayKwh = +Math.max(
+        0,
+        explicitTodayKwh,
+        Number(dayIntCache[cKey] || 0),
+        Number(daySeriesIntKwh[cKey] || 0)
+    ).toFixed(3);
 
     // Calculate historical PV charging share across today's buckets if available
     let dayPvSharePct = null;
     const dayDs = (currentCurveTimeframe === 'day' && intradaySeriesState?.bucketTimes?.length > 0)
         ? intradaySeriesState
-        : (intradayHistoryCache?.day || intradaySeriesState);
+        : intradayHistoryCache?.day;
     const wbSeries = dayDs?.series?.[cKey];
     const loadSeries = dayDs?.series?.house_load || dayDs?.series?.load;
     const gridImpSeries = dayDs?.series?.grid_power || dayDs?.series?.grid_imp;
@@ -10165,13 +10172,13 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
         }
     }
 
-    // Reconstruct sessions from HA history & merge with persistent archive
-    const archivedSessions = reconstructWallboxSessionsForConsumer(c, t, authoritativeTodayKwh);
+    // Reconstruct sessions purely from HA history curve segments & merge with persistent archive
+    const archivedSessions = reconstructWallboxSessionsForConsumer(c, t);
     const startOfTodayMs = new Date().setHours(0, 0, 0, 0);
     const latestHistSession = archivedSessions.length > 0 ? archivedSessions[0] : null;
     const hasTodayHistSession = Boolean(latestHistSession && (latestHistSession.endedAtMs >= startOfTodayMs || latestHistSession.isOngoing));
 
-    // Hybrid Session Tracker: Anchor kWh counter at session start + live Watt integral between counter ticks
+    // Session Tracker: Uses pure session energy from the latest charging session (or manual reset delta if active)
     const sessions = loadWallboxSessionsState();
     const nowMs = Date.now();
     const isChargingNow = wbW > 45;
@@ -10186,7 +10193,7 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
     let sess = sessions[idKey];
     if (!sess) {
         sess = {
-            sessionStartedAt: hasTodayHistSession
+            sessionStartedAt: latestHistSession
                 ? new Date(latestHistSession.startedAtMs).toISOString()
                 : (isChargingNow ? new Date(nowMs).toISOString() : null),
             lastActiveMs: isChargingNow ? nowMs : (latestHistSession?.lastActiveAtMs || 0),
@@ -10194,10 +10201,8 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
             startCounterKwh: curCounterReading,
             integralKwh: 0,
             solarIntegralKwh: 0,
-            sessionChargedKwh: hasTodayHistSession ? latestHistSession.chargedKwh : authoritativeTodayKwh,
-            sessionSolarKwh: hasTodayHistSession
-                ? latestHistSession.solarKwh
-                : (authoritativeTodayKwh * ((dayPvSharePct ?? livePvSharePct) / 100)),
+            sessionChargedKwh: latestHistSession ? latestHistSession.chargedKwh : 0,
+            sessionSolarKwh: latestHistSession ? latestHistSession.solarKwh : 0,
             isCharging: isChargingNow
         };
         sessions[idKey] = sess;
@@ -10214,7 +10219,7 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
 
         const hasActiveManualReset = Boolean(
             sess.manualResetAtMs &&
-            (!hasTodayHistSession || sess.manualResetAtMs > latestHistSession.startedAtMs + 60 * 1000) &&
+            (!latestHistSession || sess.manualResetAtMs > latestHistSession.startedAtMs + 60 * 1000) &&
             (nowMs - sess.manualResetAtMs < 18 * 3600 * 1000)
         );
 
@@ -10232,34 +10237,17 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
                 sess.sessionChargedKwh,
                 Math.max(sess.solarIntegralKwh || 0, sess.sessionChargedKwh * (livePvSharePct / 100))
             ).toFixed(3);
-        } else if (hasTodayHistSession) {
-            // Synchronize with the true history-reconstructed session so opening the app mid-charge shows the exact start time & kWh!
+        } else if (latestHistSession) {
+            // Synchronize strictly with the true session energy from the charging window (never inflate with authoritativeTodayKwh)
             sess.sessionStartedAt = new Date(latestHistSession.startedAtMs).toISOString();
-            sess.sessionChargedKwh = +Math.max(
-                latestHistSession.chargedKwh || 0,
-                // If only 1 session today, never lag behind authoritativeTodayKwh
-                archivedSessions.filter(s => s.endedAtMs >= startOfTodayMs).length <= 1 ? authoritativeTodayKwh : 0
-            ).toFixed(3);
-            const histRatio = (latestHistSession.chargedKwh > 0.005)
-                ? (latestHistSession.solarKwh / latestHistSession.chargedKwh)
-                : ((dayPvSharePct ?? livePvSharePct) / 100);
-            sess.sessionSolarKwh = +Math.min(sess.sessionChargedKwh, sess.sessionChargedKwh * histRatio).toFixed(3);
-
-            // Also keep live integral synced for smooth ticks between 5-min history updates
-            if (isChargingNow && latestHistSession.isOngoing) {
-                latestHistSession.chargedKwh = sess.sessionChargedKwh;
-                latestHistSession.solarKwh = sess.sessionSolarKwh;
-                latestHistSession.gridKwh = +Math.max(0, sess.sessionChargedKwh - sess.sessionSolarKwh).toFixed(3);
-                latestHistSession.pvSharePct = sess.sessionChargedKwh > 0.005
-                    ? Math.min(100, Math.max(0, Math.round((sess.sessionSolarKwh / sess.sessionChargedKwh) * 100)))
-                    : livePvSharePct;
-                latestHistSession.endedAtMs = nowMs;
-                latestHistSession.durationMinutes = Math.max(1, Math.round((nowMs - latestHistSession.startedAtMs) / 60000));
-            }
-        } else if (authoritativeTodayKwh > 0.005) {
-            // Fallback when 24h curve is still loading on initial boot: immediately show today's authoritative kWh
-            sess.sessionChargedKwh = +authoritativeTodayKwh.toFixed(3);
-            sess.sessionSolarKwh = +(authoritativeTodayKwh * ((dayPvSharePct ?? livePvSharePct) / 100)).toFixed(3);
+            sess.sessionChargedKwh = +(latestHistSession.chargedKwh || 0).toFixed(3);
+            sess.sessionSolarKwh = +Math.min(sess.sessionChargedKwh, Number(latestHistSession.solarKwh || 0)).toFixed(3);
+        } else if (isChargingNow && (sess.integralKwh || 0) > 0) {
+            sess.sessionChargedKwh = +(sess.integralKwh || 0).toFixed(3);
+            sess.sessionSolarKwh = +Math.min(sess.sessionChargedKwh, Number(sess.solarIntegralKwh || 0)).toFixed(3);
+        } else {
+            sess.sessionChargedKwh = 0;
+            sess.sessionSolarKwh = 0;
         }
 
         sess.isCharging = isChargingNow;
@@ -10276,9 +10264,15 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
 
     const hasManualResetActive = Boolean(
         sess.manualResetAtMs &&
-        (!hasTodayHistSession || sess.manualResetAtMs > latestHistSession.startedAtMs + 60 * 1000) &&
+        (!latestHistSession || sess.manualResetAtMs > latestHistSession.startedAtMs + 60 * 1000) &&
         (nowMs - sess.manualResetAtMs < 18 * 3600 * 1000)
     );
+
+    const latestSessionLabel = (!hasManualResetActive && latestHistSession)
+        ? formatWallboxSessionDateLabel(latestHistSession.startedAtMs, latestHistSession.endedAtMs, latestHistSession.isOngoing || isChargingNow)
+        : (sess.sessionStartedAt
+            ? `Seit ${new Date(sess.sessionStartedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
+            : 'Noch keine Session');
 
     return {
         livePvSharePct,
@@ -10291,9 +10285,11 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
         sessionGridKwh,
         sessionPvSharePct,
         sessionStartedAt: sess.sessionStartedAt,
+        latestSessionLabel,
+        hasTodayHistSession,
         hasManualResetActive,
-        fullSessionKwhBeforeReset: hasTodayHistSession ? +(latestHistSession.chargedKwh || authoritativeTodayKwh).toFixed(2) : +authoritativeTodayKwh.toFixed(2),
-        trueSessionStartedAt: hasTodayHistSession ? new Date(latestHistSession.startedAtMs).toISOString() : sess.sessionStartedAt,
+        fullSessionKwhBeforeReset: latestHistSession ? +(latestHistSession.chargedKwh || 0).toFixed(2) : +authoritativeTodayKwh.toFixed(2),
+        trueSessionStartedAt: latestHistSession ? new Date(latestHistSession.startedAtMs).toISOString() : sess.sessionStartedAt,
         archivedSessions,
         hasCounterSensor: Boolean(c?.energyEntity)
     };
@@ -10594,9 +10590,11 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
         const pvBarWidth = Math.min(100, Math.max(0, displayPvSharePct));
         const gridBarWidth = Math.max(0, 100 - pvBarWidth);
 
-        const sessionTimeHint = wbM.sessionStartedAt
-            ? `Seit ${new Date(wbM.sessionStartedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
-            : (wbM.hasCounterSensor ? 'Synchron mit kWh-Zähler' : 'Berechnet aus Live-Watt');
+        const sessionTimeHint = isCharging
+            ? (wbM.sessionStartedAt
+                ? `Seit ${new Date(wbM.sessionStartedAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} Uhr`
+                : (wbM.hasCounterSensor ? 'Synchron mit kWh-Zähler' : 'Berechnet aus Live-Watt'))
+            : (wbM.latestSessionLabel || 'Noch keine Session');
 
         const savedSessionEur = (wbM.sessionSolarKwh * gridPrice).toFixed(2).replace('.', ',');
         const sessionFuelMetrics = typeof getEvFuelSavingsMetrics === 'function'
@@ -10606,25 +10604,35 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
             ? getEvFuelSavingsMetrics(todayKwh, todayKwh * ((wbM.dayPvSharePct ?? displayPvSharePct) / 100), { gridPriceEur: gridPrice, eegRateEur: baseline?.eegRateEur })
             : null;
 
-        // When NOT actively charging and NOT expanded: render sleek 1-row summary below consumer bars
+        // When NOT actively charging and NOT expanded: render sleek 1-row summary below consumer bars with prominent Session kWh (Today & Month shown only when expanded)
         if (!isCharging && !isIdleExpanded) {
             idleHtmlArr.push(`
             <div onclick="toggleIdleWallboxCardExpand('${safeIdJs}', event)" role="button" tabindex="0"
                 title="Tippen zum Aufklappen der Wallbox-Details (${safeName})"
-                class="rounded-[18px] px-3.5 py-2.5 border border-teal-500/25 dark:border-teal-500/25 bg-white/85 dark:bg-slate-900/70 hover:border-teal-500/50 flex items-center justify-between gap-2 transition-all cursor-pointer group active:scale-[0.99]">
-                <div class="flex items-center gap-2 min-w-0">
-                    <div class="w-7 h-7 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 border border-teal-500/25 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-[17px]">ev_station</span>
+                class="rounded-[18px] px-3.5 py-2.5 border border-teal-500/25 dark:border-teal-500/25 bg-white/85 dark:bg-slate-900/70 hover:border-teal-500/50 flex items-center justify-between gap-2.5 transition-all cursor-pointer group active:scale-[0.99]">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-8 h-8 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 border border-teal-500/25 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[18px]">ev_station</span>
                     </div>
-                    <span class="text-[13.5px] font-semibold text-slate-800 dark:text-slate-100 truncate">${safeName}</span>
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/75 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-semibold shrink-0">Bereit</span>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                            <span class="text-[13px] sm:text-[13.5px] font-bold text-slate-900 dark:text-slate-100 truncate">${safeName}</span>
+                        </div>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate">
+                            <span>Bereit</span>
+                            <span aria-hidden="true"> · </span>
+                            <span class="font-semibold text-emerald-600 dark:text-emerald-400">☀️ ${displayPvSharePct}% PV</span>
+                            ${wbM.sessionChargedKwh > 0.01 && wbM.latestSessionLabel ? `<span class="hidden sm:inline"> · ${escapeHtml(wbM.latestSessionLabel)}</span>` : ''}
+                        </p>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2 sm:gap-2.5 shrink-0 tabular-nums text-xs">
-                    <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-bold text-[11px]" title="PV-Ladeanteil">☀️ ${displayPvSharePct}% PV</span>
-                    <span class="text-slate-600 dark:text-slate-300 font-medium hidden xs:inline" title="Geladen in letzter Session">Session: <strong class="text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</strong></span>
-                    <span class="text-slate-600 dark:text-slate-300 font-medium" title="Heute geladen">Heute: <strong class="text-teal-700 dark:text-teal-300">${formatKwhDe(todayKwh, 2)}</strong></span>
+                <div class="flex items-center gap-2 sm:gap-2.5 shrink-0 tabular-nums">
+                    <div class="text-right">
+                        <p class="text-sm sm:text-[15px] font-black text-slate-900 dark:text-white leading-tight">${formatKwhDe(wbM.sessionChargedKwh, 2)}</p>
+                        <p class="text-[10px] font-semibold text-teal-700 dark:text-teal-300 leading-tight">Letzte Session</p>
+                    </div>
                     <button type="button" onclick="openWallboxSessionsModal('${safeIdJs}', event)"
-                        class="px-1.5 py-0.5 rounded-lg bg-slate-200/75 hover:bg-teal-500/20 dark:bg-white/10 dark:hover:bg-teal-500/25 text-slate-700 dark:text-slate-200 text-[10.5px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
+                        class="px-2 py-1 rounded-lg bg-slate-200/75 hover:bg-teal-500/20 dark:bg-white/10 dark:hover:bg-teal-500/25 text-slate-700 dark:text-slate-200 text-[10.5px] font-bold flex items-center gap-0.5 transition-colors cursor-pointer"
                         title="Vergangene Wallbox-Ladesessions anschauen (${archivedSessions.length})">
                         <span class="material-symbols-rounded text-[13px]">history</span>
                         <span>${archivedSessions.length}</span>
@@ -10742,7 +10750,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                 </div>
             </div>
 
-            <!-- Middle Row: 3 Dynamic Wallbox KPIs (PV-Ladeanteil % | Geladen seit Ladebeginn kWh | Heute & Monat Bilanz) -->
+            <!-- Middle Row: 3 Dynamic Wallbox KPIs (PV-Ladeanteil % | Letzte / Aktive Ladesession kWh | Heute & Monat Bilanz) -->
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <!-- KPI 1: Aktueller PV-Ladeanteil (%) -->
                 <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-emerald-500/25 flex flex-col justify-between">
@@ -10754,30 +10762,30 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                         <span class="text-xl sm:text-2xl font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400">${displayPvSharePct} %</span>
                         <span class="text-[11px] font-mono tabular-nums text-slate-500 dark:text-slate-400">Ø Session: ${wbM.sessionPvSharePct}%</span>
                     </div>
-                    <p class="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-1 truncate">
+                    <p class="text-[11px] text-slate-600 dark:text-slate-300 tabular-nums mt-1 leading-snug">
                         ${isCharging
                             ? `☀️ ${formatPowerDe(wbM.livePvPowerW, true)} PV · ⚡ ${formatPowerDe(wbM.liveGridPowerW, true)} Netz`
                             : `☀️ ${formatKwhDe(wbM.sessionSolarKwh, 2)} Solar · ⚡ ${formatKwhDe(wbM.sessionGridKwh, 2)} Netz`}
                     </p>
                 </div>
 
-                <!-- KPI 2: Geladene kWh seit Ladebeginn (History-Synced Session Counter + Sprit-Ersparnis vs. Verbrenner) -->
+                <!-- KPI 2: Geladene kWh der Session (Reine Session-Lademenge ohne Hochskalieren + Sprit-Ersparnis vs. Verbrenner) -->
                 <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-teal-500/25 flex flex-col justify-between">
                     <div class="flex items-center justify-between gap-1">
-                        <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Geladen seit Ladebeginn</span>
+                        <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">${isCharging ? 'Geladen seit Ladebeginn' : 'Letzte Ladesession'}</span>
                         <span class="material-symbols-rounded text-sm text-teal-500">battery_charging_full</span>
                     </div>
                     <div class="flex items-baseline justify-between gap-2 mt-1">
                         <span class="text-xl sm:text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</span>
                         ${sessionFuelMetrics && sessionFuelMetrics.drivenKmEquivalent > 0 ? `<span class="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">~${sessionFuelMetrics.drivenKmEquivalent} km</span>` : ''}
                     </div>
-                    <p class="text-[11px] text-teal-700 dark:text-teal-300 tabular-nums mt-1 truncate">
-                        ${sessionTimeHint} · +${savedSessionEur} € PV${sessionFuelMetrics ? ` · ⛽ +${sessionFuelMetrics.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin` : ''}
+                    <p class="text-[11px] text-teal-700 dark:text-teal-300 tabular-nums mt-1 leading-snug">
+                        ${escapeHtml(sessionTimeHint)} · +${savedSessionEur} € PV${sessionFuelMetrics ? ` · <span class="text-amber-600 dark:text-amber-400 font-semibold">⛽ +${sessionFuelMetrics.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin</span>` : ''}
                     </p>
                     ${undoResetHintHtml}
                 </div>
 
-                <!-- KPI 3: Tages- & Monatsbilanz (im Hausverbrauch enthalten + Tages-Spritersparnis) -->
+                <!-- KPI 3: Tages- & Monatsbilanz (nur aufgeklappt sichtbar + Tages-Spritersparnis) -->
                 <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
                     <div class="flex items-center justify-between gap-1">
                         <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Wallbox Heute / Monat</span>
@@ -10787,7 +10795,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                         <span class="text-lg sm:text-xl font-black font-mono tabular-nums text-slate-900 dark:text-white">${formatKwhDe(todayKwh, 2)}</span>
                         <span class="text-[11px] font-mono tabular-nums text-slate-400">/ ${formatKwhDe(monthKwh, 1)} M</span>
                     </div>
-                    <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-1 truncate">
+                    <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-1 leading-snug">
                         ${todayFuelMetrics && todayKwh > 0.1
                             ? `⛽ Heute +${todayFuelMetrics.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin (~${todayFuelMetrics.drivenKmEquivalent} km)`
                             : `Im Hausverbrauch (${formatKwhDe(td?.houseTotal || 0, 2)}) berücksichtigt`}

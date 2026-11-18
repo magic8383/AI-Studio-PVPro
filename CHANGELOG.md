@@ -4,6 +4,25 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.9] – 2026-11-18
+
+### ✨ Reine Wallbox-Session-Lademenge ohne Überkreuz-Hochskalieren, Automatische Archiv-Selbstheilung & Mobiloptimierte 1-Zeilen-Session-Anzeige
+
+#### 1. Entkopplung der Session-kWh von Tages- & Monats-Gesamtsummen (`telemetry.js`)
+* **Keine Verfälschung einzelner Ladesessions durch 7-Tage-/30-Tage-Summen (`reconstructWallboxSessionsForConsumer`, `getWallboxConsumerMetrics`, `getAvailableCurveDefinitions`):**
+  - Bisher wurde beim Scannen oder Umschalten auf die 30-Tage-/Monatskurve der Monats-Gesamtwert (z. B. `52,08 kWh`) über `cKwh` bzw. `intradaySeriesState.integratedKwh` in `getWallboxConsumerMetrics` eingespeist und per `Math.max` auf die heutige Einzelsession hochskaliert.
+  - Ab sofort berechnet jede Ladesession ihre geladene Energie (`chargedKwh`), ihren Solar-Anteil (`solarKwh`) und ihren Netz-Anteil (`gridKwh`) ausschließlich aus ihrem eigenen Ladezeitfenster (`chargedKwh = solarKwh + gridKwh`). Das künstliche Hochskalieren gegen den Tages- oder Monatszähler entfällt vollständig.
+* **Automatische Selbstheilung bestehender `localStorage`-Einträge (`upsertSession`):**
+  - Beim Zusammenführen im lokalen Archiv (`pvpro_wallbox_sessions_archive_v1`) überschreibt ein aktueller Kurvenscan gleicher oder höherer Auflösung den Archiv-Eintrag direkt ohne `Math.max(ex.chargedKwh, incoming.chargedKwh)`.
+  - Bereits im Browser gespeicherte Alt-Einträge, bei denen `chargedKwh` durch den früheren Monats-Abgleich höher war als die tatsächliche Summe aus `solarKwh + gridKwh`, werden beim Laden automatisch auf ihre echte Session-Summe korrigiert.
+
+#### 2. Mobiloptimierte 1-Zeilen-Wallbox-Leiste mit prominenter Session-Anzeige (`renderWallboxLiveStatusCard`)
+* **Letzte Session groß in der eingeklappten Zeile, Tages-/Monatswerte nur aufgeklappt:**
+  - Im eingeklappten Zustand unter den Verbraucherbalken zeigt die Wallbox-Zeile links den lesbaren Wallbox-Namen samt Status (`Bereit · ☀️ XX% PV`) und rechts **groß und prominent den kWh-Wert der letzten Session** (`Letzte Session`) neben dem History-Button.
+  - Die Gesamtzähler für **Heute** und **Monat** (`Wallbox Heute / Monat`) werden ausschließlich in der aufgeklappten 3-Kachel-Detailansicht dargestellt, sodass auf Smartphone-Bildschirmen ab 360 px Breite weder der Name noch die Session-Werte abgeschnitten werden.
+
+---
+
 ## [Version 12.8] – 2026-11-18
 
 ### ✨ Kamera-Vollbild ohne Zwangsdrehung (`0°`-Standard + 4-Stufen-Rotationsbutton), E-Auto Sprit-Ersparnis (`⛽ vs. Benzin`) in Live-Wallbox, Sessions & Analyse/Amortisation sowie Aufgeräumte Planung & Analyse-Übersicht

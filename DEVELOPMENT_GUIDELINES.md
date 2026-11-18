@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.8 (Kamera-Vollbild 0°-Standard ohne ungewollte Zwangsdrehung + 4-Stufen-Rotationsbutton, E-Auto Sprit-Substitution ggü. Verbrenner in Live-Wallbox, Sessions, Analyse-KPIs & Amortisation sowie aufgeräumte Planung- & Analyse-Übersicht ohne doppelte Diagramme)  
+**Aktuelle Version:** 12.9 (Reine Wallbox-Session-Lademenge ohne Überkreuz-Hochskalieren gegen Tages-/Monatszähler inkl. automatischer Archiv-Selbstheilung sowie mobiloptimierte 1-Zeilen-Wallbox-Leiste mit prominenter Session-kWh-Anzeige)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
