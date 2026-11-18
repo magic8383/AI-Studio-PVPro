@@ -1,8 +1,8 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V12.9)
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.0)
 // Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '12.9';
+const APP_VERSION = '13.0';
 const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
 const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
 const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);
@@ -35,30 +35,30 @@ function escapeHtml(str) {
 function createDefaultHaConfigSchema() {
     return {
         mode: 'poll',
-        baseUrl: 'https://home.mb10.org',
+        baseUrl: '',
         accessToken: '',
         pollIntervalSec: 10,
         autoSyncMonthly: true,
         trackingStartDate: '2026-11-01',
-        batteryName: 'BYD HVS+',
+        batteryName: 'Speicher',
         entities: {
-            pvPower: 'sensor.pv_power_total',
-            loadPower: 'sensor.house_consumption_power',
-            gridPower: 'sensor.grid_power',
+            pvPower: '',
+            loadPower: '',
+            gridPower: '',
             gridImportPower: '',
             gridExportPower: '',
             batteryChargePower: '',
             batteryDischargePower: '',
-            batteryPower: 'sensor.battery_power',
-            batterySoc: 'sensor.battery_soc',
+            batteryPower: '',
+            batterySoc: '',
             pvEnergyToday: '',
-            pvEnergyMonth: 'sensor.pv_energy_monthly',
-            pvEnergyTotal: 'sensor.pv_energy_total',
+            pvEnergyMonth: '',
+            pvEnergyTotal: '',
             loadEnergyMonth: '',
-            gridImportMonth: 'sensor.grid_import_monthly',
-            gridExportMonth: 'sensor.grid_export_monthly',
-            batteryChargeMonth: 'sensor.battery_charge_monthly',
-            batteryDischargeMonth: 'sensor.battery_discharge_monthly'
+            gridImportMonth: '',
+            gridExportMonth: '',
+            batteryChargeMonth: '',
+            batteryDischargeMonth: ''
         },
         pvEnergyExtraEntities: [],
         weatherEntity: '',
@@ -66,17 +66,8 @@ function createDefaultHaConfigSchema() {
         customWeatherSensors: [],
         monitoredDevices: [],
         homeCameras: [],
-        customStrings: [
-            { id: 'str_fronius_1', name: 'Fronius · String 1 DC', powerEntity: 'sensor.fronius_string_1_power', energyEntity: 'sensor.fronius_string_1_energy_today', color: '#14b8a6' },
-            { id: 'str_fronius_2', name: 'Fronius · String 2 DC', powerEntity: 'sensor.fronius_string_2_power', energyEntity: 'sensor.fronius_string_2_energy_today', color: '#f59e0b' },
-            { id: 'str_hoymiles', name: 'Hoymiles · gesamt DC', powerEntity: 'sensor.hoymiles_power_dc', energyEntity: '', color: '#22c55e' }
-        ],
-        customConsumers: [
-            { id: 'cons_1', name: 'Trockner', group: '', powerEntity: 'sensor.trockner_power', energyEntity: '' },
-            { id: 'cons_2', name: 'TV-Verstärker', group: '', powerEntity: 'sensor.tv_verstaerker_power', energyEntity: '' },
-            { id: 'cons_3', name: 'Esszimmer Licht', group: '', powerEntity: 'sensor.esszimmer_licht_power', energyEntity: '' },
-            { id: 'cons_4', name: 'Küche Licht', group: '', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
-        ]
+        customStrings: [],
+        customConsumers: []
     };
 }
 
@@ -98,7 +89,7 @@ function normalizeHaConfigSchema(incoming = {}, current = null, options = {}) {
         ...base,
         ...src,
         mode: rawMode === 'demo' ? 'poll' : rawMode,
-        baseUrl: src.baseUrl || base.baseUrl || def.baseUrl,
+        baseUrl: (typeof src.baseUrl === 'string' && (src.baseUrl || options.allowEmptyStrings)) ? src.baseUrl : (base.baseUrl || def.baseUrl),
         accessToken: resolvedToken,
         pollIntervalSec: Number(src.pollIntervalSec) || Number(base.pollIntervalSec) || def.pollIntervalSec,
         autoSyncMonthly: src.autoSyncMonthly !== undefined ? Boolean(src.autoSyncMonthly) : (base.autoSyncMonthly !== undefined ? Boolean(base.autoSyncMonthly) : true),
@@ -121,7 +112,9 @@ function normalizeHaConfigSchema(incoming = {}, current = null, options = {}) {
             : (Array.isArray(src.homeCameras) && (src.homeCameras.length > 0 || !Array.isArray(base.homeCameras) || base.homeCameras.length === 0)
                 ? cloneArr(src.homeCameras, [])
                 : cloneArr(base.homeCameras, [])),
-        customStrings: cloneNonEmptyArr(src.customStrings, base.customStrings || def.customStrings),
+        customStrings: options.allowEmptyArrays
+            ? cloneArr(src.customStrings, base.customStrings)
+            : cloneNonEmptyArr(src.customStrings, base.customStrings || def.customStrings),
         customConsumers: Array.isArray(src.customConsumers) && (src.customConsumers.length > 0 || options.allowEmptyArrays)
             ? cloneArr(src.customConsumers, base.customConsumers)
             : cloneArr(base.customConsumers, def.customConsumers)
@@ -172,7 +165,7 @@ if (typeof window !== 'undefined') {
 }
 
 const colors = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#14b8a6', '#84cc16'];
-let LocationData = { lat: 48.06, lon: 8.46, name: "Villingen-Schwenningen" };
+let LocationData = { lat: 51.16, lon: 10.45, name: "Deutschland (Mitte)" };
 let YieldDataCache = null, ConsumptionCache = null, FlowCache = null, activeGroupIndex = null;
 let strings = [], currentDetailMonth = null;
 let chartYield = null, chartAutarkyCons = null, chartAutarkyGen = null, detailConsChart = null, detailGenChart = null;
@@ -430,7 +423,7 @@ function isPlanTombstoned(planId, planName) {
 }
 
 function getGitHubSyncConfig() {
-    let defaultRepo = 'magic8383/PVPro';
+    let defaultRepo = '';
     try {
         const host = window.location.hostname || '';
         if (host.endsWith('.github.io')) {
@@ -441,7 +434,7 @@ function getGitHubSyncConfig() {
     } catch (e) {}
     const saved = readJsonStorage(PV_GITHUB_SYNC_KEY, null) || {};
     return {
-        repo: String(saved.repo || defaultRepo).trim() || 'magic8383/PVPro',
+        repo: String(saved.repo || defaultRepo).trim(),
         branch: String(saved.branch || 'main').trim() || 'main',
         filePath: String(saved.filePath || 'data/system_plans.json').trim() || 'data/system_plans.json',
         token: String(saved.token || '').trim(),
@@ -489,7 +482,7 @@ function getSystemHardwareAndConsSummary(cfg = null) {
     let batteryKwh = 0;
     let batteryPowerW = 0;
     let batteryName = 'Ohne Akku';
-    const locName = cfg?.LocationData?.name || (LocationData?.name || 'Villingen-Schwenningen');
+    const locName = cfg?.LocationData?.name || (LocationData?.name || 'Deutschland (Mitte)');
 
     strArray.forEach(str => {
         (str.fields || []).forEach(f => {
@@ -776,7 +769,7 @@ function createNewProject(name = null, cloneCurrent = false) {
             exportedAt: new Date().toISOString(),
             appName: 'PV-Planung Pro',
             strings: freshStrings,
-            LocationData: LocationData ? Object.assign({}, LocationData) : { lat: 48.06, lon: 8.46, name: 'Villingen-Schwenningen' },
+            LocationData: LocationData ? Object.assign({}, LocationData) : { lat: 51.16, lon: 10.45, name: 'Deutschland (Mitte)' },
             consumption: JSON.parse(localStorage.getItem('pvpro_cons') || '{}'),
             invest: JSON.parse(localStorage.getItem('pvpro_invest') || '{}'),
             finance: JSON.parse(localStorage.getItem('pvpro_finance') || '{}'),
@@ -1127,7 +1120,7 @@ async function pushUnifiedPackagesToGitHub(silent = false) {
 
     const parts = cfg.repo.split('/').map(s => s.trim()).filter(Boolean);
     if (parts.length !== 2) {
-        if (!silent) showToastNotification('Ungültiges Repository-Format. Bitte als owner/repo (z.B. magic8383/PVPro) angeben.', 'error');
+        if (!silent) showToastNotification('Ungültiges Repository-Format. Bitte als owner/repo angeben.', 'error');
         return false;
     }
     const [owner, repo] = parts;
@@ -1470,7 +1463,7 @@ function renderProjectManagerModal(tab = null) {
                         <div class="sm:col-span-4">
                             <label class="block text-[10px] font-bold text-slate-400 mb-0.5">GitHub Repo (owner/repo)</label>
                             <input type="text" id="ghSyncRepoInput" value="${escapeHtml(ghCfg.repo)}" oninput="onGitHubSyncFieldInput()"
-                                placeholder="magic8383/PVPro"
+                                placeholder="owner/repo"
                                 class="w-full text-xs font-mono px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-teal-500">
                         </div>
                         <div class="sm:col-span-2">

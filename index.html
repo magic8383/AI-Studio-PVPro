@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>PV-Planung Pro 12.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
+    <title>PV-Planung Pro 13.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung</title>
     <meta name="description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
-    <meta property="og:title" content="PV-Planung Pro 12.9 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
+    <meta property="og:title" content="PV-Planung Pro 13.0 - Solar & Netz Live-Dashboard, Sankey-Analyse & PV-Auslegung">
     <meta property="og:description" content="Solar & Netz Live-Dashboard, interaktives Sankey-Energieflussdiagramm, Home Assistant Reverse-Proxy Integration und Photovoltaik-Planung nach VDE 0100-712">
     
     <!-- PWA Settings & Premium High-Quality App Icons -->
-    <link rel="manifest" href="manifest.json?v=12.9">
+    <link rel="manifest" href="manifest.json?v=13.0">
     <meta name="theme-color" content="#064e3b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="PVPro">
-    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=12.9">
-    <link rel="icon" type="image/svg+xml" href="icon.svg?v=12.9">
-    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=12.9">
-    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=12.9">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png?v=13.0">
+    <link rel="icon" type="image/svg+xml" href="icon.svg?v=13.0">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=13.0">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=13.0">
     <script>
-        // V12.9: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
+        // V13.0: Request Persistent Device Storage (prevents Android/Chrome from auto-evicting IndexedDB & localStorage)
         // and verify Service Worker script MIME-type before registering or updating to avoid 'text/html' errors.
         window.registerAndVerifyServiceWorker = async function () {
             try {
@@ -662,10 +662,10 @@
                     <!-- Level 1 Brand & Version Pill -->
                     <div id="headerBrandBadge" class="flex items-center gap-1.5">
                         <button onclick="switchTab('home')" class="w-8 h-8 rounded-xl overflow-hidden shadow-xs border border-teal-400/40 flex items-center justify-center shrink-0 cursor-pointer relative group" title="Zur Startseite (Ebene 0)">
-                            <img src="icon.svg?v=12.9" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
+                            <img src="icon.svg?v=13.0" alt="PVPro" class="w-full h-full object-cover" referrerPolicy="no-referrer">
                             <span id="headerSectionIcon" class="material-symbols-rounded text-sm hidden">home</span>
                         </button>
-                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 12.9</span>
+                        <span id="app-header-version" class="text-[11px] font-bold px-2.5 py-1 rounded-full bg-teal-600/12 text-teal-800 dark:bg-teal-400/15 dark:text-teal-200 border border-teal-500/20 shrink-0">Pro 13.0</span>
                     </div>
 
                     <!-- Level 2 Prominent Back Button (Hidden on Level 1, Shown on Level 2 Drill-Down) -->
@@ -972,7 +972,7 @@
                                 <span>·</span>
                                 <span id="pvgisStatusBadge" class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 normal-case tracking-normal">EU-JRC Server-Proxy</span>
                             </p>
-                            <p class="text-xs sm:text-sm font-bold text-primary leading-none truncate" id="locNameText">Villingen-Schwenningen</p>
+                            <p class="text-xs sm:text-sm font-bold text-primary leading-none truncate" id="locNameText">Deutschland (Mitte)</p>
                         </div>
                     </div>
                     <button onclick="document.getElementById('locEditBox').classList.toggle('hidden')" class="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 px-2.5 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors flex items-center gap-1 shrink-0">
@@ -2656,7 +2656,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Standort der Anlage (für 8.760h PVGIS-Daten)</p>
-                        <p id="locNameTextStep1" class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Villingen-Schwenningen</p>
+                        <p id="locNameTextStep1" class="text-sm sm:text-base font-black text-slate-900 dark:text-white truncate">Deutschland (Mitte)</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -3047,7 +3047,7 @@
                     </div>
                     <div class="min-w-0">
                         <p class="text-[13.5px] font-semibold text-slate-900 dark:text-white group-hover:text-primary transition-colors truncate">Handbuch</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v12.9</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Hilfe &amp; v13.0</p>
                     </div>
                 </button>
             </div>
@@ -3393,7 +3393,7 @@
 
                 <div>
                     <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 uppercase tracking-wider">Name der Planung *</label>
-                    <input type="text" id="savePlanNameInput" placeholder="z. B. Anlage Villingen-Schwenningen" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary font-bold">
+                    <input type="text" id="savePlanNameInput" placeholder="z. B. Meine PV-Anlage" class="w-full border-2 border-slate-200 dark:border-slate-700 dark:bg-slate-950 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary font-bold">
                 </div>
 
                 <div id="savePlanSummaryBox" class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400 space-y-1">
@@ -3534,7 +3534,6 @@
     - 192.168.0.0/16
     - 10.0.0.0/8
   cors_allowed_origins:
-    - https://magic8383.github.io
     - https://aistudio.google.com</pre>
                     </div>
 
@@ -3617,7 +3616,7 @@
                             </div>
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Home Assistant Domain / URL</label>
-                                <input type="text" id="ha_cfg_url" placeholder="https://home.mb10.org" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
+                                <input type="text" id="ha_cfg_url" placeholder="https://ha.deine-domain.de" class="w-full text-xs font-mono px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-primary">
                             </div>
                             <div>
                                 <label class="block text-[11px] font-bold text-slate-500 mb-1">Poll-Intervall (Sekunden)</label>
@@ -4727,13 +4726,13 @@
     <!-- Toast Notification Container -->
     <div id="toast-container" class="fixed bottom-20 right-4 sm:right-6 z-[110] flex flex-col gap-2 pointer-events-none max-w-sm w-full"></div>
 
-    <!-- MODULARE ARCHITEKTUR V12.9 (Reine Wallbox-Session-Lademenge ohne Hochskalieren & Mobile 1-Zeilen-Session-Anzeige) -->
-    <script src="qrcode.client.js?v=12.9"></script>
-    <script src="database.js?v=12.9"></script>
-    <script src="content.js?v=12.9"></script>
-    <script src="app.js?v=12.9"></script>
-    <script src="wiring.js?v=12.9"></script>
-    <script src="dossier.js?v=12.9"></script>
-    <script src="telemetry.js?v=12.9"></script>
+    <!-- MODULARE ARCHITEKTUR V13.0 (Echte Zählerstand-Differenz statt HA-Summe & Bereinigung persönlicher Vorbelegungen) -->
+    <script src="qrcode.client.js?v=13.0"></script>
+    <script src="database.js?v=13.0"></script>
+    <script src="content.js?v=13.0"></script>
+    <script src="app.js?v=13.0"></script>
+    <script src="wiring.js?v=13.0"></script>
+    <script src="dossier.js?v=13.0"></script>
+    <script src="telemetry.js?v=13.0"></script>
 </body>
 </html>

@@ -1,50 +1,41 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.8)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V13.0)
 // Zentrale Single Source of Truth via PVProCore (Stromausfall-0W-Guard,
 // Verbraucher-Gruppen, Geräte-Diagnose, 3-Stufen Hauskameras & IndexedDB Sync)
 // ============================================================================
 
-const DEFAULT_CUSTOM_STRINGS = [
-    { id: 'str_fronius_1', name: 'Fronius · String 1 DC', powerEntity: 'sensor.fronius_string_1_power', energyEntity: 'sensor.fronius_string_1_energy_today', color: '#14b8a6' },
-    { id: 'str_fronius_2', name: 'Fronius · String 2 DC', powerEntity: 'sensor.fronius_string_2_power', energyEntity: 'sensor.fronius_string_2_energy_today', color: '#f59e0b' },
-    { id: 'str_hoymiles', name: 'Hoymiles · gesamt DC', powerEntity: 'sensor.hoymiles_power_dc', energyEntity: '', color: '#22c55e' }
-];
+const DEFAULT_CUSTOM_STRINGS = [];
 
-const DEFAULT_CUSTOM_CONSUMERS = [
-    { id: 'cons_1', name: 'Trockner', group: '', powerEntity: 'sensor.trockner_power', energyEntity: '' },
-    { id: 'cons_2', name: 'TV-Verstärker', group: '', powerEntity: 'sensor.tv_verstaerker_power', energyEntity: '' },
-    { id: 'cons_3', name: 'Esszimmer Licht', group: '', powerEntity: 'sensor.esszimmer_licht_power', energyEntity: '' },
-    { id: 'cons_4', name: 'Küche Licht', group: '', powerEntity: 'sensor.kueche_licht_power', energyEntity: '' }
-];
+const DEFAULT_CUSTOM_CONSUMERS = [];
 
 let haConfigState = typeof createDefaultHaConfigSchema === 'function'
     ? createDefaultHaConfigSchema()
     : {
         mode: 'poll',
-        baseUrl: 'https://home.mb10.org',
+        baseUrl: '',
         accessToken: '',
         pollIntervalSec: 10,
         autoSyncMonthly: true,
         trackingStartDate: '2026-11-01',
-        batteryName: 'BYD HVS+',
+        batteryName: 'Speicher',
         entities: {
-            pvPower: 'sensor.pv_power_total',
-            loadPower: 'sensor.house_consumption_power',
-            gridPower: 'sensor.grid_power',
+            pvPower: '',
+            loadPower: '',
+            gridPower: '',
             gridImportPower: '',
             gridExportPower: '',
             batteryChargePower: '',
             batteryDischargePower: '',
-            batteryPower: 'sensor.battery_power',
-            batterySoc: 'sensor.battery_soc',
+            batteryPower: '',
+            batterySoc: '',
             pvEnergyToday: '',
-            pvEnergyMonth: 'sensor.pv_energy_monthly',
-            pvEnergyTotal: 'sensor.pv_energy_total',
+            pvEnergyMonth: '',
+            pvEnergyTotal: '',
             loadEnergyMonth: '',
-            gridImportMonth: 'sensor.grid_import_monthly',
-            gridExportMonth: 'sensor.grid_export_monthly',
-            batteryChargeMonth: 'sensor.battery_charge_monthly',
-            batteryDischargeMonth: 'sensor.battery_discharge_monthly'
+            gridImportMonth: '',
+            gridExportMonth: '',
+            batteryChargeMonth: '',
+            batteryDischargeMonth: ''
         },
         pvEnergyExtraEntities: [],
         weatherEntity: '',
@@ -52,8 +43,8 @@ let haConfigState = typeof createDefaultHaConfigSchema === 'function'
         customWeatherSensors: [],
         monitoredDevices: [],
         homeCameras: [],
-        customStrings: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_STRINGS)),
-        customConsumers: JSON.parse(JSON.stringify(DEFAULT_CUSTOM_CONSUMERS))
+        customStrings: [],
+        customConsumers: []
     };
 
 let discoveredHaSensors = [];
@@ -176,7 +167,7 @@ let intradaySeriesState = {
     peakValues: {} // key -> max value today
 };
 
-let activeCurveKeys = new Set(['str_fronius_1', 'str_fronius_2', 'str_hoymiles', 'pv_total', 'battery_soc']);
+let activeCurveKeys = new Set(['pv_total', 'house_load', 'battery_soc']);
 let currentCurveTimeframe = 'day'; // 'day' | 'week' | 'month'
 let intradayDayZoomMode = 'auto'; // 'auto' (Ab Aktivität + 1h Zukunft) | 'full' (00:00 – +1h)
 let intradayDayPanOffsetBuckets = 0; // 5-Minuten-Buckets Verschiebung nach links (<0) oder rechts (>0)
@@ -1947,12 +1938,14 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
 
     const statsByEntity = wsRes.data;
 
-    // Aggregate daily buckets per month (with protection against initial counter offset jumps)
+    // Aggregate daily buckets per month using real meter readings (state / max) instead of HA's reset-inflated sum
     const monthlyAggByEntity = {};
     allStatIds.forEach(entId => {
         const buckets = statsByEntity[entId];
         if (!Array.isArray(buckets) || buckets.length === 0) return;
         const scale = getEnergyScaleForEntity(entId, statesMap);
+        const isCum = isEntityCumulativeTotal(entId, statesMap, false);
+        const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
         const isConsumer = isConsumerEnergyEntity(entId, cfg);
         const isWb = isWallboxEnergyEntity(entId, cfg);
         const maxDailyStepKwh = isWb ? 260.0 : (isConsumer ? 85.0 : 220.0);
@@ -1962,12 +1955,14 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
 
         buckets.forEach(b => {
             const bStartMs = parseHaStatTimestampMs(b.start);
+            // Always prefer real meter reading (b.state / b.max) over b.sum!
             const rawNum = typeof b.state === 'number'
                 ? b.state
-                : (typeof b.sum === 'number'
-                    ? b.sum
-                    : (typeof b.max === 'number' ? b.max : (typeof b.mean === 'number' ? b.mean : null)));
-            const rawStVal = rawNum !== null && !isNaN(rawNum) ? (rawNum * scale) : null;
+                : (typeof b.max === 'number'
+                    ? b.max
+                    : (typeof b.mean === 'number' ? b.mean : null));
+            const rawStVal = rawNum !== null && !isNaN(rawNum) ? (rawStValFrom(rawNum, scale)) : null;
+            function rawStValFrom(n, s) { return n * s; }
             if (isNaN(bStartMs) || bStartMs < (trackMs - 12 * 3600 * 1000)) {
                 if (rawStVal !== null && !isNaN(rawStVal) && rawStVal > 0) prevBucketState = rawStVal;
                 return;
@@ -1976,14 +1971,19 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
             if (bDate.getFullYear() !== targetYear) return;
             const mIdx = bDate.getMonth();
             if (!byMonth[mIdx]) {
-                byMonth[mIdx] = { changeSum: 0, hasChange: false, firstState: null, lastState: null, jumpOffsetSum: 0 };
+                byMonth[mIdx] = { changeSum: 0, hasChange: false, firstState: null, lastState: null, jumpOffsetSum: 0, hadFullResetJump: false };
             }
             if (typeof b.change === 'number' && !isNaN(b.change)) {
                 const dKwh = Math.max(0, b.change * scale);
+                const isFullCounterResetJump = isCum && !isWb && curLiveReading !== null && curLiveReading > 5 && dKwh >= curLiveReading * 0.45;
                 const isInitialOffsetJump = !isWb && (
                     ((prevBucketState === null || prevBucketState <= 0.5) && dKwh >= initJumpMinKwh)
                     || dKwh >= maxDailyStepKwh
+                    || (isFullCounterResetJump && (prevBucketState > 0.5 || byMonth[mIdx].hadFullResetJump))
                 );
+                if (isFullCounterResetJump) {
+                    byMonth[mIdx].hadFullResetJump = true;
+                }
                 if (!isInitialOffsetJump) {
                     byMonth[mIdx].changeSum += dKwh;
                     byMonth[mIdx].hasChange = true;
@@ -2009,7 +2009,7 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         monthlyAggByEntity[entId] = byMonth;
     });
 
-    // 1. Update current month's exact LTS change & reconstruct 1st-of-month baseline
+    // 1. Update current month's exact meter delta & reconstruct 1st-of-month baseline from real meter readings
     if (targetYear === curYear) {
         if (!energyCounterBaselines.ltsMonthChangeByEntity) {
             energyCounterBaselines.ltsMonthChangeByEntity = {};
@@ -2017,24 +2017,29 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         allStatIds.forEach(entId => {
             const mInfo = monthlyAggByEntity[entId]?.[curMonth];
             if (!mInfo) return;
+            const isCum = isEntityCumulativeTotal(entId, statesMap, false);
             const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
             const effEndReading = (curLiveReading !== null && (mInfo.lastState === null || curLiveReading >= mInfo.lastState))
                 ? curLiveReading
                 : mInfo.lastState;
-            const rawSpanFromState = (mInfo.firstState !== null && mInfo.firstState > 0.1 && effEndReading !== null && effEndReading >= mInfo.firstState)
+            const hasRealStateSpan = (mInfo.firstState !== null && mInfo.firstState > 0.1 && effEndReading !== null && effEndReading >= mInfo.firstState);
+            const realSpanFromState = hasRealStateSpan
                 ? Math.max(0, effEndReading - mInfo.firstState)
                 : 0;
-            const cleanSpanFromState = Math.max(0, rawSpanFromState - (mInfo.jumpOffsetSum || 0));
             const liveTailDelta = (curLiveReading !== null && mInfo.lastState !== null && curLiveReading > mInfo.lastState && (curLiveReading - mInfo.lastState) < 25)
                 ? (curLiveReading - mInfo.lastState)
                 : 0;
-            const totalChangeWithTail = mInfo.changeSum + liveTailDelta;
-            if (!mInfo.hasChange && cleanSpanFromState <= 0) return;
+            let totalChangeWithTail = mInfo.changeSum + liveTailDelta;
+            // A cumulative lifetime meter can never have produced more in a single month than its total lifetime reading!
+            if (isCum && curLiveReading !== null && curLiveReading > 0 && totalChangeWithTail > curLiveReading) {
+                totalChangeWithTail = curLiveReading;
+            }
+            if (!mInfo.hasChange && !hasRealStateSpan) return;
 
-            // Never let rawSpanFromState overwrite a jump-filtered changeSum!
-            const monthChangeKwh = mInfo.hasChange
-                ? +((cleanSpanFromState > 0 && totalChangeWithTail > cleanSpanFromState * 1.15 + 8) ? cleanSpanFromState : totalChangeWithTail).toFixed(3)
-                : +cleanSpanFromState.toFixed(3);
+            // For cumulative meters with real state readings, use the real meter difference (effEndReading - firstState) directly!
+            const monthChangeKwh = (isCum && hasRealStateSpan)
+                ? +realSpanFromState.toFixed(3)
+                : (mInfo.hasChange ? +totalChangeWithTail.toFixed(3) : +realSpanFromState.toFixed(3));
             energyCounterBaselines.ltsMonthChangeByEntity[entId] = monthChangeKwh;
 
             if (curLiveReading !== null && curLiveReading >= monthChangeKwh) {
@@ -2054,8 +2059,17 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         const cleanId = String(entId || '').trim();
         if (!cleanId) return null;
         const mInfo = monthlyAggByEntity[cleanId]?.[monthIdx];
-        if (mInfo && mInfo.hasChange) {
-            return +Math.max(0, mInfo.changeSum).toFixed(1);
+        if (!mInfo) return null;
+        const isCum = isEntityCumulativeTotal(cleanId, statesMap, false);
+        const curLiveReading = statesMap ? extractHaNumericClient(statesMap, cleanId, 'kWh') : (lastKnownHaReadingMap.get(cleanId) ?? null);
+        if (isCum && mInfo.firstState !== null && mInfo.firstState > 0.1 && mInfo.lastState !== null && mInfo.lastState >= mInfo.firstState) {
+            return +Math.max(0, mInfo.lastState - mInfo.firstState).toFixed(1);
+        }
+        if (mInfo.hasChange) {
+            const capped = (isCum && curLiveReading !== null && curLiveReading > 0)
+                ? Math.min(mInfo.changeSum, curLiveReading)
+                : mInfo.changeSum;
+            return +Math.max(0, capped).toFixed(1);
         }
         return null;
     };
@@ -2083,6 +2097,11 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         }
 
         if (m > maxMonthIdx || months[m].source === 'manual') continue;
+
+        // Protect completed past months already stored in our database so swapping a sensor later never alters past months!
+        const isCompletedPastMonth = (targetYear < curYear) || (targetYear === curYear && m < curMonth);
+        const hasSavedPastData = months[m].source === 'ha' && months[m].pvYieldKwh !== null && months[m].pvYieldKwh > 0;
+        if (isCompletedPastMonth && hasSavedPastData) continue;
 
         let pvMonthSum = 0;
         let pvMonthFound = false;
@@ -2858,19 +2877,22 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         }
                     }
 
-                    // 2) Energy counter statistics (change / state / sum / max / mean) — with protection against counter offset jumps
+                    // 2) Energy counter statistics: use real meter reading (b.state / b.max) instead of HA's reset-inflated b.sum!
                     if (energyEntitySet.has(entId)) {
-                        const rawBucketNum = typeof b.sum === 'number'
-                            ? b.sum
-                            : (typeof b.state === 'number'
-                                ? b.state
-                                : (typeof b.max === 'number' ? b.max : (typeof b.mean === 'number' ? b.mean : null)));
+                        const isCumCounter = isEntityCumulativeTotal(entId, null, false);
+                        const rawBucketNum = typeof b.state === 'number'
+                            ? b.state
+                            : (typeof b.max === 'number'
+                                ? b.max
+                                : (typeof b.mean === 'number' ? b.mean : null));
                         const stVal = rawBucketNum !== null && !isNaN(rawBucketNum) ? (rawBucketNum * eScale) : null;
                         if (effEndMs >= startTime.getTime()) {
                             if (typeof b.change === 'number' && !isNaN(b.change)) {
                                 const dKwh = Math.max(0, b.change * eScale);
+                                const isFullResetJump = isCumCounter && liveValKwh !== null && liveValKwh > 5 && dKwh >= liveValKwh * 0.45;
                                 const isJump = ((prevStValKwh === null || prevStValKwh <= 2.0) && dKwh >= initJumpMinKwh)
-                                    || dKwh >= maxHourlyStepKwh;
+                                    || dKwh >= maxHourlyStepKwh
+                                    || (isFullResetJump && (prevStValKwh > 0.5 || jumpOffsetSum > 0));
                                 if (!isJump) {
                                     kwhChangeSum += dKwh;
                                     hasKwhChange = true;
@@ -2911,23 +2933,27 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                     ltsNegPeakByEntity.set(entId, maxNegPeakW);
                 }
 
+                const isCumEntity = isEntityCumulativeTotal(entId, null, false);
                 const effEndStateKwh = (liveValKwh !== null && !isNaN(liveValKwh) && (lastStateKwh === null || liveValKwh >= lastStateKwh))
                     ? liveValKwh
                     : lastStateKwh;
-                const rawStateSpanKwh = (firstStateKwh !== null && firstStateKwh > 0.1 && effEndStateKwh !== null && effEndStateKwh >= firstStateKwh)
+                const hasRealStateSpan = (firstStateKwh !== null && firstStateKwh > 0.1 && effEndStateKwh !== null && effEndStateKwh >= firstStateKwh);
+                const realStateSpanKwh = hasRealStateSpan
                     ? Math.max(0, effEndStateKwh - firstStateKwh)
                     : 0;
-                const cleanStateSpanKwh = Math.max(0, rawStateSpanKwh - jumpOffsetSum);
                 const liveTailKwh = (liveValKwh !== null && lastStateKwh !== null && liveValKwh > lastStateKwh && (liveValKwh - lastStateKwh) < maxHourlyStepKwh)
                     ? (liveValKwh - lastStateKwh)
                     : 0;
-                const totalKwhChange = kwhChangeSum + liveTailKwh;
+                let totalKwhChange = kwhChangeSum + liveTailKwh;
+                if (isCumEntity && liveValKwh !== null && liveValKwh > 0 && totalKwhChange > liveValKwh) {
+                    totalKwhChange = liveValKwh;
+                }
 
-                // Never let raw stateSpanKwh overwrite a jump-cleaned kwhChangeSum (which caused 652,32 kWh on Netzbezug)!
-                if (hasKwhChange || cleanStateSpanKwh > 0) {
-                    const bestLtsKwh = hasKwhChange
-                        ? +((cleanStateSpanKwh > 0 && totalKwhChange > cleanStateSpanKwh * 1.15 + 5) ? cleanStateSpanKwh : totalKwhChange).toFixed(3)
-                        : +cleanStateSpanKwh.toFixed(3);
+                // For cumulative meters with real state readings, directly use the real meter difference (effEndStateKwh - firstStateKwh)!
+                if (hasKwhChange || hasRealStateSpan) {
+                    const bestLtsKwh = (isCumEntity && hasRealStateSpan)
+                        ? +realStateSpanKwh.toFixed(3)
+                        : (hasKwhChange ? +totalKwhChange.toFixed(3) : +realStateSpanKwh.toFixed(3));
                     ltsKwhByEntity.set(entId, bestLtsKwh);
                 }
 
@@ -9408,10 +9434,10 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
 
     const cleanMode = (!haConfigState.mode || haConfigState.mode === 'demo') ? 'poll' : haConfigState.mode;
     setElVal('ha_cfg_mode', cleanMode);
-    setElVal('ha_cfg_url', haConfigState.baseUrl || 'https://home.mb10.org');
+    setElVal('ha_cfg_url', haConfigState.baseUrl || '');
     setElVal('ha_cfg_token', haConfigState.accessToken || '');
     setElVal('ha_cfg_interval', haConfigState.pollIntervalSec || 10);
-    setElVal('ha_cfg_bat_name', haConfigState.batteryName || 'BYD HVS+');
+    setElVal('ha_cfg_bat_name', haConfigState.batteryName || 'Speicher');
     setElVal('ha_cfg_tracking_start_date', haConfigState.trackingStartDate || '2026-11-01');
     setElVal('logbuchTrackingStartDate', haConfigState.trackingStartDate || '2026-11-01');
 
@@ -9504,7 +9530,7 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
 
 function updateHaReverseProxyYamlDynamic() {
     const currentOrigin = window.location.origin;
-    const originsSet = new Set([currentOrigin, 'https://magic8383.github.io', 'https://aistudio.google.com']);
+    const originsSet = new Set([currentOrigin, 'https://aistudio.google.com']);
     const originsLines = [...originsSet].map(o => `    - ${o}`).join('\n');
     const yamlText = `http:
   use_x_forwarded_for: true
@@ -10940,10 +10966,10 @@ window.removeHaPvEnergyExtra = removeHaPvEnergyExtra;
 function readHaModalIntoState() {
     const rawMode = document.getElementById('ha_cfg_mode')?.value || 'poll';
     haConfigState.mode = rawMode === 'demo' ? 'poll' : rawMode;
-    haConfigState.baseUrl = (document.getElementById('ha_cfg_url')?.value || 'https://home.mb10.org').trim();
+    haConfigState.baseUrl = (document.getElementById('ha_cfg_url')?.value || '').trim();
     haConfigState.accessToken = (document.getElementById('ha_cfg_token')?.value || '').trim();
     haConfigState.pollIntervalSec = Math.max(3, parseInt(document.getElementById('ha_cfg_interval')?.value) || 10);
-    haConfigState.batteryName = (document.getElementById('ha_cfg_bat_name')?.value || 'BYD HVS+').trim();
+    haConfigState.batteryName = (document.getElementById('ha_cfg_bat_name')?.value || 'Speicher').trim();
     const trackInp = document.getElementById('ha_cfg_tracking_start_date')?.value;
     if (trackInp) {
         haConfigState.trackingStartDate = trackInp.trim();

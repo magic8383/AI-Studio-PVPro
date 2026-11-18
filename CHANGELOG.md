@@ -4,6 +4,27 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.0] – 2026-11-18
+
+### ✨ Echte Zählerstand-Differenz (`state`) statt fehleranfälliger HA-Summierung (`sum`/`change`), Schutz abgeschlossener Monate bei Sensorwechsel & Bereinigung persönlicher Vorbelegungen
+
+#### 1. Echte Zählerstand-Differenz (`state` / `max`) statt Home-Assistant-`sum`/`change`-Aufaddierung (`telemetry.js`)
+* **Beseitigung von Doppelzählungen (z. B. `188,00 kWh` bei `97,77 kWh` Gesamtzählerstand):**
+  - Bisher wurde in `fetchAndRenderIntradayFromHa` vorrangig `b.sum` (`typeof b.sum === 'number' ? b.sum : b.state`) und in `syncLongTermStatisticsFromHa` die von Home Assistant aufaddierte `b.change`-Summe verwendet. Wenn ein Wechselrichter- oder OpenDTU-Zähler (`state_class: total_increasing`) nach einem Neustart kurzzeitig `0` meldete und anschließend wieder auf seinen Lebensdauer-Stand (`~94 kWh`) sprang, addierte Home Assistant diesen Betrag in `sum`/`change` mehrfach auf (`2 × 94 = 188,00 kWh`).
+  - Ab sofort lesen sowohl `syncLongTermStatisticsFromHa` als auch `fetchAndRenderIntradayFromHa` ausschließlich den **echten Zählerstand (`b.state` bzw. `b.max` / Live-Zählerstand)** aus und berechnen bei kumulativen Gesamtzählern direkt die reale Differenz **`Aktueller Zählerstand − Erster echter Zählerstand (> 0) im Zeitraum`**.
+  - Zusätzlich gilt der aktuelle Lebensdauer-Zählerstand als physikalische Obergrenze für einen einzelnen Zeitraum, sodass ein Zähler mit `97,77 kWh` Gesamtstand niemals einen höheren Teilzeitraum-Wert ausweisen kann.
+
+#### 2. Einfrieren abgeschlossener Monate in der App-Datenbank bei Sensorwechsel (`syncLongTermStatisticsFromHa`)
+* **Vergangenheit bleibt bei Sensor-Tausch geschützt:**
+  - Bereits in der lokalen App-Datenbank (`performanceRecordsByProject`) gespeicherte, abgeschlossene Kalendermonate (`m < curMonth`) werden bei späteren Hintergrund-Synchronisationen nicht mehr rückwirkend durch neu eingetragene Sensoren überschrieben. Ein Sensorwechsel (z. B. von Shelly AC auf OpenDTU DC) wirkt sich damit nur auf die laufende Zählung aus, ohne die historische Monatsdatenbank zu verändern.
+
+#### 3. Vollständige Entfernung persönlicher Sensor-, Domain- & Standort-Vorbelegungen aus dem öffentlichen Quellcode (`app.js`, `telemetry.js`, `index.html`)
+* **Keine persönlichen Sensoren oder Domains im GitHub-Code:**
+  - Alle hartcodierten Vorbelegungen in `createDefaultHaConfigSchema()`, `DEFAULT_CUSTOM_STRINGS`, `DEFAULT_CUSTOM_CONSUMERS` sowie persönliche Domain-, Standort- und Repository-Platzhalter wurden aus dem öffentlichen Quellcode entfernt.
+  - Die persönlichen Sensoren, Strings, Verbraucher, Domains und Tokens werden ausschließlich lokal im Browser (`localStorage` & `IndexedDB`) sowie über die eigene Backup-Datei (**„Speichern unter…“** / **„Datei öffnen…“**) geladen und verwaltet.
+
+---
+
 ## [Version 12.9] – 2026-11-18
 
 ### ✨ Reine Wallbox-Session-Lademenge ohne Überkreuz-Hochskalieren, Automatische Archiv-Selbstheilung & Mobiloptimierte 1-Zeilen-Session-Anzeige
@@ -766,7 +787,7 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 #### 1. Schutz vor Zähler-Reset-Sprüngen (`53 kWh -> 216 kWh`) in der Home-Assistant-Statistik (`telemetry.js`)
 * **Ursachenbehebung für den `+163 kWh`-Sprung:**
-  - Wenn ein Wechselrichter-Gesamtzähler (wie `sensor.opendtu_4d5150_yieldtotal`) nach einem Neustart oder Kommunikations-Reset kurzzeitig `0` meldet und anschließend wieder auf seinen historischen Lebensdauer-Zählerstand (`163 kWh`) springt, verbucht Home Assistant in der `statistics`-Tabelle einen positiven `change` von `+163,0 kWh` in einem einzigen Stunden-/Tages-Bucket.
+  - Wenn ein Wechselrichter-Gesamtzähler (wie `sensor.opendtu_yieldtotal`) nach einem Neustart oder Kommunikations-Reset kurzzeitig `0` meldet und anschließend wieder auf seinen historischen Lebensdauer-Zählerstand (`163 kWh`) springt, verbucht Home Assistant in der `statistics`-Tabelle einen positiven `change` von `+163,0 kWh` in einem einzigen Stunden-/Tages-Bucket.
   - `isCounterResetSpikeJump()` prüft ab sofort jeden Stunden- und Tages-Bucket in `syncLongTermStatisticsFromHa()`, `fetchHaHistoryInBrowser()` und `syncEnergyCounterBaselinesFromHaHistory()`:
     1. **Reset-von-Null-Erkennung:** Entspricht ein einzelner Bucket-Anstieg (`change >= 15 kWh`) nahezu dem gesamten absoluten Zählerstand (`prevState <= 0.5 kWh`), wird er als Initialisierungs-/Reset-Sprung (`0 → Gesamtertrag`) erkannt und herausgefiltert.
     2. **Physikalisches Plausibilitäts-Limit:** Übersteigt ein einzelner Stunden- (`> 25 kWh/h`) oder Tages-Sprung (`> 85 kWh/Tag`) das physikalisch mögliche Maximum der PV-Anlage, wird der fehlerhafte Sprung verworfen, statt den Monatsstartwert (`monthStartByEntity`) künstlich auf `0` zu drücken.
@@ -791,7 +812,7 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
   - Blockierende Browser-Dialoge (`window.confirm` / `window.prompt`) wurden durch direkte Inline-Aktionen ersetzt.
   - Gelöschte Pakete werden lokal, im Server-Cache und in einer persistenten Tombstone-Liste (`pvpro_deleted_plan_ids`) vermerkt, sodass statische Vorlagen aus `data/system_plans.json` oder `database.js` gelöschte Sicherungen beim Neuladen nie wiederherstellen.
 * **Direkter GitHub-Repository-Sync per Personal Access Token:**
-  - Im Paket-Manager lässt sich optional ein GitHub Personal Access Token (`repo` / `contents:write` für `magic8383/PVPro`) hinterlegen, mit dem jedes Speichern oder Löschen direkt per GitHub REST API in `data/system_plans.json` im Repository geschrieben bzw. von dort geladen wird.
+  - Im Paket-Manager lässt sich optional ein GitHub Personal Access Token (`repo` / `contents:write`) hinterlegen, mit dem jedes Speichern oder Löschen direkt per GitHub REST API in `data/system_plans.json` im Repository geschrieben bzw. von dort geladen wird.
 
 ---
 
@@ -835,7 +856,7 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 * **Globales Mess-Startdatum in Sektion 2 & im Monats-Logbuch:**
   - Über das neue Datumsfeld **„Mess-Startdatum (Zähle erst ab Stichtag)“** (Standard: `2026-11-01`) und den Button **„Ab Datum neu zählen“** (`applyTrackingStartDateAndResync()`) werden historische Altwerte vor dem Stichtag ausgeblendet und die Zähler-Baselines ab dem Stichtag neu kalibriert.
 * **Behebung des überhöhten November-Ertrags (z. B. `213,5 kWh` statt `~125 kWh`):**
-  - **Ursache 1 (`_yieldtotal` Regex-Wortgrenze):** In JavaScript erkennt `\b(total|...)\b` keine zusammengesetzten Namen ohne Unterstrich wie `sensor.opendtu_4d5150_yieldtotal`. Dadurch wurde der OpenDTU-Gesamtzähler beim Monatswert nicht als kumulativer Zähler (`total_increasing`) erkannt, sodass sein gesamter historischer Lebensdauer-Zählerstand (~88,5 kWh vor November) ungekürzt zum Fronius-Novemberertrag (~125 kWh) addiert wurde. `isEntityCumulativeTotal()` erkennt zusammengesetzte Gesamtzähler (`yieldtotal`, `energytotal`) nun zuverlässig und verhindert in `resolveEnergyCounterDelta()`, dass ein kumulativer Zähler mit `baseVal = 0` seinen Lebensdauer-Gesamtwert als Monatsdifferenz ausgibt.
+  - **Ursache 1 (`_yieldtotal` Regex-Wortgrenze):** In JavaScript erkennt `\b(total|...)\b` keine zusammengesetzten Namen ohne Unterstrich wie `sensor.opendtu_yieldtotal`. Dadurch wurde der OpenDTU-Gesamtzähler beim Monatswert nicht als kumulativer Zähler (`total_increasing`) erkannt, sodass sein gesamter historischer Lebensdauer-Zählerstand (~88,5 kWh vor November) ungekürzt zum Fronius-Novemberertrag (~125 kWh) addiert wurde. `isEntityCumulativeTotal()` erkennt zusammengesetzte Gesamtzähler (`yieldtotal`, `energytotal`) nun zuverlässig und verhindert in `resolveEnergyCounterDelta()`, dass ein kumulativer Zähler mit `baseVal = 0` seinen Lebensdauer-Gesamtwert als Monatsdifferenz ausgibt.
   - **Ursache 2 (`state: null` bei `total_increasing` in HA Langzeit-Statistiken):** `syncLongTermStatisticsFromHa()` fragt die Langzeit-Statistik ab dem Mess-Startdatum nun taggenau (`period: 'day'`) ab, summiert die täglichen `change`-Werte ab `trackingStartDate` (`ltsMonthChangeByEntity`) und berechnet daraus selbst dann die exakte Monatsdifferenz und den Monatsstartwert (`aktueller Zählerstand - change`), wenn Home Assistant in der `statistics`-Tabelle `state: null` liefert.
 * **Vorrang manueller Logbuch-Korrekturen (`source === 'manual'`):**
   - Wird im Monats-Logbuch ein Monatswert manuell eingetragen oder korrigiert (z. B. `125 kWh` für November), erhält dieser manuelle Wert in `getUnifiedEnergyLedger()`, im Sankey-Diagramm (`Monat`) und in der Performance-Auswertung sofort Vorrang, statt durch `Math.max(...)` von einem unkalibrierten Rohzähler überschrieben zu werden.
@@ -1228,9 +1249,9 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 * **Kein Absturz bei HTML-Fehlerseiten:**
   - Alle verbleibenden Backend-Fallbacks prüfen zuerst den Antworttext auf `<` / `<!doctype`, sodass HTML-Seiten niemals ungeprüft an `JSON.parse` übergeben werden.
 * **Automatische Port-Korrektur für HTTPS-Domains:**
-  - Falls bei einer HTTPS-Reverse-Proxy-Domain versehentlich `:8123` eingetragen wurde (z. B. `https://home.mb10.org:8123`), testet die App automatisch auch die Standard-Port-443-URL (`https://home.mb10.org`) und übernimmt die funktionierende Adresse direkt in die Konfiguration.
+  - Falls bei einer HTTPS-Reverse-Proxy-Domain versehentlich `:8123` eingetragen wurde (z. B. `https://ha.deine-domain.de:8123`), testet die App automatisch auch die Standard-Port-443-URL (`https://ha.deine-domain.de`) und übernimmt die funktionierende Adresse direkt in die Konfiguration.
 * **Dynamische GitHub-Pages `cors_allowed_origins`-Vorlage:**
-  - Da Home Assistant in `cors_allowed_origins` exakte Origin-URLs verlangt, fügt das Modal automatisch die aktuelle Browser-Origin (z. B. `https://magic8383.github.io`) in die kopierbare `configuration.yaml`-Vorlage ein.
+  - Da Home Assistant in `cors_allowed_origins` exakte Origin-URLs verlangt, fügt das Modal automatisch die aktuelle Browser-Origin in die kopierbare `configuration.yaml`-Vorlage ein.
 
 ---
 

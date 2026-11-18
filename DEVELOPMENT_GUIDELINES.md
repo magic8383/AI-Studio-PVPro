@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.9 (Reine Wallbox-Session-Lademenge ohne Überkreuz-Hochskalieren gegen Tages-/Monatszähler inkl. automatischer Archiv-Selbstheilung sowie mobiloptimierte 1-Zeilen-Wallbox-Leiste mit prominenter Session-kWh-Anzeige)  
+**Aktuelle Version:** 13.0 (Echte Zählerstand-Differenz statt fehleranfälliger Home-Assistant-Summe gegen Doppelzählungen, Schutz abgeschlossener Monate bei Sensorwechsel & Bereinigung sämtlicher persönlicher Sensor-/Domain-Vorbelegungen aus dem öffentlichen Quellcode)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
