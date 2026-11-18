@@ -1,6 +1,6 @@
 // ==========================================
 // PV PRO STUDIO – DOSSIER & PDF EXPORT ENGINE
-// Version 12.7 (Single Source of Truth via PVProCore)
+// Version 12.8 (Single Source of Truth via PVProCore)
 // Normkonforme Projektdokumentation nach DIN VDE 0100-712
 // ==========================================
 

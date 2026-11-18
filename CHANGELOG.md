@@ -4,6 +4,33 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.8] – 2026-11-18
+
+### ✨ Kamera-Vollbild ohne Zwangsdrehung (`0°`-Standard + 4-Stufen-Rotationsbutton), E-Auto Sprit-Ersparnis (`⛽ vs. Benzin`) in Live-Wallbox, Sessions & Analyse/Amortisation sowie Aufgeräumte Planung & Analyse-Übersicht
+
+#### 1. Kamera-Vollbild-Fix: Natürliche `0°`-Ausrichtung statt fehlerhafter Auto-Rotation (`index.html`, `telemetry.js`)
+* **Kein verzerrtes oder auf dem Kopf stehendes Bild mehr beim Drehen des Smartphones (`openHomeCameraFullscreenModal`, `applyFullscreenCameraStageLayout`):**
+  - Bisher erzwang das Kamera-Vollbild beim Öffnen auf dem Smartphone sofort eine künstliche CSS-Drehung (`rotate(90deg)` mit vertauschten `100dvh`/`100dvw`-Achsen) parallel zum Fullscreen-Request. Drehte man das Handy anschließend ins Querformat, addierten sich Browser-Rotation und CSS-Rotation, sodass das 16:9-Bild zu einem schmalen Streifen gestaucht wurde oder auf dem Kopf stand.
+  - Ab sofort startet der Stream im Vollbild immer aufrecht in natürlicher **`0°`-Standardausrichtung** (`cameraFullscreenRotationDeg = 0`). Über den Button **`Drehen (0°)`** oben rechts lässt sich das Bild bei Bedarf manuell in 4 klaren Schritten (**`0° -> 90° -> 180° -> 270°`**) in jede gewünschte Richtung drehen.
+
+#### 2. E-Auto Sprit-Substitution (`⛽ vs. Benzin`) als Single Source of Truth in Live-Wallbox, Sessions & Analyse (`app.js`, `telemetry.js`, `index.html`)
+* **Zentrale Sprit-Ersparnis-Engine (`getEvFuelSavingsMetrics` in `window.PVProCore`):**
+  - Verknüpft die real geladenen Wallbox-`kWh` (Solar-Anteil + Netz-Anteil) mit den Fahrzeug- und Kraftstoffparametern aus der Finanzplanung (`fin_petrol_price` Standard `1,75 €/L`, `fin_ice_cons` Standard `7,0 L/100km`, spezifischer E-Auto-Verbrauch aus `cons_ev_kwh / cons_ev_km` bzw. `18,0 kWh/100km`).
+  - Berechnet für jeden Ladevorgang, jeden Tag, jeden Monat und das Gesamtjahr sowohl den **reinen PV-Stromvorteil** (`Solar-kWh × Hausstrompreis`) als auch die **äquivalente Fahrstrecke (`~km`)**, die **ersetzten Liter Benzin (`L`)** und die **Netto-Ersparnis gegenüber einem Verbrenner** (`Benzinkosten minus tatsächliche Ladekosten aus Netzbezug + entgangener EEG-Vergütung`).
+* **Durchgängige Anzeige in Live & Analyse:**
+  - **Live Wallbox-Kachel & Session-Historie:** Zeigt direkt in der Session-Kachel (`~km · +X,XX € PV · ⛽ +Y,YY € vs. Benzin`), in der Tages-/Monatskachel sowie im Session-Popup (`#modal-wallbox-sessions`) eine eigene 4. KPI-Kachel **`⛽ Sprit-Ersparnis`** und die geladenen Kilometer pro Ladevorgang.
+  - **Analyse Top-KPI, Sankey, E-Mobility-Bilanz & Reale Amortisation:** Die Top-Kachel **`Real-Ersparnis (€)`**, das Sankey-Wallbox-Banner, die E-Mobility-Karte in *Autarkie & Speicher* und das Detail-Panel **`3. Reale Amortisation & €-Bilanz`** weisen den E-Auto-Spritvorteil (`#ana_fin_saved_ev_fuel`) transparent aus und berücksichtigen ihn in der realen Amortisationsdauer (`Ist vs. Plan`).
+
+#### 3. Aufgeräumte Planung (`#tab-auswertung`) & Entschlacktes Analyse-Hub (`#tab-performance` Ebene 1) (`index.html`, `telemetry.js`)
+* **Planung (Schritt 6 · Ergebnis) ohne doppelte Diagramm-Wand:**
+  - Die kompakte **Simulierte Autarkie & Energiefluss-Bilanz** (Autarkie-/Eigenverbrauchs-Ringe + 4 Energieblöcke) bleibt direkt sichtbar und bietet einen Direkt-Button **`Zum Analyse-Balkencockpit`**.
+  - Die 5 detaillierten PVGIS-Simulationsdiagramme (Monatserzeugung, Monatsverbrauch, String-Ertrag, Tagesauflösung) sind nun standardmäßig in einem aufgeräumten Akkordeon (**`Simulierte PVGIS-Planungsdiagramme bei Bedarf einblenden`**) eingeklappt, bleiben aber im DOM für den VDE-Dossier-Export (`dossier.js`) vollständig erhalten.
+* **Analyse-Tab (Ebene 1) entschlackt:**
+  - Die 4 großen, redundanten Drill-Down-Kacheln am unteren Seitenende wurden durch eine kompakte **4er-Schnellwahl-Leiste** (`Soll-Ist (PVGIS)` · `Autarkie & E-Auto` · `Amortisation & €` · `Monats-Logbuch`) direkt unter dem Balkendiagramm-Cockpit-Banner ersetzt.
+  - Das **Sankey-Energieflussdiagramm** rückt direkt nach oben; darunter zeigt der **Monatliche PVGIS-Soll-Ist-Fokus** standardmäßig nur den kompakten Fokus-Banner des aktuellen Monats (die 12-Monats-Liste klappt erst auf Klick auf **`Alle Monate ausklappen`** auf).
+
+---
+
 ## [Version 12.7] – 2026-11-18
 
 ### ✨ Historien-gestützte Wallbox-Sessions (Exakter Abgleich mit Live-Diagramm), Vergangene Ladesessions (Aufklappbar + Session-Popup), Aktive Wallbox-Leiste im Startseiten-Kurzüberblick & Kompakte String-Prozentzahlen (`80%`)

@@ -1,8 +1,8 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V12.7)
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V12.8)
 // Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '12.7';
+const APP_VERSION = '12.8';
 const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
 const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
 const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);
@@ -4812,9 +4812,63 @@ function getUnifiedFinanceAndRoiSummary() {
         lcoeCtPerKwh
     };
 }
+
+function getEvFuelSavingsMetrics(chargedKwh = 0, solarKwh = 0, customOpts = {}) {
+    const cKwh = Math.max(0, Number(chargedKwh) || 0);
+    const sKwh = Math.max(0, Math.min(cKwh, Number(solarKwh) || 0));
+    const gKwh = Math.max(0, cKwh - sKwh);
+
+    const gridPriceEur = Number(customOpts.gridPriceEur) > 0
+        ? Number(customOpts.gridPriceEur)
+        : (parseFloat(document.getElementById('fin_grid_price')?.value) || 0.32);
+    const eegRateEur = Number(customOpts.eegRateEur) >= 0 && customOpts.eegRateEur !== undefined
+        ? Number(customOpts.eegRateEur)
+        : ((typeof updateEEGPreview === 'function' ? updateEEGPreview() : 7.8) / 100);
+    const petrolPriceEur = Number(customOpts.petrolPriceEur) > 0
+        ? Number(customOpts.petrolPriceEur)
+        : (parseFloat(document.getElementById('fin_petrol_price')?.value) || 1.75);
+    const iceConsL = Number(customOpts.iceConsL) > 0
+        ? Number(customOpts.iceConsL)
+        : (parseFloat(document.getElementById('fin_ice_cons')?.value) || 7.0);
+
+    const plannedEvKwh = parseFloat(document.getElementById('cons_ev_kwh')?.value) || 0;
+    const plannedEvKm = parseFloat(document.getElementById('cons_ev_km')?.value) || 0;
+    const evKwhPer100Km = (plannedEvKwh > 100 && plannedEvKm > 500)
+        ? Math.max(11.0, Math.min(30.0, (plannedEvKwh / plannedEvKm) * 100))
+        : 18.0;
+
+    const drivenKmEquivalent = evKwhPer100Km > 0 ? ((cKwh / evKwhPer100Km) * 100) : 0;
+    const petrolEquivalentLiters = (drivenKmEquivalent / 100) * iceConsL;
+    const petrolCostEquivalentEur = petrolEquivalentLiters * petrolPriceEur;
+    const pvElectricityAdvantageEur = sKwh * gridPriceEur;
+    const actualChargingCostEur = (gKwh * gridPriceEur) + (sKwh * eegRateEur);
+    const netFuelSavingsVsIceEur = Math.max(0, petrolCostEquivalentEur - actualChargingCostEur);
+
+    return {
+        chargedKwh: +cKwh.toFixed(3),
+        solarKwh: +sKwh.toFixed(3),
+        gridKwh: +gKwh.toFixed(3),
+        evKwhPer100Km: +evKwhPer100Km.toFixed(1),
+        iceConsL: +iceConsL.toFixed(1),
+        petrolPriceEur: +petrolPriceEur.toFixed(2),
+        gridPriceEur: +gridPriceEur.toFixed(3),
+        eegRateEur: +eegRateEur.toFixed(4),
+        drivenKmEquivalent: Math.round(drivenKmEquivalent),
+        petrolEquivalentLiters: +petrolEquivalentLiters.toFixed(2),
+        petrolCostEquivalentEur: +petrolCostEquivalentEur.toFixed(2),
+        pvElectricityAdvantageEur: +pvElectricityAdvantageEur.toFixed(2),
+        actualChargingCostEur: +actualChargingCostEur.toFixed(2),
+        netFuelSavingsVsIceEur: +netFuelSavingsVsIceEur.toFixed(2)
+    };
+}
+
 if (typeof window !== 'undefined') {
     window.getUnifiedFinanceAndRoiSummary = getUnifiedFinanceAndRoiSummary;
-    if (window.PVProCore) window.PVProCore.getUnifiedFinanceAndRoiSummary = getUnifiedFinanceAndRoiSummary;
+    window.getEvFuelSavingsMetrics = getEvFuelSavingsMetrics;
+    if (window.PVProCore) {
+        window.PVProCore.getUnifiedFinanceAndRoiSummary = getUnifiedFinanceAndRoiSummary;
+        window.PVProCore.getEvFuelSavingsMetrics = getEvFuelSavingsMetrics;
+    }
 }
 
 function calculateFinances() {

@@ -1,5 +1,5 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.7)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.8)
 // Zentrale Single Source of Truth via PVProCore (Stromausfall-0W-Guard,
 // Verbraucher-Gruppen, Geräte-Diagnose, 3-Stufen Hauskameras & IndexedDB Sync)
 // ============================================================================
@@ -6251,15 +6251,24 @@ function changeAnalysisYear(yearVal) {
 }
 
 let monthlyYieldSummaryFilter = 'recorded'; // 'recorded' | 'all'
+let isMonthlyYieldListExpanded = false;
 
 function setMonthlyYieldSummaryFilter(mode) {
     monthlyYieldSummaryFilter = mode === 'all' ? 'all' : 'recorded';
+    isMonthlyYieldListExpanded = true;
+    const baseline = getPlannedSystemBaseline();
+    const metrics = computeAggregatedPerformanceMetrics(baseline);
+    renderMonthlyYieldSummaryCard(baseline, metrics);
+}
+function toggleMonthlyYieldListExpanded() {
+    isMonthlyYieldListExpanded = !isMonthlyYieldListExpanded;
     const baseline = getPlannedSystemBaseline();
     const metrics = computeAggregatedPerformanceMetrics(baseline);
     renderMonthlyYieldSummaryCard(baseline, metrics);
 }
 if (typeof window !== 'undefined') {
     window.setMonthlyYieldSummaryFilter = setMonthlyYieldSummaryFilter;
+    window.toggleMonthlyYieldListExpanded = toggleMonthlyYieldListExpanded;
 }
 
 function computeAggregatedPerformanceMetrics(baseline) {
@@ -6416,14 +6425,45 @@ function computeAggregatedPerformanceMetrics(baseline) {
 
     const recordedSelfSavingsEur = selfConsumedTotalKwh * baseline.gridPriceEur;
     const recordedFeedInEur = gridExportSum * baseline.eegRateEur;
-    const recordedTotalEur = recordedSelfSavingsEur + recordedFeedInEur;
+    const recordedElectricityEur = recordedSelfSavingsEur + recordedFeedInEur;
 
-    const projectedAnnualRealEur = monthlyComparison.reduce((acc, m) => {
+    // E-Auto Sprit-Substitution (Fossil-Ersatz ggü. Verbrenner)
+    const wbYearOrMonthKwh = Math.max(0, Number(ledger?.year?.wallboxKwh || ledger?.month?.wallboxKwh || 0));
+    const wbYearOrMonthSolarKwh = Math.max(0, Number(ledger?.year?.wallboxSolarKwh || ledger?.month?.wallboxSolarKwh || 0));
+    const evFuelMetrics = typeof getEvFuelSavingsMetrics === 'function'
+        ? getEvFuelSavingsMetrics(wbYearOrMonthKwh, wbYearOrMonthSolarKwh, {
+            gridPriceEur: baseline.gridPriceEur,
+            eegRateEur: baseline.eegRateEur
+        })
+        : {
+            chargedKwh: wbYearOrMonthKwh,
+            solarKwh: wbYearOrMonthSolarKwh,
+            gridKwh: Math.max(0, wbYearOrMonthKwh - wbYearOrMonthSolarKwh),
+            drivenKmEquivalent: Math.round((wbYearOrMonthKwh / 18) * 100),
+            petrolEquivalentLiters: +(((wbYearOrMonthKwh / 18) * 7.0)).toFixed(2),
+            petrolCostEquivalentEur: +(((wbYearOrMonthKwh / 18) * 7.0 * 1.75)).toFixed(2),
+            pvElectricityAdvantageEur: +(wbYearOrMonthSolarKwh * baseline.gridPriceEur).toFixed(2),
+            netFuelSavingsVsIceEur: 0
+        };
+
+    // Zusatz-Ersparnis durch Sprit-Substitution über den reinen PV-Eigenstromvorteil hinaus
+    // (da wbSolarKwh * gridPriceEur bereits in selfConsumedTotalKwh * gridPriceEur enthalten ist)
+    const evAdditionalFuelBonusEur = Math.max(0, evFuelMetrics.netFuelSavingsVsIceEur - evFuelMetrics.pvElectricityAdvantageEur);
+    const recordedTotalEur = recordedElectricityEur + evAdditionalFuelBonusEur;
+
+    const projectedAnnualElectricityEur = monthlyComparison.reduce((acc, m) => {
         if (m.hasReal && !m.isCurrentRunningMonth) return acc + m.totalBenefitEur;
         return acc + (m.sollMonthEur * (overallPerfIndexPct / 100));
     }, 0);
+    const annualizedEvBonusEur = recordedMonthsCount > 0
+        ? (evAdditionalFuelBonusEur * (12 / Math.max(1, recordedMonthsCount)))
+        : evAdditionalFuelBonusEur;
+    const projectedAnnualRealEur = projectedAnnualElectricityEur + annualizedEvBonusEur;
 
-    const plannedAnnualEur = monthlyComparison.reduce((acc, m) => acc + m.sollMonthEur, 0);
+    const plannedFin = typeof getUnifiedFinanceAndRoiSummary === 'function' ? getUnifiedFinanceAndRoiSummary() : null;
+    const plannedAnnualEur = (plannedFin && plannedFin.annualSavingsEur > 0)
+        ? plannedFin.annualSavingsEur
+        : monthlyComparison.reduce((acc, m) => acc + m.sollMonthEur, 0);
     const realAmortYears = projectedAnnualRealEur > 0 ? (baseline.sysCostEur / projectedAnnualRealEur) : 99;
     const plannedAmortYears = plannedAnnualEur > 0 ? (baseline.sysCostEur / plannedAnnualEur) : 99;
 
@@ -6452,7 +6492,11 @@ function computeAggregatedPerformanceMetrics(baseline) {
         batFullCycles,
         recordedSelfSavingsEur,
         recordedFeedInEur,
+        recordedElectricityEur,
+        evFuelMetrics,
+        evAdditionalFuelBonusEur,
         recordedTotalEur,
+        projectedAnnualElectricityEur,
         projectedAnnualRealEur,
         plannedAnnualEur,
         realAmortYears,
@@ -6605,9 +6649,22 @@ function renderMonthlyYieldSummaryCard(baseline, metrics) {
         `;
     }
 
-    // 3. Render Monthly Comparison Rows / Grid
+    // 3. Render Monthly Comparison Rows / Grid (Collapsed by default on Level 1 to prevent visual clutter)
     const listEl = document.getElementById('monthlyYieldSummaryList');
+    const toggleBtnLbl = document.getElementById('btnMonthlyYieldListToggleLabel');
+    const toggleBtnIcon = document.getElementById('btnMonthlyYieldListToggleIcon');
+    if (toggleBtnLbl) {
+        toggleBtnLbl.textContent = isMonthlyYieldListExpanded ? 'Monatsliste einklappen' : 'Alle Monate ausklappen';
+    }
+    if (toggleBtnIcon) {
+        toggleBtnIcon.textContent = isMonthlyYieldListExpanded ? 'expand_less' : 'expand_more';
+    }
     if (listEl) {
+        if (!isMonthlyYieldListExpanded) {
+            listEl.classList.add('hidden');
+        } else {
+            listEl.classList.remove('hidden');
+        }
         let monthsToRender = metrics.monthlyComparison;
         if (monthlyYieldSummaryFilter === 'recorded') {
             monthsToRender = metrics.monthlyComparison.filter(m => m.hasReal || m.isCurrentRunningMonth);
@@ -6711,14 +6768,17 @@ function renderAnalysisSection(baseline) {
         perfEl.className = `text-xl sm:text-3xl font-black font-mono tabular-nums ${metrics.overallPerfIndexPct >= 98 ? 'text-emerald-600 dark:text-emerald-400' : (metrics.overallPerfIndexPct >= 88 ? 'text-amber-500' : 'text-rose-500')}`;
     }
 
+    const hasEvFuelBonus = (metrics.evFuelMetrics?.chargedKwh || 0) > 0.05;
     setElText('ana_kpi_euro_real', `${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} €`);
-    setElText('ana_kpi_euro_sub', `Hochrechnung Jahr: ${Math.round(metrics.projectedAnnualRealEur).toLocaleString('de-DE')} €/a · ROI: ${metrics.realAmortYears.toFixed(1)} J.`);
+    setElText('ana_kpi_euro_sub', hasEvFuelBonus
+        ? `Strom+EEG: ${Math.round(metrics.recordedElectricityEur)} € · ⛽ Sprit: +${Math.round(metrics.evFuelMetrics.netFuelSavingsVsIceEur)} €`
+        : `Hochrechnung: ${Math.round(metrics.projectedAnnualRealEur).toLocaleString('de-DE')} €/a · ROI: ${metrics.realAmortYears.toFixed(1)} J.`);
 
     // Update Level 1 Drill-Down Hub Card Subtitles
-    setElText('hub_card_soll_ist_sub', `${perfSign}${perfDelta} % Abweichung (${metrics.overallPerfIndexPct.toFixed(1)} % PR) · ${Math.round(metrics.realPvSum).toLocaleString('de-DE')} / ${Math.round(metrics.sollPvForRecordedMonths).toLocaleString('de-DE')} kWh`);
-    setElText('hub_card_autarkie_sub', `${metrics.realAutarkyPct.toFixed(1)} % Autarkie · ${metrics.realEigenQuotaPct.toFixed(1)} % Eigenverbrauch · ${baseline.totalBatteryKwh > 0 ? metrics.batFullCycles.toFixed(0) + ' Zyklen' : 'Ohne Speicher'}`);
-    setElText('hub_card_amort_sub', `${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} € gespart · ROI ${metrics.realAmortYears.toFixed(1)} J. (Plan: ${metrics.plannedAmortYears.toFixed(1)} J.)`);
-    setElText('hub_card_logbuch_sub', `${metrics.recordedMonthsCount} von 12 Monaten für ${selectedAnalysisYear} erfasst · HA-Sync & CSV`);
+    setElText('hub_card_soll_ist_sub', `${perfSign}${perfDelta} % Abweichung (${metrics.overallPerfIndexPct.toFixed(1)} % PR)`);
+    setElText('hub_card_autarkie_sub', `${metrics.realAutarkyPct.toFixed(1)} % Autarkie · ${metrics.realEigenQuotaPct.toFixed(1)} % Eigenverbrauch`);
+    setElText('hub_card_amort_sub', `${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} € inkl. E-Auto · ROI ${metrics.realAmortYears.toFixed(1)} J.`);
+    setElText('hub_card_logbuch_sub', `${metrics.recordedMonthsCount}/12 Monate (${selectedAnalysisYear})`);
 
     // Render Monthly Yield Summary Card directly on Level 1 Hub
     renderMonthlyYieldSummaryCard(baseline, metrics);
@@ -8619,6 +8679,9 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
             </div>
         ` : '';
 
+        const wbEvFuel = d.hasWallbox && typeof getEvFuelSavingsMetrics === 'function'
+            ? getEvFuelSavingsMetrics(d.wallboxKwh, d.wallboxSolarKwh, { gridPriceEur: d.gridPriceEur })
+            : null;
         const wbRibbonHtml = d.hasWallbox ? `
             <div class="col-span-full p-3 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/35 border border-emerald-500/30 text-left flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div class="flex items-center gap-2.5 min-w-0">
@@ -8634,9 +8697,14 @@ function renderSankeyDiagram(horizon = currentSankeyHorizon, baseline = null, me
                         </p>
                     </div>
                 </div>
-                <span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[11px] font-mono font-bold shrink-0">
-                    +${(d.wallboxSolarKwh * d.gridPriceEur).toFixed(2).replace('.', ',')} € Solar-Laden
-                </span>
+                <div class="flex items-center gap-1.5 flex-wrap shrink-0">
+                    <span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-[11px] font-mono font-bold">
+                        +${(d.wallboxSolarKwh * d.gridPriceEur).toFixed(2).replace('.', ',')} € Solar-Strom
+                    </span>
+                    ${wbEvFuel ? `<span class="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[11px] font-mono font-bold" title="Netto-Ersparnis gegenüber Verbrenner (${wbEvFuel.iceConsL} L/100km · ${wbEvFuel.petrolPriceEur.toFixed(2).replace('.', ',')} €/L)">
+                        ⛽ +${wbEvFuel.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin (~${wbEvFuel.drivenKmEquivalent} km)
+                    </span>` : ''}
+                </div>
             </div>
         ` : '';
 
@@ -8765,6 +8833,9 @@ function renderAutarkyBatteryPanel(baseline, metrics) {
             const wbM = ledger.month;
             const wbShareOfHouse = wbM.houseTotal > 0 ? Math.min(100, Math.round((wbM.wallboxKwh / wbM.houseTotal) * 100)) : 0;
             const savedEurMonth = (wbM.wallboxSolarKwh * baseline.gridPriceEur).toFixed(2).replace('.', ',');
+            const evFuelM = typeof getEvFuelSavingsMetrics === 'function'
+                ? getEvFuelSavingsMetrics(wbM.wallboxKwh, wbM.wallboxSolarKwh, { gridPriceEur: baseline.gridPriceEur, eegRateEur: baseline.eegRateEur })
+                : null;
             wbBox.innerHTML = `
                 <div class="p-4 rounded-2xl bg-emerald-500/10 dark:bg-emerald-950/35 border border-emerald-500/30 space-y-3">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -8773,15 +8844,20 @@ function renderAutarkyBatteryPanel(baseline, metrics) {
                                 <span class="material-symbols-rounded text-xl">ev_station</span>
                             </div>
                             <div>
-                                <h5 class="text-sm font-black text-slate-900 dark:text-white">${typeof escapeHtml === 'function' ? escapeHtml(ledger.primaryWallboxName) : ledger.primaryWallboxName} · E-Mobility &amp; Hausverbrauch-Bilanz</h5>
+                                <h5 class="text-sm font-black text-slate-900 dark:text-white">${typeof escapeHtml === 'function' ? escapeHtml(ledger.primaryWallboxName) : ledger.primaryWallboxName} · E-Mobility &amp; Sprit-Substitution</h5>
                                 <p class="text-[11px] text-slate-500 dark:text-slate-400">Hinter Smart Meter angeschlossen · Voll im Hausverbrauch &amp; Autarkiegrad berücksichtigt</p>
                             </div>
                         </div>
-                        <span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-xs font-mono font-bold self-start sm:self-auto">
-                            ☀️ ${wbM.wallboxPvSharePct}% PV-Ladeanteil
-                        </span>
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="px-2.5 py-1 rounded-xl bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 text-xs font-mono font-bold">
+                                ☀️ ${wbM.wallboxPvSharePct}% PV-Ladeanteil
+                            </span>
+                            ${evFuelM ? `<span class="px-2.5 py-1 rounded-xl bg-amber-500/20 text-amber-800 dark:text-amber-200 text-xs font-mono font-bold">
+                                ⛽ +${evFuelM.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin (~${evFuelM.drivenKmEquivalent} km)
+                            </span>` : ''}
+                        </div>
                     </div>
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono tabular-nums">
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-xs font-mono tabular-nums">
                         <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
                             <span class="text-[10px] text-slate-400 block">Wallbox (Monat)</span>
                             <span class="text-sm font-extrabold text-slate-900 dark:text-white">${formatKwhDe(wbM.wallboxKwh, 2)}</span>
@@ -8790,16 +8866,21 @@ function renderAutarkyBatteryPanel(baseline, metrics) {
                         <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
                             <span class="text-[10px] text-slate-400 block">Solar-Ladestrom</span>
                             <span class="text-sm font-extrabold text-emerald-600 dark:text-emerald-400">${formatKwhDe(wbM.wallboxSolarKwh, 2)}</span>
-                            <span class="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 block">+${savedEurMonth} € gespart</span>
+                            <span class="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 block">+${savedEurMonth} € PV-Vorteil</span>
                         </div>
                         <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
                             <span class="text-[10px] text-slate-400 block">Netz-Ladestrom</span>
                             <span class="text-sm font-extrabold text-blue-600 dark:text-blue-400">${formatKwhDe(wbM.wallboxGridKwh, 2)}</span>
                             <span class="text-[10px] text-slate-500 block">Zukauf aus Netz</span>
                         </div>
-                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20">
+                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-amber-500/25">
+                            <span class="text-[10px] text-amber-600 dark:text-amber-400 block">⛽ Sprit-Ersparnis</span>
+                            <span class="text-sm font-extrabold text-amber-600 dark:text-amber-400">+${evFuelM ? evFuelM.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',') : '0,00'} €</span>
+                            <span class="text-[10px] text-slate-500 block">${evFuelM ? `~${evFuelM.drivenKmEquivalent} km · ${evFuelM.petrolEquivalentLiters.toFixed(1).replace('.', ',')} L Benzin` : 'vs. Verbrenner'}</span>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-white/75 dark:bg-slate-900/75 border border-emerald-500/20 col-span-2 sm:col-span-1">
                             <span class="text-[10px] text-slate-400 block">Haushalt (ohne WB)</span>
-                            <span class="text-sm font-extrabold text-amber-600 dark:text-amber-400">${formatKwhDe(wbM.houseWithoutWallboxKwh, 2)}</span>
+                            <span class="text-sm font-extrabold text-teal-600 dark:text-teal-400">${formatKwhDe(wbM.houseWithoutWallboxKwh, 2)}</span>
                             <span class="text-[10px] text-slate-500 block">Reine Hauslast</span>
                         </div>
                     </div>
@@ -8865,13 +8946,18 @@ function renderRealAmortizationPanel(baseline, metrics) {
     const deltaAnnualEur = metrics.projectedAnnualRealEur - metrics.plannedAnnualEur;
     const deltaSign = deltaAnnualEur >= 0 ? '+' : '';
     const paybackPct = baseline.sysCostEur > 0 ? Math.min(100, (metrics.recordedTotalEur / baseline.sysCostEur) * 100) : 0;
+    const evM = metrics.evFuelMetrics || { chargedKwh: 0, netFuelSavingsVsIceEur: 0, drivenKmEquivalent: 0, petrolEquivalentLiters: 0, petrolCostEquivalentEur: 0 };
 
     setElText('ana_fin_invest_total', `${Math.round(baseline.sysCostEur).toLocaleString('de-DE')} €`);
     setElText('ana_fin_saved_self', `${Math.round(metrics.recordedSelfSavingsEur).toLocaleString('de-DE')} €`);
     setElText('ana_fin_saved_eeg', `${Math.round(metrics.recordedFeedInEur).toLocaleString('de-DE')} €`);
+    setElText('ana_fin_saved_ev_fuel', `+${Math.round(evM.netFuelSavingsVsIceEur).toLocaleString('de-DE')} €`);
+    setElText('ana_fin_saved_ev_sub', evM.chargedKwh > 0
+        ? `~${evM.drivenKmEquivalent} km · ${evM.petrolEquivalentLiters.toFixed(1).replace('.', ',')} L Benzin ersetzt`
+        : 'Wallbox E-Auto vs. Verbrenner');
     setElText('ana_fin_delta_plan', `${deltaSign}${Math.round(deltaAnnualEur).toLocaleString('de-DE')} €/Jahr`);
     setElText('ana_fin_amort_compare', `${metrics.realAmortYears.toFixed(1)} J. (Ist) vs. ${metrics.plannedAmortYears.toFixed(1)} J. (Plan)`);
-    setElText('ana_fin_progress_label', `${paybackPct.toFixed(1)} % im aktuellen Jahr eingespielt (${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} € von ${Math.round(baseline.sysCostEur).toLocaleString('de-DE')} €)`);
+    setElText('ana_fin_progress_label', `${paybackPct.toFixed(1)} % im aktuellen Jahr eingespielt (${Math.round(metrics.recordedTotalEur).toLocaleString('de-DE')} € inkl. Sprit-Vorteil von ${Math.round(baseline.sysCostEur).toLocaleString('de-DE')} €)`);
 
     const progBar = document.getElementById('ana_fin_progress_bar');
     if (progBar) progBar.style.width = `${Math.max(2, paybackPct)}%`;
@@ -10347,9 +10433,12 @@ function renderWallboxSessionsModalContent() {
     const totalGridKwh = Math.max(0, totalKwh - totalSolarKwh);
     const avgPvPct = totalKwh > 0.01 ? Math.min(100, Math.max(0, Math.round((totalSolarKwh / totalKwh) * 100))) : 0;
     const totalSavedEur = (totalSolarKwh * gridPrice).toFixed(2).replace('.', ',');
+    const totalEvFuel = typeof getEvFuelSavingsMetrics === 'function'
+        ? getEvFuelSavingsMetrics(totalKwh, totalSolarKwh, { gridPriceEur: gridPrice, eegRateEur: baseline?.eegRateEur })
+        : null;
 
     const summaryHtml = `
-        <div class="grid grid-cols-3 gap-2.5">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <div class="p-3 rounded-2xl bg-slate-100/85 dark:bg-slate-800/75 border border-slate-200/80 dark:border-white/10">
                 <p class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Erfasste Sessions</p>
                 <p class="text-lg sm:text-xl font-black tabular-nums text-slate-900 dark:text-white mt-0.5">${sessionsList.length}</p>
@@ -10361,9 +10450,14 @@ function renderWallboxSessionsModalContent() {
                 <p class="text-[11px] text-emerald-700/80 dark:text-emerald-300/80 tabular-nums mt-0.5">${formatKwhDe(totalSolarKwh, 2)} Solar</p>
             </div>
             <div class="p-3 rounded-2xl bg-teal-500/10 dark:bg-teal-500/15 border border-teal-500/25">
-                <p class="text-[11px] font-semibold text-teal-700 dark:text-teal-300">PV-Ersparnis</p>
+                <p class="text-[11px] font-semibold text-teal-700 dark:text-teal-300">PV-Stromvorteil</p>
                 <p class="text-lg sm:text-xl font-black tabular-nums text-teal-700 dark:text-teal-300 mt-0.5">+${totalSavedEur} €</p>
                 <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-0.5">Netz: ${formatKwhDe(totalGridKwh, 2)}</p>
+            </div>
+            <div class="p-3 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/25">
+                <p class="text-[11px] font-semibold text-amber-700 dark:text-amber-300">⛽ Sprit-Ersparnis</p>
+                <p class="text-lg sm:text-xl font-black tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">+${totalEvFuel ? totalEvFuel.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',') : '0,00'} €</p>
+                <p class="text-[11px] text-amber-700/80 dark:text-amber-300/80 tabular-nums mt-0.5">${totalEvFuel ? `~${totalEvFuel.drivenKmEquivalent} km vs. Benzin` : 'vs. Verbrenner'}</p>
             </div>
         </div>
     `;
@@ -10386,6 +10480,9 @@ function renderWallboxSessionsModalContent() {
         const pvPct = Math.min(100, Math.max(0, Number(s.pvSharePct) || 0));
         const gridPct = Math.max(0, 100 - pvPct);
         const savedEur = ((Number(s.solarKwh) || 0) * gridPrice).toFixed(2).replace('.', ',');
+        const sFuel = typeof getEvFuelSavingsMetrics === 'function'
+            ? getEvFuelSavingsMetrics(s.chargedKwh, s.solarKwh, { gridPriceEur: gridPrice, eegRateEur: baseline?.eegRateEur })
+            : null;
         const peakStr = s.peakPowerW > 0 ? formatPowerDe(s.peakPowerW, s.peakPowerW < 1000) : '';
 
         return `
@@ -10398,12 +10495,12 @@ function renderWallboxSessionsModalContent() {
                             <span class="text-xs sm:text-[13px] font-bold text-slate-900 dark:text-white tabular-nums">${escapeHtml(label)}</span>
                             ${s.isOngoing ? `<span class="px-1.5 py-0.5 rounded-md bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-[10px] font-extrabold">Aktiv</span>` : ''}
                         </div>
-                        <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">Dauer: ${dur}${peakStr ? ` · Peak: ${peakStr}` : ''}</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">Dauer: ${dur}${peakStr ? ` · Peak: ${peakStr}` : ''}${sFuel ? ` · ~${sFuel.drivenKmEquivalent} km` : ''}</p>
                     </div>
                 </div>
                 <div class="text-right shrink-0 tabular-nums">
                     <p class="text-sm sm:text-base font-black text-slate-900 dark:text-white">${formatKwhDe(s.chargedKwh, 2)}</p>
-                    <p class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">☀️ ${pvPct}% PV · +${savedEur} €</p>
+                    <p class="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">☀️ ${pvPct}% PV · +${savedEur} €${sFuel ? ` · <span class="text-amber-600 dark:text-amber-400">⛽ +${sFuel.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} €</span>` : ''}</p>
                 </div>
             </div>
             <div class="space-y-1">
@@ -10502,6 +10599,12 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
             : (wbM.hasCounterSensor ? 'Synchron mit kWh-Zähler' : 'Berechnet aus Live-Watt');
 
         const savedSessionEur = (wbM.sessionSolarKwh * gridPrice).toFixed(2).replace('.', ',');
+        const sessionFuelMetrics = typeof getEvFuelSavingsMetrics === 'function'
+            ? getEvFuelSavingsMetrics(wbM.sessionChargedKwh, wbM.sessionSolarKwh, { gridPriceEur: gridPrice, eegRateEur: baseline?.eegRateEur })
+            : null;
+        const todayFuelMetrics = typeof getEvFuelSavingsMetrics === 'function'
+            ? getEvFuelSavingsMetrics(todayKwh, todayKwh * ((wbM.dayPvSharePct ?? displayPvSharePct) / 100), { gridPriceEur: gridPrice, eegRateEur: baseline?.eegRateEur })
+            : null;
 
         // When NOT actively charging and NOT expanded: render sleek 1-row summary below consumer bars
         if (!isCharging && !isIdleExpanded) {
@@ -10573,16 +10676,19 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     const lbl = formatWallboxSessionDateLabel(s.startedAtMs, s.endedAtMs, s.isOngoing);
                     const dur = formatWallboxSessionDuration(s.durationMinutes);
                     const sEur = ((Number(s.solarKwh) || 0) * gridPrice).toFixed(2).replace('.', ',');
+                    const sFuel = typeof getEvFuelSavingsMetrics === 'function'
+                        ? getEvFuelSavingsMetrics(s.chargedKwh, s.solarKwh, { gridPriceEur: gridPrice, eegRateEur: baseline?.eegRateEur })
+                        : null;
                     return `
                     <div class="px-3 py-2 rounded-xl bg-white/80 dark:bg-slate-950/60 border border-slate-200/75 dark:border-white/10 flex items-center justify-between gap-2 text-xs tabular-nums">
                         <div class="min-w-0">
                             <span class="font-bold text-slate-800 dark:text-slate-100">${escapeHtml(lbl)}</span>
-                            <span class="text-[11px] text-slate-500 dark:text-slate-400 ml-1.5">(${dur})</span>
+                            <span class="text-[11px] text-slate-500 dark:text-slate-400 ml-1.5">(${dur}${sFuel ? ` · ~${sFuel.drivenKmEquivalent} km` : ''})</span>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
                             <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 text-[10.5px] font-bold">☀️ ${s.pvSharePct}% PV</span>
                             <span class="font-black text-slate-900 dark:text-white">${formatKwhDe(s.chargedKwh, 2)}</span>
-                            <span class="text-[11px] text-teal-700 dark:text-teal-300 font-semibold hidden sm:inline">+${sEur} €</span>
+                            <span class="text-[11px] text-teal-700 dark:text-teal-300 font-semibold hidden sm:inline">+${sEur} €${sFuel ? ` · ⛽ +${sFuel.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} €` : ''}</span>
                         </div>
                     </div>`;
                 }).join('') : `<p class="text-xs text-slate-500 dark:text-slate-400 py-1">Noch keine Ladesessions im Verlauf erfasst.</p>`}
@@ -10655,22 +10761,23 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                     </p>
                 </div>
 
-                <!-- KPI 2: Geladene kWh seit Ladebeginn (History-Synced Session Counter) -->
+                <!-- KPI 2: Geladene kWh seit Ladebeginn (History-Synced Session Counter + Sprit-Ersparnis vs. Verbrenner) -->
                 <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-teal-500/25 flex flex-col justify-between">
                     <div class="flex items-center justify-between gap-1">
                         <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Geladen seit Ladebeginn</span>
                         <span class="material-symbols-rounded text-sm text-teal-500">battery_charging_full</span>
                     </div>
-                    <div class="flex items-baseline gap-2 mt-1">
+                    <div class="flex items-baseline justify-between gap-2 mt-1">
                         <span class="text-xl sm:text-2xl font-black font-mono tabular-nums text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</span>
+                        ${sessionFuelMetrics && sessionFuelMetrics.drivenKmEquivalent > 0 ? `<span class="text-[11px] font-mono font-bold text-amber-600 dark:text-amber-400">~${sessionFuelMetrics.drivenKmEquivalent} km</span>` : ''}
                     </div>
                     <p class="text-[11px] text-teal-700 dark:text-teal-300 tabular-nums mt-1 truncate">
-                        ${sessionTimeHint} · +${savedSessionEur} € PV-Vorteil
+                        ${sessionTimeHint} · +${savedSessionEur} € PV${sessionFuelMetrics ? ` · ⛽ +${sessionFuelMetrics.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin` : ''}
                     </p>
                     ${undoResetHintHtml}
                 </div>
 
-                <!-- KPI 3: Tages- & Monatsbilanz (im Hausverbrauch enthalten) -->
+                <!-- KPI 3: Tages- & Monatsbilanz (im Hausverbrauch enthalten + Tages-Spritersparnis) -->
                 <div class="p-3 rounded-2xl bg-white/85 dark:bg-slate-950/65 border border-slate-200/80 dark:border-white/10 flex flex-col justify-between">
                     <div class="flex items-center justify-between gap-1">
                         <span class="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Wallbox Heute / Monat</span>
@@ -10681,7 +10788,9 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                         <span class="text-[11px] font-mono tabular-nums text-slate-400">/ ${formatKwhDe(monthKwh, 1)} M</span>
                     </div>
                     <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-1 truncate">
-                        Im Hausverbrauch (${formatKwhDe(td?.houseTotal || 0, 2)}) berücksichtigt
+                        ${todayFuelMetrics && todayKwh > 0.1
+                            ? `⛽ Heute +${todayFuelMetrics.netFuelSavingsVsIceEur.toFixed(2).replace('.', ',')} € vs. Benzin (~${todayFuelMetrics.drivenKmEquivalent} km)`
+                            : `Im Hausverbrauch (${formatKwhDe(td?.houseTotal || 0, 2)}) berücksichtigt`}
                     </p>
                 </div>
             </div>
@@ -15538,7 +15647,7 @@ let homeCamerasRefreshTimer = null;
 let homeCamerasStackRefreshTimer = null;
 let homeCameraFullscreenRefreshTimer = null;
 let activeFullscreenCameraId = null;
-let isCameraFullscreenRotated = false;
+let cameraFullscreenRotationDeg = 0; // 0 | 90 | 180 | 270 (standardmäßig 0° ohne automatische Zwangsdrehung)
 const cameraObjectUrlsMap = new Map(); // imgDomId -> objectUrl
 const cameraLastResolvedSrcMap = new Map(); // camId -> last valid src
 
@@ -15982,16 +16091,20 @@ function applyFullscreenCameraStageLayout() {
     const rotBtnLabel = document.getElementById('homeCameraFullscreenRotateLabel');
     if (!stage) return;
 
-    if (isCameraFullscreenRotated) {
+    const deg = ((Number(cameraFullscreenRotationDeg) || 0) % 360 + 360) % 360;
+    const isQuarterTurn = (deg === 90 || deg === 270);
+
+    if (isQuarterTurn) {
         stage.style.width = '100dvh';
         stage.style.height = '100dvw';
-        stage.style.transform = 'rotate(90deg)';
-        if (rotBtnLabel) rotBtnLabel.innerText = 'Querformat (90°)';
     } else {
         stage.style.width = '100dvw';
         stage.style.height = '100dvh';
-        stage.style.transform = 'none';
-        if (rotBtnLabel) rotBtnLabel.innerText = 'Normal (0°)';
+    }
+
+    stage.style.transform = deg === 0 ? 'none' : `rotate(${deg}deg)`;
+    if (rotBtnLabel) {
+        rotBtnLabel.innerText = `Drehen (${deg}°)`;
     }
 }
 
@@ -16006,21 +16119,14 @@ function openHomeCameraFullscreenModal(camId) {
     if (!modal) return;
     modal.classList.remove('hidden');
 
-    // Automatically activate 90° Landscape mode if device is currently held in portrait orientation
-    isCameraFullscreenRotated = window.innerHeight > window.innerWidth;
+    // Start in natural 0° upright orientation so turning the phone or viewing 16:9 never double-rotates or flips upside-down
+    cameraFullscreenRotationDeg = 0;
     applyFullscreenCameraStageLayout();
 
-    // Try native Fullscreen + landscape orientation lock where supported
+    // Request native fullscreen without forcing screen.orientation.lock (which conflicted with manual rotation)
     try {
         if (modal.requestFullscreen && !document.fullscreenElement) {
-            modal.requestFullscreen().then(() => {
-                if (screen.orientation && typeof screen.orientation.lock === 'function') {
-                    screen.orientation.lock('landscape').then(() => {
-                        isCameraFullscreenRotated = false;
-                        applyFullscreenCameraStageLayout();
-                    }).catch(() => {});
-                }
-            }).catch(() => {});
+            modal.requestFullscreen().catch(() => {});
         }
     } catch (e) {}
 
@@ -16052,7 +16158,7 @@ function renderActiveFullscreenCameraContent() {
 }
 
 function toggleHomeCameraFullscreenRotation() {
-    isCameraFullscreenRotated = !isCameraFullscreenRotated;
+    cameraFullscreenRotationDeg = (((Number(cameraFullscreenRotationDeg) || 0) + 90) % 360);
     applyFullscreenCameraStageLayout();
 }
 
