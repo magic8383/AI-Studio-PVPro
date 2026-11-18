@@ -1,5 +1,5 @@
 // ============================================================================
-// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.5)
+// TELEMETRY, LIVE DASHBOARD, SANKEY ENERGY FLOW & PERFORMANCE ENGINE (V12.6)
 // Zentrale Single Source of Truth via PVProCore (Stromausfall-0W-Guard,
 // Verbraucher-Gruppen, Geräte-Diagnose, 3-Stufen Hauskameras & IndexedDB Sync)
 // ============================================================================
@@ -671,7 +671,7 @@ async function initTelemetryAndAnalysis() {
         const savedCurves = localStorage.getItem('pvpro_active_curves');
         if (savedCurves) {
             const parsedC = JSON.parse(savedCurves);
-            if (Array.isArray(parsedC) && parsedC.length > 0) {
+            if (Array.isArray(parsedC)) {
                 activeCurveKeys = new Set(parsedC);
             }
         }
@@ -1254,9 +1254,8 @@ function setSensorDiagnostic(entityId, diagObj) {
     sensorDiagnosticsByEntity[cleanId] = {
         ...prev,
         ...diagObj,
-        // Preserve any detected jumpInfo notice while status/readings update
-        jumpInfo: diagObj.jumpInfo !== undefined ? diagObj.jumpInfo : prev.jumpInfo,
-        jumpKwh: diagObj.jumpKwh !== undefined ? diagObj.jumpKwh : prev.jumpKwh,
+        jumpInfo: diagObj.jumpInfo !== undefined ? diagObj.jumpInfo : null,
+        jumpKwh: diagObj.jumpKwh !== undefined ? diagObj.jumpKwh : null,
         entityId: cleanId,
         updatedAt: Date.now()
     };
@@ -1268,26 +1267,60 @@ function getSensorDiagnostic(entityId) {
     return sensorDiagnosticsByEntity[cleanId] || null;
 }
 
-function renderEntityDiagnosticSubline(entityId) {
+const expandedSensorDiagEntities = new Set();
+
+function toggleSensorDiagInfo(entityId, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
     const cleanId = String(entityId || '').trim();
-    if (!cleanId) return '';
-    const d = getSensorDiagnostic(cleanId);
-    if (!d) return '';
-    const safeReason = typeof escapeHtml === 'function' ? escapeHtml(d.reason || '') : (d.reason || '');
+    if (!cleanId) return;
+    if (expandedSensorDiagEntities.has(cleanId)) {
+        expandedSensorDiagEntities.delete(cleanId);
+    } else {
+        expandedSensorDiagEntities.add(cleanId);
+    }
+    const box = document.getElementById(`sensor_diag_box_${cleanId.replace(/[^a-zA-Z0-9_-]/g, '_')}`);
+    if (box) {
+        box.classList.toggle('hidden', !expandedSensorDiagEntities.has(cleanId));
+    } else {
+        renderHaCustomConsumersEditor();
+        renderHaCustomStringsEditor();
+        renderHaPvEnergyExtraList();
+    }
+}
+if (typeof window !== 'undefined') {
+    window.toggleSensorDiagInfo = toggleSensorDiagInfo;
+}
+
+function renderEntityDiagnosticSubline(entityId, extraInfoText = '') {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId && !extraInfoText) return '';
+    const d = cleanId ? getSensorDiagnostic(cleanId) : null;
+    if (!d && !extraInfoText) return '';
+    const safeReason = typeof escapeHtml === 'function' ? escapeHtml(d?.reason || '') : (d?.reason || '');
     const fmtNum = (v, dec = 2) => (v !== undefined && v !== null && !isNaN(v))
         ? Number(v).toLocaleString('de-DE', { minimumFractionDigits: dec, maximumFractionDigits: dec })
         : '–';
 
-    if (d.status === 'unavailable' || d.status === 'wrong_unit' || d.status === 'fallback_watt') {
+    if (d && (d.status === 'unavailable' || d.status === 'wrong_unit' || d.status === 'fallback_watt')) {
         return `<div class="mt-1 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] font-semibold text-amber-700 dark:text-amber-300 flex items-start gap-1 break-words max-w-full overflow-hidden">
             <span class="material-symbols-rounded text-xs shrink-0 mt-0.5">info</span>
             <span class="break-words min-w-0">${safeReason || 'Sensor liefert aktuell keinen kWh-Wert → Berechnung aus Live-Watt'}</span>
         </div>`;
     }
 
-    let html = '';
-    if (d.currentKwh !== undefined && d.currentKwh !== null) {
-        const parts = [`Aktuell: ${fmtNum(d.currentKwh, 2)} kWh`];
+    const hasCounterDetails = Boolean(d && d.currentKwh !== undefined && d.currentKwh !== null);
+    if (!hasCounterDetails && !extraInfoText) return '';
+
+    const toggleKey = cleanId || `extra_${extraInfoText.slice(0, 16)}`;
+    const domSafeId = toggleKey.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const isExpanded = expandedSensorDiagEntities.has(toggleKey);
+    const safeToggleKeyJs = toggleKey.replace(/'/g, "\\'");
+
+    const parts = [];
+    if (hasCounterDetails) {
+        parts.push(`Aktuell: ${fmtNum(d.currentKwh, 2)} kWh`);
         if (d.deltaTodayKwh !== undefined && d.deltaTodayKwh !== null) {
             const bDay = d.baseTodayKwh !== undefined && d.baseTodayKwh !== null ? ` (00:00: ${fmtNum(d.baseTodayKwh, 2)})` : '';
             parts.push(`Heute: +${fmtNum(d.deltaTodayKwh, 2)} kWh${bDay}`);
@@ -1296,20 +1329,25 @@ function renderEntityDiagnosticSubline(entityId) {
             const bMo = d.baseMonthKwh !== undefined && d.baseMonthKwh !== null ? ` (Start: ${fmtNum(d.baseMonthKwh, 1)})` : '';
             parts.push(`Monat: +${fmtNum(d.deltaMonthKwh, 1)} kWh${bMo}`);
         }
-        html += `<div class="mt-1 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-800 dark:text-emerald-300 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 break-words max-w-full overflow-hidden">
-            <span class="font-bold">✓ 1:1 kWh-Zähler aktiv</span>
-            <span class="break-words min-w-0">${parts.join(' · ')}</span>
-        </div>`;
     }
 
-    if (d.jumpInfo) {
-        const safeJump = typeof escapeHtml === 'function' ? escapeHtml(d.jumpInfo) : d.jumpInfo;
-        html += `<div class="mt-1 px-2 py-1 rounded-lg bg-sky-500/10 border border-sky-500/30 text-[10px] font-semibold text-sky-800 dark:text-sky-300 flex items-start gap-1 break-words max-w-full overflow-hidden">
-            <span class="material-symbols-rounded text-xs shrink-0 mt-0.5">info</span>
-            <span class="break-words min-w-0">${safeJump} (wird 1:1 ungefiltert mitgezählt)</span>
-        </div>`;
-    }
-    return html;
+    const shortBadgeLabel = hasCounterDetails
+        ? `✓ Zähler aktiv${d.deltaTodayKwh !== undefined && d.deltaTodayKwh !== null ? ` (+${fmtNum(d.deltaTodayKwh, 2)} kWh)` : ''}`
+        : `ⓘ Info`;
+
+    return `
+    <div class="mt-1">
+        <button type="button" onclick="toggleSensorDiagInfo('${safeToggleKeyJs}', event)"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 transition-colors cursor-pointer select-none"
+            title="Klicken für Zähler- &amp; Modus-Details">
+            <span>${shortBadgeLabel}</span>
+            <span class="material-symbols-rounded text-[12px]">info</span>
+        </button>
+        <div id="sensor_diag_box_${domSafeId}" class="${isExpanded ? '' : 'hidden'} mt-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[10px] font-mono text-emerald-800 dark:text-emerald-300 space-y-1 break-words max-w-full overflow-hidden">
+            ${hasCounterDetails ? `<div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5"><span class="font-bold">✓ 1:1 kWh-Zähler aktiv</span><span>${parts.join(' · ')}</span></div>` : ''}
+            ${extraInfoText ? `<div class="font-sans font-semibold text-emerald-700 dark:text-emerald-300">${typeof escapeHtml === 'function' ? escapeHtml(extraInfoText) : extraInfoText}</div>` : ''}
+        </div>
+    </div>`;
 }
 
 function getEffectiveTrackingStartDate(cfg = haConfigState) {
@@ -1328,6 +1366,15 @@ function isConsumerEnergyEntity(entityId, cfg = haConfigState) {
     if (!cleanId) return false;
     const consumers = cfg?.customConsumers || haConfigState?.customConsumers || [];
     return consumers.some(cc => String(cc?.energyEntity || '').trim() === cleanId);
+}
+
+function isWallboxEnergyEntity(entityId, cfg = haConfigState) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return false;
+    const consumers = cfg?.customConsumers || haConfigState?.customConsumers || [];
+    const matchedWb = consumers.some(cc => String(cc?.energyEntity || '').trim() === cleanId && (cc.type === 'wallbox' || isWallboxConsumerName(cc.name)));
+    if (matchedWb) return true;
+    return isWallboxConsumerName(cleanId);
 }
 
 function isEntityCumulativeTotal(entityId, statesMap = null, forceCumulative = false) {
@@ -1572,8 +1619,9 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
         const scale = getEnergyScaleForEntity(entId, statesMap);
         const isCum = isEntityCumulativeTotal(entId, statesMap, false);
         const isConsumer = isConsumerEnergyEntity(entId, cfg);
-        const maxSingleStepKwh = isConsumer ? 4.0 : 25.0;
-        const initJumpThresholdKwh = isConsumer ? 4.0 : 15.0;
+        const isWb = isWallboxEnergyEntity(entId, cfg);
+        const maxSingleStepKwh = isWb ? 120.0 : (isConsumer ? 25.0 : 60.0);
+        const initJumpThresholdKwh = isWb ? 150.0 : (isConsumer ? 35.0 : 50.0);
 
         let prevPtVal = null;
         let validDeltaSum = 0;
@@ -1598,22 +1646,12 @@ async function syncEnergyCounterBaselinesFromHaHistory(cfg, statesMap = null) {
                 const diff = v >= prevPtVal
                     ? (v - prevPtVal)
                     : ((v < 0.5 && prevPtVal > 2.0) ? v : 0);
-                const isJump = isCum && (
-                    ((prevPtVal <= 2.0) && diff >= initJumpThresholdKwh) ||
+                const isJump = isCum && !isWb && (
+                    ((prevPtVal <= 0.5) && diff >= initJumpThresholdKwh) ||
                     diff >= maxSingleStepKwh
                 );
                 if (isJump) {
                     hadOffsetJump = true;
-                    const jumpVal = +diff.toFixed(1);
-                    const dt = new Date(pt.last_changed || pt.last_updated || periodStartMs);
-                    const dateStr = !isNaN(dt.getTime())
-                        ? dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
-                        : '';
-                    setSensorDiagnostic(entId, {
-                        status: 'ok',
-                        jumpKwh: jumpVal,
-                        jumpInfo: `Zähler-Sprung von ${prevPtVal.toFixed(1).replace('.', ',')} → ${v.toFixed(1).replace('.', ',')} kWh (+${jumpVal.toFixed(1).replace('.', ',')} kWh${dateStr ? ' am ' + dateStr : ''}) automatisch herausgerechnet`
-                    });
                 } else if (diff > 0) {
                     validDeltaSum += diff;
                 }
@@ -1916,8 +1954,9 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         if (!Array.isArray(buckets) || buckets.length === 0) return;
         const scale = getEnergyScaleForEntity(entId, statesMap);
         const isConsumer = isConsumerEnergyEntity(entId, cfg);
-        const maxDailyStepKwh = isConsumer ? 15.0 : 180.0;
-        const initJumpMinKwh = isConsumer ? 4.0 : 40.0;
+        const isWb = isWallboxEnergyEntity(entId, cfg);
+        const maxDailyStepKwh = isWb ? 260.0 : (isConsumer ? 85.0 : 220.0);
+        const initJumpMinKwh = isWb ? 260.0 : (isConsumer ? 50.0 : 80.0);
         const byMonth = {};
         let prevBucketState = null;
 
@@ -1941,23 +1980,19 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
             }
             if (typeof b.change === 'number' && !isNaN(b.change)) {
                 const dKwh = Math.max(0, b.change * scale);
-                const isInitialOffsetJump = ((prevBucketState === null || prevBucketState <= 5.0) && dKwh >= initJumpMinKwh)
-                    || dKwh >= maxDailyStepKwh;
+                const isInitialOffsetJump = !isWb && (
+                    ((prevBucketState === null || prevBucketState <= 0.5) && dKwh >= initJumpMinKwh)
+                    || dKwh >= maxDailyStepKwh
+                );
                 if (!isInitialOffsetJump) {
                     byMonth[mIdx].changeSum += dKwh;
                     byMonth[mIdx].hasChange = true;
                 } else {
                     byMonth[mIdx].jumpOffsetSum += dKwh;
-                    const dateStr = bDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-                    setSensorDiagnostic(entId, {
-                        status: 'ok',
-                        jumpKwh: +dKwh.toFixed(1),
-                        jumpInfo: `Start-Zählerstand ${dKwh.toFixed(1).replace('.', ',')} kWh am ${dateStr} als Basis kalibriert`
-                    });
                 }
             } else if (rawStVal !== null && prevBucketState !== null && prevBucketState > 0.5) {
                 const stepDiff = rawStVal >= prevBucketState ? (rawStVal - prevBucketState) : 0;
-                const isStepJump = ((prevBucketState <= 5.0) && stepDiff >= initJumpMinKwh) || stepDiff >= maxDailyStepKwh;
+                const isStepJump = !isWb && (((prevBucketState <= 0.5) && stepDiff >= initJumpMinKwh) || stepDiff >= maxDailyStepKwh);
                 if (stepDiff >= 0 && !isStepJump) {
                     byMonth[mIdx].changeSum += stepDiff;
                     byMonth[mIdx].hasChange = true;
@@ -4467,10 +4502,14 @@ function renderLiveCockpitUI(baseline) {
             return b.powerW - a.powerW;
         };
 
-        // Bundle consumers that belong to a group into a single expandable group item
+        // Bundle consumers that belong to a group into a single expandable group item.
+        // Idle Wallboxes (!c.isActive && c.isWallbox) are shown in the dedicated 1-row card right below #dash_active_consumers_list so they are not duplicated.
         const groupMap = new Map();
         const displayItems = [];
         consumers.forEach(c => {
+            if (c.isWallbox && !(c.powerW > 45)) {
+                return;
+            }
             if (c.group) {
                 const slug = normalizeConsumerGroupSlug(c.group);
                 const curveKey = `group_${slug}`;
@@ -4965,13 +5004,35 @@ function renderInlineDiagSymbol(diagTone, diagText) {
     return `<span class="inline-flex items-center justify-center ml-1 text-[12.5px] font-extrabold text-amber-500 dark:text-amber-400 shrink-0" title="${safeTip}">∫</span>`;
 }
 
+function resolveCustomStringKwp(cs, idx, baseline = null) {
+    if (cs && cs.kwp !== undefined && cs.kwp !== null && cs.kwp !== '' && Number(cs.kwp) > 0) {
+        return +Number(cs.kwp).toFixed(2);
+    }
+    const base = baseline || (typeof getPlannedSystemBaseline === 'function' ? getPlannedSystemBaseline() : null);
+    if (!base) return 0;
+    const summaries = Array.isArray(base.stringSummaries) ? base.stringSummaries : [];
+    if (cs && typeof cs.id === 'string' && cs.id.startsWith('str_plan_')) {
+        const planId = cs.id.replace('str_plan_', '');
+        const matched = summaries.find(s => String(s.id) === String(planId));
+        if (matched && Number(matched.kwp) > 0) return +Number(matched.kwp).toFixed(2);
+    }
+    if (summaries[idx] && Number(summaries[idx].kwp) > 0) {
+        return +Number(summaries[idx].kwp).toFixed(2);
+    }
+    if (summaries.length === 1 && Number(base.totalKwp) > 0) {
+        return +Number(base.totalKwp).toFixed(2);
+    }
+    return 0;
+}
+
 function getAvailableCurveDefinitions() {
     const t = currentLiveTelemetry;
     const intKwh = intradaySeriesState.integratedKwh || {};
     const peaks = intradaySeriesState.peakValues || {};
     const dayIntCache = intradayHistoryCache.day?.integratedKwh || {};
     const dayPeakCache = intradayHistoryCache.day?.peakValues || {};
-    const ledger = typeof getUnifiedEnergyLedger === 'function' ? getUnifiedEnergyLedger() : null;
+    const baseline = typeof getPlannedSystemBaseline === 'function' ? getPlannedSystemBaseline() : null;
+    const ledger = typeof getUnifiedEnergyLedger === 'function' ? getUnifiedEnergyLedger(baseline) : null;
     const customStrings = Array.isArray(haConfigState.customStrings) && haConfigState.customStrings.length > 0
         ? haConfigState.customStrings
         : DEFAULT_CUSTOM_STRINGS;
@@ -4987,8 +5048,9 @@ function getAvailableCurveDefinitions() {
         : (isMonth ? (win.boundedByTrackingStart ? `ab ${trackShortStr}` : '30 Tage') : 'heute');
 
     const defs = [];
+    let sumStringKwp = 0;
 
-    // 1. Custom PV Strings / Inverters
+    // 1. Custom PV Strings / Inverters (with right-aligned kWp Performance % and kWh/kWp!)
     customStrings.forEach((cs, idx) => {
         const teleItem = (t.customStringsTelemetry || []).find(x => x.id === cs.id);
         const liveW = teleItem ? teleItem.powerW : (t.stringTelemetry?.[cs.id]?.powerW || 0);
@@ -5005,6 +5067,22 @@ function getAvailableCurveDefinitions() {
         const diagRefKwh = isDay ? rawExplicitKwh : Math.max(rawExplicitKwh ?? 0, rawMonthExplicitKwh ?? 0, kwhVal);
         const diag = getChannelEnergyDiagnosticBadge(cs.energyEntity, diagRefKwh, calcKwh);
 
+        const strKwp = resolveCustomStringKwp(cs, idx, baseline);
+        if (strKwp > 0) sumStringKwp += strKwp;
+
+        let rightBadgeLine1 = '';
+        let rightBadgeLine2 = '';
+        let rightBadgeTitle = '';
+        if (strKwp > 0) {
+            const specYield = kwhVal / strKwp;
+            const specPct = Math.round(specYield * 100);
+            const specYieldFmt = specYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const kwpFmt = strKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            rightBadgeLine1 = `${specPct}% · ${specYieldFmt}/kWp`;
+            rightBadgeLine2 = `${kwpFmt} kWp`;
+            rightBadgeTitle = `Performance pro kWp: ${specYieldFmt} kWh/kWp (${specPct} % bei ${kwpFmt} kWp Nennleistung)`;
+        }
+
         defs.push({
             key: cs.id,
             name: cs.name || `String ${idx + 1}`,
@@ -5012,10 +5090,14 @@ function getAvailableCurveDefinitions() {
             axis: 'yPower',
             unit: 'W',
             category: 'pv',
+            kwp: strKwp,
             liveDisplay: formatPowerDe(liveW, true),
             subLine1: `${formatKwhDe(kwhVal, 2)} ${periodSuffix}`,
             subLine2: `${formatPowerDe(peakW, true)} Max`,
             subDisplay: `${formatKwhDe(kwhVal, 2)} · Max ${formatPowerDe(peakW, true)}`,
+            rightBadgeLine1,
+            rightBadgeLine2,
+            rightBadgeTitle,
             diagTone: diag.tone,
             diagText: diag.text
         });
@@ -5032,6 +5114,19 @@ function getAvailableCurveDefinitions() {
             : Math.max(intKwh.pv_total ?? 0, todayPvKwh));
     const pvPeakW = Math.max(t.pvPowerW || 0, peaks.pv_total || 0, isDay ? 0 : (dayPeakCache.pv_total || 0));
     const pvDiag = getChannelEnergyDiagnosticBadge(pvCounterIds, t.pvEnergyTodayKwh, intKwh.pv_total ?? 0);
+    const totalSysKwp = +(Number(baseline?.totalKwp) > 0 ? Number(baseline.totalKwp) : sumStringKwp).toFixed(2);
+    let pvRightBadge1 = '';
+    let pvRightBadge2 = '';
+    let pvRightTitle = '';
+    if (totalSysKwp > 0) {
+        const pvSpecYield = pvTotalKwh / totalSysKwp;
+        const pvSpecPct = Math.round(pvSpecYield * 100);
+        const pvSpecFmt = pvSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const totKwpFmt = totalSysKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        pvRightBadge1 = `${pvSpecPct}% · ${pvSpecFmt}/kWp`;
+        pvRightBadge2 = `${totKwpFmt} kWp`;
+        pvRightTitle = `Gesamt-Performance pro kWp: ${pvSpecFmt} kWh/kWp (${pvSpecPct} % bei ${totKwpFmt} kWp Gesamtleistung)`;
+    }
     defs.push({
         key: 'pv_total',
         name: 'PV gesamt · DC',
@@ -5039,10 +5134,14 @@ function getAvailableCurveDefinitions() {
         axis: 'yPower',
         unit: 'W',
         category: 'pv',
+        kwp: totalSysKwp,
         liveDisplay: formatPowerDe(t.pvPowerW, t.pvPowerW < 1000),
         subLine1: `${formatKwhDe(pvTotalKwh, 2)} ${periodSuffix}`,
         subLine2: `${formatPowerDe(pvPeakW, true)} Max`,
         subDisplay: `${formatKwhDe(pvTotalKwh, 2)} · Max ${formatPowerDe(pvPeakW, true)}`,
+        rightBadgeLine1: pvRightBadge1,
+        rightBadgeLine2: pvRightBadge2,
+        rightBadgeTitle: pvRightTitle,
         diagTone: pvDiag.tone,
         diagText: pvDiag.text
     });
@@ -5369,9 +5468,7 @@ function computeIntradayDayAutoStartIndex(defs) {
 
 function toggleIntradayCurve(curveKey) {
     if (activeCurveKeys.has(curveKey)) {
-        if (activeCurveKeys.size > 1) {
-            activeCurveKeys.delete(curveKey);
-        }
+        activeCurveKeys.delete(curveKey);
     } else {
         activeCurveKeys.add(curveKey);
     }
@@ -5397,7 +5494,7 @@ function renderIntradayCurveSection(baseline) {
     }
     const resetBtn = document.getElementById('btnResetCurveFocus');
     if (resetBtn) {
-        if (currentFocusedCurveMode) resetBtn.classList.remove('hidden');
+        if (currentFocusedCurveMode || activeCurveKeys.size === 0) resetBtn.classList.remove('hidden');
         else resetBtn.classList.add('hidden');
     }
 
@@ -5550,10 +5647,16 @@ function renderIntradayCurveSection(baseline) {
                     <span class="text-[11px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md ${isActive ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}">${isActive ? 'AN' : 'AUS'}</span>
                 </div>
                 <div class="mt-1 space-y-0.5 tabular-nums">
-                    <p class="text-[12.5px] font-medium ${isActive ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-snug flex items-center gap-0.5 truncate">
-                        <span class="truncate">${d.subLine1 || d.subDisplay}</span>${renderInlineDiagSymbol(d.diagTone, d.diagText)}
-                    </p>
-                    <p class="text-[12px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-snug truncate">${d.subLine2 || ''}</p>
+                    <div class="flex items-center justify-between gap-1">
+                        <p class="text-[12.5px] font-medium ${isActive ? 'text-slate-700 dark:text-slate-200' : 'text-slate-500 dark:text-slate-400'} leading-snug flex items-center gap-0.5 min-w-0 truncate">
+                            <span class="truncate">${d.subLine1 || d.subDisplay}</span>${renderInlineDiagSymbol(d.diagTone, d.diagText)}
+                        </p>
+                        ${d.rightBadgeLine1 ? `<span class="text-[10.5px] font-bold px-1.5 py-0.5 rounded-md ${isActive ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300 border border-teal-500/25' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0 tabular-nums leading-none" title="${escapeHtml(d.rightBadgeTitle || '')}">${escapeHtml(d.rightBadgeLine1)}</span>` : ''}
+                    </div>
+                    <div class="flex items-center justify-between gap-1">
+                        <p class="text-[12px] ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} leading-snug truncate">${d.subLine2 || ''}</p>
+                        ${d.rightBadgeLine2 ? `<span class="text-[11px] font-semibold ${isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} shrink-0 tabular-nums" title="${escapeHtml(d.rightBadgeTitle || '')}">${escapeHtml(d.rightBadgeLine2)}</span>` : ''}
+                    </div>
                 </div>
             </div>`;
         };
@@ -5955,7 +6058,9 @@ function updateIntradayHoverReadout(localIndex, defs) {
         return `<span class="inline-flex items-center gap-1 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span><span class="${isDark ? 'text-slate-400' : 'text-slate-500'}">${safeName}:</span><strong class="${isDark ? 'text-white' : 'text-slate-900'}">${fmtVal} ${unit}</strong></span>`;
     });
 
-    const fullHtml = `<span class="text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap">${datePrefix}${timePart} Uhr</span><span class="text-slate-400 dark:text-slate-600">·</span>${htmlItems.join('<span class="text-slate-300 dark:text-slate-700 mx-0.5">·</span>')}`;
+    const fullHtml = activeDefs.length > 0
+        ? `<span class="text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap">${datePrefix}${timePart} Uhr</span><span class="text-slate-400 dark:text-slate-600">·</span>${htmlItems.join('<span class="text-slate-300 dark:text-slate-700 mx-0.5">·</span>')}`
+        : `<span class="text-slate-500 dark:text-slate-400 font-medium">Kein Kanal aktiv — Tippe unten auf eine oder mehrere Kacheln (oder oben auf „Alle“)</span>`;
 
     const readoutEl = document.getElementById('dash_curve_hover_readout');
     if (readoutEl) readoutEl.innerHTML = fullHtml;
@@ -6752,22 +6857,48 @@ function selectAnalyseBarCategory(cat) {
 }
 
 function toggleAnalyseBarChannel(channelId) {
-    // 1 Tile = 1 clean bar (or smart stack for houseTotal / pvTotal / pvStrings) — never side-by-side multi-bar clutter!
-    analyseBarExplorerState.selectedChannel = channelId;
-    analyseBarExplorerState.activeChannels = [channelId];
-    analyseBarExplorerState.soloChannel = channelId;
-    if (channelId === 'houseTotal') analyseBarExplorerState.activeCategory = 'bilanz';
-    else if (channelId === 'pvTotal') analyseBarExplorerState.activeCategory = 'solar';
-    else if (channelId === 'pvStrings') analyseBarExplorerState.activeCategory = 'haus_bat';
-    else if (channelId === 'gridImp' || channelId === 'gridExp') analyseBarExplorerState.activeCategory = 'netz';
-    else if (channelId === 'autarkyPct' || channelId === 'eigenPct' || channelId === 'savingsEur') analyseBarExplorerState.activeCategory = 'finanz';
+    // Allow 0, 1, or 2 active channels:
+    // - 0 channels: all deselected
+    // - 1 channel: rendered as foreground classic bars (or smart stack)
+    // - 2 channels: 1st selected = smooth filled area line in background, 2nd selected = classic bars in foreground!
+    const current = Array.isArray(analyseBarExplorerState.activeChannels)
+        ? [...analyseBarExplorerState.activeChannels]
+        : (analyseBarExplorerState.selectedChannel ? [analyseBarExplorerState.selectedChannel] : []);
+
+    const existingIdx = current.indexOf(channelId);
+    if (existingIdx !== -1) {
+        // Clicking an already active channel deselects it (even down to 0 channels!)
+        current.splice(existingIdx, 1);
+    } else {
+        if (current.length < 2) {
+            current.push(channelId);
+        } else {
+            // Keep max 2 channels: previous 2nd channel becomes 1st (background area line), new channel becomes 2nd (foreground bars)
+            current.shift();
+            current.push(channelId);
+        }
+    }
+
+    analyseBarExplorerState.activeChannels = current;
+    analyseBarExplorerState.selectedChannel = current.length > 0 ? current[current.length - 1] : '';
+    analyseBarExplorerState.soloChannel = analyseBarExplorerState.selectedChannel;
+
+    const leadCh = analyseBarExplorerState.selectedChannel;
+    if (leadCh === 'houseTotal') analyseBarExplorerState.activeCategory = 'bilanz';
+    else if (leadCh === 'pvTotal') analyseBarExplorerState.activeCategory = 'solar';
+    else if (leadCh === 'pvStrings') analyseBarExplorerState.activeCategory = 'haus_bat';
+    else if (leadCh === 'gridImp' || leadCh === 'gridExp') analyseBarExplorerState.activeCategory = 'netz';
+    else if (leadCh === 'autarkyPct' || leadCh === 'eigenPct' || leadCh === 'savingsEur') analyseBarExplorerState.activeCategory = 'finanz';
     else analyseBarExplorerState.activeCategory = '';
     renderAnalyseBarExplorer();
 }
 
 function focusSingleAnalyseBarChannel(channelId, ev) {
     if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
-    toggleAnalyseBarChannel(channelId);
+    analyseBarExplorerState.activeChannels = [channelId];
+    analyseBarExplorerState.selectedChannel = channelId;
+    analyseBarExplorerState.soloChannel = channelId;
+    renderAnalyseBarExplorer();
 }
 
 function selectAnalyseBarPreset(preset) {
@@ -6905,8 +7036,9 @@ function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1, prevSta
 
     const eScale = getEnergyScaleForEntity(entityId, null);
     const isConsumer = isConsumerEnergyEntity(entityId, haConfigState);
-    const maxStepKwh = isConsumer ? Math.max(4.0, hoursInBucket * 2.5) : Math.max(22.0, hoursInBucket * 12.0);
-    const initJumpMinKwh = isConsumer ? 4.0 : 25.0;
+    const isWb = isWallboxEnergyEntity(entityId, haConfigState);
+    const maxStepKwh = isWb ? Math.max(45.0, hoursInBucket * 25.0) : (isConsumer ? Math.max(15.0, hoursInBucket * 6.0) : Math.max(25.0, hoursInBucket * 14.0));
+    const initJumpMinKwh = isWb ? 200.0 : (isConsumer ? 40.0 : 50.0);
     const rawNum = typeof statRow.state === 'number'
         ? statRow.state
         : (typeof statRow.sum === 'number'
@@ -6916,8 +7048,8 @@ function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1, prevSta
 
     if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
         const dKwh = Math.max(0, statRow.change * eScale);
-        const isInitJump = ((prevStateKwh === null || prevStateKwh <= 2.0) && dKwh >= initJumpMinKwh)
-            || dKwh >= maxStepKwh;
+        const isInitJump = !isWb && (((prevStateKwh === null || prevStateKwh <= 0.5) && dKwh >= initJumpMinKwh)
+            || dKwh >= maxStepKwh);
         if (isInitJump) {
             return { deltaKwh: 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
         }
@@ -7480,20 +7612,34 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
     const catalog = getAnalyseBarExplorerChannelCatalog();
     const { labels, seriesById, win } = data;
 
-    // Ensure selectedChannel is valid
+    // Validate 0, 1, or 2 active channels
     const validIds = new Set(catalog.map(c => c.id));
-    if (!analyseBarExplorerState.selectedChannel || !validIds.has(analyseBarExplorerState.selectedChannel)) {
-        analyseBarExplorerState.selectedChannel = 'houseTotal';
+    if (!Array.isArray(analyseBarExplorerState.activeChannels)) {
+        analyseBarExplorerState.activeChannels = analyseBarExplorerState.selectedChannel && validIds.has(analyseBarExplorerState.selectedChannel)
+            ? [analyseBarExplorerState.selectedChannel]
+            : ['houseTotal'];
     }
-    const selId = analyseBarExplorerState.selectedChannel;
-    const primaryCh = catalog.find(c => c.id === selId) || catalog[0];
-    const primaryArr = seriesById[primaryCh.id] || [];
+    const activeIds = analyseBarExplorerState.activeChannels.filter(id => validIds.has(id)).slice(0, 2);
+    analyseBarExplorerState.activeChannels = activeIds;
 
-    // Update stacked toggle visibility/label (relevant for houseTotal and pvTotal)
+    // When 2 channels are selected: activeIds[0] = Background Area Line, activeIds[1] = Foreground Bars
+    // When 1 channel is selected: activeIds[0] = Foreground Bars
+    // When 0 channels are selected: empty chart (all deselected)
+    const hasTwoChannels = activeIds.length === 2;
+    const bgId = hasTwoChannels ? activeIds[0] : null;
+    const fgId = hasTwoChannels ? activeIds[1] : (activeIds.length === 1 ? activeIds[0] : null);
+    analyseBarExplorerState.selectedChannel = fgId || '';
+
+    const bgCh = bgId ? catalog.find(c => c.id === bgId) : null;
+    const primaryCh = fgId ? (catalog.find(c => c.id === fgId) || catalog[0]) : catalog[0];
+    const primaryArr = fgId ? (seriesById[primaryCh.id] || []) : [];
+    const bgArr = bgCh ? (seriesById[bgCh.id] || []) : [];
+
+    // Update stacked toggle visibility/label (relevant when foreground bar is houseTotal or pvTotal)
     const stackBtn = document.getElementById('btnBarExpStackedToggle');
     const stackLbl = document.getElementById('btnBarExpStackedLabel');
     if (stackBtn) {
-        if (selId === 'houseTotal' || selId === 'pvTotal') {
+        if (fgId === 'houseTotal' || fgId === 'pvTotal') {
             stackBtn.classList.remove('hidden');
             if (stackLbl) stackLbl.innerText = analyseBarExplorerState.stacked ? 'Aufteilung' : 'Einzeln';
         } else {
@@ -7501,7 +7647,7 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         }
     }
 
-    // Compute Summary KPIs for selected channel + overall PV/Autarky in period
+    // Compute Summary KPIs for foreground channel (and background channel if 2 selected)
     const sumVal = primaryArr.reduce((a, b) => a + (Number(b) || 0), 0);
     const nonZeroBuckets = primaryArr.filter(v => Number(v) > 0).length;
     const avgVal = primaryCh.unit === '%'
@@ -7525,47 +7671,72 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
     const fmtNum = (v, d = 1) => Number(v || 0).toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
     const kpiBox = document.getElementById('barExplorerSummaryKpis');
     if (kpiBox) {
-        const unitLabel = primaryCh.unit;
-        const bucketUnitName = analyseBarExplorerState.horizon === 'day' ? 'Stunde' : (analyseBarExplorerState.horizon === 'year' ? 'Monat' : 'Tag');
-        kpiBox.innerHTML = `
-            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
-                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</p>
-                <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
-                    ${fmtNum(primaryCh.unit === '%' ? avgVal : sumVal, primaryCh.unit === 'kWh' && sumVal < 10 ? 2 : 1)} ${unitLabel}
-                </p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${escapeHtml(win.label)}</p>
-            </div>
-            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
-                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
-                <p class="text-lg sm:text-xl font-bold tabular-nums text-teal-700 dark:text-teal-300 mt-0.5">
-                    ${fmtNum(avgVal, avgVal < 10 ? 2 : 1)} ${unitLabel}
-                </p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${nonZeroBuckets} aktive Intervalle</p>
-            </div>
-            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
-                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
-                <p class="text-lg sm:text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
-                    ${fmtNum(peakVal, peakVal < 10 ? 2 : 1)} ${unitLabel}
-                </p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">Zeit: ${escapeHtml(peakLabel)}</p>
-            </div>
-            <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
-                <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Autarkie im Zeitraum</p>
-                <p class="text-lg sm:text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
-                    ${fmtNum(autarkyPeriod, 1)} %
-                </p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">PV: ${fmtNum(pvSumPeriod, 1)} · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
-            </div>
-        `;
+        if (!fgId) {
+            kpiBox.innerHTML = `
+                <div class="col-span-2 sm:col-span-4 p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                    <span>Kein Kanal aktiv — Wähle unten 1 Kachel (Balken) oder 2 Kacheln (1. = Flächenlinie im Hintergrund, 2. = Balken im Vordergrund).</span>
+                    <span class="font-bold text-emerald-600 dark:text-emerald-400 shrink-0 ml-2">Autarkie: ${fmtNum(autarkyPeriod, 1)} %</span>
+                </div>`;
+        } else {
+            const unitLabel = primaryCh.unit;
+            const bucketUnitName = analyseBarExplorerState.horizon === 'day' ? 'Stunde' : (analyseBarExplorerState.horizon === 'year' ? 'Monat' : 'Tag');
+            const bgSumVal = bgArr.reduce((a, b) => a + (Number(b) || 0), 0);
+            const bgNz = bgArr.filter(v => Number(v) > 0).length;
+            const bgDispVal = bgCh ? (bgCh.unit === '%' ? (bgNz > 0 ? bgSumVal / bgNz : 0) : bgSumVal) : 0;
+            const secondCardHtml = bgCh
+                ? `<div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10" style="border-left: 3px solid ${bgCh.color}">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">1. Fläche: ${escapeHtml(bgCh.shortLabel || bgCh.label)}</p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                        ${fmtNum(bgDispVal, bgCh.unit === 'kWh' && bgDispVal < 10 ? 2 : 1)} ${bgCh.unit}
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">Hintergrund-Flächenlinie</p>
+                </div>`
+                : `<div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-teal-700 dark:text-teal-300 mt-0.5">
+                        ${fmtNum(avgVal, avgVal < 10 ? 2 : 1)} ${unitLabel}
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${nonZeroBuckets} aktive Intervalle</p>
+                </div>`;
+
+            kpiBox.innerHTML = `
+                <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10" style="border-left: 3px solid ${primaryCh.color}">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">${hasTwoChannels ? '2. Balken: ' : ''}${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                        ${fmtNum(primaryCh.unit === '%' ? avgVal : sumVal, primaryCh.unit === 'kWh' && sumVal < 10 ? 2 : 1)} ${unitLabel}
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${escapeHtml(win.label)}</p>
+                </div>
+                ${secondCardHtml}
+                <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+                        ${fmtNum(peakVal, peakVal < 10 ? 2 : 1)} ${unitLabel}
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">Zeit: ${escapeHtml(peakLabel)}</p>
+                </div>
+                <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Autarkie im Zeitraum</p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        ${fmtNum(autarkyPeriod, 1)} %
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">PV: ${fmtNum(pvSumPeriod, 1)} · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
+                </div>
+            `;
+        }
     }
 
-    // 2. Render 3-Column Channel Selector Tiles (Unified Design with Live Intraday Tiles + Inline ✓ / ∫ / ! Symbol)
+    // 2. Render 3-Column Channel Selector Tiles (Supports up to 2 channels: 1. Fläche + 2. Balken, plus right-aligned String kWp performance!)
     const isDark = document.documentElement.classList.contains('dark');
     const gridEl = document.getElementById('analysisExplorerChannelsGrid');
     if (gridEl) {
         const entCfg = haConfigState.entities || {};
         gridEl.innerHTML = catalog.map(ch => {
-            const isSelected = ch.id === selId;
+            const selOrderIdx = activeIds.indexOf(ch.id);
+            const isSelected = selOrderIdx !== -1;
+            const isBgAreaRole = hasTwoChannels && selOrderIdx === 0;
+            const isFgBarRole = (hasTwoChannels && selOrderIdx === 1) || (!hasTwoChannels && selOrderIdx === 0);
+
             const arr = seriesById[ch.id] || [];
             const total = arr.reduce((a, b) => a + (Number(b) || 0), 0);
             const nz = arr.filter(v => Number(v) > 0).length;
@@ -7582,6 +7753,33 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             else if (ch.id === 'batChg') chDiag = getChannelEnergyDiagnosticBadge(entCfg.batteryChargeMonth, total, total);
             else if (ch.id === 'batDis') chDiag = getChannelEnergyDiagnosticBadge(entCfg.batteryDischargeMonth, total, total);
             else if (ch.group === 'string') chDiag = getChannelEnergyDiagnosticBadge(ch.energyEntity, total, total);
+
+            // Right-aligned kWp performance badge for PV strings in Analyse Bar Explorer too
+            let strKwpPerfBadge = '';
+            if (ch.group === 'string') {
+                const sIdx = parseInt(String(ch.id).replace('str_', ''), 10);
+                const csObj = (haConfigState.customStrings || [])[sIdx];
+                const sKwp = resolveCustomStringKwp(csObj, sIdx, baseline);
+                if (sKwp > 0) {
+                    const specY = displayVal / sKwp;
+                    const specPct = Math.round(specY * 100);
+                    strKwpPerfBadge = `<span class="text-[10.5px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0 tabular-nums" title="Spezifischer Ertrag im Zeitraum bezogen auf ${fmtNum(sKwp, 2)} kWp">${specPct}% · ${fmtNum(specY, 2)}/kWp</span>`;
+                }
+            }
+
+            let roleBadgeText = 'AUS';
+            let roleBadgeClass = 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400';
+            if (isBgAreaRole) {
+                roleBadgeText = '1 · Fläche';
+                roleBadgeClass = 'bg-sky-500/15 text-sky-800 dark:text-sky-200 border border-sky-500/30';
+            } else if (isFgBarRole) {
+                roleBadgeText = ch.hasSmartStack && analyseBarExplorerState.stacked
+                    ? (hasTwoChannels ? '2 · Stapel' : 'Stapel')
+                    : (hasTwoChannels ? '2 · Balken' : 'Balken');
+                roleBadgeClass = 'bg-teal-500/15 text-teal-800 dark:text-teal-200 border border-teal-500/30';
+            } else if (ch.hasSmartStack) {
+                roleBadgeText = 'Stapel';
+            }
 
             let cardStyle = '';
             if (isDark) {
@@ -7603,15 +7801,13 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
                         <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${isSelected ? ch.color : '#94a3b8'}"></span>
                         <span class="text-[12.5px] ${isSelected ? 'font-medium text-slate-900 dark:text-slate-100' : 'font-normal text-slate-600 dark:text-slate-400'} truncate leading-snug">${escapeHtml(ch.shortLabel || ch.label)}</span>
                     </div>
-                    ${ch.hasSmartStack
-                        ? `<span class="text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-200' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0">Stapel</span>`
-                        : `<span class="text-[11px] font-semibold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0">${isSelected ? 'AN' : 'AUS'}</span>`
-                    }
+                    <span class="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-md ${roleBadgeClass} shrink-0">${roleBadgeText}</span>
                 </div>
                 <div class="mt-1.5 flex items-baseline justify-between gap-1 tabular-nums">
                     <span class="text-[16px] sm:text-[17px] font-bold ${isSelected ? 'text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'} leading-tight flex items-center gap-0.5">
                         <span>${valFmt} ${ch.unit}</span>${chDiag ? renderInlineDiagSymbol(chDiag.tone, chDiag.text) : ''}
                     </span>
+                    ${strKwpPerfBadge}
                 </div>
                 <p class="mt-0.5 text-[12px] ${isSelected ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'} tabular-nums truncate" title="Spitzenwert im Zeitraum">
                     Peak ${maxFmt} ${ch.unit}
@@ -7620,89 +7816,127 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         }).join('');
     }
 
-    // 3. Build Datasets: ALWAYS 1 BAR PER TIME BUCKET (either 1 solid bar or 1 meaningful stacked bar!)
+    // 3. Build Datasets: Supports 0 channels, 1 channel (Bars/Stack), or 2 channels (1st = Background Area Line, 2nd = Foreground Bars/Stack)
     const canvas = document.getElementById('analysisExplorerBarChart');
     if (!canvas || typeof Chart === 'undefined') return;
     let datasets = [];
     let isStackedBar = false;
-    let badgeText = '1 Balken / Intervall';
+    let badgeText = '0 / 2 Kanäle aktiv';
 
-    if (selId === 'houseTotal' && analyseBarExplorerState.stacked) {
-        isStackedBar = true;
-        badgeText = 'Hauslast-Aufteilung (gestapelt)';
-        datasets = [
-            {
-                label: 'Direkt-PV (kWh)',
-                data: seriesById._houseDirectPv || [],
-                backgroundColor: '#10b981',
+    if (fgId) {
+        if (fgId === 'houseTotal' && analyseBarExplorerState.stacked) {
+            isStackedBar = true;
+            badgeText = 'Hauslast-Aufteilung (gestapelt)';
+            datasets = [
+                {
+                    type: 'bar',
+                    label: 'Direkt-PV (kWh)',
+                    data: seriesById._houseDirectPv || [],
+                    backgroundColor: '#10b981',
+                    borderRadius: 2,
+                    stack: 'single_bar',
+                    order: 1
+                },
+                {
+                    type: 'bar',
+                    label: 'Aus Speicher (kWh)',
+                    data: seriesById._houseFromBat || [],
+                    backgroundColor: '#a855f7',
+                    borderRadius: 2,
+                    stack: 'single_bar',
+                    order: 1
+                },
+                {
+                    type: 'bar',
+                    label: 'Aus Stromnetz (kWh)',
+                    data: seriesById._houseFromGrid || [],
+                    backgroundColor: '#3b82f6',
+                    borderRadius: 3,
+                    stack: 'single_bar',
+                    order: 1
+                }
+            ];
+        } else if (fgId === 'pvTotal' && analyseBarExplorerState.stacked) {
+            isStackedBar = true;
+            badgeText = 'PV-Verwendung (gestapelt)';
+            datasets = [
+                {
+                    type: 'bar',
+                    label: 'Direktverbrauch (kWh)',
+                    data: seriesById._pvDirectUsed || [],
+                    backgroundColor: '#10b981',
+                    borderRadius: 2,
+                    stack: 'single_bar',
+                    order: 1
+                },
+                {
+                    type: 'bar',
+                    label: 'Batterie-Ladung (kWh)',
+                    data: seriesById._pvToBat || [],
+                    backgroundColor: '#a855f7',
+                    borderRadius: 2,
+                    stack: 'single_bar',
+                    order: 1
+                },
+                {
+                    type: 'bar',
+                    label: 'Netzeinspeisung (kWh)',
+                    data: seriesById._pvToGrid || [],
+                    backgroundColor: '#06b6d4',
+                    borderRadius: 3,
+                    stack: 'single_bar',
+                    order: 1
+                }
+            ];
+        } else if (fgId === 'pvStrings') {
+            isStackedBar = true;
+            badgeText = 'PV-Strings (gestapelt)';
+            const strChannels = catalog.filter(c => c.group === 'string');
+            datasets = strChannels.map(sc => ({
+                type: 'bar',
+                label: `${sc.shortLabel || sc.label} (kWh)`,
+                data: seriesById[sc.id] || [],
+                backgroundColor: sc.color,
                 borderRadius: 2,
-                stack: 'single_bar'
-            },
-            {
-                label: 'Aus Speicher (kWh)',
-                data: seriesById._houseFromBat || [],
-                backgroundColor: '#a855f7',
-                borderRadius: 2,
-                stack: 'single_bar'
-            },
-            {
-                label: 'Aus Stromnetz (kWh)',
-                data: seriesById._houseFromGrid || [],
-                backgroundColor: '#3b82f6',
-                borderRadius: 3,
-                stack: 'single_bar'
-            }
-        ];
-    } else if (selId === 'pvTotal' && analyseBarExplorerState.stacked) {
-        isStackedBar = true;
-        badgeText = 'PV-Verwendung (gestapelt)';
-        datasets = [
-            {
-                label: 'Direktverbrauch (kWh)',
-                data: seriesById._pvDirectUsed || [],
-                backgroundColor: '#10b981',
-                borderRadius: 2,
-                stack: 'single_bar'
-            },
-            {
-                label: 'Batterie-Ladung (kWh)',
-                data: seriesById._pvToBat || [],
-                backgroundColor: '#a855f7',
-                borderRadius: 2,
-                stack: 'single_bar'
-            },
-            {
-                label: 'Netzeinspeisung (kWh)',
-                data: seriesById._pvToGrid || [],
-                backgroundColor: '#06b6d4',
-                borderRadius: 3,
-                stack: 'single_bar'
-            }
-        ];
-    } else if (selId === 'pvStrings') {
-        isStackedBar = true;
-        badgeText = 'PV-Strings (gestapelt)';
-        const strChannels = catalog.filter(c => c.group === 'string');
-        datasets = strChannels.map(sc => ({
-            label: `${sc.shortLabel || sc.label} (kWh)`,
-            data: seriesById[sc.id] || [],
-            backgroundColor: sc.color,
-            borderRadius: 2,
-            stack: 'single_bar'
-        }));
-    } else {
-        isStackedBar = false;
-        badgeText = primaryCh.shortLabel || primaryCh.label;
-        datasets = [
-            {
-                label: `${primaryCh.shortLabel || primaryCh.label} (${primaryCh.unit})`,
-                data: primaryArr,
-                backgroundColor: primaryCh.color,
-                hoverBackgroundColor: primaryCh.color,
-                borderRadius: 4,
-                stack: 'single_bar'
-            }
-        ];
+                stack: 'single_bar',
+                order: 1
+            }));
+        } else {
+            isStackedBar = false;
+            badgeText = primaryCh.shortLabel || primaryCh.label;
+            datasets = [
+                {
+                    type: 'bar',
+                    label: `${primaryCh.shortLabel || primaryCh.label} (${primaryCh.unit})`,
+                    data: primaryArr,
+                    backgroundColor: hexToRgba(primaryCh.color, 0.88),
+                    hoverBackgroundColor: primaryCh.color,
+                    borderRadius: 4,
+                    stack: 'single_bar',
+                    order: 1
+                }
+            ];
+        }
+    }
+
+    const useSecondaryY = Boolean(bgCh && fgId && bgCh.unit !== primaryCh.unit);
+    if (bgCh) {
+        badgeText = `1. Fläche: ${bgCh.shortLabel || bgCh.label} · 2. Balken: ${primaryCh.shortLabel || primaryCh.label}`;
+        datasets.push({
+            type: 'line',
+            label: `${bgCh.shortLabel || bgCh.label} · Fläche (${bgCh.unit})`,
+            data: bgArr,
+            borderColor: bgCh.color,
+            backgroundColor: hexToRgba(bgCh.color, isDark ? 0.24 : 0.18),
+            borderWidth: 2.5,
+            fill: true,
+            tension: 0.34,
+            pointRadius: 2,
+            pointHoverRadius: 5,
+            pointBackgroundColor: bgCh.color,
+            yAxisID: useSecondaryY ? 'yBg' : 'y',
+            order: 2
+        });
     }
 
     setElText('barExplorerActiveCountBadge', badgeText);
@@ -7714,7 +7948,13 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
 
     const readoutEl = document.getElementById('barExplorerHoverReadout');
     if (readoutEl) {
-        readoutEl.innerHTML = `<span class="font-semibold text-teal-700 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${escapeHtml(primaryCh.label)} — Tippe auf einen Balken für Details`;
+        if (!fgId) {
+            readoutEl.innerHTML = `<span class="text-slate-500 dark:text-slate-400">Kein Kanal ausgewählt — Tippe unten auf 1 oder 2 Kacheln (1. = Flächenlinie im Hintergrund, 2. = Balken im Vordergrund)</span>`;
+        } else if (bgCh) {
+            readoutEl.innerHTML = `<span class="font-semibold text-teal-700 dark:text-teal-300">${escapeHtml(win.label)}</span> · <span style="color:${bgCh.color}" class="font-semibold">Fläche: ${escapeHtml(bgCh.shortLabel || bgCh.label)}</span> vs. <span style="color:${primaryCh.color}" class="font-semibold">Balken: ${escapeHtml(primaryCh.shortLabel || primaryCh.label)}</span>`;
+        } else {
+            readoutEl.innerHTML = `<span class="font-semibold text-teal-700 dark:text-teal-300">${escapeHtml(win.label)}</span> · ${escapeHtml(primaryCh.label)} — Tippe eine 2. Kachel für Hintergrund-Flächenvergleich an`;
+        }
     }
 
     const isMobileScreen = typeof window !== 'undefined' && window.innerWidth < 640;
@@ -7731,23 +7971,26 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             },
             interaction: { mode: 'index', intersect: false },
             onHover: (event, elements) => {
-                if (!elements || elements.length === 0 || !readoutEl) return;
+                if (!elements || elements.length === 0 || !readoutEl || !fgId) return;
                 const idx = elements[0].index;
                 const bucketLbl = labels[idx] || '';
                 const totalBucketVal = primaryArr[idx] || 0;
-                if (isStackedBar && datasets.length > 1) {
-                    const parts = datasets.map(ds => {
+                const bgPartHtml = bgCh
+                    ? ` · <span style="color:${bgCh.color}" class="font-semibold">Fläche (${escapeHtml(bgCh.shortLabel || bgCh.label)}): ${fmtNum(bgArr[idx] || 0, (bgArr[idx] || 0) < 10 && (bgArr[idx] || 0) > 0 ? 2 : 1)} ${bgCh.unit}</span>`
+                    : '';
+                if (isStackedBar && datasets.filter(d => d.type !== 'line').length > 1) {
+                    const parts = datasets.filter(d => d.type !== 'line').map(ds => {
                         const v = (ds.data || [])[idx] || 0;
                         return `<span style="color:${ds.backgroundColor}" class="font-medium">${escapeHtml(ds.label.replace(' (kWh)', ''))}: ${fmtNum(v, v < 10 && v > 0 ? 2 : 1)}</span>`;
                     });
-                    readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)} (Gesamt ${fmtNum(totalBucketVal, totalBucketVal < 10 ? 2 : 1)} kWh):</strong> ${parts.join(' · ')}`;
+                    readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)} (Balken ${fmtNum(totalBucketVal, totalBucketVal < 10 ? 2 : 1)} kWh):</strong> ${parts.join(' · ')}${bgPartHtml}`;
                 } else {
-                    readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)}:</strong> <span style="color:${primaryCh.color}" class="font-semibold">${escapeHtml(primaryCh.shortLabel || primaryCh.label)}: ${fmtNum(totalBucketVal, totalBucketVal < 10 && totalBucketVal > 0 ? 2 : 1)} ${primaryCh.unit}</span>`;
+                    readoutEl.innerHTML = `<strong class="text-slate-900 dark:text-white">${escapeHtml(bucketLbl)}:</strong> <span style="color:${primaryCh.color}" class="font-semibold">Balken (${escapeHtml(primaryCh.shortLabel || primaryCh.label)}): ${fmtNum(totalBucketVal, totalBucketVal < 10 && totalBucketVal > 0 ? 2 : 1)} ${primaryCh.unit}</span>${bgPartHtml}`;
                 }
             },
             plugins: {
                 legend: {
-                    display: isStackedBar && datasets.length > 1,
+                    display: (isStackedBar || hasTwoChannels) && datasets.length > 1,
                     position: 'top',
                     labels: {
                         color: isDark ? '#cbd5e1' : '#334155',
@@ -7777,17 +8020,32 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
                     }
                 },
                 y: {
-                    display: !hideYAxis,
-                    stacked: true,
+                    display: !hideYAxis && Boolean(fgId),
+                    stacked: isStackedBar,
                     beginAtZero: true,
-                    max: primaryCh.unit === '%' ? 100 : undefined,
+                    max: (!hasTwoChannels || !useSecondaryY) && primaryCh.unit === '%' ? 100 : undefined,
                     grid: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)' },
                     ticks: {
                         color: isDark ? '#94a3b8' : '#64748b',
                         font: { size: 11 },
                         callback: (v) => `${v} ${primaryCh.unit}`
                     }
-                }
+                },
+                ...(useSecondaryY ? {
+                    yBg: {
+                        type: 'linear',
+                        position: 'right',
+                        display: !hideYAxis,
+                        beginAtZero: true,
+                        max: bgCh.unit === '%' ? 100 : undefined,
+                        grid: { drawOnChartArea: false },
+                        ticks: {
+                            color: bgCh.color,
+                            font: { size: 10.5 },
+                            callback: (v) => `${v} ${bgCh.unit}`
+                        }
+                    }
+                } : {})
             }
         }
     });
@@ -9196,20 +9454,31 @@ function renderHaCustomStringsEditor() {
         return;
     }
 
+    const baseline = typeof getPlannedSystemBaseline === 'function' ? getPlannedSystemBaseline() : null;
+
     container.innerHTML = list.map((cs, idx) => {
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(cs.name || '') : (cs.name || '');
         const safePower = typeof escapeHtml === 'function' ? escapeHtml(cs.powerEntity || '') : (cs.powerEntity || '');
         const safeEnergy = typeof escapeHtml === 'function' ? escapeHtml(cs.energyEntity || '') : (cs.energyEntity || '');
         const safeColor = cs.color || '#14b8a6';
+        const autoKwp = resolveCustomStringKwp({ ...cs, kwp: '' }, idx, baseline);
+        const curKwpVal = (cs.kwp !== undefined && cs.kwp !== null && cs.kwp !== '') ? cs.kwp : '';
+        const kwpPlaceholder = autoKwp > 0 ? `${autoKwp.toLocaleString('de-DE')} kWp (Auto)` : 'kWp (z.B. 7.05)';
         const diagHtml = renderEntityDiagnosticSubline(cs.energyEntity);
 
         return `
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2">
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap sm:flex-nowrap items-center gap-2">
                 <input type="color" value="${safeColor}" onchange="updateHaCustomStringField(${idx}, 'color', this.value)" class="w-6 h-6 rounded-full shrink-0 cursor-pointer border-0" title="Kurvenfarbe">
                 <input type="text" id="ha_str_name_${idx}" value="${safeName}" oninput="updateHaCustomStringField(${idx}, 'name', this.value)"
                     placeholder="z.B. Fronius · String 1 DC"
-                    class="flex-1 min-w-0 text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                    class="flex-1 min-w-[140px] text-xs font-bold px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                <div class="flex items-center gap-1 shrink-0" title="Installierte kWp-Leistung dieses Strings (für die prozentuale Performance pro kWp auf den Live-Kacheln)">
+                    <input type="number" step="0.01" min="0" id="ha_str_kwp_${idx}" value="${curKwpVal}" oninput="updateHaCustomStringField(${idx}, 'kwp', this.value)"
+                        placeholder="${escapeHtml(kwpPlaceholder)}"
+                        class="w-28 text-xs font-mono font-bold px-2 py-1.5 rounded-lg border border-teal-500/35 bg-teal-500/5 dark:bg-teal-950/30 text-teal-900 dark:text-teal-200 placeholder:text-slate-400 outline-none focus:border-teal-500">
+                    <span class="text-[10.5px] font-bold text-teal-700 dark:text-teal-300">kWp</span>
+                </div>
                 <button type="button" onclick="removeHaCustomString(${idx})" class="w-8 h-8 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center transition-colors shrink-0 cursor-pointer" title="String entfernen">
                     <span class="material-symbols-rounded text-base">delete</span>
                 </button>
@@ -9245,6 +9514,11 @@ function renderHaCustomStringsEditor() {
 
 function updateHaCustomStringField(idx, field, val) {
     if (!Array.isArray(haConfigState.customStrings) || !haConfigState.customStrings[idx]) return;
+    if (field === 'kwp') {
+        const parsed = parseFloat(String(val).replace(',', '.'));
+        haConfigState.customStrings[idx].kwp = (!isNaN(parsed) && parsed > 0) ? +parsed.toFixed(2) : '';
+        return;
+    }
     haConfigState.customStrings[idx][field] = val;
 }
 
@@ -9258,6 +9532,7 @@ function addHaCustomString() {
         name: `PV-String ${nextNum} · DC`,
         powerEntity: '',
         energyEntity: '',
+        kwp: '',
         color: palette[(nextNum - 1) % palette.length]
     });
     activeCurveKeys.add(newId);
@@ -9283,12 +9558,13 @@ function syncCustomStringsFromPlannedStrings() {
             name: `${s.inverterName} · ${s.name} DC`,
             powerEntity: `sensor.string_${idx + 1}_power`,
             energyEntity: `sensor.string_${idx + 1}_energy_today`,
+            kwp: s.kwp ? +Number(s.kwp).toFixed(2) : '',
             color: s.color || '#14b8a6'
         };
     });
     renderHaCustomStringsEditor();
     if (typeof showToastNotification === 'function') {
-        showToastNotification(`${baseline.stringSummaries.length} Strings aus deiner PV-Planung übernommen!`, 'success');
+        showToastNotification(`${baseline.stringSummaries.length} Strings (inkl. kWp) aus deiner PV-Planung übernommen!`, 'success');
     }
 }
 
@@ -9341,7 +9617,10 @@ function renderHaCustomConsumersEditor() {
         const safeNrgEnt = typeof escapeHtml === 'function' ? escapeHtml(cc.energyEntity || '') : (cc.energyEntity || '');
         const isWb = isWallboxConsumer(cc);
         const curType = isWb ? 'wallbox' : 'standard';
-        const diagHtml = renderEntityDiagnosticSubline(cc.energyEntity);
+        const wbExtraNote = isWb
+            ? 'Wallbox-Modus aktiv: Zeigt im Live-Dashboard beim Laden oben die Echtzeit-Kachel (☀️ % PV-Strom + kWh seit Ladebeginn) und im Standby kompakt eingeklappt unter den Verbraucherbalken.'
+            : '';
+        const diagHtml = renderEntityDiagnosticSubline(cc.energyEntity, wbExtraNote);
         return `
         <div class="p-2.5 rounded-xl bg-white dark:bg-slate-900 border ${isWb ? 'border-emerald-500/45 dark:border-emerald-500/40' : 'border-slate-200 dark:border-slate-800'} space-y-1.5">
             <div class="flex flex-wrap sm:flex-nowrap items-center gap-1.5">
@@ -9368,7 +9647,6 @@ function renderHaCustomConsumersEditor() {
                     </button>
                 </div>
             </div>
-            ${isWb ? `<div class="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-[10.5px] font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5"><span class="material-symbols-rounded text-sm">ev_station</span><span>Wallbox-Modus aktiv: Zeigt im Live-Dashboard automatisch die geladenen kWh sowie den Echtzeit-PV-Ladeanteil (☀️ % PV-Strom) an.</span></div>` : ''}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                 <div>
                     <label class="block text-[10px] font-semibold text-slate-400 mb-0.5">Leistung (W / kW)</label>
@@ -9605,33 +9883,54 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
     };
 }
 
+const expandedIdleWallboxIds = new Set();
+
+function toggleIdleWallboxCardExpand(wbId, event = null) {
+    if (event && typeof event.stopPropagation === 'function') {
+        event.stopPropagation();
+    }
+    const key = String(wbId || '');
+    if (!key) return;
+    if (expandedIdleWallboxIds.has(key)) {
+        expandedIdleWallboxIds.delete(key);
+    } else {
+        expandedIdleWallboxIds.add(key);
+    }
+    renderLiveCockpitUI();
+}
+if (typeof window !== 'undefined') {
+    window.toggleIdleWallboxCardExpand = toggleIdleWallboxCardExpand;
+}
+
 function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
-    const container = document.getElementById('dash_wallbox_status_card_container');
-    if (!container) return;
+    const topContainer = document.getElementById('dash_wallbox_status_card_container');
+    const bottomContainer = document.getElementById('dash_wallbox_status_card_bottom_container');
+    if (!topContainer && !bottomContainer) return;
 
     const wallboxes = (Array.isArray(consumers) ? consumers : []).filter(
         c => c && (c.isWallbox || c.type === 'wallbox' || isWallboxConsumer(c))
     );
 
     if (wallboxes.length === 0) {
-        container.classList.add('hidden');
-        container.innerHTML = '';
+        if (topContainer) { topContainer.classList.add('hidden'); topContainer.innerHTML = ''; }
+        if (bottomContainer) { bottomContainer.classList.add('hidden'); bottomContainer.innerHTML = ''; }
         return;
     }
 
-    container.classList.remove('hidden');
     const gridPrice = baseline?.gridPriceEur || 0.32;
+    const chargingHtmlArr = [];
+    const idleHtmlArr = [];
 
-    container.innerHTML = wallboxes.map(wb => {
+    wallboxes.forEach(wb => {
         const wbM = getWallboxConsumerMetrics(wb, t);
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(wb.name || 'Wallbox') : (wb.name || 'Wallbox');
         const safeIdJs = String(wb.id || '').replace(/'/g, "\\'");
         const isCharging = wb.powerW > 45;
+        const isIdleExpanded = expandedIdleWallboxIds.has(String(wb.id || ''));
         const powerStr = formatPowerDe(wb.powerW, wb.powerW < 1000);
         const todayKwh = Number(wb.consKwh || 0);
         const monthKwh = Math.max(todayKwh, Number(wb.consMonthKwh || ledger?.month?.wallboxKwh || 0));
 
-        // Primary displayed PV share % (live when charging, session/day average when idle)
         const displayPvSharePct = isCharging
             ? wbM.livePvSharePct
             : (wbM.sessionChargedKwh > 0.01 ? wbM.sessionPvSharePct : (wbM.dayPvSharePct ?? wbM.livePvSharePct));
@@ -9644,6 +9943,30 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
             : (wbM.hasCounterSensor ? 'Hybrid: kWh-Zähler + Live-W' : 'Berechnet aus Live-Watt');
 
         const savedSessionEur = (wbM.sessionSolarKwh * gridPrice).toFixed(2).replace('.', ',');
+
+        // When NOT actively charging and NOT expanded: render sleek 1-row summary below consumer bars
+        if (!isCharging && !isIdleExpanded) {
+            idleHtmlArr.push(`
+            <div onclick="toggleIdleWallboxCardExpand('${safeIdJs}', event)" role="button" tabindex="0"
+                title="Tippen zum Aufklappen der Wallbox-Details (${safeName})"
+                class="rounded-[18px] px-3.5 py-2.5 border border-teal-500/25 dark:border-teal-500/25 bg-white/85 dark:bg-slate-900/70 hover:border-teal-500/50 flex items-center justify-between gap-2 transition-all cursor-pointer group active:scale-[0.99]">
+                <div class="flex items-center gap-2 min-w-0">
+                    <div class="w-7 h-7 rounded-xl bg-teal-500/12 text-teal-600 dark:text-teal-400 border border-teal-500/25 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-[17px]">ev_station</span>
+                    </div>
+                    <span class="text-[13.5px] font-semibold text-slate-800 dark:text-slate-100 truncate">${safeName}</span>
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/75 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-semibold shrink-0">Bereit</span>
+                </div>
+                <div class="flex items-center gap-2 sm:gap-3 shrink-0 tabular-nums text-xs">
+                    <span class="px-1.5 py-0.5 rounded-md bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25 font-bold text-[11px]" title="PV-Ladeanteil">☀️ ${displayPvSharePct}% PV</span>
+                    <span class="text-slate-600 dark:text-slate-300 font-medium hidden xs:inline" title="Geladen seit Ladebeginn">Session: <strong class="text-slate-900 dark:text-white">${formatKwhDe(wbM.sessionChargedKwh, 2)}</strong></span>
+                    <span class="text-slate-600 dark:text-slate-300 font-medium" title="Heute geladen">Heute: <strong class="text-teal-700 dark:text-teal-300">${formatKwhDe(todayKwh, 2)}</strong></span>
+                    <span class="material-symbols-rounded text-base text-slate-400 group-hover:text-teal-500 transition-colors">expand_more</span>
+                </div>
+            </div>`);
+            return;
+        }
+
         const statusBadgeHtml = isCharging
             ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/18 text-emerald-700 dark:text-emerald-300 border border-emerald-500/35 text-xs font-extrabold tabular-nums">
                  <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
@@ -9654,7 +9977,15 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                  <span>Bereit · ${powerStr}</span>
                </span>`;
 
-        return `
+        const collapseBtnHtml = !isCharging
+            ? `<button type="button" onclick="toggleIdleWallboxCardExpand('${safeIdJs}', event)"
+                class="w-7 h-7 rounded-xl bg-slate-200/70 hover:bg-slate-200 dark:bg-white/10 dark:hover:bg-white/20 text-slate-600 dark:text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+                title="Wallbox-Kachel auf 1 Zeile einklappen">
+                <span class="material-symbols-rounded text-base">expand_less</span>
+               </button>`
+            : '';
+
+        const fullCardHtml = `
         <div onclick="openLiveCurveFocus('consumer:${safeIdJs}')" role="button" tabindex="0"
             title="Tippen für 24h-Wallbox-Ladekurve (${safeName})"
             class="rounded-[24px] p-4 sm:p-5 border transition-all cursor-pointer group ${
@@ -9686,6 +10017,7 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                         <span class="material-symbols-rounded text-xs text-teal-600 dark:text-teal-400">restart_alt</span>
                         <span class="hidden sm:inline">Session Reset</span>
                     </button>
+                    ${collapseBtnHtml}
                 </div>
             </div>
 
@@ -9750,7 +10082,33 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
                 </div>
             </div>
         </div>`;
-    }).join('');
+
+        if (isCharging) {
+            chargingHtmlArr.push(fullCardHtml);
+        } else {
+            idleHtmlArr.push(fullCardHtml);
+        }
+    });
+
+    if (topContainer) {
+        if (chargingHtmlArr.length > 0) {
+            topContainer.classList.remove('hidden');
+            topContainer.innerHTML = chargingHtmlArr.join('');
+        } else {
+            topContainer.classList.add('hidden');
+            topContainer.innerHTML = '';
+        }
+    }
+
+    if (bottomContainer) {
+        if (idleHtmlArr.length > 0) {
+            bottomContainer.classList.remove('hidden');
+            bottomContainer.innerHTML = idleHtmlArr.join('');
+        } else {
+            bottomContainer.classList.add('hidden');
+            bottomContainer.innerHTML = '';
+        }
+    }
 }
 
 function updateHaCustomConsumerField(idx, field, val) {

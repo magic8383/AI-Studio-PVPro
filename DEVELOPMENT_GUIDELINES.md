@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 12.5 (Vollständige Single-Source-of-Truth-Zentralisierung `PVProCore` über alle Module hinweg: Zentrale 8.760h-Monats-/Tages-Breakdown-Engine, identisch aufgebaute Monats- & Tagesdiagramme in der Planung, zentrale Finanz-/ROI-/LCOE-Berechnung für Planung & PDF-Dossier sowie einheitliche HA-Schema-Normalisierung)  
+**Aktuelle Version:** 12.6 (Dynamisch positionierte & eingeklappte Wallbox-Kachel auf dem Live-Dashboard, 2-Kanal-Vergleich Fläche + Balken & komplettes Abwählen in Analyse- & Live-Diagrammen, beseitigte Fehlalarme beim Wallbox-Startzählerstand & aufklappbare grüne Diagnose-Hinweise sowie rechtsbündige String-Performance in `%` & `kWh/kWp` auf den Diagramm-Kacheln)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

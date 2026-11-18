@@ -4,6 +4,39 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 12.6] – 2026-11-18
+
+### ✨ Dynamische Wallbox-Kachel (Oben beim Laden / Unten eingeklappt im Ruhezustand), 2-Kanal-Vergleich (Fläche + Balken) & Komplettes Abwählen, Bereinigter Wallbox-Zählerhinweis & Aufklappbare Diagnose-Infos sowie Rechtsbündige String-Performance (`%` & `kWh/kWp`)
+
+#### 1. Wallbox-Kachel im Live-Dashboard dynamisch positionieren & einklappen (`index.html`, `telemetry.js`)
+* **Oben nur bei aktivem Ladevorgang (`> 45 W`):**
+  - Während das E-Auto aktiv lädt, erscheint die große Wallbox-Status-Kachel wie gewohnt prominent oben (`#dash_wallbox_status_card_container`) über den Verbraucherbalken.
+* **Im Ruhezustand unten unter den Verbraucherbalken & einzeilig zugeklappt:**
+  - Sobald **nicht** geladen wird (`Bereit`), verschwindet die große Kachel oben komplett und wird unterhalb der Verbraucherbalken (`#dash_wallbox_status_card_bottom_container`) als **kompakte 1-Zeilen-Leiste** gerendert (`Wallbox · Bereit · ☀️ XX% PV · Session: X,XX kWh · Heute: X,XX kWh`).
+  - Gleichzeitig wird die ruhende Wallbox aus den regulären Verbraucherbalken ausgeblendet, damit kein doppelter Eintrag entsteht. Ein Tipp auf die kompakte Zeile klappt bei Bedarf alle Details (Solar-/Netz-Balken & Session-Reset) auf und wieder zu (`toggleIdleWallboxCardExpand`).
+
+#### 2. Analyse-Balken-Explorer: Bis zu 2 Kanäle (1. Fläche im Hintergrund, 2. Balken im Vordergrund) + Komplettes Abwählen (`telemetry.js`)
+* **2-Kanal-Overlay im Analyse-Balkendiagramm (`toggleAnalyseBarChannel`, `drawAnalyseBarExplorerView`):**
+  - Im Analyse-Balkendiagramm können ab sofort **0, 1 oder 2 Kanäle** gleichzeitig ausgewählt werden.
+  - Sind **2 Kanäle** aktiv (`[Kanal 1, Kanal 2]`), wird der **erste gewählte Kanal** als sanft gefüllte **Flächenlinie im Hintergrund** (`1 · Fläche`, `type: 'line'`, `fill: true`, `order: 2`) gezeichnet und der **zweite gewählte Kanal** als **klassische Balken im Vordergrund** (`2 · Balken` bzw. `2 · Stapel`, `type: 'bar'`, `order: 1`).
+* **Komplettes Abwählen (`0` Kanäle) in Analyse- & Live-Diagrammen:**
+  - Sowohl im Analyse-Balken-Explorer als auch in den Live-Intraday-Diagrammen (`toggleIntradayCurve`) lässt sich auch der letzte aktive Kanal per Klick abwählen, um bei einer leeren Fläche frisch zu starten.
+
+#### 3. Wallbox-Startzählerstand-Hinweis behoben & Grüne Erklärungen erst nach Klick (`telemetry.js`)
+* **Keine falschen „Start-Zählerstand / Zähler-Sprung“-Hinweise mehr bei der Wallbox:**
+  - Wallbox-Energiezähler (`isWallboxEnergyEntity`) wurden bisher wie kleine 4-kWh-Zwischenstecker behandelt, wodurch normales E-Auto-Laden fälschlich als Zähler-Offset-Sprung (`jumpInfo`) gewertet wurde; zudem blieb ein einmal gesetztes `jumpInfo` dauerhaft kleben.
+  - Ab sofort gelten für Wallbox-Zähler EV-gerechte Schwellenwerte (`120–260 kWh`), und `setSensorDiagnostic` löscht veraltete Hinweise sofort beim nächsten regulären Messzyklus.
+* **Grüne Diagnose- & Wallbox-Erklärungen standardmäßig eingeklappt (`renderEntityDiagnosticSubline`, `toggleSensorDiagInfo`):**
+  - In den Sensoreinstellungen (`1. Sensoren` & `2. Verbraucher`) verbrauchen die grünen Diagnose-Boxen und der grüne Wallbox-Erklärtext keine 3 Zeilen mehr, sondern erscheinen als kompakter, anklickbarer Chip (`✓ Zähler aktiv (Heute: X,XX kWh) ⓘ` bzw. `🚗 Wallbox-Modus aktiv ⓘ`), der erst beim Antippen die ausführliche 3-Zeilen-Erklärung ausklappt.
+
+#### 4. Prozentuale kWp-Leistung / Spezifischer Ertrag (`kWh/kWp`) rechtsbündig auf den String-Kacheln (`telemetry.js`)
+* **Automatische `kWp`-Zuordnung & manuelles Override-Feld (`resolveCustomStringKwp`):**
+  - Jeder PV-String übernimmt seine Nennleistung (`kWp`) automatisch aus den geplanten Strings der Anlagenplanung (`baseline.stringSummaries`), oder optional über das neue Feld `kWp` direkt in `1. Sensoren -> Eigene PV-Strings`.
+* **Rechtsbündige Anzeige auf den Live- & Analyse-Kacheln (`getAvailableCurveDefinitions`, `renderSingleCurveTileHtml`):**
+  - Auf jeder String-Kachel wird rechtsbündig neben den Tages-/Zeitraum-kWh die **prozentuale spezifische Leistung** sowie der **Ertrag pro kWp** angezeigt (z. B. `142% · 1,42/kWp` auf Höhe des Hauptwerts und darunter rechtsbündig `7,05 kWp`, wobei `100 % = 1,00 kWh pro 1 kWp Nennleistung`, also z. B. `10,0 kWh ÷ 7,05 kWp = 1,42 kWh/kWp = 142 %`).
+
+---
+
 ## [Version 12.5] – 2026-11-17
 
 ### ✨ Vollständige Single-Source-of-Truth-Zentralisierung (`PVProCore`), Identische Monats- & Tagesdiagramme, Echte Live-Finanzwerte im PDF-Dossier & Code-Bereinigung
