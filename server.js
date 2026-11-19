@@ -16,7 +16,7 @@ const nginxPort = Number(process.env.NGINX_PORT);
 const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
 const PORT = (!rawPort || (nginxPort && rawPort === nginxPort)) ? defaultAppPort : rawPort;
 const HOST = '0.0.0.0';
-const APP_VERSION = '13.4';
+const APP_VERSION = '13.5';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -691,7 +691,8 @@ function createDefaultHaConfig() {
     customConsumers: getDefaultCustomConsumers(),
     customWeatherSensors: [],
     monitoredDevices: [],
-    homeCameras: []
+    homeCameras: [],
+    homeLights: []
   };
 }
 
@@ -720,7 +721,8 @@ function loadHaConfig() {
         customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : defaults.customConsumers,
         customWeatherSensors: Array.isArray(parsed.customWeatherSensors) ? parsed.customWeatherSensors : [],
         monitoredDevices: Array.isArray(parsed.monitoredDevices) ? parsed.monitoredDevices : [],
-        homeCameras: Array.isArray(parsed.homeCameras) ? parsed.homeCameras : []
+        homeCameras: Array.isArray(parsed.homeCameras) ? parsed.homeCameras : [],
+        homeLights: Array.isArray(parsed.homeLights) ? parsed.homeLights : []
       };
     }
   } catch (err) {
@@ -811,10 +813,14 @@ function cleanHaToken(rawToken) {
  * - Accepts self-signed / intermediate reverse-proxy certificates (rejectUnauthorized: false)
  * - Detects HTML login / proxy walls vs. JSON responses
  */
-function requestHomeAssistant(baseUrl, token, apiPath, timeoutMs = 8500, maxRedirects = 5) {
+function requestHomeAssistant(baseUrl, token, apiPath, timeoutMs = 8500, maxRedirects = 5, options = {}) {
   const normalizedBase = normalizeHaBaseUrl(baseUrl);
   const cleanedToken = cleanHaToken(token);
   const fullUrl = `${normalizedBase}${apiPath.startsWith('/') ? apiPath : '/' + apiPath}`;
+  const method = String(options?.method || 'GET').toUpperCase();
+  const payloadStr = (options && options.body !== undefined && options.body !== null)
+    ? (typeof options.body === 'string' ? options.body : JSON.stringify(options.body))
+    : null;
 
   return new Promise((resolve, reject) => {
     const performRequest = (targetUrl, redirectsLeft) => {
@@ -829,20 +835,25 @@ function requestHomeAssistant(baseUrl, token, apiPath, timeoutMs = 8500, maxRedi
       const lib = isHttps ? https : http;
       const agent = isHttps ? new https.Agent({ rejectUnauthorized: false, keepAlive: true }) : new http.Agent({ keepAlive: true });
 
+      const headers = {
+        'Authorization': `Bearer ${cleanedToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': `PV-Planung-Pro/${APP_VERSION} (HomeAssistant-Connector)`,
+        'X-Requested-With': 'XMLHttpRequest'
+      };
+      if (payloadStr !== null) {
+        headers['Content-Length'] = Buffer.byteLength(payloadStr, 'utf-8');
+      }
+
       const reqOptions = {
         protocol: parsedUrl.protocol,
         hostname: parsedUrl.hostname,
         port: parsedUrl.port || (isHttps ? 443 : 80),
         path: parsedUrl.pathname + parsedUrl.search,
-        method: 'GET',
+        method,
         agent,
-        headers: {
-          'Authorization': `Bearer ${cleanedToken}`,
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          'User-Agent': `PV-Planung-Pro/${APP_VERSION} (HomeAssistant-Connector)`,
-          'X-Requested-With': 'XMLHttpRequest'
-        }
+        headers
       };
 
       const req = lib.request(reqOptions, (res) => {
@@ -888,6 +899,9 @@ function requestHomeAssistant(baseUrl, token, apiPath, timeoutMs = 8500, maxRedi
         reject(err);
       });
 
+      if (payloadStr !== null) {
+        req.write(payloadStr);
+      }
       req.end();
     };
 
@@ -910,6 +924,8 @@ app.post('/api/ha/config', (req, res) => {
       customStrings: Array.isArray(incoming.customStrings) ? incoming.customStrings : (current.customStrings || getDefaultCustomStrings()),
       customConsumers: Array.isArray(incoming.customConsumers) ? incoming.customConsumers : (current.customConsumers || getDefaultCustomConsumers()),
       monitoredDevices: Array.isArray(incoming.monitoredDevices) ? incoming.monitoredDevices : (current.monitoredDevices || []),
+      homeCameras: Array.isArray(incoming.homeCameras) ? incoming.homeCameras : (current.homeCameras || []),
+      homeLights: Array.isArray(incoming.homeLights) ? incoming.homeLights : (current.homeLights || []),
       updatedAt: new Date().toISOString()
     };
     saveHaConfig(merged);
@@ -1008,13 +1024,25 @@ app.post('/api/ha/test', async (req, res) => {
 
     const allStates = result.json;
     const sensors = allStates
-      .filter(s => s && typeof s.entity_id === 'string' && (s.entity_id.startsWith('sensor.') || s.entity_id.startsWith('number.') || s.entity_id.startsWith('input_number.')))
+      .filter(s => s && typeof s.entity_id === 'string' && (
+        s.entity_id.startsWith('sensor.') ||
+        s.entity_id.startsWith('number.') ||
+        s.entity_id.startsWith('input_number.') ||
+        s.entity_id.startsWith('light.') ||
+        s.entity_id.startsWith('switch.')
+      ))
       .map(s => ({
         entity_id: s.entity_id,
         name: s.attributes?.friendly_name || s.entity_id,
         state: s.state,
         unit: s.attributes?.unit_of_measurement || '',
-        device_class: s.attributes?.device_class || ''
+        device_class: s.attributes?.device_class || '',
+        supported_color_modes: Array.isArray(s.attributes?.supported_color_modes) ? s.attributes.supported_color_modes : undefined,
+        brightness: s.attributes?.brightness,
+        color_temp_kelvin: s.attributes?.color_temp_kelvin,
+        min_color_temp_kelvin: s.attributes?.min_color_temp_kelvin,
+        max_color_temp_kelvin: s.attributes?.max_color_temp_kelvin,
+        rgb_color: Array.isArray(s.attributes?.rgb_color) ? s.attributes.rgb_color : undefined
       }));
 
     res.json({
@@ -1236,6 +1264,38 @@ app.all('/api/ha/states', async (req, res) => {
       strings: snapStrings
     });
 
+    // Map explicitly configured homeLights (light.* & switch.* — strict opt-in only)
+    const homeLightsList = Array.isArray(cfg.homeLights) ? cfg.homeLights : [];
+    const lightsTelemetry = {};
+    homeLightsList.forEach(item => {
+      const entId = String(item?.entityId || '').trim();
+      if (!entId) return;
+      const stObj = stateMap.get(entId);
+      if (!stObj) return;
+      const attrs = stObj.attributes || {};
+      lightsTelemetry[entId] = {
+        entity_id: entId,
+        state: stObj.state,
+        last_changed: stObj.last_changed || null,
+        last_updated: stObj.last_updated || null,
+        attributes: {
+          friendly_name: attrs.friendly_name || '',
+          supported_color_modes: Array.isArray(attrs.supported_color_modes) ? attrs.supported_color_modes : undefined,
+          color_mode: attrs.color_mode || undefined,
+          brightness: attrs.brightness,
+          color_temp_kelvin: attrs.color_temp_kelvin,
+          min_color_temp_kelvin: attrs.min_color_temp_kelvin,
+          max_color_temp_kelvin: attrs.max_color_temp_kelvin,
+          color_temp: attrs.color_temp,
+          min_mireds: attrs.min_mireds,
+          max_mireds: attrs.max_mireds,
+          rgb_color: Array.isArray(attrs.rgb_color) ? attrs.rgb_color : undefined,
+          hs_color: Array.isArray(attrs.hs_color) ? attrs.hs_color : undefined,
+          device_class: attrs.device_class || undefined
+        }
+      };
+    });
+
     res.json({
       success: true,
       mode: 'poll',
@@ -1243,12 +1303,86 @@ app.all('/api/ha/states', async (req, res) => {
       telemetry,
       stringTelemetry,
       customStringsTelemetry,
-      consumersTelemetry
+      consumersTelemetry,
+      lightsTelemetry
     });
   } catch (err) {
     res.status(200).json({
       success: false,
       error: `Fehler beim Abruf von Home Assistant: ${err.message}`
+    });
+  }
+});
+
+// POST /api/ha/service: Whitelisted Home Assistant Light & Switch service proxy (strictly light.* & switch.*)
+const ALLOWED_HA_SERVICE_DOMAINS = new Set(['light', 'switch']);
+const ALLOWED_HA_SERVICES = new Set(['turn_on', 'turn_off', 'toggle']);
+
+app.post('/api/ha/service', async (req, res) => {
+  try {
+    const stored = loadHaConfig();
+    const cfg = req.body && req.body.config ? { ...stored, ...req.body.config } : stored;
+    const baseUrl = normalizeHaBaseUrl(req.body?.baseUrl || cfg.baseUrl || '');
+    const token = cleanHaToken(req.body?.accessToken || cfg.accessToken || '');
+
+    const domain = String(req.body?.domain || '').trim().toLowerCase();
+    const service = String(req.body?.service || '').trim().toLowerCase();
+    const rawData = (req.body && typeof req.body.serviceData === 'object' && req.body.serviceData !== null) ? req.body.serviceData : {};
+    const entityId = String(req.body?.entityId || rawData.entity_id || '').trim();
+
+    if (!ALLOWED_HA_SERVICE_DOMAINS.has(domain)) {
+      return res.status(400).json({ success: false, error: `Unzulässige Domain "${domain}". Nur light und switch sind erlaubt.` });
+    }
+    if (!ALLOWED_HA_SERVICES.has(service)) {
+      return res.status(400).json({ success: false, error: `Unzulässiger Service "${service}". Nur turn_on, turn_off und toggle sind erlaubt.` });
+    }
+    if (!entityId || !entityId.startsWith(`${domain}.`) || !/^[a-z0-9_]+\.[a-z0-9_]+$/i.test(entityId)) {
+      return res.status(400).json({ success: false, error: `Ungültige Entitäts-ID "${entityId}" für Domain "${domain}".` });
+    }
+    if (!baseUrl || !token) {
+      return res.status(400).json({ success: false, error: 'Home Assistant URL oder Token fehlt.' });
+    }
+
+    const cleanPayload = { entity_id: entityId };
+    if (domain === 'light' && service === 'turn_on') {
+      if (rawData.brightness_pct !== undefined && rawData.brightness_pct !== null) {
+        const bp = Math.round(Number(rawData.brightness_pct));
+        if (Number.isFinite(bp)) cleanPayload.brightness_pct = Math.max(1, Math.min(100, bp));
+      }
+      if (rawData.color_temp_kelvin !== undefined && rawData.color_temp_kelvin !== null) {
+        const k = Math.round(Number(rawData.color_temp_kelvin));
+        if (Number.isFinite(k)) cleanPayload.color_temp_kelvin = Math.max(1500, Math.min(10000, k));
+      }
+      if (Array.isArray(rawData.rgb_color) && rawData.rgb_color.length === 3) {
+        const rgb = rawData.rgb_color.map(v => Math.max(0, Math.min(255, Math.round(Number(v)))));
+        if (rgb.every(Number.isFinite)) cleanPayload.rgb_color = rgb;
+      }
+    }
+
+    const result = await requestHomeAssistant(baseUrl, token, `/api/services/${domain}/${service}`, 8500, 5, {
+      method: 'POST',
+      body: cleanPayload
+    });
+
+    if (!result.ok) {
+      return res.status(200).json({
+        success: false,
+        status: result.status,
+        error: `Home Assistant Fehler (${result.status}) bei ${domain}.${service} für ${entityId}.`
+      });
+    }
+
+    res.json({
+      success: true,
+      entity_id: entityId,
+      domain,
+      service,
+      states: Array.isArray(result.json) ? result.json : []
+    });
+  } catch (err) {
+    res.status(200).json({
+      success: false,
+      error: `Schaltbefehl fehlgeschlagen: ${err.message}`
     });
   }
 });

@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 13.4 (Einheitlicher eigener spezifischer Ertrag in kWh/kWp auf jedem PV-String & PV gesamt im Live-Diagramm und Balken-Explorer)  
+**Aktuelle Version:** 13.5 (Startseiten-Abschnitt „Licht & Schalter“ mit horizontaler 1-Zeilen-Kachelleiste, sicherem Steuer-Popup für An/Aus, Dimmer, Farbtemperatur & RGB, strengem Opt-In-Schutz für Shellys sowie optimierter Startseiten-Reihenfolge)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

@@ -4,6 +4,35 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.5] – 2026-11-19
+
+### ✨ Moderner Startseiten-Abschnitt „Licht & Schalter“ mit sicherem Steuer-Popup & neuer Startseiten-Reihenfolge
+
+#### 1. Startseiten-Struktur & Reihenfolge (`index.html`)
+* **Neue Startseiten-Reihenfolge (`#tab-home`):**
+  - *Begrüßung* → *Wetter-Widget* → *Energie · Kurzüberblick* → *Raumklima & Temperaturen* → **Hauskameras** → **Licht & Schalter** → **Meine Geräte & Hardware** (ans Ende verschoben).
+* **Kompakte 1-Zeilen-Kachelleiste (`#homeLightsSection` / `#homeLightsGrid`):**
+  - Vier moderne Licht-/Schalter-Kacheln in einer Reihe (im selben Rhythmus wie die 4 Energie-Kacheln); bei mehr als 4 ausgewählten Entitäten horizontal durchwischbar (`overflow-x-auto` mit Snap-Scroll) inkl. Live-Zähler-Badge (*„X von Y an“*).
+  - **Visueller Live-Status:** Eingeschaltete Lampen/Schalter leuchten warm-amberfarben (bzw. in ihrer echten RGB-Farbe bei Farblampen) mit gefülltem Symbol und Status (`An` oder Helligkeit in `%`); ausgeschaltete Kacheln bleiben ruhig neutral (`Aus`), nicht erreichbare Entitäten zeigen `Offline`.
+
+#### 2. Sicheres Steuer-Popup statt versehentlichem Direkt-Schalten (`index.html`, `telemetry.js`, `app.js`)
+* **Kein Direkt-Schalten auf der Startseite:** Ein Tipp auf eine Licht- oder Shelly-Kachel öffnet immer zuerst das moderne Steuer-Popup (`#modal-home-light-control`, integriert in die Android-Zurück-Wischgeste in `app.js`), sodass beim Scrollen niemals versehentlich geschaltet wird.
+* **Automatische Funktions-Erkennung (`getLightCapabilities`):**
+  - **Schalter & Shellys (`switch.*` oder `light.*` mit `onoff`):** Großer, taktiler Power-Button (*Einschalten / Ausschalten*) mit Live-Status-Badge.
+  - **Dimmbare Lampen (`brightness`):** Moderner Helligkeits-Slider (`1 % – 100 %`) + 4 Schnell-Presets (`25 %`, `50 %`, `75 %`, `100 %`).
+  - **Farbtemperatur (`color_temp`):** Warm-bis-Kalt-Kelvin-Regler + Presets (*Kerze*, *Warm*, *Neutral*, *Tageslicht*).
+  - **Farblampen (`rgb` / `hs` / `xy`):** 8 kuratierte Farb-Swatches + nativer Farbwähler mit Live-Glow-Vorschau.
+
+#### 3. Strenges Opt-In für Shellys & sicherer HA-Service-Proxy (`server.js`, `telemetry.js`, `app.js`)
+* **Neuer HA-Konfigurations-Tab „6. Lichter“ (`#ha-modal-panel-lights`):**
+  - Listet verfügbare `light.*`- und `switch.*`-Entitäten aus Home Assistant mit Suche und Domain-Filter (*Alle / Lichter / Schalter & Shellys*) auf.
+  - **Null Auto-Import:** Es werden niemals automatisch Lampen oder Shellys übernommen – geschützte Shellys bleiben vollständig unberührt. Name, Symbol und Reihenfolge jeder ausgewählten Kachel sind frei anpassbar und werden über `homeLights` im HA-Schema (`localStorage`, `IndexedDB`, `ha_config.json`, Backup) gespeichert.
+* **Abgesicherter Service-Proxy (`POST /api/ha/service` in `server.js`) + Direkt-Browser-Fallback:**
+  - Erlaubt serverseitig per Whitelist ausschließlich die Domains `light` und `switch` sowie die Services `turn_on`, `turn_off` und `toggle` mit bereinigtem Payload.
+  - Live-Status-Synchronisation über `/api/ha/states` (`lightsTelemetry`) und Direkt-Polling aktualisiert Startseite und geöffnetes Popup in Echtzeit (inkl. Verifikations-Refresh nach dem Schalten).
+
+---
+
 ## [Version 13.4] – 2026-11-19
 
 ### ✨ Einheitlicher spezifischer Ertrag (`kWh/kWp`) je String & für `PV gesamt`

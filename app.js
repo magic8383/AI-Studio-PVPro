@@ -1,8 +1,8 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.4)
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.5)
 // Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '13.4';
+const APP_VERSION = '13.5';
 const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
 const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
 const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);
@@ -66,6 +66,7 @@ function createDefaultHaConfigSchema() {
         customWeatherSensors: [],
         monitoredDevices: [],
         homeCameras: [],
+        homeLights: [],
         customStrings: [],
         customConsumers: []
     };
@@ -112,6 +113,11 @@ function normalizeHaConfigSchema(incoming = {}, current = null, options = {}) {
             : (Array.isArray(src.homeCameras) && (src.homeCameras.length > 0 || !Array.isArray(base.homeCameras) || base.homeCameras.length === 0)
                 ? cloneArr(src.homeCameras, [])
                 : cloneArr(base.homeCameras, [])),
+        homeLights: options.allowEmptyArrays
+            ? cloneArr(src.homeLights, base.homeLights)
+            : (Array.isArray(src.homeLights) && (src.homeLights.length > 0 || !Array.isArray(base.homeLights) || base.homeLights.length === 0)
+                ? cloneArr(src.homeLights, [])
+                : cloneArr(base.homeLights, [])),
         customStrings: options.allowEmptyArrays
             ? cloneArr(src.customStrings, base.customStrings)
             : cloneNonEmptyArr(src.customStrings, base.customStrings || def.customStrings),
@@ -3277,6 +3283,15 @@ function getTopmostOpenModalEntry() {
             }
         };
     }
+    if (isVisible('modal-home-light-control')) {
+        return {
+            id: 'modal-home-light-control',
+            close: () => {
+                if (typeof closeHomeLightControlModal === 'function') closeHomeLightControlModal();
+                else document.getElementById('modal-home-light-control')?.classList.add('hidden');
+            }
+        };
+    }
     if (isVisible('modal-hardware-docs')) {
         return {
             id: 'modal-hardware-docs',
@@ -3393,6 +3408,10 @@ function closeAllTransientOverlaysOnBack() {
         const climateModal = document.getElementById('modal-climate-curve');
         if (climateModal && !climateModal.classList.contains('hidden') && typeof closeClimateHistoryModal === 'function') {
             closeClimateHistoryModal();
+        }
+        const lightModal = document.getElementById('modal-home-light-control');
+        if (lightModal && !lightModal.classList.contains('hidden') && typeof closeHomeLightControlModal === 'function') {
+            closeHomeLightControlModal();
         }
         closeMoreSheet();
     } catch (e) {}

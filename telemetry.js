@@ -43,6 +43,7 @@ let haConfigState = typeof createDefaultHaConfigSchema === 'function'
         customWeatherSensors: [],
         monitoredDevices: [],
         homeCameras: [],
+        homeLights: [],
         customStrings: [],
         customConsumers: []
     };
@@ -3720,6 +3721,16 @@ async function refreshLiveTelemetryNow() {
             connectionOk: true,
             lastError: null
         };
+
+        if (data.lightsTelemetry && typeof data.lightsTelemetry === 'object') {
+            Object.entries(data.lightsTelemetry).forEach(([entId, stObj]) => {
+                if (entId && stObj) {
+                    homeHaStatesCache.set(entId, stObj);
+                }
+            });
+            renderHomeLightsSection();
+            syncOpenHomeLightControlModal();
+        }
 
         if (haConfigState.autoSyncMonthly && currentLiveTelemetry.pvEnergyMonthKwh !== null && currentLiveTelemetry.pvEnergyMonthKwh > 0) {
             syncCurrentMonthFromLiveTelemetry(false);
@@ -9446,12 +9457,14 @@ function switchHaModalTab(tab = 'config') {
     const panelClimate = document.getElementById('ha-modal-panel-climate');
     const panelDevices = document.getElementById('ha-modal-panel-devices');
     const panelCameras = document.getElementById('ha-modal-panel-cameras');
+    const panelLights = document.getElementById('ha-modal-panel-lights');
     const panelGuide = document.getElementById('ha-modal-panel-guide');
     const btnCfg = document.getElementById('btn-ha-tab-config') || document.getElementById('btn-ha-modal-tab-config');
     const btnConsumers = document.getElementById('btn-ha-tab-consumers');
     const btnClimate = document.getElementById('btn-ha-tab-climate');
     const btnDevices = document.getElementById('btn-ha-tab-devices');
     const btnCameras = document.getElementById('btn-ha-tab-cameras');
+    const btnLights = document.getElementById('btn-ha-tab-lights');
     const btnGuide = document.getElementById('btn-ha-tab-guide') || document.getElementById('btn-ha-modal-tab-guide');
     const scrollBody = document.getElementById('haModalScrollBody');
 
@@ -9463,6 +9476,7 @@ function switchHaModalTab(tab = 'config') {
     if (panelClimate) panelClimate.classList.toggle('hidden', tab !== 'climate');
     if (panelDevices) panelDevices.classList.toggle('hidden', tab !== 'devices');
     if (panelCameras) panelCameras.classList.toggle('hidden', tab !== 'cameras');
+    if (panelLights) panelLights.classList.toggle('hidden', tab !== 'lights');
     if (panelGuide) panelGuide.classList.toggle('hidden', tab !== 'guide');
 
     if (btnCfg) btnCfg.className = tab === 'config' ? activeCls : inactiveCls;
@@ -9470,6 +9484,7 @@ function switchHaModalTab(tab = 'config') {
     if (btnClimate) btnClimate.className = tab === 'climate' ? activeCls : inactiveCls;
     if (btnDevices) btnDevices.className = tab === 'devices' ? activeCls : inactiveCls;
     if (btnCameras) btnCameras.className = tab === 'cameras' ? activeCls : inactiveCls;
+    if (btnLights) btnLights.className = tab === 'lights' ? activeCls : inactiveCls;
     if (btnGuide) btnGuide.className = tab === 'guide' ? activeCls : inactiveCls;
 
     if (scrollBody) {
@@ -9489,6 +9504,12 @@ function switchHaModalTab(tab = 'config') {
     } else if (tab === 'cameras') {
         renderHaHomeCamerasEditor();
         ensureMonitoredDevicesStatesLoaded();
+    } else if (tab === 'lights') {
+        renderHaHomeLightsEditor();
+        renderHaAvailableLightsPickerList();
+        if (homeHaStatesCache.size === 0 && haConfigState.baseUrl && haConfigState.accessToken) {
+            loadAvailableHaLightsIntoPicker(false);
+        }
     }
 }
 
@@ -11365,6 +11386,8 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
                 s.entity_id.startsWith('sensor.') ||
                 s.entity_id.startsWith('weather.') ||
                 s.entity_id.startsWith('camera.') ||
+                s.entity_id.startsWith('light.') ||
+                s.entity_id.startsWith('switch.') ||
                 s.entity_id.startsWith('number.') ||
                 s.entity_id.startsWith('input_number.') ||
                 s.entity_id.startsWith('counter.')
@@ -11373,11 +11396,17 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
         .map(s => {
             const isWeather = s.entity_id.startsWith('weather.');
             const isCamera = s.entity_id.startsWith('camera.');
+            const isLight = s.entity_id.startsWith('light.');
+            const isSwitch = s.entity_id.startsWith('switch.');
             const unit = isCamera
                 ? 'Kamera'
-                : (isWeather
-                    ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
-                    : String(s.attributes?.unit_of_measurement || '').trim());
+                : (isLight
+                    ? 'Licht'
+                    : (isSwitch
+                        ? 'Schalter'
+                        : (isWeather
+                            ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
+                            : String(s.attributes?.unit_of_measurement || '').trim())));
             const unitLower = unit.toLowerCase();
             const devClass = String(s.attributes?.device_class || '').toLowerCase();
             const groupInfo = classifyHaEntityGroup(s, tplDeviceMap);
@@ -11385,6 +11414,8 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
             let unitCategory = 'other';
             if (isCamera) {
                 unitCategory = 'camera';
+            } else if (isLight || isSwitch) {
+                unitCategory = 'light';
             } else if (unitLower === 'w' || unitLower === 'kw' || unitLower === 'mw' || unitLower === 'va' || devClass === 'power') {
                 unitCategory = 'power';
             } else if (unitLower === 'kwh' || unitLower === 'wh' || unitLower === 'mwh' || devClass === 'energy') {
@@ -11399,9 +11430,25 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
                 state: s.state,
                 unit,
                 unitCategory,
-                category: (isWeather || isCamera) ? 'device' : groupInfo.category, // 'device' | 'helper'
-                groupName: isCamera ? 'Hauskameras (camera.*)' : (isWeather ? 'Wetter & Klima' : groupInfo.groupName),
-                areaName: groupInfo.areaName || ''
+                category: (isWeather || isCamera || isLight || isSwitch) ? 'device' : groupInfo.category, // 'device' | 'helper'
+                groupName: isCamera
+                    ? 'Hauskameras (camera.*)'
+                    : (isLight
+                        ? 'Lichter (light.*)'
+                        : (isSwitch
+                            ? 'Schalter & Shellys (switch.*)'
+                            : (isWeather ? 'Wetter & Klima' : groupInfo.groupName))),
+                areaName: groupInfo.areaName || '',
+                attributes: (isLight || isSwitch) ? {
+                    supported_color_modes: Array.isArray(s.attributes?.supported_color_modes) ? s.attributes.supported_color_modes : undefined,
+                    color_mode: s.attributes?.color_mode,
+                    brightness: s.attributes?.brightness,
+                    color_temp_kelvin: s.attributes?.color_temp_kelvin,
+                    min_color_temp_kelvin: s.attributes?.min_color_temp_kelvin,
+                    max_color_temp_kelvin: s.attributes?.max_color_temp_kelvin,
+                    rgb_color: Array.isArray(s.attributes?.rgb_color) ? s.attributes.rgb_color : undefined,
+                    hs_color: Array.isArray(s.attributes?.hs_color) ? s.attributes.hs_color : undefined
+                } : undefined
             };
         })
         .sort((a, b) => {
@@ -11558,6 +11605,8 @@ async function openHaEntityPicker(options = {}) {
         currentEntityId = String(haConfigState.pvEnergyExtraEntities?.[options.index] || '').trim();
     } else if (options.customType === 'cameraEntity' && options.index !== undefined) {
         currentEntityId = String(haConfigState.homeCameras?.[options.index]?.entityId || '').trim();
+    } else if (options.customType === 'lightEntity' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.homeLights?.[options.index]?.entityId || '').trim();
     }
 
     haPickerState = {
@@ -11929,6 +11978,15 @@ function pickHaEntityFromModal(entityId) {
             updateHaHomeCameraField(haPickerState.index, 'name', cleanCamName);
         }
         renderHaHomeCamerasEditor();
+    } else if (haPickerState.customType === 'lightEntity' && haPickerState.index !== null) {
+        updateHaHomeLightField(haPickerState.index, 'entityId', entityId);
+        const curName = haConfigState.homeLights?.[haPickerState.index]?.name || '';
+        const cleanLightName = sensorObj ? String(sensorObj.name || '').trim() : '';
+        if (cleanLightName && (!curName || /^Licht \/ Schalter \d+/i.test(curName))) {
+            updateHaHomeLightField(haPickerState.index, 'name', cleanLightName);
+        }
+        renderHaHomeLightsEditor();
+        renderHaAvailableLightsPickerList();
     }
 
     closeHaEntityPicker();
@@ -12652,6 +12710,8 @@ function updateHomeStatesFromHaArray(statesArray) {
     renderHomeCustomWeatherSensors();
     renderHomeMonitoredDevicesBar();
     renderHomeCamerasSection();
+    renderHomeLightsSection();
+    syncOpenHomeLightControlModal();
     renderDevicesDiagnosticsTab();
     syncHomeRoomSensorsMinMaxFromHistory();
 }
@@ -13336,6 +13396,8 @@ function refreshHomeWeatherAndSensors(force = false) {
     renderHomeMonitoredDevicesBar();
     renderDevicesDiagnosticsTab();
     renderHomeCamerasSection();
+    renderHomeLightsSection();
+    syncOpenHomeLightControlModal();
     if (force) {
         refreshLiveTelemetryNow();
     }
@@ -13348,6 +13410,7 @@ function renderHomeTab() {
     renderHomeCustomWeatherSensors();
     renderHomeMonitoredDevicesBar();
     renderHomeCamerasSection();
+    renderHomeLightsSection();
 }
 
 // ============================================================================
@@ -16435,6 +16498,1050 @@ function closeHomeCameraFullscreenModal() {
     } catch (e) {}
 }
 
+// ============================================================================
+// 12. LICHT & SCHALTER (STARTSEITE 1-ZEILEN-STRIP & SICHERES STEUER-POPUP V13.5)
+//     Strenges Opt-In: Keine automatische Übernahme (schützt unberührte Shellys)
+//     Kein Direkt-Schalten beim Tippen auf der Startseite — immer über Popup
+// ============================================================================
+
+const HOME_LIGHT_ICON_OPTIONS = Object.freeze([
+    { icon: 'lightbulb', label: 'Lampe' },
+    { icon: 'ceiling_lamp', label: 'Decke' },
+    { icon: 'floor_lamp', label: 'Stehlampe' },
+    { icon: 'table_lamp', label: 'Tischlampe' },
+    { icon: 'wall_lamp', label: 'Wandlampe' },
+    { icon: 'highlight', label: 'Spot' },
+    { icon: 'wb_incandescent', label: 'Glühbirne' },
+    { icon: 'outdoor_garden', label: 'Außen / Garten' },
+    { icon: 'bedtime', label: 'Nachtlicht' },
+    { icon: 'power_settings_new', label: 'Shelly / Schalter' },
+    { icon: 'toggle_on', label: 'Relais' },
+    { icon: 'bolt', label: 'Steckdose' }
+]);
+
+const HOME_LIGHT_RGB_SWATCHES = Object.freeze([
+    { label: 'Warmweiß', hex: '#fff1d6', rgb: [255, 241, 214] },
+    { label: 'Bernstein', hex: '#ff9e2c', rgb: [255, 158, 44] },
+    { label: 'Koralle', hex: '#ff5a36', rgb: [255, 90, 54] },
+    { label: 'Rose', hex: '#f43f8e', rgb: [244, 63, 142] },
+    { label: 'Violett', hex: '#9333ea', rgb: [147, 51, 234] },
+    { label: 'Ozean', hex: '#2563eb', rgb: [37, 99, 235] },
+    { label: 'Türkis', hex: '#14b8a6', rgb: [20, 184, 166] },
+    { label: 'Smaragd', hex: '#22c55e', rgb: [34, 197, 94] }
+]);
+
+let activeHomeLightControlId = null;
+let homeLightCommandInFlight = false;
+let homeLightBrightnessDebounceTimer = null;
+let homeLightColorTempDebounceTimer = null;
+let homeLightVerifyRefreshTimer = null;
+let haLightsPickerSearchQuery = '';
+let haLightsPickerDomainFilter = 'all'; // 'all' | 'light' | 'switch'
+
+function ensureDefaultHomeLightsArray() {
+    if (!Array.isArray(haConfigState.homeLights)) {
+        haConfigState.homeLights = [];
+    }
+    return haConfigState.homeLights;
+}
+
+function inferDefaultLightIcon(entityId = '', friendlyName = '') {
+    const id = String(entityId || '').toLowerCase();
+    const hay = `${id} ${String(friendlyName || '').toLowerCase()}`;
+    if (id.startsWith('switch.')) {
+        if (/licht|lamp|led|spot|garten|terrasse|flur|k[uü]che|decke|wand/.test(hay)) return 'lightbulb';
+        return 'power_settings_new';
+    }
+    if (/decke|ceiling|esszimmer|wohnzimmer/.test(hay)) return 'ceiling_lamp';
+    if (/steh|floor/.test(hay)) return 'floor_lamp';
+    if (/tisch|nacht|schreib|bed/.test(hay)) return 'table_lamp';
+    if (/wand|wall/.test(hay)) return 'wall_lamp';
+    if (/spot|strahler|led|strip|band/.test(hay)) return 'highlight';
+    if (/garten|terrasse|aussen|außen|einfahrt|balkon|hof/.test(hay)) return 'outdoor_garden';
+    return 'lightbulb';
+}
+
+function hsToRgbArray(hDeg, sPct) {
+    const h = ((Number(hDeg) || 0) % 360 + 360) % 360;
+    const s = Math.max(0, Math.min(100, Number(sPct) || 0)) / 100;
+    const c = s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = 1 - c;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else { r = c; b = x; }
+    return [
+        Math.round((r + m) * 255),
+        Math.round((g + m) * 255),
+        Math.round((b + m) * 255)
+    ];
+}
+
+function rgbArrayToHex(rgb) {
+    if (!Array.isArray(rgb) || rgb.length < 3) return '#ffb84d';
+    const toHex = (n) => Math.max(0, Math.min(255, Math.round(Number(n) || 0))).toString(16).padStart(2, '0');
+    return `#${toHex(rgb[0])}${toHex(rgb[1])}${toHex(rgb[2])}`;
+}
+
+function hexToRgbArray(hex) {
+    const clean = String(hex || '').replace(/^#/, '').trim();
+    if (!/^[0-9a-f]{6}$/i.test(clean)) return [255, 184, 77];
+    return [
+        parseInt(clean.slice(0, 2), 16),
+        parseInt(clean.slice(2, 4), 16),
+        parseInt(clean.slice(4, 6), 16)
+    ];
+}
+
+function getLightCapabilities(entityId, stateObj = null) {
+    const cleanId = String(entityId || '').trim();
+    const domain = cleanId.startsWith('switch.') ? 'switch' : (cleanId.startsWith('light.') ? 'light' : '');
+    const st = stateObj || (cleanId ? homeHaStatesCache.get(cleanId) : null) || null;
+    const attrs = (st && typeof st.attributes === 'object' && st.attributes) ? st.attributes : {};
+    const rawState = String(st?.state ?? '').trim().toLowerCase();
+    const isOn = rawState === 'on';
+    const isUnavailable = !st || rawState === 'unavailable' || rawState === 'unknown' || rawState === '';
+
+    if (domain !== 'light') {
+        return {
+            domain: domain || 'switch',
+            stateStr: rawState || 'unknown',
+            isOn,
+            isUnavailable,
+            canDim: false,
+            canColorTemp: false,
+            canColor: false,
+            brightnessPct: isOn ? 100 : 0,
+            kelvin: null,
+            minKelvin: 2000,
+            maxKelvin: 6500,
+            rgb: null,
+            modeSummary: 'Schalter / Shelly'
+        };
+    }
+
+    const modes = Array.isArray(attrs.supported_color_modes)
+        ? attrs.supported_color_modes.map(m => String(m || '').toLowerCase())
+        : [];
+    const hasRgbMode = modes.some(m => ['rgb', 'rgbw', 'rgbww', 'hs', 'xy'].includes(m));
+    const hasColorTempMode = modes.includes('color_temp');
+    const hasBrightnessMode = modes.some(m => ['brightness', 'color_temp', 'rgb', 'rgbw', 'rgbww', 'hs', 'xy', 'white'].includes(m));
+
+    const canColor = hasRgbMode || Array.isArray(attrs.rgb_color) || Array.isArray(attrs.hs_color);
+    const canColorTemp = hasColorTempMode || Number.isFinite(Number(attrs.color_temp_kelvin)) || Number.isFinite(Number(attrs.color_temp));
+    const canDim = hasBrightnessMode || canColor || canColorTemp || Number.isFinite(Number(attrs.brightness));
+
+    let brightnessPct = isOn ? 100 : 0;
+    if (Number.isFinite(Number(attrs.brightness))) {
+        brightnessPct = Math.max(1, Math.min(100, Math.round((Number(attrs.brightness) / 255) * 100)));
+    }
+
+    let minKelvin = Number(attrs.min_color_temp_kelvin);
+    let maxKelvin = Number(attrs.max_color_temp_kelvin);
+    if (!Number.isFinite(minKelvin) && Number.isFinite(Number(attrs.max_mireds)) && Number(attrs.max_mireds) > 0) {
+        minKelvin = Math.round(1000000 / Number(attrs.max_mireds));
+    }
+    if (!Number.isFinite(maxKelvin) && Number.isFinite(Number(attrs.min_mireds)) && Number(attrs.min_mireds) > 0) {
+        maxKelvin = Math.round(1000000 / Number(attrs.min_mireds));
+    }
+    minKelvin = Number.isFinite(minKelvin) ? Math.max(1500, Math.min(6000, Math.round(minKelvin))) : 2000;
+    maxKelvin = Number.isFinite(maxKelvin) ? Math.max(minKelvin + 500, Math.min(10000, Math.round(maxKelvin))) : 6500;
+
+    let kelvin = Number(attrs.color_temp_kelvin);
+    if (!Number.isFinite(kelvin) && Number.isFinite(Number(attrs.color_temp)) && Number(attrs.color_temp) > 0) {
+        kelvin = Math.round(1000000 / Number(attrs.color_temp));
+    }
+    if (!Number.isFinite(kelvin)) {
+        kelvin = Math.round((minKelvin + maxKelvin) / 2);
+    }
+    kelvin = Math.max(minKelvin, Math.min(maxKelvin, Math.round(kelvin)));
+
+    let rgb = null;
+    if (Array.isArray(attrs.rgb_color) && attrs.rgb_color.length >= 3) {
+        rgb = attrs.rgb_color.slice(0, 3).map(v => Math.max(0, Math.min(255, Math.round(Number(v) || 0))));
+    } else if (Array.isArray(attrs.hs_color) && attrs.hs_color.length >= 2) {
+        rgb = hsToRgbArray(attrs.hs_color[0], attrs.hs_color[1]);
+    }
+
+    const parts = [];
+    if (canColor) parts.push('Farbe');
+    if (canColorTemp) parts.push('Farbtemp');
+    if (canDim) parts.push('Dimmer');
+    const modeSummary = parts.length > 0 ? parts.join(' · ') : 'An / Aus';
+
+    return {
+        domain: 'light',
+        stateStr: rawState || 'unknown',
+        isOn,
+        isUnavailable,
+        canDim,
+        canColorTemp,
+        canColor,
+        brightnessPct,
+        kelvin,
+        minKelvin,
+        maxKelvin,
+        rgb,
+        modeSummary
+    };
+}
+
+function renderHomeLightsSection() {
+    const grid = document.getElementById('homeLightsGrid');
+    const activeBadge = document.getElementById('homeLightsActiveBadge');
+    const scrollHint = document.getElementById('homeLightsScrollHint');
+    if (!grid) return;
+
+    const list = ensureDefaultHomeLightsArray().filter(item => item && String(item.entityId || '').trim());
+
+    if (list.length === 0) {
+        if (activeBadge) activeBadge.classList.add('hidden');
+        if (scrollHint) scrollHint.classList.add('hidden');
+        grid.innerHTML = `
+            <div class="w-full rounded-[18px] p-3.5 sm:p-4 bg-slate-500/[0.05] dark:bg-white/[0.03] border border-dashed border-slate-300/80 dark:border-white/15 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500/12 text-amber-600 dark:text-amber-300 border border-amber-500/25 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-xl">lightbulb</span>
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-xs sm:text-[13px] font-bold text-slate-800 dark:text-slate-100">Noch keine Lichter oder Schalter ausgewählt</p>
+                        <p class="text-[11px] text-slate-500 dark:text-slate-400">Wähle nur die Lampen &amp; Shellys aus, die du steuern möchtest — andere bleiben geschützt.</p>
+                    </div>
+                </div>
+                <button type="button" onclick="openHaConfigModal('lights')" class="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 shadow-xs">
+                    <span class="material-symbols-rounded text-base">add</span>
+                    <span>Lichter wählen</span>
+                </button>
+            </div>`;
+        return;
+    }
+
+    let onCount = 0;
+    const tilesHtml = list.map((item, idx) => {
+        const caps = getLightCapabilities(item.entityId);
+        if (caps.isOn) onCount++;
+
+        const safeName = escapeHtml(item.name || item.entityId.replace(/^(light|switch)\./, '') || `Licht ${idx + 1}`);
+        const safeIdJs = String(item.id || `light_${idx}`).replace(/'/g, "\\'");
+        const iconName = escapeHtml(item.icon || inferDefaultLightIcon(item.entityId, item.name));
+
+        const hasCustomRgb = caps.isOn && caps.canColor && Array.isArray(caps.rgb);
+        const rgbCss = hasCustomRgb ? `rgb(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]})` : '';
+        const rgbSoftBg = hasCustomRgb ? `rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.16)` : '';
+        const rgbBorder = hasCustomRgb ? `rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.55)` : '';
+
+        let tileCls = 'flex-none snap-start w-[calc((100%-24px)/4)] sm:w-[calc((100%-30px)/4)] min-w-[78px] rounded-[18px] p-2.5 sm:p-3 border flex flex-col justify-between text-left transition-all duration-200 cursor-pointer active:scale-[0.97] min-w-0 select-none ';
+        let tileInlineStyle = '';
+        let iconCls = 'material-symbols-rounded text-[20px] shrink-0 transition-all ';
+        let statusText = 'Aus';
+        let statusCls = 'text-[11px] font-semibold tabular-nums truncate mt-0.5 ';
+        let dotHtml = '';
+
+        if (caps.isUnavailable) {
+            tileCls += 'bg-slate-500/[0.04] dark:bg-white/[0.03] border-dashed border-slate-300/80 dark:border-white/15 opacity-75';
+            iconCls += 'text-slate-400 dark:text-slate-500';
+            statusText = 'Offline';
+            statusCls += 'text-slate-400 dark:text-slate-500';
+        } else if (caps.isOn) {
+            if (hasCustomRgb) {
+                tileCls += 'shadow-[0_6px_18px_-8px_rgba(245,158,11,0.45)]';
+                tileInlineStyle = `background:${rgbSoftBg}; border-color:${rgbBorder};`;
+                iconCls += 'fill-1';
+                dotHtml = `<span class="w-2 h-2 rounded-full shrink-0 ring-2 ring-white/70 dark:ring-slate-900/70" style="background:${rgbCss};"></span>`;
+            } else {
+                tileCls += 'bg-amber-500/[0.13] dark:bg-amber-400/[0.17] border-amber-400/55 dark:border-amber-400/45 shadow-[0_6px_18px_-8px_rgba(245,158,11,0.5)]';
+                iconCls += 'text-amber-500 dark:text-amber-300 fill-1';
+                dotHtml = `<span class="w-2 h-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.9)] shrink-0"></span>`;
+            }
+            statusText = caps.canDim ? `${caps.brightnessPct} %` : 'An';
+            statusCls += 'text-amber-700 dark:text-amber-200 font-bold';
+        } else {
+            tileCls += 'bg-slate-500/[0.06] dark:bg-white/[0.05] border-slate-200/80 dark:border-white/10 hover:border-amber-400/40';
+            iconCls += 'text-slate-400 dark:text-slate-400';
+            statusText = 'Aus';
+            statusCls += 'text-slate-500 dark:text-slate-400';
+            dotHtml = `<span class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0"></span>`;
+        }
+
+        const iconStyle = (hasCustomRgb && caps.isOn) ? `style="color:${rgbCss};"` : '';
+
+        return `
+        <button type="button" onclick="openHomeLightControlModal('${safeIdJs}')"
+            style="${tileInlineStyle}"
+            title="${safeName} · Tippen öffnet sicheres Steuer-Popup (${escapeHtml(caps.modeSummary)})"
+            class="${tileCls}">
+            <div class="flex items-center justify-between gap-1 w-full">
+                <span class="${iconCls}" ${iconStyle}>${iconName}</span>
+                ${dotHtml}
+            </div>
+            <div class="mt-2 min-w-0 w-full">
+                <p class="text-[12.5px] sm:text-[13px] font-bold text-slate-900 dark:text-white leading-tight truncate">${safeName}</p>
+                <p class="${statusCls}">${escapeHtml(statusText)}</p>
+            </div>
+        </button>`;
+    }).join('');
+
+    grid.innerHTML = tilesHtml;
+
+    if (activeBadge) {
+        activeBadge.classList.remove('hidden');
+        if (onCount > 0) {
+            activeBadge.className = 'px-2 py-0.5 rounded-full bg-amber-500/18 text-amber-800 dark:text-amber-200 border border-amber-500/35 text-[11px] font-bold tabular-nums shrink-0';
+            activeBadge.innerText = `${onCount} von ${list.length} an`;
+        } else {
+            activeBadge.className = 'px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-600 dark:text-slate-300 border border-slate-400/20 text-[11px] font-semibold tabular-nums shrink-0';
+            activeBadge.innerText = `Alle aus (${list.length})`;
+        }
+    }
+
+    if (scrollHint) {
+        scrollHint.classList.toggle('hidden', list.length <= 4);
+    }
+}
+
+function renderHomeLightColorSwatches(activeRgb = null) {
+    const container = document.getElementById('homeLightModalColorSwatches');
+    if (!container) return;
+    container.innerHTML = HOME_LIGHT_RGB_SWATCHES.map(sw => {
+        const isNear = Array.isArray(activeRgb) && activeRgb.length === 3
+            && Math.abs(activeRgb[0] - sw.rgb[0]) + Math.abs(activeRgb[1] - sw.rgb[1]) + Math.abs(activeRgb[2] - sw.rgb[2]) < 45;
+        return `
+        <button type="button" onclick="applyHomeLightRgbPreset(${sw.rgb[0]}, ${sw.rgb[1]}, ${sw.rgb[2]})"
+            title="${escapeHtml(sw.label)}"
+            style="background:${sw.hex};"
+            class="w-full aspect-square rounded-full border-2 transition-transform active:scale-90 cursor-pointer ${isNear ? 'border-slate-900 dark:border-white scale-110 shadow-md' : 'border-white/80 dark:border-slate-800 shadow-xs hover:scale-105'}">
+        </button>`;
+    }).join('');
+}
+
+function openHomeLightControlModal(lightId) {
+    const list = ensureDefaultHomeLightsArray();
+    const item = list.find(l => String(l.id) === String(lightId));
+    if (!item || !item.entityId) return;
+
+    activeHomeLightControlId = item.id;
+    const modal = document.getElementById('modal-home-light-control');
+    if (!modal) return;
+
+    syncOpenHomeLightControlModal();
+    modal.classList.remove('hidden');
+}
+
+function closeHomeLightControlModal() {
+    const modal = document.getElementById('modal-home-light-control');
+    if (modal) modal.classList.add('hidden');
+    activeHomeLightControlId = null;
+}
+
+function syncOpenHomeLightControlModal() {
+    if (!activeHomeLightControlId) return;
+    const modal = document.getElementById('modal-home-light-control');
+    if (!modal) return;
+
+    const list = ensureDefaultHomeLightsArray();
+    const item = list.find(l => String(l.id) === String(activeHomeLightControlId));
+    if (!item) return;
+
+    const caps = getLightCapabilities(item.entityId);
+    const titleEl = document.getElementById('homeLightModalTitle');
+    const subEl = document.getElementById('homeLightModalSubtitle');
+    const badgeEl = document.getElementById('homeLightModalStateBadge');
+    const iconEl = document.getElementById('homeLightModalIcon');
+    const iconWrap = document.getElementById('homeLightModalIconWrap');
+    const heroEl = document.getElementById('homeLightModalHero');
+    const powerBtn = document.getElementById('homeLightModalPowerBtn');
+    const powerIcon = document.getElementById('homeLightModalPowerIcon');
+    const powerLabel = document.getElementById('homeLightModalPowerLabel');
+    const hintEl = document.getElementById('homeLightModalStatusHint');
+
+    if (titleEl) titleEl.innerText = item.name || item.entityId;
+    if (subEl) subEl.innerText = `${item.entityId} · ${caps.modeSummary}`;
+    if (iconEl) iconEl.innerText = item.icon || inferDefaultLightIcon(item.entityId, item.name);
+
+    const hasCustomRgb = caps.isOn && caps.canColor && Array.isArray(caps.rgb);
+    const rgbCss = hasCustomRgb ? `rgb(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]})` : '#f59e0b';
+
+    if (heroEl) {
+        if (caps.isOn) {
+            heroEl.style.background = hasCustomRgb
+                ? `linear-gradient(135deg, rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.18), transparent 72%)`
+                : 'linear-gradient(135deg, rgba(245, 158, 11, 0.16), transparent 72%)';
+        } else {
+            heroEl.style.background = '';
+        }
+    }
+
+    if (iconWrap) {
+        if (caps.isOn) {
+            iconWrap.className = 'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 border shadow-md';
+            iconWrap.style.background = hasCustomRgb
+                ? `rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.22)`
+                : 'rgba(245, 158, 11, 0.2)';
+            iconWrap.style.borderColor = hasCustomRgb
+                ? `rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.55)`
+                : 'rgba(245, 158, 11, 0.5)';
+            iconWrap.style.color = rgbCss;
+            if (iconEl) iconEl.classList.add('fill-1');
+        } else {
+            iconWrap.className = 'w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/80 dark:border-white/10';
+            iconWrap.style.background = '';
+            iconWrap.style.borderColor = '';
+            iconWrap.style.color = '';
+            if (iconEl) iconEl.classList.remove('fill-1');
+        }
+    }
+
+    if (badgeEl) {
+        if (caps.isUnavailable) {
+            badgeEl.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25 shrink-0';
+            badgeEl.innerText = 'Offline';
+        } else if (caps.isOn) {
+            badgeEl.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/35 shrink-0 tabular-nums';
+            badgeEl.innerText = caps.canDim ? `An · ${caps.brightnessPct} %` : 'Eingeschaltet';
+        } else {
+            badgeEl.className = 'px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0';
+            badgeEl.innerText = 'Ausgeschaltet';
+        }
+    }
+
+    if (powerBtn) {
+        powerBtn.disabled = homeLightCommandInFlight || caps.isUnavailable;
+        if (caps.isUnavailable) {
+            powerBtn.className = 'w-full py-4 px-5 rounded-[22px] font-extrabold text-sm sm:text-base flex items-center justify-center gap-2.5 transition-all bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-300 dark:border-slate-700 cursor-not-allowed';
+            if (powerLabel) powerLabel.innerText = 'Gerät nicht erreichbar';
+            if (powerIcon) powerIcon.innerText = 'cloud_off';
+        } else if (caps.isOn) {
+            powerBtn.className = 'w-full py-4 px-5 rounded-[22px] font-extrabold text-sm sm:text-base flex items-center justify-center gap-2.5 transition-all duration-200 active:scale-[0.98] cursor-pointer shadow-md bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white border border-amber-400/50';
+            if (powerLabel) powerLabel.innerText = homeLightCommandInFlight ? 'Wird geschaltet…' : 'Ausschalten';
+            if (powerIcon) powerIcon.innerText = homeLightCommandInFlight ? 'progress_activity' : 'power_settings_new';
+        } else {
+            powerBtn.className = 'w-full py-4 px-5 rounded-[22px] font-extrabold text-sm sm:text-base flex items-center justify-center gap-2.5 transition-all duration-200 active:scale-[0.98] cursor-pointer shadow-sm bg-slate-900 hover:bg-slate-800 dark:bg-teal-600 dark:hover:bg-teal-500 text-white border border-slate-700/60 dark:border-teal-400/40';
+            if (powerLabel) powerLabel.innerText = homeLightCommandInFlight ? 'Wird geschaltet…' : 'Einschalten';
+            if (powerIcon) powerIcon.innerText = homeLightCommandInFlight ? 'progress_activity' : 'power_settings_new';
+        }
+        if (powerIcon) {
+            powerIcon.classList.toggle('animate-spin', homeLightCommandInFlight);
+        }
+    }
+
+    if (hintEl && !homeLightCommandInFlight) {
+        hintEl.innerText = caps.isUnavailable
+            ? 'Home Assistant meldet diese Entität aktuell als nicht erreichbar.'
+            : (caps.domain === 'switch' ? 'Relais / Schalter (An & Aus über Home Assistant)' : 'Änderungen werden live an Home Assistant übertragen');
+    }
+
+    // 2. Brightness Controls
+    const brightBox = document.getElementById('homeLightModalBrightnessBox');
+    const brightSlider = document.getElementById('homeLightModalBrightnessSlider');
+    const brightVal = document.getElementById('homeLightModalBrightnessValue');
+    if (brightBox) {
+        brightBox.classList.toggle('hidden', !caps.canDim);
+        if (caps.canDim) {
+            const pct = caps.isOn ? caps.brightnessPct : 0;
+            if (brightSlider && document.activeElement !== brightSlider) {
+                brightSlider.value = String(Math.max(1, caps.brightnessPct || 50));
+            }
+            if (brightVal) brightVal.innerText = `${pct} %`;
+        }
+    }
+
+    // 3. Color Temp Controls
+    const ctBox = document.getElementById('homeLightModalColorTempBox');
+    const ctSlider = document.getElementById('homeLightModalColorTempSlider');
+    const ctVal = document.getElementById('homeLightModalColorTempValue');
+    if (ctBox) {
+        ctBox.classList.toggle('hidden', !caps.canColorTemp);
+        if (caps.canColorTemp) {
+            if (ctSlider) {
+                ctSlider.min = String(caps.minKelvin);
+                ctSlider.max = String(caps.maxKelvin);
+                if (document.activeElement !== ctSlider) {
+                    ctSlider.value = String(caps.kelvin);
+                }
+            }
+            if (ctVal) ctVal.innerText = `${Number(caps.kelvin).toLocaleString('de-DE')} K`;
+        }
+    }
+
+    // 4. RGB Color Controls
+    const colorBox = document.getElementById('homeLightModalColorBox');
+    const colorPicker = document.getElementById('homeLightModalColorPicker');
+    if (colorBox) {
+        colorBox.classList.toggle('hidden', !caps.canColor);
+        if (caps.canColor) {
+            if (colorPicker && Array.isArray(caps.rgb)) {
+                colorPicker.value = rgbArrayToHex(caps.rgb);
+            }
+            renderHomeLightColorSwatches(caps.rgb);
+        }
+    }
+}
+
+async function callHaLightService(entityId, service, serviceData = {}) {
+    const cleanId = String(entityId || '').trim();
+    const domain = cleanId.startsWith('light.') ? 'light' : (cleanId.startsWith('switch.') ? 'switch' : '');
+    const cleanService = String(service || '').trim().toLowerCase();
+
+    if (!domain || !['turn_on', 'turn_off', 'toggle'].includes(cleanService)) {
+        return { ok: false, error: 'Nur light.* und switch.* sind für Schaltbefehle freigegeben.' };
+    }
+
+    const baseUrl = normalizeHaUrlClient(haConfigState.baseUrl);
+    const token = cleanHaTokenClient(haConfigState.accessToken);
+    if (!baseUrl || !token) {
+        if (typeof showToastNotification === 'function') {
+            showToastNotification('Home Assistant URL oder Token fehlt. Bitte zuerst verbinden.', 'error');
+        }
+        return { ok: false, error: 'Home Assistant URL oder Token fehlt.' };
+    }
+
+    const payload = { entity_id: cleanId };
+    if (domain === 'light' && cleanService === 'turn_on') {
+        if (serviceData.brightness_pct !== undefined) {
+            payload.brightness_pct = Math.max(1, Math.min(100, Math.round(Number(serviceData.brightness_pct))));
+        }
+        if (serviceData.color_temp_kelvin !== undefined) {
+            payload.color_temp_kelvin = Math.max(1500, Math.min(10000, Math.round(Number(serviceData.color_temp_kelvin))));
+        }
+        if (Array.isArray(serviceData.rgb_color) && serviceData.rgb_color.length === 3) {
+            payload.rgb_color = serviceData.rgb_color.map(v => Math.max(0, Math.min(255, Math.round(Number(v)))));
+        }
+    }
+
+    // Optimistic state update so UI feels instantaneous
+    const prevState = homeHaStatesCache.get(cleanId);
+    const optimisticAttrs = { ...(prevState?.attributes || {}) };
+    let optimisticStateStr = prevState?.state || 'off';
+    if (cleanService === 'turn_on') optimisticStateStr = 'on';
+    else if (cleanService === 'turn_off') optimisticStateStr = 'off';
+    else if (cleanService === 'toggle') optimisticStateStr = optimisticStateStr === 'on' ? 'off' : 'on';
+    if (payload.brightness_pct !== undefined) {
+        optimisticAttrs.brightness = Math.round((payload.brightness_pct / 100) * 255);
+    }
+    if (payload.color_temp_kelvin !== undefined) {
+        optimisticAttrs.color_temp_kelvin = payload.color_temp_kelvin;
+    }
+    if (payload.rgb_color !== undefined) {
+        optimisticAttrs.rgb_color = payload.rgb_color;
+    }
+
+    homeLightCommandInFlight = true;
+    homeHaStatesCache.set(cleanId, {
+        ...(prevState || {}),
+        entity_id: cleanId,
+        state: optimisticStateStr,
+        attributes: optimisticAttrs
+    });
+    renderHomeLightsSection();
+    syncOpenHomeLightControlModal();
+
+    let resOk = false;
+    let returnedStates = [];
+    let lastError = '';
+
+    // 1. Direct browser call to HA REST API (supports standalone / GitHub Pages / local LAN)
+    try {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 7000) : null;
+        const directResp = await fetch(`${baseUrl}/api/services/${domain}/${cleanService}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller ? controller.signal : undefined
+        });
+        if (timer) clearTimeout(timer);
+        if (directResp.ok) {
+            resOk = true;
+            try {
+                const json = await directResp.json();
+                if (Array.isArray(json)) returnedStates = json;
+            } catch (e) {}
+        } else {
+            lastError = `HA HTTP ${directResp.status}`;
+        }
+    } catch (err) {
+        lastError = err?.message || 'Direktzugriff fehlgeschlagen';
+    }
+
+    // 2. Backend proxy fallback (POST /api/ha/service) if direct browser request blocked by CORS
+    if (!resOk) {
+        const proxyRes = await safeFetchBackendJson('/api/ha/service', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                baseUrl,
+                accessToken: token,
+                domain,
+                service: cleanService,
+                entityId: cleanId,
+                serviceData: payload
+            })
+        });
+        if (proxyRes.ok && proxyRes.data && proxyRes.data.success) {
+            resOk = true;
+            if (Array.isArray(proxyRes.data.states)) {
+                returnedStates = proxyRes.data.states;
+            }
+        } else {
+            lastError = proxyRes.data?.error || lastError || 'Schaltbefehl fehlgeschlagen';
+        }
+    }
+
+    homeLightCommandInFlight = false;
+
+    if (resOk) {
+        if (Array.isArray(returnedStates) && returnedStates.length > 0) {
+            returnedStates.forEach(stObj => {
+                if (stObj && stObj.entity_id) {
+                    homeHaStatesCache.set(stObj.entity_id, stObj);
+                }
+            });
+        }
+        renderHomeLightsSection();
+        syncOpenHomeLightControlModal();
+
+        // Schedule real-hardware verification refresh (~750ms) so Shelly/Zigbee state matches 100%
+        if (homeLightVerifyRefreshTimer) clearTimeout(homeLightVerifyRefreshTimer);
+        homeLightVerifyRefreshTimer = setTimeout(async () => {
+            try {
+                const verifyRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, `/api/states/${encodeURIComponent(cleanId)}`);
+                if (verifyRes.ok && verifyRes.data && verifyRes.data.entity_id) {
+                    homeHaStatesCache.set(verifyRes.data.entity_id, verifyRes.data);
+                    renderHomeLightsSection();
+                    syncOpenHomeLightControlModal();
+                }
+            } catch (e) {}
+        }, 750);
+
+        return { ok: true };
+    } else {
+        // Revert optimistic state on error
+        if (prevState) {
+            homeHaStatesCache.set(cleanId, prevState);
+        }
+        renderHomeLightsSection();
+        syncOpenHomeLightControlModal();
+        const hintEl = document.getElementById('homeLightModalStatusHint');
+        if (hintEl) hintEl.innerText = `Fehler: ${lastError}`;
+        if (typeof showToastNotification === 'function') {
+            showToastNotification(`Schalten fehlgeschlagen: ${lastError}`, 'error');
+        }
+        return { ok: false, error: lastError };
+    }
+}
+
+function getActiveHomeLightItem() {
+    if (!activeHomeLightControlId) return null;
+    return ensureDefaultHomeLightsArray().find(l => String(l.id) === String(activeHomeLightControlId)) || null;
+}
+
+function toggleActiveHomeLightPower() {
+    const item = getActiveHomeLightItem();
+    if (!item || !item.entityId) return;
+    const caps = getLightCapabilities(item.entityId);
+    const service = caps.isOn ? 'turn_off' : 'turn_on';
+    callHaLightService(item.entityId, service);
+}
+
+function onHomeLightBrightnessInput(val) {
+    const pct = Math.max(1, Math.min(100, Math.round(Number(val) || 1)));
+    const valEl = document.getElementById('homeLightModalBrightnessValue');
+    if (valEl) valEl.innerText = `${pct} %`;
+    if (homeLightBrightnessDebounceTimer) clearTimeout(homeLightBrightnessDebounceTimer);
+    homeLightBrightnessDebounceTimer = setTimeout(() => {
+        commitHomeLightBrightness(pct);
+    }, 260);
+}
+
+function commitHomeLightBrightness(val) {
+    if (homeLightBrightnessDebounceTimer) {
+        clearTimeout(homeLightBrightnessDebounceTimer);
+        homeLightBrightnessDebounceTimer = null;
+    }
+    const item = getActiveHomeLightItem();
+    if (!item || !item.entityId) return;
+    const pct = Math.max(1, Math.min(100, Math.round(Number(val) || 1)));
+    callHaLightService(item.entityId, 'turn_on', { brightness_pct: pct });
+}
+
+function applyHomeLightBrightnessPreset(pct) {
+    const slider = document.getElementById('homeLightModalBrightnessSlider');
+    const valEl = document.getElementById('homeLightModalBrightnessValue');
+    if (slider) slider.value = String(pct);
+    if (valEl) valEl.innerText = `${pct} %`;
+    commitHomeLightBrightness(pct);
+}
+
+function onHomeLightColorTempInput(val) {
+    const k = Math.max(1500, Math.min(10000, Math.round(Number(val) || 2700)));
+    const valEl = document.getElementById('homeLightModalColorTempValue');
+    if (valEl) valEl.innerText = `${k.toLocaleString('de-DE')} K`;
+    if (homeLightColorTempDebounceTimer) clearTimeout(homeLightColorTempDebounceTimer);
+    homeLightColorTempDebounceTimer = setTimeout(() => {
+        commitHomeLightColorTemp(k);
+    }, 260);
+}
+
+function commitHomeLightColorTemp(val) {
+    if (homeLightColorTempDebounceTimer) {
+        clearTimeout(homeLightColorTempDebounceTimer);
+        homeLightColorTempDebounceTimer = null;
+    }
+    const item = getActiveHomeLightItem();
+    if (!item || !item.entityId) return;
+    const k = Math.max(1500, Math.min(10000, Math.round(Number(val) || 2700)));
+    callHaLightService(item.entityId, 'turn_on', { color_temp_kelvin: k });
+}
+
+function applyHomeLightColorTempPreset(kelvin) {
+    const item = getActiveHomeLightItem();
+    if (!item) return;
+    const caps = getLightCapabilities(item.entityId);
+    const clamped = Math.max(caps.minKelvin, Math.min(caps.maxKelvin, Math.round(Number(kelvin) || 2700)));
+    const slider = document.getElementById('homeLightModalColorTempSlider');
+    const valEl = document.getElementById('homeLightModalColorTempValue');
+    if (slider) slider.value = String(clamped);
+    if (valEl) valEl.innerText = `${clamped.toLocaleString('de-DE')} K`;
+    commitHomeLightColorTemp(clamped);
+}
+
+function applyHomeLightRgbPreset(r, g, b) {
+    const item = getActiveHomeLightItem();
+    if (!item || !item.entityId) return;
+    const rgb = [r, g, b].map(v => Math.max(0, Math.min(255, Math.round(Number(v) || 0))));
+    const picker = document.getElementById('homeLightModalColorPicker');
+    if (picker) picker.value = rgbArrayToHex(rgb);
+    callHaLightService(item.entityId, 'turn_on', { rgb_color: rgb });
+}
+
+function commitHomeLightRgbHex(hexVal) {
+    const rgb = hexToRgbArray(hexVal);
+    applyHomeLightRgbPreset(rgb[0], rgb[1], rgb[2]);
+}
+
+// --- HA Config Modal Tab 6: Strict Opt-In Lights & Switches Manager ---
+
+function renderHaHomeLightsEditor() {
+    const container = document.getElementById('haHomeLightsMappingContainer');
+    const badge = document.getElementById('haHomeLightsActiveCountBadge');
+    const list = ensureDefaultHomeLightsArray();
+
+    if (badge) {
+        const activeCount = list.filter(l => l && String(l.entityId || '').trim()).length;
+        badge.innerText = `${activeCount} aktiv`;
+    }
+    if (!container) return;
+
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div class="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 text-center space-y-1.5">
+                <p class="text-xs font-bold text-slate-700 dark:text-slate-200">Noch keine Lichter oder Schalter freigegeben</p>
+                <p class="text-[11px] text-slate-500 dark:text-slate-400">Wähle unten gezielt einzelne <code>light.*</code> oder <code>switch.*</code> Entitäten aus Home Assistant aus.</p>
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = list.map((item, idx) => {
+        const safeName = escapeHtml(item.name || '');
+        const safeEntity = escapeHtml(item.entityId || '');
+        const curIcon = item.icon || inferDefaultLightIcon(item.entityId, item.name);
+        const caps = getLightCapabilities(item.entityId);
+        const stateBadgeCls = caps.isOn
+            ? 'bg-amber-500/18 text-amber-800 dark:text-amber-200 border-amber-500/35'
+            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700';
+        const stateBadgeTxt = caps.isUnavailable ? 'Offline' : (caps.isOn ? (caps.canDim ? `AN · ${caps.brightnessPct}%` : 'AN') : 'AUS');
+
+        const iconOptionsHtml = HOME_LIGHT_ICON_OPTIONS.map(opt =>
+            `<option value="${opt.icon}" ${opt.icon === curIcon ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`
+        ).join('');
+
+        return `
+        <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <span class="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-300 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-lg">${escapeHtml(curIcon)}</span>
+                    </span>
+                    <input type="text" value="${safeName}" oninput="updateHaHomeLightField(${idx}, 'name', this.value)"
+                        placeholder="Anzeigename (z. B. Wohnzimmer, Terrasse)"
+                        class="flex-1 min-w-0 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <span class="hidden sm:inline-block px-2 py-0.5 rounded-md border text-[10px] font-bold ${stateBadgeCls}">${escapeHtml(stateBadgeTxt)}</span>
+                    <button type="button" onclick="moveHaHomeLight(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="w-7 h-7 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 flex items-center justify-center cursor-pointer" title="Nach oben">
+                        <span class="material-symbols-rounded text-base">arrow_upward</span>
+                    </button>
+                    <button type="button" onclick="moveHaHomeLight(${idx}, 1)" ${idx === list.length - 1 ? 'disabled' : ''} class="w-7 h-7 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 flex items-center justify-center cursor-pointer" title="Nach unten">
+                        <span class="material-symbols-rounded text-base">arrow_downward</span>
+                    </button>
+                    <button type="button" onclick="removeHaHomeLight(${idx})" class="w-7 h-7 rounded-lg text-rose-500 hover:bg-rose-500/10 flex items-center justify-center cursor-pointer" title="Entfernen">
+                        <span class="material-symbols-rounded text-base">delete</span>
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <div class="sm:col-span-8">
+                    <label class="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">Entität (<code>light.*</code> oder <code>switch.*</code>) · <span class="text-teal-600 dark:text-teal-400">${escapeHtml(caps.modeSummary)}</span></label>
+                    <div class="flex items-center gap-1.5">
+                        <input type="text" list="haEntitiesDatalist" value="${safeEntity}" oninput="updateHaHomeLightField(${idx}, 'entityId', this.value)"
+                            placeholder="z. B. light.wohnzimmer oder switch.shelly_flur"
+                            class="flex-1 min-w-0 text-xs font-mono px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'lightEntity', index: ${idx}, unitFilter: 'light', title: 'Licht / Schalter ${idx + 1}' })"
+                            class="px-2.5 h-8 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-800 dark:text-amber-300 text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer" title="Aus Liste wählen">
+                            <span class="material-symbols-rounded text-sm">lightbulb</span>
+                            <span>Wählen</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="sm:col-span-4">
+                    <label class="block text-[10.5px] font-bold text-slate-500 dark:text-slate-400 mb-1">Symbol</label>
+                    <select onchange="updateHaHomeLightField(${idx}, 'icon', this.value)"
+                        class="w-full text-xs font-semibold px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-white outline-none focus:border-teal-500">
+                        ${iconOptionsHtml}
+                    </select>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addHaHomeLightManual() {
+    const list = ensureDefaultHomeLightsArray();
+    const nextNum = list.length + 1;
+    list.push({
+        id: `light_${Date.now()}_${nextNum}`,
+        name: `Licht / Schalter ${nextNum}`,
+        entityId: '',
+        icon: 'lightbulb'
+    });
+    renderHaHomeLightsEditor();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeLightsSection();
+}
+
+function updateHaHomeLightField(idx, field, val) {
+    const list = ensureDefaultHomeLightsArray();
+    if (!list[idx]) return;
+    list[idx][field] = String(val || '').trim();
+    if (field === 'icon') {
+        renderHaHomeLightsEditor();
+    }
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeLightsSection();
+}
+
+function moveHaHomeLight(idx, dir) {
+    const list = ensureDefaultHomeLightsArray();
+    const target = idx + dir;
+    if (target < 0 || target >= list.length) return;
+    const tmp = list[idx];
+    list[idx] = list[target];
+    list[target] = tmp;
+    renderHaHomeLightsEditor();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeLightsSection();
+}
+
+function removeHaHomeLight(idx) {
+    const list = ensureDefaultHomeLightsArray();
+    if (!list[idx]) return;
+    list.splice(idx, 1);
+    renderHaHomeLightsEditor();
+    renderHaAvailableLightsPickerList();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeLightsSection();
+}
+
+function setHaLightsPickerDomainFilter(domain = 'all') {
+    haLightsPickerDomainFilter = domain;
+    ['all', 'light', 'switch'].forEach(key => {
+        const btn = document.getElementById(`haLightsFilter_${key}`);
+        if (!btn) return;
+        btn.className = key === domain
+            ? 'px-2.5 py-1.5 rounded-xl bg-teal-600 text-white text-[11px] font-bold cursor-pointer transition-all'
+            : 'px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[11px] font-bold cursor-pointer transition-all';
+    });
+    renderHaAvailableLightsPickerList();
+}
+
+function onHaLightsPickerSearchInput(val) {
+    haLightsPickerSearchQuery = String(val || '').trim().toLowerCase();
+    renderHaAvailableLightsPickerList();
+}
+
+async function loadAvailableHaLightsIntoPicker(showFeedback = true) {
+    readHaModalIntoState();
+    const listEl = document.getElementById('haAvailableLightsPickerList');
+    if (listEl) {
+        listEl.innerHTML = `<div class="p-3 text-center text-xs text-slate-500 flex items-center justify-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Lade verfügbare Lichter &amp; Schalter aus Home Assistant…</span></div>`;
+    }
+
+    const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+    if (directRes.ok && Array.isArray(directRes.data)) {
+        // Store live states in cache WITHOUT auto-seeding any lights (strict opt-in!)
+        directRes.data.forEach(s => {
+            if (s && s.entity_id) homeHaStatesCache.set(s.entity_id, s);
+        });
+        const tplDeviceMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+        discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplDeviceMap);
+        updateHaEntitiesDatalistElement();
+        renderHaHomeLightsEditor();
+        renderHaAvailableLightsPickerList();
+        renderHomeLightsSection();
+        if (showFeedback && typeof showToastNotification === 'function') {
+            const count = directRes.data.filter(s => s && typeof s.entity_id === 'string' && (s.entity_id.startsWith('light.') || s.entity_id.startsWith('switch.'))).length;
+            showToastNotification(`${count} Lichter & Schalter gefunden — wähle nur die gewünschten aus.`, 'success');
+        }
+        return;
+    }
+
+    // Backend proxy fallback via /api/ha/test
+    const testRes = await safeFetchBackendJson('/api/ha/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: haConfigState.baseUrl, accessToken: haConfigState.accessToken })
+    });
+    if (testRes.ok && testRes.data && testRes.data.success && Array.isArray(testRes.data.sensors)) {
+        testRes.data.sensors.forEach(s => {
+            if (s && s.entity_id && (s.entity_id.startsWith('light.') || s.entity_id.startsWith('switch.'))) {
+                homeHaStatesCache.set(s.entity_id, {
+                    entity_id: s.entity_id,
+                    state: s.state,
+                    attributes: {
+                        friendly_name: s.name,
+                        supported_color_modes: s.supported_color_modes,
+                        brightness: s.brightness,
+                        color_temp_kelvin: s.color_temp_kelvin,
+                        min_color_temp_kelvin: s.min_color_temp_kelvin,
+                        max_color_temp_kelvin: s.max_color_temp_kelvin,
+                        rgb_color: s.rgb_color
+                    }
+                });
+            }
+        });
+        renderHaHomeLightsEditor();
+        renderHaAvailableLightsPickerList();
+        renderHomeLightsSection();
+        if (showFeedback && typeof showToastNotification === 'function') {
+            showToastNotification('Verfügbare Lichter & Schalter geladen — wähle nur die gewünschten aus.', 'success');
+        }
+    } else {
+        renderHaAvailableLightsPickerList();
+        if (showFeedback && typeof showToastNotification === 'function') {
+            showToastNotification('Verbindung zu Home Assistant fehlgeschlagen. Bitte prüfe URL & Token.', 'error');
+        }
+    }
+}
+
+function toggleOptInHaLightEntity(entityId) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId) return;
+    const list = ensureDefaultHomeLightsArray();
+    const existingIdx = list.findIndex(item => String(item.entityId || '').trim() === cleanId);
+
+    if (existingIdx >= 0) {
+        list.splice(existingIdx, 1);
+    } else {
+        const stObj = homeHaStatesCache.get(cleanId);
+        const friendly = String(stObj?.attributes?.friendly_name || cleanId.replace(/^(light|switch)\./, '').replace(/_/g, ' ')).trim();
+        list.push({
+            id: `light_${Date.now()}_${list.length + 1}`,
+            name: friendly,
+            entityId: cleanId,
+            icon: inferDefaultLightIcon(cleanId, friendly)
+        });
+    }
+
+    renderHaHomeLightsEditor();
+    renderHaAvailableLightsPickerList();
+    persistMonitoredDevicesConfigImmediate();
+    renderHomeLightsSection();
+}
+
+function renderHaAvailableLightsPickerList() {
+    const container = document.getElementById('haAvailableLightsPickerList');
+    if (!container) return;
+
+    const configuredIds = new Set(ensureDefaultHomeLightsArray().map(l => String(l.entityId || '').trim()).filter(Boolean));
+    const candidates = [];
+
+    homeHaStatesCache.forEach((stObj, entId) => {
+        if (!entId || typeof entId !== 'string') return;
+        const isLight = entId.startsWith('light.');
+        const isSwitch = entId.startsWith('switch.');
+        if (!isLight && !isSwitch) return;
+        if (haLightsPickerDomainFilter === 'light' && !isLight) return;
+        if (haLightsPickerDomainFilter === 'switch' && !isSwitch) return;
+
+        const name = String(stObj?.attributes?.friendly_name || entId).trim();
+        if (haLightsPickerSearchQuery) {
+            const hay = `${name} ${entId}`.toLowerCase();
+            if (!hay.includes(haLightsPickerSearchQuery)) return;
+        }
+        candidates.push({ entId, name, stObj, isLight });
+    });
+
+    candidates.sort((a, b) => {
+        const aSel = configuredIds.has(a.entId) ? 0 : 1;
+        const bSel = configuredIds.has(b.entId) ? 0 : 1;
+        if (aSel !== bSel) return aSel - bSel;
+        if (a.isLight !== b.isLight) return a.isLight ? -1 : 1;
+        return a.name.localeCompare(b.name, 'de');
+    });
+
+    if (candidates.length === 0) {
+        container.innerHTML = `
+            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 text-center text-xs text-slate-500 dark:text-slate-400">
+                ${homeHaStatesCache.size === 0
+                    ? 'Klicke oben auf <strong>„Aus HA wählen“</strong> oder <strong>„Liste aktualisieren“</strong>, um deine Home-Assistant-Lichter &amp; Shellys anzuzeigen.'
+                    : 'Keine passenden Lichter oder Schalter für diesen Filter gefunden.'}
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = candidates.map(c => {
+        const isSelected = configuredIds.has(c.entId);
+        const caps = getLightCapabilities(c.entId, c.stObj);
+        const safeIdJs = c.entId.replace(/'/g, "\\'");
+        const statePill = caps.isOn
+            ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 text-[10px] font-bold">AN</span>'
+            : (caps.isUnavailable
+                ? '<span class="px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-600 dark:text-rose-300 text-[10px] font-bold">OFFLINE</span>'
+                : '<span class="px-1.5 py-0.5 rounded bg-slate-200/80 dark:bg-slate-800 text-slate-500 text-[10px] font-bold">AUS</span>');
+
+        return `
+        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-all ${isSelected
+            ? 'bg-teal-500/10 border-teal-500/40 dark:bg-teal-500/15'
+            : 'bg-slate-50/70 dark:bg-slate-950/50 border-slate-200/80 dark:border-slate-800 hover:border-amber-400/50'}">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <span class="material-symbols-rounded text-lg shrink-0 ${c.isLight ? 'text-amber-500' : 'text-teal-500'}">${c.isLight ? 'lightbulb' : 'power_settings_new'}</span>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <p class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHtml(c.name)}</p>
+                        ${statePill}
+                        <span class="px-1.5 py-0.5 rounded bg-slate-200/60 dark:bg-white/10 text-[10px] font-semibold text-slate-600 dark:text-slate-300">${escapeHtml(caps.modeSummary)}</span>
+                    </div>
+                    <p class="text-[10.5px] font-mono text-slate-500 dark:text-slate-400 truncate">${escapeHtml(c.entId)}</p>
+                </div>
+            </div>
+            <button type="button" onclick="toggleOptInHaLightEntity('${safeIdJs}')"
+                class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-all ${isSelected
+                    ? 'bg-teal-600 text-white hover:bg-rose-600'
+                    : 'bg-white dark:bg-slate-800 hover:bg-amber-500 hover:text-white text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'}">
+                <span class="material-symbols-rounded text-sm">${isSelected ? 'check' : 'add'}</span>
+                <span>${isSelected ? 'Ausgewählt' : 'Hinzufügen'}</span>
+            </button>
+        </div>`;
+    }).join('');
+}
+
 window.renderHaHomeCamerasEditor = renderHaHomeCamerasEditor;
 window.addHaHomeCamera = addHaHomeCamera;
 window.updateHaHomeCameraField = updateHaHomeCameraField;
@@ -16447,6 +17554,31 @@ window.openHomeCameraFullscreenModal = openHomeCameraFullscreenModal;
 window.closeHomeCameraFullscreenModal = closeHomeCameraFullscreenModal;
 window.toggleHomeCameraFullscreenRotation = toggleHomeCameraFullscreenRotation;
 window.stepHomeCameraFullscreen = stepHomeCameraFullscreen;
+window.getLightCapabilities = getLightCapabilities;
+window.renderHomeLightsSection = renderHomeLightsSection;
+window.openHomeLightControlModal = openHomeLightControlModal;
+window.closeHomeLightControlModal = closeHomeLightControlModal;
+window.syncOpenHomeLightControlModal = syncOpenHomeLightControlModal;
+window.toggleActiveHomeLightPower = toggleActiveHomeLightPower;
+window.onHomeLightBrightnessInput = onHomeLightBrightnessInput;
+window.commitHomeLightBrightness = commitHomeLightBrightness;
+window.applyHomeLightBrightnessPreset = applyHomeLightBrightnessPreset;
+window.onHomeLightColorTempInput = onHomeLightColorTempInput;
+window.commitHomeLightColorTemp = commitHomeLightColorTemp;
+window.applyHomeLightColorTempPreset = applyHomeLightColorTempPreset;
+window.applyHomeLightRgbPreset = applyHomeLightRgbPreset;
+window.commitHomeLightRgbHex = commitHomeLightRgbHex;
+window.callHaLightService = callHaLightService;
+window.renderHaHomeLightsEditor = renderHaHomeLightsEditor;
+window.addHaHomeLightManual = addHaHomeLightManual;
+window.updateHaHomeLightField = updateHaHomeLightField;
+window.moveHaHomeLight = moveHaHomeLight;
+window.removeHaHomeLight = removeHaHomeLight;
+window.setHaLightsPickerDomainFilter = setHaLightsPickerDomainFilter;
+window.onHaLightsPickerSearchInput = onHaLightsPickerSearchInput;
+window.loadAvailableHaLightsIntoPicker = loadAvailableHaLightsIntoPicker;
+window.toggleOptInHaLightEntity = toggleOptInHaLightEntity;
+window.renderHaAvailableLightsPickerList = renderHaAvailableLightsPickerList;
 window.getDailyPvgisSollForMonth = getDailyPvgisSollForMonth;
 window.getHourlyPvgisSollForDate = getHourlyPvgisSollForDate;
 
