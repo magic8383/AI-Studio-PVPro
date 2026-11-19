@@ -1749,9 +1749,9 @@ function getEffectiveTimeframeWindow(cfg = haConfigState, timeframe = currentCur
     const trackMs = trackDate.getTime();
 
     if (timeframe === 'month') {
-        const rawStartMs = now.getTime() - 30 * 24 * 3600 * 1000;
-        const boundedByTrackingStart = (trackMs <= now.getTime() && trackMs > rawStartMs);
-        const effStartMs = Math.min(startOfDayMs, boundedByTrackingStart ? trackMs : rawStartMs);
+        const startOfMonthMs = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).getTime();
+        const boundedByTrackingStart = (trackMs <= now.getTime() && trackMs > startOfMonthMs);
+        const effStartMs = Math.min(startOfDayMs, boundedByTrackingStart ? trackMs : startOfMonthMs);
         const startTime = new Date(effStartMs);
         const spanDays = Math.max(1, (now.getTime() - effStartMs) / (24 * 3600 * 1000));
         const stepMs = spanDays <= 14 ? (60 * 60 * 1000) : (3 * 3600 * 1000);
@@ -1872,6 +1872,55 @@ function fetchHaLongTermStatisticsWs(rawBaseUrl, rawToken, statisticIds, startTi
     });
 }
 
+/**
+ * Single Source of Truth helper: returns consistent step-jump thresholds for an HA energy counter entity.
+ * Ensures Wallbox fast charging (up to 22 kW) is never capped at regular consumer thresholds (4 kWh/h).
+ */
+function getEnergyCounterStepLimits(entId, cfg = haConfigState, granularity = 'hour') {
+    const isConsumer = isConsumerEnergyEntity(entId, cfg);
+    const isWb = isWallboxEnergyEntity(entId, cfg);
+    if (granularity === 'day') {
+        return {
+            isConsumer,
+            isWb,
+            maxStepKwh: isWb ? 260.0 : (isConsumer ? 85.0 : 220.0),
+            initJumpMinKwh: isWb ? 260.0 : (isConsumer ? 50.0 : 80.0)
+        };
+    }
+    return {
+        isConsumer,
+        isWb,
+        maxStepKwh: isWb ? 25.0 : (isConsumer ? 4.0 : 22.0),
+        initJumpMinKwh: isWb ? 25.0 : (isConsumer ? 4.0 : 14.0)
+    };
+}
+
+/**
+ * Single Source of Truth helper: resolves a counter's real meter delta from a bucket summary.
+ * For cumulative total counters with real state readings, strictly uses (effEndReading - firstState).
+ */
+function resolveRealMeterDeltaFromStats({ isCum, firstState, lastState, liveReading, changeSum, hasChange, maxTailStepKwh = 25.0 }) {
+    const effEndReading = (liveReading !== null && !isNaN(liveReading) && (lastState === null || liveReading >= lastState))
+        ? liveReading
+        : lastState;
+    const hasRealStateSpan = (firstState !== null && firstState > 0.1 && effEndReading !== null && effEndReading >= firstState);
+    const realStateSpanKwh = hasRealStateSpan
+        ? Math.max(0, effEndReading - firstState)
+        : 0;
+    const liveTailKwh = (liveReading !== null && !isNaN(liveReading) && lastState !== null && liveReading > lastState && (liveReading - lastState) < maxTailStepKwh)
+        ? (liveReading - lastState)
+        : 0;
+    let totalChangeWithTail = (Number(changeSum) || 0) + liveTailKwh;
+    if (isCum && liveReading !== null && liveReading > 0 && totalChangeWithTail > liveReading) {
+        totalChangeWithTail = liveReading;
+    }
+    if (!hasChange && !hasRealStateSpan) return null;
+    if (isCum && hasRealStateSpan) {
+        return +realStateSpanKwh.toFixed(3);
+    }
+    return hasChange ? +totalChangeWithTail.toFixed(3) : +realStateSpanKwh.toFixed(3);
+}
+
 async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = null, showToast = false) {
     if (!cfg || !cfg.baseUrl || !cfg.accessToken) {
         if (showToast && typeof showToastNotification === 'function') {
@@ -1946,10 +1995,7 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
         const scale = getEnergyScaleForEntity(entId, statesMap);
         const isCum = isEntityCumulativeTotal(entId, statesMap, false);
         const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
-        const isConsumer = isConsumerEnergyEntity(entId, cfg);
-        const isWb = isWallboxEnergyEntity(entId, cfg);
-        const maxDailyStepKwh = isWb ? 260.0 : (isConsumer ? 85.0 : 220.0);
-        const initJumpMinKwh = isWb ? 260.0 : (isConsumer ? 50.0 : 80.0);
+        const { isWb, maxStepKwh: maxDailyStepKwh, initJumpMinKwh } = getEnergyCounterStepLimits(entId, cfg, 'day');
         const byMonth = {};
         let prevBucketState = null;
 
@@ -1961,8 +2007,7 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
                 : (typeof b.max === 'number'
                     ? b.max
                     : (typeof b.mean === 'number' ? b.mean : null));
-            const rawStVal = rawNum !== null && !isNaN(rawNum) ? (rawStValFrom(rawNum, scale)) : null;
-            function rawStValFrom(n, s) { return n * s; }
+            const rawStVal = rawNum !== null && !isNaN(rawNum) ? (rawNum * scale) : null;
             if (isNaN(bStartMs) || bStartMs < (trackMs - 12 * 3600 * 1000)) {
                 if (rawStVal !== null && !isNaN(rawStVal) && rawStVal > 0) prevBucketState = rawStVal;
                 return;
@@ -2019,27 +2064,17 @@ async function syncLongTermStatisticsFromHa(cfg = haConfigState, statesMap = nul
             if (!mInfo) return;
             const isCum = isEntityCumulativeTotal(entId, statesMap, false);
             const curLiveReading = statesMap ? extractHaNumericClient(statesMap, entId, 'kWh') : (lastKnownHaReadingMap.get(entId) ?? null);
-            const effEndReading = (curLiveReading !== null && (mInfo.lastState === null || curLiveReading >= mInfo.lastState))
-                ? curLiveReading
-                : mInfo.lastState;
-            const hasRealStateSpan = (mInfo.firstState !== null && mInfo.firstState > 0.1 && effEndReading !== null && effEndReading >= mInfo.firstState);
-            const realSpanFromState = hasRealStateSpan
-                ? Math.max(0, effEndReading - mInfo.firstState)
-                : 0;
-            const liveTailDelta = (curLiveReading !== null && mInfo.lastState !== null && curLiveReading > mInfo.lastState && (curLiveReading - mInfo.lastState) < 25)
-                ? (curLiveReading - mInfo.lastState)
-                : 0;
-            let totalChangeWithTail = mInfo.changeSum + liveTailDelta;
-            // A cumulative lifetime meter can never have produced more in a single month than its total lifetime reading!
-            if (isCum && curLiveReading !== null && curLiveReading > 0 && totalChangeWithTail > curLiveReading) {
-                totalChangeWithTail = curLiveReading;
-            }
-            if (!mInfo.hasChange && !hasRealStateSpan) return;
+            const monthChangeKwh = resolveRealMeterDeltaFromStats({
+                isCum,
+                firstState: mInfo.firstState,
+                lastState: mInfo.lastState,
+                liveReading: curLiveReading,
+                changeSum: mInfo.changeSum,
+                hasChange: mInfo.hasChange,
+                maxTailStepKwh: 25.0
+            });
+            if (monthChangeKwh === null) return;
 
-            // For cumulative meters with real state readings, use the real meter difference (effEndReading - firstState) directly!
-            const monthChangeKwh = (isCum && hasRealStateSpan)
-                ? +realSpanFromState.toFixed(3)
-                : (mInfo.hasChange ? +totalChangeWithTail.toFixed(3) : +realSpanFromState.toFixed(3));
             energyCounterBaselines.ltsMonthChangeByEntity[entId] = monthChangeKwh;
 
             if (curLiveReading !== null && curLiveReading >= monthChangeKwh) {
@@ -2835,9 +2870,7 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                 const pScale = isSoc ? 1 : getPowerScaleForEntity(entId, null);
                 const eScale = getEnergyScaleForEntity(entId, null);
                 const isEnergyCounter = energyEntitySet.has(entId) && !powerEntitySet.has(entId);
-                const isConsumer = isConsumerEnergyEntity(entId, cfg);
-                const maxHourlyStepKwh = isConsumer ? 4.0 : 22.0;
-                const initJumpMinKwh = isConsumer ? 4.0 : 14.0;
+                const { isWb, maxStepKwh: maxHourlyStepKwh, initJumpMinKwh } = getEnergyCounterStepLimits(entId, cfg, 'hour');
 
                 const meanPts = [];
                 const derivedPowerPts = [];
@@ -2889,10 +2922,12 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         if (effEndMs >= startTime.getTime()) {
                             if (typeof b.change === 'number' && !isNaN(b.change)) {
                                 const dKwh = Math.max(0, b.change * eScale);
-                                const isFullResetJump = isCumCounter && liveValKwh !== null && liveValKwh > 5 && dKwh >= liveValKwh * 0.45;
-                                const isJump = ((prevStValKwh === null || prevStValKwh <= 2.0) && dKwh >= initJumpMinKwh)
+                                const isFullResetJump = isCumCounter && !isWb && liveValKwh !== null && liveValKwh > 5 && dKwh >= liveValKwh * 0.45;
+                                const isJump = !isWb && (
+                                    ((prevStValKwh === null || prevStValKwh <= 2.0) && dKwh >= initJumpMinKwh)
                                     || dKwh >= maxHourlyStepKwh
-                                    || (isFullResetJump && (prevStValKwh > 0.5 || jumpOffsetSum > 0));
+                                    || (isFullResetJump && (prevStValKwh > 0.5 || jumpOffsetSum > 0))
+                                );
                                 if (!isJump) {
                                     kwhChangeSum += dKwh;
                                     hasKwhChange = true;
@@ -2903,8 +2938,10 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                                 }
                             } else if (stVal !== null && prevStValKwh !== null && prevStValKwh > 0.5) {
                                 const stepDiff = stVal >= prevStValKwh ? (stVal - prevStValKwh) : 0;
-                                const isStepJump = ((prevStValKwh <= 2.0) && stepDiff >= initJumpMinKwh)
-                                    || stepDiff >= maxHourlyStepKwh;
+                                const isStepJump = !isWb && (
+                                    ((prevStValKwh <= 2.0) && stepDiff >= initJumpMinKwh)
+                                    || stepDiff >= maxHourlyStepKwh
+                                );
                                 if (stepDiff >= 0 && !isStepJump) {
                                     kwhChangeSum += stepDiff;
                                     hasKwhChange = true;
@@ -2934,26 +2971,16 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                 }
 
                 const isCumEntity = isEntityCumulativeTotal(entId, null, false);
-                const effEndStateKwh = (liveValKwh !== null && !isNaN(liveValKwh) && (lastStateKwh === null || liveValKwh >= lastStateKwh))
-                    ? liveValKwh
-                    : lastStateKwh;
-                const hasRealStateSpan = (firstStateKwh !== null && firstStateKwh > 0.1 && effEndStateKwh !== null && effEndStateKwh >= firstStateKwh);
-                const realStateSpanKwh = hasRealStateSpan
-                    ? Math.max(0, effEndStateKwh - firstStateKwh)
-                    : 0;
-                const liveTailKwh = (liveValKwh !== null && lastStateKwh !== null && liveValKwh > lastStateKwh && (liveValKwh - lastStateKwh) < maxHourlyStepKwh)
-                    ? (liveValKwh - lastStateKwh)
-                    : 0;
-                let totalKwhChange = kwhChangeSum + liveTailKwh;
-                if (isCumEntity && liveValKwh !== null && liveValKwh > 0 && totalKwhChange > liveValKwh) {
-                    totalKwhChange = liveValKwh;
-                }
-
-                // For cumulative meters with real state readings, directly use the real meter difference (effEndStateKwh - firstStateKwh)!
-                if (hasKwhChange || hasRealStateSpan) {
-                    const bestLtsKwh = (isCumEntity && hasRealStateSpan)
-                        ? +realStateSpanKwh.toFixed(3)
-                        : (hasKwhChange ? +totalKwhChange.toFixed(3) : +realStateSpanKwh.toFixed(3));
+                const bestLtsKwh = resolveRealMeterDeltaFromStats({
+                    isCum: isCumEntity,
+                    firstState: firstStateKwh,
+                    lastState: lastStateKwh,
+                    liveReading: liveValKwh,
+                    changeSum: kwhChangeSum,
+                    hasChange: hasKwhChange,
+                    maxTailStepKwh: maxHourlyStepKwh
+                });
+                if (bestLtsKwh !== null) {
                     ltsKwhByEntity.set(entId, bestLtsKwh);
                 }
 
@@ -3028,9 +3055,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
 
                 if (energyEntitySet.has(entId)) {
                     const eScale = getEnergyScaleForEntity(entId, null);
-                    const isConsumer = isConsumerEnergyEntity(entId, cfg);
-                    const maxSingleStepKwh = isConsumer ? 4.0 : 22.0;
-                    const initJumpMinKwh = isConsumer ? 4.0 : 14.0;
+                    const { isWb, maxStepKwh: maxSingleStepKwh, initJumpMinKwh } = getEnergyCounterStepLimits(entId, cfg, 'hour');
+                    const isCumRest = isEntityCumulativeTotal(entId, null, false);
                     const ePts = [];
                     entityHistoryArr.forEach(pt => {
                         const val = parseFloat(String(pt.state).replace(',', '.'));
@@ -3043,14 +3069,17 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         ePts.sort((a, b) => a.ts - b.ts);
                         let posDeltaSum = 0;
                         let jumpOffsetSum = 0;
+                        let firstPositiveVal = null;
                         const derivedPts = [];
-                        for (let i = 1; i < ePts.length; i++) {
+                        for (let i = 0; i < ePts.length; i++) {
+                            if (firstPositiveVal === null && ePts[i].val > 0.1) firstPositiveVal = ePts[i].val;
+                            if (i === 0) continue;
                             const prev = ePts[i - 1];
                             const cur = ePts[i];
                             const diff = cur.val >= prev.val
                                 ? (cur.val - prev.val)
                                 : ((cur.val < 0.5 && prev.val > 2.0) ? cur.val : 0);
-                            const isJump = ((prev.val <= 2.0) && diff >= initJumpMinKwh) || diff >= maxSingleStepKwh;
+                            const isJump = !isWb && (((prev.val <= 2.0) && diff >= initJumpMinKwh) || diff >= maxSingleStepKwh);
                             if (diff > 0 && !isJump) {
                                 posDeltaSum += diff;
                                 const dtH = Math.max(0.0833, (cur.ts - prev.ts) / 3600000);
@@ -3062,16 +3091,15 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                         }
                         const liveVal = lastKnownHaReadingMap.get(entId) ?? null;
                         const lastHistVal = ePts[ePts.length - 1].val;
-                        if (liveVal !== null && !isNaN(liveVal) && liveVal > lastHistVal && (liveVal - lastHistVal) < maxSingleStepKwh) {
-                            posDeltaSum += (liveVal - lastHistVal);
+                        const effEndVal = (liveVal !== null && !isNaN(liveVal) && liveVal >= lastHistVal) ? liveVal : lastHistVal;
+                        if (isCumRest && firstPositiveVal !== null && effEndVal >= firstPositiveVal) {
+                            restKwhByEntity.set(entId, +Math.max(0, effEndVal - firstPositiveVal).toFixed(3));
+                        } else {
+                            if (liveVal !== null && !isNaN(liveVal) && liveVal > lastHistVal && (liveVal - lastHistVal) < maxSingleStepKwh) {
+                                posDeltaSum += (liveVal - lastHistVal);
+                            }
+                            restKwhByEntity.set(entId, +Math.max(0, posDeltaSum).toFixed(3));
                         }
-                        const firstHistVal = ePts[0].val;
-                        const rawSpanDiff = (liveVal !== null && liveVal >= firstHistVal)
-                            ? (liveVal - firstHistVal)
-                            : Math.max(0, lastHistVal - firstHistVal);
-                        const cleanSpanDiff = Math.max(0, rawSpanDiff - jumpOffsetSum);
-                        const bestRestKwh = +(cleanSpanDiff > 0 && posDeltaSum > cleanSpanDiff * 1.12 ? cleanSpanDiff : posDeltaSum).toFixed(3);
-                        restKwhByEntity.set(entId, bestRestKwh);
                         if (derivedPts.length > 0 && !ltsDerivedPowerFromKwhByEntity.has(entId)) {
                             ltsDerivedPowerFromKwhByEntity.set(entId, derivedPts);
                         }
@@ -3268,40 +3296,38 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         return +(wh / 1000).toFixed(3);
     };
 
-    // Helper to resolve Single Source of Truth kWh for a channel:
-    // Priority 1: LTS / REST kWh counter change in window (sanity-checked against physical power curve when present)
-    // Priority 2: Curve Watt integral -> Bounded below by Today/Period fallback
-    const resolveChannelKwh = (energyEntityIds, curveKwh, todayKwhFallback = 0, isConsumerChannel = false) => {
+    // Single Source of Truth kWh resolver:
+    // Priority 1: Real HA kWh counter reading (1:1 unfiltered, NEVER overwritten or rejected against Watt integral)
+    // Priority 2: Watt curve integral (strictly fallback only when no HA kWh counter is configured/available)
+    const resolveChannelKwh = (energyEntityIds, curveKwh, fallbackKwh = null) => {
         const ids = (Array.isArray(energyEntityIds) ? energyEntityIds : [energyEntityIds])
             .map(x => String(x || '').trim())
             .filter(Boolean);
-        const cleanCurveKwh = Number(curveKwh) || 0;
-        const cleanFallbackKwh = Number(todayKwhFallback) || 0;
+        const cleanCurveKwh = Math.max(0, Number(curveKwh) || 0);
+        const hasFallback = fallbackKwh !== null && fallbackKwh !== undefined && !isNaN(fallbackKwh);
 
         if (ids.length > 0) {
             let counterSum = 0;
             let foundCounter = false;
             ids.forEach(id => {
-                const ltsVal = ltsKwhByEntity.has(id) ? (ltsKwhByEntity.get(id) || 0) : null;
-                const restVal = restKwhByEntity.has(id) ? (restKwhByEntity.get(id) || 0) : null;
-                if (ltsVal !== null || restVal !== null) {
-                    counterSum += (ltsVal !== null && ltsVal > 0) ? ltsVal : (restVal || 0);
+                const ltsVal = ltsKwhByEntity.has(id) ? ltsKwhByEntity.get(id) : null;
+                const restVal = restKwhByEntity.has(id) ? restKwhByEntity.get(id) : null;
+                if (ltsVal !== null && !isNaN(ltsVal)) {
+                    counterSum += Math.max(0, ltsVal);
+                    foundCounter = true;
+                } else if (restVal !== null && !isNaN(restVal)) {
+                    counterSum += Math.max(0, restVal);
                     foundCounter = true;
                 }
             });
-            if (foundCounter && counterSum > 0) {
-                // Cross-check against measured power curve integral when a real power curve exists
-                const hasRealCurve = isConsumerChannel ? (cleanCurveKwh > 0.02) : (cleanCurveKwh > 0.5);
-                const maxPlausibleVsCurve = isConsumerChannel
-                    ? Math.max(cleanCurveKwh * 3.0, cleanCurveKwh + 3.0)
-                    : Math.max(cleanCurveKwh * 2.8, cleanCurveKwh + 25.0);
-                if (hasRealCurve && counterSum > maxPlausibleVsCurve) {
-                    return +Math.max(cleanCurveKwh, cleanFallbackKwh).toFixed(3);
-                }
-                return +Math.max(counterSum, cleanFallbackKwh).toFixed(3);
+            if (foundCounter) {
+                return +Math.max(0, counterSum).toFixed(3);
+            }
+            if (hasFallback) {
+                return +Math.max(0, Number(fallbackKwh)).toFixed(3);
             }
         }
-        return +Math.max(cleanCurveKwh, cleanFallbackKwh).toFixed(3);
+        return +cleanCurveKwh.toFixed(3);
     };
 
     const series = {};
@@ -3318,11 +3344,10 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         arr = overlayTodayTailIfZero(arr, cs.id);
         series[cs.id] = arr;
         const teleStr = (tLive.customStringsTelemetry || []).find(x => x.id === cs.id);
-        const todayStrKwh = teleStr?.energyTodayKwh ?? teleStr?.energyKwh ?? dayIntCache[cs.id] ?? 0;
         const periodStrFallback = timeframe === 'month'
-            ? Math.max(todayStrKwh, teleStr?.energyMonthKwh ?? 0)
-            : todayStrKwh;
-        integratedKwh[cs.id] = resolveChannelKwh(cs.energyEntity, integrateKwh(arr), periodStrFallback, false);
+            ? (teleStr?.energyMonthKwh ?? null)
+            : (teleStr?.energyTodayKwh ?? teleStr?.energyKwh ?? null);
+        integratedKwh[cs.id] = resolveChannelKwh(cs.energyEntity, integrateKwh(arr), periodStrFallback);
     });
 
     // 2. PV Total (DC)
@@ -3340,9 +3365,12 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
     series.pv_total = pvTotalArr;
 
     const sumStringsPeriodKwh = (cfg.customStrings || []).reduce((acc, cs) => acc + (integratedKwh[cs?.id] || 0), 0);
-    const todayPvFallback = tLive.pvEnergyTodayKwh ?? dayIntCache.pv_total ?? 0;
-    const pvTotalFromLtsOrCurve = resolveChannelKwh(pvCounterIds, integrateKwh(pvTotalArr), todayPvFallback);
-    integratedKwh.pv_total = +Math.max(pvTotalFromLtsOrCurve, sumStringsPeriodKwh).toFixed(3);
+    const hasDedicatedPvCounter = pvCounterIds.some(id => ltsKwhByEntity.has(id) || restKwhByEntity.has(id));
+    const pvTotalFallback = timeframe === 'month' ? (tLive.pvEnergyMonthKwh ?? null) : (tLive.pvEnergyTodayKwh ?? null);
+    const pvTotalFromLtsOrCurve = resolveChannelKwh(pvCounterIds, integrateKwh(pvTotalArr), pvTotalFallback);
+    integratedKwh.pv_total = hasDedicatedPvCounter
+        ? pvTotalFromLtsOrCurve
+        : (pvCounterIds.length > 0 ? pvTotalFromLtsOrCurve : +Math.max(pvTotalFromLtsOrCurve, sumStringsPeriodKwh).toFixed(3));
 
     // 3. Grid Import & Grid Export
     const hasSeparateGridImp = Boolean(
@@ -3387,8 +3415,16 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         series.grid_power = impArr;
         series.grid_feedin = expArr;
     }
-    integratedKwh.grid_power = resolveChannelKwh(e.gridImportMonth, integrateKwh(series.grid_power), tLive.gridImportTodayKwh ?? dayIntCache.grid_power ?? 0);
-    integratedKwh.grid_feedin = resolveChannelKwh(e.gridExportMonth, integrateKwh(series.grid_feedin), tLive.gridExportTodayKwh ?? dayIntCache.grid_feedin ?? 0);
+    integratedKwh.grid_power = resolveChannelKwh(
+        e.gridImportMonth,
+        integrateKwh(series.grid_power),
+        timeframe === 'month' ? (tLive.gridImportMonthKwh ?? null) : (tLive.gridImportTodayKwh ?? null)
+    );
+    integratedKwh.grid_feedin = resolveChannelKwh(
+        e.gridExportMonth,
+        integrateKwh(series.grid_feedin),
+        timeframe === 'month' ? (tLive.gridExportMonthKwh ?? null) : (tLive.gridExportTodayKwh ?? null)
+    );
 
     // 4. Battery Power (Charge / Discharge) & SoC
     const hasSeparateBatChg = Boolean(
@@ -3406,6 +3442,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         )
     );
 
+    const batChgFallback = timeframe === 'month' ? (tLive.batteryChargeMonthKwh ?? null) : (tLive.batteryChargeTodayKwh ?? null);
+    const batDisFallback = timeframe === 'month' ? (tLive.batteryDischargeMonthKwh ?? null) : (tLive.batteryDischargeTodayKwh ?? null);
     if (hasSeparateBatChg || hasSeparateBatDis) {
         const chgArr = hasSeparateBatChg
             ? sampleEntity(e.batteryChargePower, 1, e.batteryChargeMonth).map(v => Math.max(0, v))
@@ -3416,8 +3454,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         let batNetArr = bucketTimes.map((_, i) => +((chgArr[i] || 0) - (disArr[i] || 0)).toFixed(2));
         batNetArr = overlayTodayTailIfZero(batNetArr, 'battery_power');
         series.battery_power = batNetArr;
-        integratedKwh.battery_charge = resolveChannelKwh(e.batteryChargeMonth, integrateKwh(chgArr), tLive.batteryChargeTodayKwh ?? dayIntCache.battery_charge ?? 0);
-        integratedKwh.battery_discharge = resolveChannelKwh(e.batteryDischargeMonth, integrateKwh(disArr), tLive.batteryDischargeTodayKwh ?? dayIntCache.battery_discharge ?? 0);
+        integratedKwh.battery_charge = resolveChannelKwh(e.batteryChargeMonth, integrateKwh(chgArr), batChgFallback);
+        integratedKwh.battery_discharge = resolveChannelKwh(e.batteryDischargeMonth, integrateKwh(disArr), batDisFallback);
         integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
     } else {
         let batRaw = sampleEntity(e.batteryPower, 1);
@@ -3425,8 +3463,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         series.battery_power = batRaw;
         const batChgArr = batRaw.map(v => Math.max(0, v));
         const batDisArr = batRaw.map(v => Math.max(0, -v));
-        integratedKwh.battery_charge = resolveChannelKwh(e.batteryChargeMonth, integrateKwh(batChgArr), tLive.batteryChargeTodayKwh ?? dayIntCache.battery_charge ?? 0);
-        integratedKwh.battery_discharge = resolveChannelKwh(e.batteryDischargeMonth, integrateKwh(batDisArr), tLive.batteryDischargeTodayKwh ?? dayIntCache.battery_discharge ?? 0);
+        integratedKwh.battery_charge = resolveChannelKwh(e.batteryChargeMonth, integrateKwh(batChgArr), batChgFallback);
+        integratedKwh.battery_discharge = resolveChannelKwh(e.batteryDischargeMonth, integrateKwh(batDisArr), batDisFallback);
         integratedKwh.battery_power = +(integratedKwh.battery_charge + integratedKwh.battery_discharge).toFixed(3);
     }
 
@@ -3454,11 +3492,11 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
     const physicalBalanceLoadKwh = isMultiDay
         ? Math.max(0, (integratedKwh.pv_total || 0) - (integratedKwh.grid_feedin || 0) - (integratedKwh.battery_charge || 0) + (integratedKwh.battery_discharge || 0) + (integratedKwh.grid_power || 0))
         : 0;
-    const todayLoadFallback = tLive.loadEnergyTodayKwh ?? dayIntCache.house_load ?? 0;
+    const loadFallback = timeframe === 'month' ? (tLive.loadEnergyMonthKwh ?? null) : (tLive.loadEnergyTodayKwh ?? null);
     integratedKwh.house_load = resolveChannelKwh(
         e.loadEnergyMonth,
         Math.max(loadCurveKwh, +physicalBalanceLoadKwh.toFixed(3)),
-        todayLoadFallback
+        loadFallback
     );
 
     // 6. Custom Consumers
@@ -3469,11 +3507,10 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
         arr = overlayTodayTailIfZero(arr, cKey);
         series[cKey] = arr;
         const teleCons = (tLive.consumersTelemetry || []).find(x => x.id === cc.id);
-        const todayConsKwh = teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? dayIntCache[cKey] ?? 0;
-        const periodConsFallback = timeframe === 'month'
-            ? Math.max(todayConsKwh, teleCons?.energyMonthKwh ?? 0)
-            : todayConsKwh;
-        integratedKwh[cKey] = resolveChannelKwh(cc.energyEntity, integrateKwh(arr), periodConsFallback, true);
+        const consFallback = timeframe === 'month'
+            ? (teleCons?.energyMonthKwh ?? null)
+            : (teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? null);
+        integratedKwh[cKey] = resolveChannelKwh(cc.energyEntity, integrateKwh(arr), consFallback);
     });
 
     // 6B. Consumer Groups (Aggregated Group Curves & Summed kWh)
@@ -3931,6 +3968,9 @@ function prewarmOtherTimeframesInBackground() {
                 if (ds) {
                     intradayHistoryCache[tf] = ds;
                     persistIntradayHistoryCacheToIdb();
+                    if (typeof renderLiveCockpitUI === 'function') {
+                        renderLiveCockpitUI();
+                    }
                     if (tf === 'month' || tf === 'day') {
                         const analyseTab = document.getElementById('tab-analyse');
                         if (analyseTab && analyseTab.classList.contains('active') && typeof renderAnalysisSection === 'function') {
@@ -4010,13 +4050,24 @@ function getUnifiedEnergyLedger(baseline = null) {
     const dayInt = getDayIntegratedKwh();
     const monthInt = getMonthIntegratedKwh();
     const hasBattery = baseline.totalBatteryKwh > 0 || Boolean(e.batterySoc || e.batteryPower || e.batteryChargePower || e.batteryDischargePower || e.batteryChargeMonth || e.batteryDischargeMonth);
+    const hasValidNum = (v) => v !== null && v !== undefined && !isNaN(Number(v));
 
-    // --- 1. TODAY (HEUTE): Combine kWh Counter Deltas + Today's Watt Integral ---
-    const strSumTodayKwh = (t.customStringsTelemetry || []).reduce((acc, s) => acc + (Number(s.energyKwh) || 0), 0);
-    const pvTodayFromCounter = (t.pvEnergyTodayKwh !== null && t.pvEnergyTodayKwh !== undefined && t.pvEnergyTodayKwh > 0) ? Number(t.pvEnergyTodayKwh) : null;
-    const pvTodayRaw = pvTodayFromCounter ?? (Number(dayInt.pv_total) > 0 ? Number(dayInt.pv_total) : (strSumTodayKwh > 0 ? strSumTodayKwh : 0));
+    const now = new Date();
+    const startOfMonthMs = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).getTime();
+    const targetYear = typeof selectedAnalysisYear === 'number' ? selectedAnalysisYear : now.getFullYear();
+    const startOfYearMs = new Date(targetYear, 0, 1, 0, 0, 0).getTime();
+    const endOfYearMs = new Date(targetYear, 11, 31, 23, 59, 59, 999).getTime();
 
-    // Aggregate individual consumers & Wallbox (connected behind Smart Meter -> always part of household consumption)
+    // --- 1. TODAY (HEUTE): Strict HA kWh Counter Priority (Watt-Integral ONLY as fallback when no kWh counter exists) ---
+    const strList = Array.isArray(t.customStringsTelemetry) ? t.customStringsTelemetry : [];
+    const hasAnyStrCounterToday = strList.some(s => hasValidNum(s?.energyTodayKwh ?? s?.energyKwh));
+    const strSumTodayKwh = strList.reduce((acc, s) => acc + Math.max(0, Number(s?.energyTodayKwh ?? s?.energyKwh) || 0), 0);
+    const pvTodayFromCounter = hasValidNum(t.pvEnergyTodayKwh)
+        ? Math.max(0, Number(t.pvEnergyTodayKwh))
+        : (hasAnyStrCounterToday ? strSumTodayKwh : null);
+    const pvTodayRaw = pvTodayFromCounter !== null ? pvTodayFromCounter : Math.max(0, Number(dayInt.pv_total) || 0);
+
+    // Aggregate individual consumers & Wallbox (strict counter priority!)
     const cfgConsumersMap = new Map((haConfigState.customConsumers || []).map(c => [String(c.id), c]));
     let consumersTodaySumKwh = 0;
     let consumersMonthSumKwh = 0;
@@ -4026,6 +4077,10 @@ function getUnifiedEnergyLedger(baseline = null) {
     let primaryWallboxName = 'Wallbox';
     let wallboxDayPvShareWeightedSum = 0;
     let wallboxDayPvShareWeight = 0;
+    let wallboxMonthSessChargedSum = 0;
+    let wallboxMonthSessSolarSum = 0;
+    let wallboxYearSessChargedSum = 0;
+    let wallboxYearSessSolarSum = 0;
 
     const rawConsList = Array.isArray(t.consumersTelemetry) && t.consumersTelemetry.length > 0
         ? t.consumersTelemetry
@@ -4037,15 +4092,18 @@ function getUnifiedEnergyLedger(baseline = null) {
         const resolvedName = cfgItem?.name || c.name || '';
         const rawType = String(cfgItem?.type || c.type || '').trim().toLowerCase();
         const isWb = rawType === 'wallbox' || (!rawType && typeof isWallboxConsumerName === 'function' && isWallboxConsumerName(resolvedName));
-        const fromCounterToday = (c.energyTodayKwh !== null && c.energyTodayKwh !== undefined && !isNaN(c.energyTodayKwh))
-            ? Number(c.energyTodayKwh)
-            : ((c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null);
-        const fromIntToday = Number(dayInt[`consumer_${c.id}`] || 0);
-        const cTodayKwh = Math.max(0, fromCounterToday !== null ? Math.max(fromCounterToday, fromIntToday) : fromIntToday);
-        const fromCounterMonth = (c.energyMonthKwh !== null && c.energyMonthKwh !== undefined && !isNaN(c.energyMonthKwh))
-            ? Number(c.energyMonthKwh)
-            : cTodayKwh;
-        const cMonthKwh = Math.max(cTodayKwh, fromCounterMonth);
+
+        const fromCounterToday = hasValidNum(c.energyTodayKwh)
+            ? Math.max(0, Number(c.energyTodayKwh))
+            : (hasValidNum(c.energyKwh) ? Math.max(0, Number(c.energyKwh)) : null);
+        const fromIntToday = Math.max(0, Number(dayInt[`consumer_${c.id}`] || 0));
+        const cTodayKwh = fromCounterToday !== null ? fromCounterToday : fromIntToday;
+
+        const fromCounterMonth = hasValidNum(c.energyMonthKwh)
+            ? Math.max(cTodayKwh, Number(c.energyMonthKwh))
+            : null;
+        const fromIntMonth = Math.max(cTodayKwh, Number(intradayHistoryCache?.month?.integratedKwh?.[`consumer_${c.id}`] || 0));
+        const cMonthKwh = fromCounterMonth !== null ? fromCounterMonth : fromIntMonth;
 
         consumersTodaySumKwh += cTodayKwh;
         consumersMonthSumKwh += cMonthKwh;
@@ -4056,28 +4114,43 @@ function getUnifiedEnergyLedger(baseline = null) {
             wallboxMonthKwh += cMonthKwh;
             if (typeof getWallboxConsumerMetrics === 'function') {
                 const wbM = getWallboxConsumerMetrics({ ...c, name: resolvedName, type: 'wallbox', consKwh: cTodayKwh }, t);
-                const effPct = wbM.sessionPvSharePct ?? wbM.dayPvSharePct ?? wbM.livePvSharePct ?? 0;
+                const effPct = wbM.dayPvSharePct ?? wbM.sessionPvSharePct ?? wbM.livePvSharePct ?? 0;
                 const weight = Math.max(0.05, cTodayKwh, (Number(c.powerW) || 0) / 1000);
                 wallboxDayPvShareWeightedSum += effPct * weight;
                 wallboxDayPvShareWeight += weight;
+
+                const sessionsArr = Array.isArray(wbM.archivedSessions) ? wbM.archivedSessions : [];
+                sessionsArr.forEach(s => {
+                    if (!s || !s.startedAtMs) return;
+                    const chg = Math.max(0, Number(s.chargedKwh) || 0);
+                    const sol = Math.min(chg, Math.max(0, Number(s.solarKwh) || 0));
+                    if (s.startedAtMs >= startOfMonthMs) {
+                        wallboxMonthSessChargedSum += chg;
+                        wallboxMonthSessSolarSum += sol;
+                    }
+                    if (s.startedAtMs >= startOfYearMs && s.startedAtMs <= endOfYearMs) {
+                        wallboxYearSessChargedSum += chg;
+                        wallboxYearSessSolarSum += sol;
+                    }
+                });
             }
         }
     });
 
-    const loadTodayFromCounter = (t.loadEnergyTodayKwh !== null && t.loadEnergyTodayKwh !== undefined && t.loadEnergyTodayKwh > 0) ? Number(t.loadEnergyTodayKwh) : null;
-    const rawLoadToday = Math.max(loadTodayFromCounter ?? Number(dayInt.house_load || 0), consumersTodaySumKwh);
+    const loadTodayFromCounter = hasValidNum(t.loadEnergyTodayKwh) ? Math.max(0, Number(t.loadEnergyTodayKwh)) : null;
+    const rawLoadToday = loadTodayFromCounter !== null ? loadTodayFromCounter : Math.max(Number(dayInt.house_load || 0), consumersTodaySumKwh);
 
-    const gridImpTodayFromCounter = (t.gridImportTodayKwh !== null && t.gridImportTodayKwh !== undefined && t.gridImportTodayKwh > 0) ? Number(t.gridImportTodayKwh) : null;
-    const rawGridImpToday = gridImpTodayFromCounter ?? Number(dayInt.grid_power || 0);
+    const gridImpTodayFromCounter = hasValidNum(t.gridImportTodayKwh) ? Math.max(0, Number(t.gridImportTodayKwh)) : null;
+    const rawGridImpToday = gridImpTodayFromCounter !== null ? gridImpTodayFromCounter : Math.max(0, Number(dayInt.grid_power || 0));
 
-    const gridExpTodayFromCounter = (t.gridExportTodayKwh !== null && t.gridExportTodayKwh !== undefined && t.gridExportTodayKwh > 0) ? Number(t.gridExportTodayKwh) : null;
-    const rawGridExpToday = gridExpTodayFromCounter ?? Number(dayInt.grid_feedin || 0);
+    const gridExpTodayFromCounter = hasValidNum(t.gridExportTodayKwh) ? Math.max(0, Number(t.gridExportTodayKwh)) : null;
+    const rawGridExpToday = gridExpTodayFromCounter !== null ? gridExpTodayFromCounter : Math.max(0, Number(dayInt.grid_feedin || 0));
 
-    const batChgTodayFromCounter = hasBattery && (t.batteryChargeTodayKwh !== null && t.batteryChargeTodayKwh !== undefined && t.batteryChargeTodayKwh > 0) ? Number(t.batteryChargeTodayKwh) : null;
-    const rawBatChgToday = hasBattery ? (batChgTodayFromCounter ?? Number(dayInt.battery_charge || 0)) : 0;
+    const batChgTodayFromCounter = hasBattery && hasValidNum(t.batteryChargeTodayKwh) ? Math.max(0, Number(t.batteryChargeTodayKwh)) : null;
+    const rawBatChgToday = hasBattery ? (batChgTodayFromCounter !== null ? batChgTodayFromCounter : Math.max(0, Number(dayInt.battery_charge || 0))) : 0;
 
-    const batDisTodayFromCounter = hasBattery && (t.batteryDischargeTodayKwh !== null && t.batteryDischargeTodayKwh !== undefined && t.batteryDischargeTodayKwh > 0) ? Number(t.batteryDischargeTodayKwh) : null;
-    const rawBatDisToday = hasBattery ? (batDisTodayFromCounter ?? Number(dayInt.battery_discharge || 0)) : 0;
+    const batDisTodayFromCounter = hasBattery && hasValidNum(t.batteryDischargeTodayKwh) ? Math.max(0, Number(t.batteryDischargeTodayKwh)) : null;
+    const rawBatDisToday = hasBattery ? (batDisTodayFromCounter !== null ? batDisTodayFromCounter : Math.max(0, Number(dayInt.battery_discharge || 0))) : 0;
 
     const pvToday = +Math.max(0, pvTodayRaw).toFixed(2);
     const batChgToday = +Math.min(pvToday, Math.max(0, rawBatChgToday)).toFixed(2);
@@ -4086,7 +4159,7 @@ function getUnifiedEnergyLedger(baseline = null) {
 
     let gridExpToday = 0;
     let pvDirectToday = 0;
-    if (rawGridExpToday > 0 || gridExpTodayFromCounter !== null) {
+    if (gridExpTodayFromCounter !== null || rawGridExpToday > 0) {
         gridExpToday = +Math.min(Math.max(0, pvToday - batChgToday), Math.max(0, rawGridExpToday)).toFixed(2);
         pvDirectToday = +Math.max(0, pvToday - batChgToday - gridExpToday).toFixed(2);
     } else {
@@ -4096,85 +4169,81 @@ function getUnifiedEnergyLedger(baseline = null) {
     }
 
     const coveredToday = pvDirectToday + batDisToday;
-    const gridImpToday = (rawGridImpToday > 0 || gridImpTodayFromCounter !== null)
+    const gridImpToday = (gridImpTodayFromCounter !== null || rawGridImpToday > 0)
         ? +Math.max(0, rawGridImpToday).toFixed(2)
         : +Math.max(0, rawLoadToday - coveredToday).toFixed(2);
 
-    const houseTotalToday = +Math.max(0, coveredToday + gridImpToday, rawLoadToday, consumersTodaySumKwh).toFixed(2);
+    const houseTotalToday = loadTodayFromCounter !== null
+        ? +Math.max(0, loadTodayFromCounter).toFixed(2)
+        : +Math.max(0, coveredToday + gridImpToday, rawLoadToday, consumersTodaySumKwh).toFixed(2);
 
-    // --- 2. CURRENT RUNNING MONTH (MONAT): Fuse Month Counter + 30d Month Watt Integral + Today (Monat >= Heute!) ---
-    const now = new Date();
+    // --- 2. CURRENT CALENDAR MONTH (AB 01. DES MONATS): Strict Counter Priority (Single Source of Truth!) ---
     const curYearMonths = getCurrentYearMonthsData(now.getFullYear());
     const curMonthLogObj = curYearMonths?.[now.getMonth()];
     const hasManualMonthOverride = Boolean(curMonthLogObj && curMonthLogObj.source === 'manual');
 
-    const pvMonthCandidates = (hasManualMonthOverride && curMonthLogObj.pvYieldKwh !== null && curMonthLogObj.pvYieldKwh !== '')
-        ? [Math.max(pvToday, Number(curMonthLogObj.pvYieldKwh) || 0)]
-        : [pvToday, Number(t.pvEnergyMonthKwh) || 0, Number(monthInt.pv_total) || 0];
-
-    const gridImpMonthCandidates = (hasManualMonthOverride && curMonthLogObj.gridImportKwh !== null && curMonthLogObj.gridImportKwh !== '')
-        ? [Math.max(gridImpToday, Number(curMonthLogObj.gridImportKwh) || 0)]
-        : [gridImpToday, Number(t.gridImportMonthKwh) || 0, Number(monthInt.grid_power) || 0];
-
-    const gridExpMonthCandidates = (hasManualMonthOverride && curMonthLogObj.gridExportKwh !== null && curMonthLogObj.gridExportKwh !== '')
-        ? [Math.max(gridExpToday, Number(curMonthLogObj.gridExportKwh) || 0)]
-        : [gridExpToday, Number(t.gridExportMonthKwh) || 0, Number(monthInt.grid_feedin) || 0];
-
-    const batChgMonthCandidates = hasBattery
-        ? ((hasManualMonthOverride && curMonthLogObj.batteryChargedKwh !== null && curMonthLogObj.batteryChargedKwh !== '')
-            ? [Math.max(batChgToday, Number(curMonthLogObj.batteryChargedKwh) || 0)]
-            : [batChgToday, Number(t.batteryChargeMonthKwh) || 0, Number(monthInt.battery_charge) || 0])
-        : [0];
-
-    const batDisMonthCandidates = hasBattery
-        ? ((hasManualMonthOverride && curMonthLogObj.batteryDischargedKwh !== null && curMonthLogObj.batteryDischargedKwh !== '')
-            ? [Math.max(batDisToday, Number(curMonthLogObj.batteryDischargedKwh) || 0)]
-            : [batDisToday, Number(t.batteryDischargeMonthKwh) || 0, Number(monthInt.battery_discharge) || 0])
-        : [0];
-
-    const loadMonthCandidates = [houseTotalToday, Number(t.loadEnergyMonthKwh) || 0, Number(monthInt.house_load) || 0, consumersMonthSumKwh];
-
-    let pvMonth = +Math.max(...pvMonthCandidates).toFixed(2);
-    let batChgMonth = +Math.min(pvMonth, Math.max(...batChgMonthCandidates)).toFixed(2);
-    let batDisMonth = +Math.max(...batDisMonthCandidates).toFixed(2);
-    let batLossMonth = +Math.max(0, batChgMonth - batDisMonth).toFixed(2);
-
-    let gridImpMonth = +Math.max(...gridImpMonthCandidates).toFixed(2);
-    const rawLoadMonth = Math.max(...loadMonthCandidates);
-    const rawExpMonth = Math.max(...gridExpMonthCandidates);
-    let gridExpMonth = +Math.min(Math.max(0, pvMonth - batChgMonth), Math.max(gridExpToday, rawExpMonth)).toFixed(2);
-
-    const directFromPvSide = Math.max(0, pvMonth - batChgMonth - gridExpMonth);
-    const directFromLoadSide = rawLoadMonth > 0
-        ? Math.min(Math.max(0, pvMonth - batChgMonth), Math.max(0, rawLoadMonth - gridImpMonth - batDisMonth))
-        : 0;
-    let pvDirectMonth = +Math.max(pvDirectToday, directFromPvSide, directFromLoadSide).toFixed(2);
-
-    if (pvDirectMonth + batChgMonth + gridExpMonth > pvMonth) {
-        gridExpMonth = +Math.max(0, pvMonth - batChgMonth - pvDirectMonth).toFixed(2);
-        if (pvDirectMonth + batChgMonth + gridExpMonth > pvMonth) {
-            pvMonth = +(pvDirectMonth + batChgMonth + gridExpMonth).toFixed(2);
+    const resolveMonthChannel = (manualVal, counterVal, intFallbackVal, todayFloorVal) => {
+        if (hasManualMonthOverride && manualVal !== null && manualVal !== undefined && manualVal !== '') {
+            return +Math.max(todayFloorVal, Number(manualVal) || 0).toFixed(2);
         }
-    }
+        if (hasValidNum(counterVal)) {
+            return +Math.max(todayFloorVal, Number(counterVal)).toFixed(2);
+        }
+        return +Math.max(todayFloorVal, Number(intFallbackVal) || 0).toFixed(2);
+    };
 
-    let houseTotalMonth = +Math.max(houseTotalToday, pvDirectMonth + batDisMonth + gridImpMonth, rawLoadMonth, consumersMonthSumKwh).toFixed(2);
+    const pvMonth = resolveMonthChannel(curMonthLogObj?.pvYieldKwh, t.pvEnergyMonthKwh, monthInt.pv_total, pvToday);
+    const gridImpMonth = resolveMonthChannel(curMonthLogObj?.gridImportKwh, t.gridImportMonthKwh, monthInt.grid_power, gridImpToday);
+    const rawExpMonth = resolveMonthChannel(curMonthLogObj?.gridExportKwh, t.gridExportMonthKwh, monthInt.grid_feedin, gridExpToday);
+    const batChgMonth = hasBattery
+        ? +Math.min(pvMonth, resolveMonthChannel(curMonthLogObj?.batteryChargedKwh, t.batteryChargeMonthKwh, monthInt.battery_charge, batChgToday)).toFixed(2)
+        : 0;
+    const batDisMonth = hasBattery
+        ? resolveMonthChannel(curMonthLogObj?.batteryDischargedKwh, t.batteryDischargeMonthKwh, monthInt.battery_discharge, batDisToday)
+        : 0;
+    const batLossMonth = +Math.max(0, batChgMonth - batDisMonth).toFixed(2);
 
-    // Wallbox solar share & grid share calculation (behind Smart Meter)
+    const gridExpMonth = +Math.min(Math.max(0, pvMonth - batChgMonth), rawExpMonth).toFixed(2);
+    const pvDirectMonth = +Math.max(0, pvMonth - batChgMonth - gridExpMonth).toFixed(2);
+
+    const loadMonthFromCounter = hasValidNum(t.loadEnergyMonthKwh) ? Math.max(houseTotalToday, Number(t.loadEnergyMonthKwh)) : null;
+    const houseTotalMonth = loadMonthFromCounter !== null
+        ? +loadMonthFromCounter.toFixed(2)
+        : +Math.max(houseTotalToday, pvDirectMonth + batDisMonth + gridImpMonth, Number(monthInt.house_load) || 0, consumersMonthSumKwh).toFixed(2);
+
+    // Wallbox solar share & grid share calculation (derived directly from real Wallbox sessions in month/year!)
     const todayAutarkyRatio = houseTotalToday > 0 ? Math.min(1, Math.max(0, (pvDirectToday + batDisToday) / houseTotalToday)) : 0;
     const monthAutarkyRatio = houseTotalMonth > 0 ? Math.min(1, Math.max(0, (pvDirectMonth + batDisMonth) / houseTotalMonth)) : 0;
     const wbTodayPvSharePct = wallboxDayPvShareWeight > 0
         ? Math.min(100, Math.max(0, Math.round(wallboxDayPvShareWeightedSum / wallboxDayPvShareWeight)))
         : Math.round(todayAutarkyRatio * 100);
-    const wbMonthPvSharePct = wallboxTodayKwh > 0 && Math.abs(wallboxMonthKwh - wallboxTodayKwh) < 0.05
-        ? wbTodayPvSharePct
-        : Math.round(((wbTodayPvSharePct / 100) * wallboxTodayKwh + monthAutarkyRatio * Math.max(0, wallboxMonthKwh - wallboxTodayKwh)) / Math.max(0.01, wallboxMonthKwh) * 100);
 
     const wbTodayClean = +wallboxTodayKwh.toFixed(2);
     const wbMonthClean = +Math.max(wbTodayClean, wallboxMonthKwh).toFixed(2);
+
+    let wbMonthPvSharePct;
+    if (wallboxMonthSessChargedSum > 0.05) {
+        wbMonthPvSharePct = Math.min(100, Math.max(0, Math.round((wallboxMonthSessSolarSum / wallboxMonthSessChargedSum) * 100)));
+    } else if (wbTodayClean > 0 && Math.abs(wbMonthClean - wbTodayClean) < 0.05) {
+        wbMonthPvSharePct = wbTodayPvSharePct;
+    } else {
+        wbMonthPvSharePct = Math.round(monthAutarkyRatio * 100);
+    }
+
     const wbSolarTodayKwh = +(wbTodayClean * (wbTodayPvSharePct / 100)).toFixed(2);
     const wbGridTodayKwh = +Math.max(0, wbTodayClean - wbSolarTodayKwh).toFixed(2);
     const wbSolarMonthKwh = +(wbMonthClean * (wbMonthPvSharePct / 100)).toFixed(2);
     const wbGridMonthKwh = +Math.max(0, wbMonthClean - wbSolarMonthKwh).toFixed(2);
+
+    // Year Wallbox summary from real sessions (or month counter floor when viewing current year)
+    const wbYearKwh = +(targetYear === now.getFullYear()
+        ? Math.max(wbMonthClean, wallboxYearSessChargedSum)
+        : wallboxYearSessChargedSum).toFixed(2);
+    const wbYearPvSharePct = wallboxYearSessChargedSum > 0.05
+        ? Math.min(100, Math.max(0, Math.round((wallboxYearSessSolarSum / wallboxYearSessChargedSum) * 100)))
+        : wbMonthPvSharePct;
+    const wbSolarYearKwh = +(wbYearKwh * (wbYearPvSharePct / 100)).toFixed(2);
+    const wbGridYearKwh = +Math.max(0, wbYearKwh - wbSolarYearKwh).toFixed(2);
 
     const hasAnyRealData = (pvMonth > 0 || gridImpMonth > 0 || batChgMonth > 0 || batDisMonth > 0 || wbMonthClean > 0);
 
@@ -4222,6 +4291,12 @@ function getUnifiedEnergyLedger(baseline = null) {
             wallboxGridKwh: wbGridMonthKwh,
             wallboxPvSharePct: wbMonthPvSharePct,
             houseWithoutWallboxKwh: +Math.max(0, houseTotalMonth - wbMonthClean).toFixed(2)
+        },
+        year: {
+            wallboxKwh: wbYearKwh,
+            wallboxSolarKwh: wbSolarYearKwh,
+            wallboxGridKwh: wbGridYearKwh,
+            wallboxPvSharePct: wbYearPvSharePct
         }
     };
 }
@@ -4490,9 +4565,11 @@ function renderLiveCockpitUI(baseline) {
             const rawType = String(cfgItem?.type || c.type || '').trim().toLowerCase();
             const isWallbox = rawType === 'wallbox' || (!rawType && isWallboxConsumerName(resolvedName));
             const pW = Math.max(0, Number(c.powerW) || 0);
-            const fromCounterKwh = (c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null;
+            const fromCounterKwh = (c.energyTodayKwh !== null && c.energyTodayKwh !== undefined && !isNaN(c.energyTodayKwh))
+                ? Number(c.energyTodayKwh)
+                : ((c.energyKwh !== null && c.energyKwh !== undefined && !isNaN(c.energyKwh)) ? Number(c.energyKwh) : null);
             const fromIntegralKwh = Number(dayInt[`consumer_${c.id}`] || 0);
-            const consKwh = fromCounterKwh !== null ? Math.max(fromCounterKwh, fromIntegralKwh) : fromIntegralKwh;
+            const consKwh = fromCounterKwh !== null ? Math.max(0, fromCounterKwh) : Math.max(0, fromIntegralKwh);
             const consMonthKwh = (c.energyMonthKwh !== null && c.energyMonthKwh !== undefined && !isNaN(c.energyMonthKwh))
                 ? Math.max(consKwh, Number(c.energyMonthKwh))
                 : consKwh;
@@ -5068,45 +5145,59 @@ function getAvailableCurveDefinitions() {
     const isDay = currentCurveTimeframe === 'day';
     const isMonth = currentCurveTimeframe === 'month';
     const win = getEffectiveTimeframeWindow(haConfigState, currentCurveTimeframe);
-    const trackShortStr = win.trackDate.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+    const startShortStr = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
     const periodSuffix = currentCurveTimeframe === 'week'
-        ? (win.boundedByTrackingStart ? `ab ${trackShortStr}` : '7 Tage')
-        : (isMonth ? (win.boundedByTrackingStart ? `ab ${trackShortStr}` : '30 Tage') : 'heute');
+        ? (win.boundedByTrackingStart ? `ab ${startShortStr}` : '7 Tage')
+        : (isMonth ? `ab ${startShortStr}` : 'heute');
+    const hasNum = (v) => v !== null && v !== undefined && !isNaN(Number(v));
 
     const defs = [];
     let sumStringKwp = 0;
 
-    // 1. Custom PV Strings / Inverters (with right-aligned kWp Performance % and kWh/kWp!)
-    customStrings.forEach((cs, idx) => {
+    // 1. Custom PV Strings / Inverters:
+    // Pre-pass to compute SSoT kWh & kWp per string so we can express each string's relative performance (%) vs. plant average (100% = Ø kWh/kWp)!
+    let sumRatedStrKwh = 0;
+    let sumRatedStrKwp = 0;
+    const preparedStrings = customStrings.map((cs, idx) => {
         const teleItem = (t.customStringsTelemetry || []).find(x => x.id === cs.id);
         const liveW = teleItem ? teleItem.powerW : (t.stringTelemetry?.[cs.id]?.powerW || 0);
-        const rawExplicitKwh = teleItem?.energyKwh ?? t.stringTelemetry?.[cs.id]?.energyKwh ?? null;
-        const rawMonthExplicitKwh = teleItem?.energyMonthKwh ?? t.stringTelemetry?.[cs.id]?.energyMonthKwh ?? null;
-        const explicitTodayKwh = rawExplicitKwh ?? dayIntCache[cs.id] ?? 0;
-        const calcKwh = intKwh[cs.id] ?? 0;
+        const rawTodayCounter = teleItem?.energyTodayKwh ?? teleItem?.energyKwh ?? t.stringTelemetry?.[cs.id]?.energyKwh ?? null;
+        const rawMonthCounter = teleItem?.energyMonthKwh ?? t.stringTelemetry?.[cs.id]?.energyMonthKwh ?? null;
+        const calcKwh = Number(intKwh[cs.id] ?? 0);
         const kwhVal = isDay
-            ? (explicitTodayKwh > 0 ? explicitTodayKwh : calcKwh)
+            ? (hasNum(rawTodayCounter) ? Math.max(0, Number(rawTodayCounter)) : calcKwh)
             : (isMonth
-                ? ((calcKwh > 0) ? Math.max(calcKwh, explicitTodayKwh) : Math.max(rawMonthExplicitKwh ?? 0, explicitTodayKwh))
-                : Math.max(calcKwh, explicitTodayKwh || 0));
+                ? (hasNum(rawMonthCounter) ? Math.max(0, Number(rawMonthCounter)) : calcKwh)
+                : calcKwh);
         const peakW = Math.max(liveW, peaks[cs.id] || 0, isDay ? 0 : (dayPeakCache[cs.id] || 0));
-        const diagRefKwh = isDay ? rawExplicitKwh : Math.max(rawExplicitKwh ?? 0, rawMonthExplicitKwh ?? 0, kwhVal);
+        const diagRefKwh = isDay ? rawTodayCounter : (isMonth ? rawMonthCounter : kwhVal);
         const diag = getChannelEnergyDiagnosticBadge(cs.energyEntity, diagRefKwh, calcKwh);
-
         const strKwp = resolveCustomStringKwp(cs, idx, baseline);
-        if (strKwp > 0) sumStringKwp += strKwp;
+        if (strKwp > 0) {
+            sumStringKwp += strKwp;
+            sumRatedStrKwh += Math.max(0, kwhVal);
+            sumRatedStrKwp += strKwp;
+        }
+        return { cs, idx, liveW, kwhVal, peakW, diag, strKwp };
+    });
 
+    const avgStringSpecYield = sumRatedStrKwp > 0 ? (sumRatedStrKwh / sumRatedStrKwp) : 0;
+    const avgSpecFmt = avgStringSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    preparedStrings.forEach(({ cs, idx, liveW, kwhVal, peakW, diag, strKwp }) => {
         let rightBadgeLine1 = '';
         let rightBadgeLine2 = '';
         let rightBadgeTitle = '';
         if (strKwp > 0) {
             const specYield = kwhVal / strKwp;
-            const specPct = Math.round(specYield * 100);
+            const relPerfPct = avgStringSpecYield > 0.0001
+                ? Math.round((specYield / avgStringSpecYield) * 100)
+                : 0;
             const specYieldFmt = specYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const kwpFmt = strKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            rightBadgeLine1 = `${specPct}%`;
+            rightBadgeLine1 = `${relPerfPct}%`;
             rightBadgeLine2 = `${kwpFmt} kWp`;
-            rightBadgeTitle = `Performance pro kWp: ${specYieldFmt} kWh/kWp (${specPct} % bei ${kwpFmt} kWp Nennleistung)`;
+            rightBadgeTitle = `Relative Performance vs. Anlagen-Ø: ${relPerfPct} % (${specYieldFmt} kWh/kWp vs. Ø ${avgSpecFmt} kWh/kWp bei ${kwpFmt} kWp)`;
         }
 
         defs.push({
@@ -5129,29 +5220,27 @@ function getAvailableCurveDefinitions() {
         });
     });
 
-    // 2. PV gesamt · DC
+    // 2. PV gesamt · DC (Single Source of Truth: ledger.today / ledger.month on Day & Month!)
     const pvCounterIds = getConfiguredPvEnergyEntities(haConfigState);
-    const todayPvKwh = ledger?.today?.pvTotal ?? t.pvEnergyTodayKwh ?? dayIntCache.pv_total ?? 0;
-    const monthPvKwh = ledger?.month?.pvTotal ?? t.pvEnergyMonthKwh ?? 0;
     const pvTotalKwh = isDay
-        ? (todayPvKwh > 0 ? todayPvKwh : (intKwh.pv_total ?? 0))
+        ? (ledger?.today?.pvTotal ?? Number(intKwh.pv_total ?? 0))
         : (isMonth
-            ? ((intKwh.pv_total && intKwh.pv_total > 0) ? Math.max(intKwh.pv_total, todayPvKwh) : Math.max(monthPvKwh, todayPvKwh))
-            : Math.max(intKwh.pv_total ?? 0, todayPvKwh));
+            ? (ledger?.month?.pvTotal ?? Number(intKwh.pv_total ?? 0))
+            : Number(intKwh.pv_total ?? 0));
     const pvPeakW = Math.max(t.pvPowerW || 0, peaks.pv_total || 0, isDay ? 0 : (dayPeakCache.pv_total || 0));
-    const pvDiag = getChannelEnergyDiagnosticBadge(pvCounterIds, t.pvEnergyTodayKwh, intKwh.pv_total ?? 0);
+    const pvDiag = getChannelEnergyDiagnosticBadge(pvCounterIds, isMonth ? t.pvEnergyMonthKwh : t.pvEnergyTodayKwh, intKwh.pv_total ?? 0);
     const totalSysKwp = +(Number(baseline?.totalKwp) > 0 ? Number(baseline.totalKwp) : sumStringKwp).toFixed(2);
     let pvRightBadge1 = '';
     let pvRightBadge2 = '';
     let pvRightTitle = '';
     if (totalSysKwp > 0) {
         const pvSpecYield = pvTotalKwh / totalSysKwp;
-        const pvSpecPct = Math.round(pvSpecYield * 100);
+        const pvSpecShort = pvSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
         const pvSpecFmt = pvSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
         const totKwpFmt = totalSysKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        pvRightBadge1 = `${pvSpecPct}%`;
+        pvRightBadge1 = `${pvSpecShort}/kWp`;
         pvRightBadge2 = `${totKwpFmt} kWp`;
-        pvRightTitle = `Gesamt-Performance pro kWp: ${pvSpecFmt} kWh/kWp (${pvSpecPct} % bei ${totKwpFmt} kWp Gesamtleistung)`;
+        pvRightTitle = `Spezifischer Gesamtertrag: ${pvSpecFmt} kWh/kWp (100 % Anlagen-Ø bei ${totKwpFmt} kWp)`;
     }
     defs.push({
         key: 'pv_total',
@@ -5172,16 +5261,14 @@ function getAvailableCurveDefinitions() {
         diagText: pvDiag.text
     });
 
-    // 3. Hausverbrauch · AC (Single Source of Truth: always prioritize ledger.today.houseTotal on 'day' just like grid_power & grid_feedin!)
-    const todayLoadKwh = ledger?.today?.houseTotal ?? t.loadEnergyTodayKwh ?? dayIntCache.house_load ?? 0;
-    const monthLoadKwh = ledger?.month?.houseTotal ?? t.loadEnergyMonthKwh ?? 0;
+    // 3. Hausverbrauch · AC (Single Source of Truth: ledger.today / ledger.month on Day & Month!)
     const loadKwh = isDay
-        ? (todayLoadKwh > 0 ? todayLoadKwh : (intKwh.house_load ?? 0))
+        ? (ledger?.today?.houseTotal ?? Number(intKwh.house_load ?? 0))
         : (isMonth
-            ? ((intKwh.house_load && intKwh.house_load > 0) ? Math.max(intKwh.house_load, todayLoadKwh) : Math.max(monthLoadKwh, todayLoadKwh))
-            : Math.max(intKwh.house_load ?? 0, todayLoadKwh));
+            ? (ledger?.month?.houseTotal ?? Number(intKwh.house_load ?? 0))
+            : Number(intKwh.house_load ?? 0));
     const loadPeakW = Math.max(t.loadPowerW || 0, peaks.house_load || 0, isDay ? 0 : (dayPeakCache.house_load || 0));
-    const loadDiag = getChannelEnergyDiagnosticBadge(e.loadEnergyMonth, t.loadEnergyTodayKwh, intKwh.house_load ?? 0);
+    const loadDiag = getChannelEnergyDiagnosticBadge(e.loadEnergyMonth, isMonth ? t.loadEnergyMonthKwh : t.loadEnergyTodayKwh, intKwh.house_load ?? 0);
     defs.push({
         key: 'house_load',
         name: 'Hauslast · AC',
@@ -5197,17 +5284,15 @@ function getAvailableCurveDefinitions() {
         diagText: loadDiag.text
     });
 
-    // 4. Netzbezug
+    // 4. Netzbezug (Single Source of Truth)
     const gridImportLive = Math.max(0, t.gridPowerW || 0);
-    const todayGridImpKwh = ledger?.today?.gridImp ?? t.gridImportTodayKwh ?? dayIntCache.grid_power ?? 0;
-    const monthGridImpKwh = ledger?.month?.gridImp ?? t.gridImportMonthKwh ?? 0;
     const gridImportKwh = isDay
-        ? (todayGridImpKwh > 0 ? todayGridImpKwh : (intKwh.grid_power ?? 0))
+        ? (ledger?.today?.gridImp ?? Number(intKwh.grid_power ?? 0))
         : (isMonth
-            ? ((intKwh.grid_power && intKwh.grid_power > 0) ? Math.max(intKwh.grid_power, todayGridImpKwh) : Math.max(monthGridImpKwh, todayGridImpKwh))
-            : Math.max(intKwh.grid_power ?? 0, todayGridImpKwh));
+            ? (ledger?.month?.gridImp ?? Number(intKwh.grid_power ?? 0))
+            : Number(intKwh.grid_power ?? 0));
     const gridImpPeakW = Math.max(gridImportLive, peaks.grid_power || 0, isDay ? 0 : (dayPeakCache.grid_power || 0));
-    const gridImpDiag = getChannelEnergyDiagnosticBadge(e.gridImportMonth, t.gridImportTodayKwh, intKwh.grid_power ?? 0);
+    const gridImpDiag = getChannelEnergyDiagnosticBadge(e.gridImportMonth, isMonth ? t.gridImportMonthKwh : t.gridImportTodayKwh, intKwh.grid_power ?? 0);
     defs.push({
         key: 'grid_power',
         name: 'Netzbezug',
@@ -5223,17 +5308,15 @@ function getAvailableCurveDefinitions() {
         diagText: gridImpDiag.text
     });
 
-    // 5. Netzeinspeisung
+    // 5. Netzeinspeisung (Single Source of Truth)
     const gridExportLive = Math.max(0, -(t.gridPowerW || 0));
-    const todayGridExpKwh = ledger?.today?.gridExp ?? t.gridExportTodayKwh ?? dayIntCache.grid_feedin ?? 0;
-    const monthGridExpKwh = ledger?.month?.gridExp ?? t.gridExportMonthKwh ?? 0;
     const gridExportKwh = isDay
-        ? (todayGridExpKwh > 0 ? todayGridExpKwh : (intKwh.grid_feedin ?? 0))
+        ? (ledger?.today?.gridExp ?? Number(intKwh.grid_feedin ?? 0))
         : (isMonth
-            ? ((intKwh.grid_feedin && intKwh.grid_feedin > 0) ? Math.max(intKwh.grid_feedin, todayGridExpKwh) : Math.max(monthGridExpKwh, todayGridExpKwh))
-            : Math.max(intKwh.grid_feedin ?? 0, todayGridExpKwh));
+            ? (ledger?.month?.gridExp ?? Number(intKwh.grid_feedin ?? 0))
+            : Number(intKwh.grid_feedin ?? 0));
     const gridExpPeakW = Math.max(gridExportLive, peaks.grid_feedin || 0, isDay ? 0 : (dayPeakCache.grid_feedin || 0));
-    const gridExpDiag = getChannelEnergyDiagnosticBadge(e.gridExportMonth, t.gridExportTodayKwh, intKwh.grid_feedin ?? 0);
+    const gridExpDiag = getChannelEnergyDiagnosticBadge(e.gridExportMonth, isMonth ? t.gridExportMonthKwh : t.gridExportTodayKwh, intKwh.grid_feedin ?? 0);
     defs.push({
         key: 'grid_feedin',
         name: 'Netzeinspeisung',
@@ -5249,27 +5332,23 @@ function getAvailableCurveDefinitions() {
         diagText: gridExpDiag.text
     });
 
-    // 6. Batterie · Leistung (W)
+    // 6. Batterie · Leistung (W) (Single Source of Truth)
     const batName = haConfigState.batteryName || 'Batterie';
     const batLiveW = t.batteryPowerW || 0;
-    const todayBatChg = ledger?.today?.batChg ?? t.batteryChargeTodayKwh ?? dayIntCache.battery_charge ?? 0;
-    const todayBatDis = ledger?.today?.batDis ?? t.batteryDischargeTodayKwh ?? dayIntCache.battery_discharge ?? 0;
-    const monthBatChg = ledger?.month?.batChg ?? t.batteryChargeMonthKwh ?? 0;
-    const monthBatDis = ledger?.month?.batDis ?? t.batteryDischargeMonthKwh ?? 0;
     const batChgKwh = isDay
-        ? (todayBatChg > 0 ? todayBatChg : (intKwh.battery_charge ?? 0))
+        ? (ledger?.today?.batChg ?? Number(intKwh.battery_charge ?? 0))
         : (isMonth
-            ? ((intKwh.battery_charge && intKwh.battery_charge > 0) ? Math.max(intKwh.battery_charge, todayBatChg) : Math.max(monthBatChg, todayBatChg))
-            : Math.max(intKwh.battery_charge ?? 0, todayBatChg));
+            ? (ledger?.month?.batChg ?? Number(intKwh.battery_charge ?? 0))
+            : Number(intKwh.battery_charge ?? 0));
     const batDisKwh = isDay
-        ? (todayBatDis > 0 ? todayBatDis : (intKwh.battery_discharge ?? 0))
+        ? (ledger?.today?.batDis ?? Number(intKwh.battery_discharge ?? 0))
         : (isMonth
-            ? ((intKwh.battery_discharge && intKwh.battery_discharge > 0) ? Math.max(intKwh.battery_discharge, todayBatDis) : Math.max(monthBatDis, todayBatDis))
-            : Math.max(intKwh.battery_discharge ?? 0, todayBatDis));
+            ? (ledger?.month?.batDis ?? Number(intKwh.battery_discharge ?? 0))
+            : Number(intKwh.battery_discharge ?? 0));
     const batLiveSign = batLiveW > 15 ? '+' : (batLiveW < -15 ? '−' : '');
     const batDiag = getChannelEnergyDiagnosticBadge(
         [e.batteryChargeMonth, e.batteryDischargeMonth],
-        (t.batteryChargeTodayKwh ?? 0) + (t.batteryDischargeTodayKwh ?? 0),
+        isMonth ? ((t.batteryChargeMonthKwh ?? 0) + (t.batteryDischargeMonthKwh ?? 0)) : ((t.batteryChargeTodayKwh ?? 0) + (t.batteryDischargeTodayKwh ?? 0)),
         (intKwh.battery_charge ?? 0) + (intKwh.battery_discharge ?? 0)
     );
     defs.push({
@@ -5309,7 +5388,6 @@ function getAvailableCurveDefinitions() {
     const consumerGroups = getConsumerGroupsSummary(haConfigState);
     consumerGroups.forEach(grp => {
         const gKey = grp.curveKey;
-        // Dynamically synthesize series[gKey] from member curves if not yet populated in intradaySeriesState
         if (intradaySeriesState.series && !intradaySeriesState.series[gKey] && Array.isArray(intradaySeriesState.labels) && intradaySeriesState.labels.length > 0) {
             const nPts = intradaySeriesState.labels.length;
             const synthArr = new Array(nPts).fill(0);
@@ -5334,15 +5412,14 @@ function getAvailableCurveDefinitions() {
             liveGrpW += mLiveW;
             if (m.energyEntity) memberEnergyIds.push(m.energyEntity);
 
-            const rawConsExplicit = teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? null;
-            const rawConsMonthExplicit = teleCons?.energyMonthKwh ?? null;
-            const todayConsKwh = rawConsExplicit ?? dayIntCache[cKey] ?? 0;
-            const calcKwh = intKwh[cKey] ?? 0;
+            const rawConsToday = teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? null;
+            const rawConsMonth = teleCons?.energyMonthKwh ?? null;
+            const calcKwh = Number(intKwh[cKey] ?? 0);
             const mKwh = isDay
-                ? (todayConsKwh > 0 ? todayConsKwh : calcKwh)
+                ? (hasNum(rawConsToday) ? Math.max(0, Number(rawConsToday)) : calcKwh)
                 : (isMonth
-                    ? ((calcKwh > 0) ? Math.max(calcKwh, todayConsKwh) : Math.max(rawConsMonthExplicit ?? 0, todayConsKwh))
-                    : Math.max(calcKwh, todayConsKwh || 0));
+                    ? (hasNum(rawConsMonth) ? Math.max(0, Number(rawConsMonth)) : calcKwh)
+                    : calcKwh);
             grpKwhSum += (mKwh || 0);
             grpPeakSum += Math.max(mLiveW, peaks[cKey] || 0);
         });
@@ -5350,7 +5427,7 @@ function getAvailableCurveDefinitions() {
         const grpSeriesArr = intradaySeriesState.series?.[gKey] || [];
         const grpCurvePeak = grpSeriesArr.reduce((mx, v) => Math.max(mx, Number(v) || 0), 0);
         const gPeakW = Math.round(Math.max(liveGrpW, peaks[gKey] || 0, grpCurvePeak, isDay ? 0 : (dayPeakCache[gKey] || 0)));
-        const gKwh = +Math.max(grpKwhSum, intKwh[gKey] || 0).toFixed(3);
+        const gKwh = +grpKwhSum.toFixed(3);
         const grpDiag = getChannelEnergyDiagnosticBadge(memberEnergyIds, gKwh, intKwh[gKey] || gKwh);
 
         defs.push({
@@ -5372,24 +5449,24 @@ function getAvailableCurveDefinitions() {
         });
     });
 
-    // 8. Einzelverbraucher (Consumers)
+    // 8. Einzelverbraucher (Consumers - strict counter priority!)
     const consumerPalette = ['#fb923c', '#facc15', '#818cf8', '#34d399', '#f87171', '#a3e635'];
     customConsumers.forEach((cc, idx) => {
         if (!cc || !cc.id) return;
         const cKey = `consumer_${cc.id}`;
         const teleCons = (t.consumersTelemetry || []).find(x => x.id === cc.id);
         const liveW = teleCons ? (teleCons.powerW || 0) : 0;
-        const rawConsExplicit = teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? null;
-        const rawConsMonthExplicit = teleCons?.energyMonthKwh ?? null;
-        const todayConsKwh = rawConsExplicit ?? dayIntCache[cKey] ?? 0;
-        const calcKwh = intKwh[cKey] ?? 0;
+        const rawConsToday = teleCons?.energyTodayKwh ?? teleCons?.energyKwh ?? null;
+        const rawConsMonth = teleCons?.energyMonthKwh ?? null;
+        const calcKwh = Number(intKwh[cKey] ?? 0);
+        const todayConsKwh = hasNum(rawConsToday) ? Math.max(0, Number(rawConsToday)) : Number(dayIntCache[cKey] ?? 0);
         const cKwh = isDay
-            ? (todayConsKwh > 0 ? todayConsKwh : calcKwh)
+            ? (hasNum(rawConsToday) ? Math.max(0, Number(rawConsToday)) : calcKwh)
             : (isMonth
-                ? ((calcKwh > 0) ? Math.max(calcKwh, todayConsKwh) : Math.max(rawConsMonthExplicit ?? 0, todayConsKwh))
-                : Math.max(calcKwh, todayConsKwh || 0));
+                ? (hasNum(rawConsMonth) ? Math.max(0, Number(rawConsMonth)) : calcKwh)
+                : calcKwh);
         const cPeakW = Math.max(liveW, peaks[cKey] || 0, isDay ? 0 : (dayPeakCache[cKey] || 0));
-        const diagRefKwh = isDay ? rawConsExplicit : Math.max(rawConsExplicit ?? 0, rawConsMonthExplicit ?? 0, cKwh);
+        const diagRefKwh = isDay ? rawConsToday : (isMonth ? rawConsMonth : cKwh);
         const consDiag = getChannelEnergyDiagnosticBadge(cc.energyEntity, diagRefKwh, calcKwh);
         const rawGrpName = String(cc.group || '').trim();
         const parentGroupSlug = rawGrpName ? normalizeConsumerGroupSlug(rawGrpName) : null;
@@ -5397,7 +5474,7 @@ function getAvailableCurveDefinitions() {
         const isWb = isWallboxConsumer(cc);
         const wbMetrics = isWb ? getWallboxConsumerMetrics({ ...cc, powerW: liveW, consKwh: todayConsKwh }, t) : null;
         const wbPvShareToDisplay = isWb
-            ? (liveW > 30 ? wbMetrics.livePvSharePct : (wbMetrics.sessionPvSharePct ?? wbMetrics.dayPvSharePct))
+            ? (liveW > 30 ? wbMetrics.livePvSharePct : (isMonth ? (ledger?.month?.wallboxPvSharePct ?? wbMetrics.sessionPvSharePct) : (wbMetrics.sessionPvSharePct ?? wbMetrics.dayPvSharePct)))
             : null;
         const wbSubLine1 = `${formatKwhDe(cKwh, 2)} ${periodSuffix}`;
         const wbSubLine2 = isWb && wbPvShareToDisplay !== null
@@ -5555,7 +5632,7 @@ function renderIntradayCurveSection(baseline) {
     } else if (currentCurveTimeframe === 'month') {
         rangeString = win.boundedByTrackingStart
             ? `Ab Mess-Start ${startStr} · ${stepHours}h-Auflösung (bis ${dateStr})`
-            : `Letzte 30 Tage · ${stepHours}h-Auflösung (bis ${dateStr})`;
+            : `Monat ab ${startStr} · ${stepHours}h-Auflösung (bis ${dateStr})`;
     }
 
     const rangeEl = document.getElementById('dash_curve_timerange');
@@ -8219,17 +8296,16 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
         }
 
         if (isCurrentYear && ledger.month.hasLiveData) {
-            // Single Source of Truth: ledger.month already respects manual Logbuch calibration or Live HA counters
-            pvTotal = +Math.max(ledger.month.pvTotal, ledger.today.pvTotal).toFixed(1);
-            gridExp = +Math.max(ledger.month.gridExp, ledger.today.gridExp).toFixed(1);
-            gridImp = +Math.max(ledger.month.gridImp, ledger.today.gridImp).toFixed(1);
-            batChg = hasBattery ? +Math.min(pvTotal, Math.max(ledger.month.batChg, ledger.today.batChg)).toFixed(1) : 0;
-            batDis = hasBattery ? +Math.max(ledger.month.batDis, ledger.today.batDis).toFixed(1) : 0;
-            gridExp = +Math.min(Math.max(0, pvTotal - batChg), gridExp).toFixed(1);
-            pvDirect = +Math.max(0, pvTotal - gridExp - batChg).toFixed(1);
-            batLoss = +Math.max(0, batChg - batDis).toFixed(1);
-            houseTotal = +Math.max(0.1, pvDirect + batDis + gridImp, ledger.today.houseTotal).toFixed(1);
-            const srcNote = ledger.month.isManualOverride ? 'Manuell kalibriert im Logbuch' : 'Live HA & Logbuch';
+            // Single Source of Truth: copy ledger.month 1:1 without divergent re-calculations
+            pvTotal = +ledger.month.pvTotal.toFixed(1);
+            gridExp = +ledger.month.gridExp.toFixed(1);
+            gridImp = +ledger.month.gridImp.toFixed(1);
+            batChg = hasBattery ? +ledger.month.batChg.toFixed(1) : 0;
+            batDis = hasBattery ? +ledger.month.batDis.toFixed(1) : 0;
+            pvDirect = +ledger.month.pvDirect.toFixed(1);
+            batLoss = +ledger.month.batLoss.toFixed(1);
+            houseTotal = +Math.max(0.1, ledger.month.houseTotal).toFixed(1);
+            const srcNote = ledger.month.isManualOverride ? 'Manuell kalibriert im Logbuch' : 'Live HA · Single Source';
             periodLabel = `Monat: ${MONTH_LABELS_LONG[curMonthIdx]} ${selectedAnalysisYear} (${srcNote})`;
         } else if (mRec && mRec.hasReal && mRec.realPv > 0) {
             pvTotal = +Math.max(0.5, mRec.realPv).toFixed(1);
@@ -8285,13 +8361,12 @@ function computeSankeyFlowData(horizon, baseline, metrics) {
 
     const hasWallbox = Boolean(ledger.hasWallbox);
     const wallboxName = ledger.primaryWallboxName || 'Wallbox';
-    const wallboxKwh = horizon === 'today'
-        ? (ledger.today.wallboxKwh || 0)
-        : (horizon === 'month' ? (ledger.month.wallboxKwh || 0) : Math.max(ledger.month.wallboxKwh || 0, ledger.today.wallboxKwh || 0));
-    const wallboxPvSharePct = horizon === 'today'
-        ? (ledger.today.wallboxPvSharePct || 0)
-        : (ledger.month.wallboxPvSharePct || 0);
-    const wallboxSolarKwh = +(wallboxKwh * (wallboxPvSharePct / 100)).toFixed(decimals);
+    const wbSlice = horizon === 'today'
+        ? ledger.today
+        : (horizon === 'month' ? ledger.month : (ledger.year || ledger.month));
+    const wallboxKwh = wbSlice?.wallboxKwh || 0;
+    const wallboxPvSharePct = wbSlice?.wallboxPvSharePct || 0;
+    const wallboxSolarKwh = +(wbSlice?.wallboxSolarKwh ?? (wallboxKwh * (wallboxPvSharePct / 100))).toFixed(decimals);
     const wallboxGridKwh = +Math.max(0, wallboxKwh - wallboxSolarKwh).toFixed(decimals);
     const houseWithoutWallboxKwh = +Math.max(0, houseTotal - wallboxKwh).toFixed(decimals);
 
@@ -9799,7 +9874,8 @@ function isWallboxConsumer(c) {
 }
 
 const WALLBOX_SESSION_STORAGE_KEY = 'pvpro_wallbox_sessions_v11_9';
-const WALLBOX_SESSIONS_ARCHIVE_KEY = 'pvpro_wallbox_sessions_archive_v12_7';
+const WALLBOX_SESSIONS_ARCHIVE_KEY = 'pvpro_wallbox_sessions_archive_v13_1';
+const LEGACY_WALLBOX_SESSIONS_ARCHIVE_KEY = 'pvpro_wallbox_sessions_archive_v12_7';
 let wallboxSessionStateById = null;
 let wallboxSessionsArchiveById = null;
 const expandedWallboxHistoryIds = new Set();
@@ -9844,6 +9920,22 @@ function loadWallboxSessionsArchive() {
                 return wallboxSessionsArchiveById;
             }
         }
+        // One-time clean migration from v12.7 archive: preserve sessions older than 30 days, rebuild recent 30 days cleanly from HA history
+        const legacyRaw = localStorage.getItem(LEGACY_WALLBOX_SESSIONS_ARCHIVE_KEY);
+        if (legacyRaw) {
+            const legacyParsed = JSON.parse(legacyRaw);
+            if (legacyParsed && typeof legacyParsed === 'object') {
+                const cutoffMs = Date.now() - 30 * 24 * 3600 * 1000;
+                const migrated = {};
+                Object.keys(legacyParsed).forEach(k => {
+                    const arr = Array.isArray(legacyParsed[k]) ? legacyParsed[k] : [];
+                    migrated[k] = arr.filter(s => s && Number(s.startedAtMs || 0) < cutoffMs);
+                });
+                wallboxSessionsArchiveById = migrated;
+                localStorage.setItem(WALLBOX_SESSIONS_ARCHIVE_KEY, JSON.stringify(migrated));
+                return wallboxSessionsArchiveById;
+            }
+        }
     } catch (e) {}
     wallboxSessionsArchiveById = {};
     return wallboxSessionsArchiveById;
@@ -9862,7 +9954,7 @@ function saveWallboxSessionsArchive() {
 
 /**
  * Extracts contiguous charging sessions from a curve dataset (day 5-min, week 1-hr, or month)
- * and calibrates today's sessions against the authoritative daily Wallbox kWh counter.
+ * strictly across the dataset's own bucket length (never clamped by another timeframe's global bucket count).
  */
 function extractSessionsFromCurveDataset(ds, wbId, wbName, maxPauseMinutes = 25, sourceTag = 'day') {
     if (!ds || !ds.series || !Array.isArray(ds.bucketTimes) || ds.bucketTimes.length === 0) return [];
@@ -9872,9 +9964,7 @@ function extractSessionsFromCurveDataset(ds, wbId, wbName, maxPauseMinutes = 25,
 
     const loadSeries = ds.series.house_load || ds.series.load || [];
     const gridImpSeries = ds.series.grid_power || ds.series.grid_imp || [];
-    const nReal = (sourceTag === 'day' && typeof intradayRealBucketsCount === 'number' && intradayRealBucketsCount > 0)
-        ? Math.min(wbSeries.length, ds.bucketTimes.length, intradayRealBucketsCount)
-        : Math.min(wbSeries.length, ds.bucketTimes.length);
+    const nReal = Math.min(wbSeries.length, ds.bucketTimes.length);
 
     if (nReal === 0) return [];
 
@@ -10153,24 +10243,19 @@ function getWallboxConsumerMetrics(c, telemetryObj) {
     const livePvPowerW = Math.round(wbW * (livePvSharePct / 100));
     const liveGridPowerW = Math.max(0, Math.round(wbW - livePvPowerW));
 
-    // Resolve authoritative daily Wallbox energy strictly from 24h sources (never from 7d/30d chart timeframe)
+    // Resolve authoritative daily Wallbox energy strictly from HA kWh counter first (Watt-integral only as fallback)
     const dayIntCache = typeof getDayIntegratedKwh === 'function' ? getDayIntegratedKwh() : {};
     const daySeriesIntKwh = (currentCurveTimeframe === 'day'
         ? intradaySeriesState?.integratedKwh
         : intradayHistoryCache?.day?.integratedKwh) || {};
-    const explicitTodayKwh = Number(
-        teleCons?.energyTodayKwh ??
-        c?.consKwh ??
-        dayIntCache[cKey] ??
-        daySeriesIntKwh[cKey] ??
-        0
-    );
-    const authoritativeTodayKwh = +Math.max(
-        0,
-        explicitTodayKwh,
-        Number(dayIntCache[cKey] || 0),
-        Number(daySeriesIntKwh[cKey] || 0)
-    ).toFixed(3);
+    const rawCounterToday = (teleCons?.energyTodayKwh !== null && teleCons?.energyTodayKwh !== undefined && !isNaN(teleCons.energyTodayKwh))
+        ? Number(teleCons.energyTodayKwh)
+        : ((teleCons?.energyKwh !== null && teleCons?.energyKwh !== undefined && !isNaN(teleCons.energyKwh))
+            ? Number(teleCons.energyKwh)
+            : null);
+    const authoritativeTodayKwh = rawCounterToday !== null
+        ? +Math.max(0, rawCounterToday).toFixed(3)
+        : +Math.max(0, Number(c?.consKwh ?? dayIntCache[cKey] ?? daySeriesIntKwh[cKey] ?? 0)).toFixed(3);
 
     // Calculate historical PV charging share across today's buckets if available
     let dayPvSharePct = null;
@@ -10404,15 +10489,37 @@ async function rescanWallboxSessionsHistory(silent = false) {
         btn.innerHTML = `<span class="material-symbols-rounded text-sm animate-spin">sync</span><span>Scanne...</span>`;
     }
     try {
-        if (typeof fetchAndRenderIntradayFromHa === 'function') {
-            if (!intradayHistoryCache?.day) await fetchAndRenderIntradayFromHa('day', true);
-            if (!intradayHistoryCache?.week) await fetchAndRenderIntradayFromHa('week', true);
-            if (!intradayHistoryCache?.month) await fetchAndRenderIntradayFromHa('month', true);
+        const timeframesToFetch = silent
+            ? ['day', 'week', 'month'].filter(tf => !intradayHistoryCache?.[tf])
+            : ['day', 'week', 'month'];
+        if (typeof fetchTimeframeDataset === 'function') {
+            for (const tf of timeframesToFetch) {
+                const ds = await fetchTimeframeDataset(tf, null);
+                if (ds) {
+                    intradayHistoryCache[tf] = ds;
+                }
+            }
+            if (timeframesToFetch.length > 0 && typeof persistIntradayHistoryCacheToIdb === 'function') {
+                persistIntradayHistoryCacheToIdb();
+            }
+        }
+        // On explicit user rescan, drop recent 30-day archive entries for the active Wallbox so sessions rebuild cleanly from fresh HA history
+        if (!silent) {
+            const archive = loadWallboxSessionsArchive();
+            const cutoffMs = Date.now() - 30 * 24 * 3600 * 1000;
+            const targetId = String(activeWallboxSessionsModalWbId || '');
+            const keysToClean = targetId ? [targetId] : Object.keys(archive);
+            keysToClean.forEach(k => {
+                if (Array.isArray(archive[k])) {
+                    archive[k] = archive[k].filter(s => s && Number(s.startedAtMs || 0) < cutoffMs);
+                }
+            });
+            saveWallboxSessionsArchive();
         }
         renderLiveCockpitUI();
         renderWallboxSessionsModalContent();
         if (!silent && typeof showToastNotification === 'function') {
-            showToastNotification('Wallbox-Ladehistorie aus 24h-, 7-Tage- & 30-Tage-Verlauf aktualisiert.', 'success');
+            showToastNotification('Wallbox-Ladehistorie frisch aus Home Assistant (Tag, Woche & Monat) neu eingelesen.', 'success');
         }
     } catch (e) {
     } finally {
@@ -10605,8 +10712,10 @@ function renderWallboxLiveStatusCard(consumers, t, td, ledger, baseline) {
         const isIdleExpanded = expandedIdleWallboxIds.has(String(wb.id || ''));
         const isHistoryExpanded = expandedWallboxHistoryIds.has(String(wb.id || ''));
         const powerStr = formatPowerDe(wb.powerW, wb.powerW < 1000);
-        const todayKwh = Math.max(Number(wb.consKwh || 0), Number(wbM.authoritativeTodayKwh || 0));
-        const monthKwh = Math.max(todayKwh, Number(wb.consMonthKwh || ledger?.month?.wallboxKwh || 0));
+        const todayKwh = wbM.authoritativeTodayKwh;
+        const monthKwh = (wb.consMonthKwh !== null && wb.consMonthKwh !== undefined && !isNaN(wb.consMonthKwh))
+            ? Math.max(todayKwh, Number(wb.consMonthKwh))
+            : Math.max(todayKwh, Number(ledger?.month?.wallboxKwh || 0));
         const archivedSessions = Array.isArray(wbM.archivedSessions) ? wbM.archivedSessions : [];
 
         const displayPvSharePct = isCharging

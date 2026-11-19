@@ -11,9 +11,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const rawPort = Number(process.env.PORT);
+const nginxPort = Number(process.env.NGINX_PORT);
+const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
+const PORT = (!rawPort || (nginxPort && rawPort === nginxPort)) ? defaultAppPort : rawPort;
 const HOST = '0.0.0.0';
-const APP_VERSION = '12.8';
+const APP_VERSION = '13.2';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -181,6 +184,11 @@ app.get('/sw.js', (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Service-Worker-Allowed', '/');
   res.sendFile(path.join(__dirname, 'sw.js'));
+});
+
+// Dedicated lightweight health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', version: APP_VERSION, port: PORT });
 });
 
 // Serve static assets from project root
@@ -645,47 +653,38 @@ function recordIntradaySnapshot(point) {
 }
 
 function getDefaultCustomStrings() {
-  return [
-    { id: 'str_fronius_1', name: 'Fronius · String 1 DC', powerEntity: 'sensor.fronius_string_1_power', energyEntity: 'sensor.fronius_string_1_energy_today', color: '#14b8a6' },
-    { id: 'str_fronius_2', name: 'Fronius · String 2 DC', powerEntity: 'sensor.fronius_string_2_power', energyEntity: 'sensor.fronius_string_2_energy_today', color: '#f59e0b' },
-    { id: 'str_hoymiles', name: 'Hoymiles · gesamt DC', powerEntity: 'sensor.hoymiles_power_dc', energyEntity: '', color: '#22c55e' }
-  ];
+  return [];
 }
 
 function getDefaultCustomConsumers() {
-  return [
-    { id: 'cons_1', name: 'Trockner', powerEntity: 'sensor.trockner_power' },
-    { id: 'cons_2', name: 'TV-Verstärker', powerEntity: 'sensor.tv_verstaerker_power' },
-    { id: 'cons_3', name: 'Esszimmer Licht', powerEntity: 'sensor.esszimmer_licht_power' },
-    { id: 'cons_4', name: 'Küche Licht', powerEntity: 'sensor.kueche_licht_power' }
-  ];
+  return [];
 }
 
 function createDefaultHaConfig() {
   return {
     mode: 'poll', // 'poll' | 'webhook'
-    baseUrl: 'http://homeassistant.local:8123',
+    baseUrl: '',
     accessToken: '',
     pollIntervalSec: 10,
     autoSyncMonthly: true,
-    batteryName: 'BYD HVS+',
+    batteryName: 'Speicher',
     entities: {
-      pvPower: 'sensor.pv_power_total',
-      loadPower: 'sensor.house_consumption_power',
-      gridPower: 'sensor.grid_power',
+      pvPower: '',
+      loadPower: '',
+      gridPower: '',
       gridImportPower: '',
       gridExportPower: '',
-      batteryPower: 'sensor.battery_power',
+      batteryPower: '',
       batteryChargePower: '',
       batteryDischargePower: '',
-      batterySoc: 'sensor.battery_soc',
-      pvEnergyToday: 'sensor.pv_energy_today',
-      pvEnergyMonth: 'sensor.pv_energy_monthly',
-      pvEnergyTotal: 'sensor.pv_energy_total',
-      gridImportMonth: 'sensor.grid_import_monthly',
-      gridExportMonth: 'sensor.grid_export_monthly',
-      batteryChargeMonth: 'sensor.battery_charge_monthly',
-      batteryDischargeMonth: 'sensor.battery_discharge_monthly'
+      batterySoc: '',
+      pvEnergyToday: '',
+      pvEnergyMonth: '',
+      pvEnergyTotal: '',
+      gridImportMonth: '',
+      gridExportMonth: '',
+      batteryChargeMonth: '',
+      batteryDischargeMonth: ''
     },
     pvEnergyExtraEntities: [],
     customStrings: getDefaultCustomStrings(),
@@ -717,7 +716,7 @@ function loadHaConfig() {
           ...(parsed.entities || {})
         },
         pvEnergyExtraEntities: Array.isArray(parsed.pvEnergyExtraEntities) ? parsed.pvEnergyExtraEntities : [],
-        customStrings: Array.isArray(parsed.customStrings) && parsed.customStrings.length > 0 ? parsed.customStrings : defaults.customStrings,
+        customStrings: Array.isArray(parsed.customStrings) ? parsed.customStrings : defaults.customStrings,
         customConsumers: Array.isArray(parsed.customConsumers) ? parsed.customConsumers : defaults.customConsumers,
         customWeatherSensors: Array.isArray(parsed.customWeatherSensors) ? parsed.customWeatherSensors : [],
         monitoredDevices: Array.isArray(parsed.monitoredDevices) ? parsed.monitoredDevices : [],

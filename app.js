@@ -1,8 +1,8 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.0)
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.2)
 // Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '13.0';
+const APP_VERSION = '13.2';
 const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
 const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
 const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);
@@ -3765,13 +3765,19 @@ function updatePlanungHubCards() {
     const baseline = typeof getPlannedSystemBaseline === 'function' ? getPlannedSystemBaseline() : null;
     if (!baseline) return;
 
+    // V13.1 Single Source of Truth: Amortisation & Jahresertrag direkt aus der zentralen Finanz-Engine
+    const fin = typeof getUnifiedFinanceAndRoiSummary === 'function' ? getUnifiedFinanceAndRoiSummary() : null;
+
     const kwpEl = document.getElementById('plan_hub_kwp');
     const yieldEl = document.getElementById('plan_hub_yield');
     const autEl = document.getElementById('plan_hub_autarky');
     const amortEl = document.getElementById('plan_hub_amort');
 
     if (kwpEl) kwpEl.innerText = `${baseline.totalKwp.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} kWp`;
-    if (yieldEl) yieldEl.innerText = `${Math.round(baseline.totalSollYearKwh).toLocaleString('de-DE')} kWh`;
+    const displayYieldKwh = (fin && Number.isFinite(fin.annualYieldKwh) && fin.annualYieldKwh > 0)
+        ? fin.annualYieldKwh
+        : baseline.totalSollYearKwh;
+    if (yieldEl) yieldEl.innerText = `${Math.round(displayYieldKwh).toLocaleString('de-DE')} kWh`;
 
     let autPct = 74;
     if (typeof FlowCache !== 'undefined' && FlowCache) {
@@ -3782,10 +3788,13 @@ function updatePlanungHubCards() {
     }
     if (autEl) autEl.innerText = `${autPct} %`;
 
-    const selfShare = baseline.totalBatteryKwh > 0 ? 0.58 : 0.34;
-    const annualBenefit = (baseline.totalSollYearKwh * selfShare * baseline.gridPriceEur) + (baseline.totalSollYearKwh * (1 - selfShare) * baseline.eegRateEur);
-    const amortY = annualBenefit > 0 ? (baseline.sysCostEur / annualBenefit) : 10.5;
-    if (amortEl) amortEl.innerText = `${amortY.toFixed(1)} J.`;
+    if (amortEl) {
+        if (fin && fin.amortYearsLabel) {
+            amortEl.innerText = fin.amortYearsLabel === '∞' ? '∞' : `${fin.amortYearsLabel} J.`;
+        } else {
+            amortEl.innerText = '—';
+        }
+    }
 }
 
 function switchTab(tabId, fromPopState = false) {

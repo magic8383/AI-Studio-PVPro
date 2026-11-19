@@ -4,6 +4,56 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.2] – 2026-11-19
+
+### 🛠️ Kollisionsfreier Server-Port-3000-Schutz & `/api/health`-Endpunkt
+
+* **Verhindert `EADDRINUSE :8080` beim Container-Kaltstart (`server.js`):**
+  - Bisher übernahm `server.js` ungeprüft `process.env.PORT`. Wenn in einer Reverse-Proxy-Umgebung `PORT=8080` identisch zu `NGINX_PORT=8080` gesetzt war, kollidierte der Node-Server mit Nginx und startete nicht auf Port `3000`.
+  - Ab sofort prüft `server.js` explizit `nginxPort && rawPort === nginxPort` und fällt in diesem Fall zuverlässig auf `DEFAULT_APP_PORT` (`3000`) zurück, während eigenständige Cloud-Run-Deployments ohne Nginx weiterhin `PORT` respektieren.
+* **Dedizierter Health-Check-Endpunkt (`GET /api/health`):**
+  - Liefert leichtgewichtig `{ status: 'ok', version, port }` ohne Umweg über das SPA-Fallback (`index.html`).
+
+---
+
+## [Version 13.1] – 2026-11-18
+
+### ✨ Strikte Single-Source-of-Truth-Zählerlogik, Kalendermonat ab 01., vollständige Wallbox-Sessions & relative String-Performance (%)
+
+#### 1. Strikte 1:1-Priorität echter Home-Assistant-`kWh`-Zähler ohne `Math.max`-Mischlogik (`telemetry.js`)
+* **Transparente Energieberechnung an genau einer Stelle (`resolveChannelKwh`, `resolveRealMeterDeltaFromStats`, `getUnifiedEnergyLedger`):**
+  - Sobald für einen Kanal (PV-Gesamt, PV-Strings, Hausverbrauch, Netzbezug, Einspeisung, Speicher, Einzelverbraucher oder Wallbox) ein echter Home-Assistant-`kWh`-Zähler konfiguriert ist und gültige Werte liefert, wird **ausschließlich** dieser Zählerwert (bzw. `Aktueller Zählerstand − Start-Zählerstand`) verwendet.
+  - Sämtliche `Math.max(zähler, wattIntegral)`-Übersteuerungen sowie Plausibilitäts-Verwerfungen echter Zählerstände gegen Watt-Kurven-Integrale wurden vollständig entfernt. Die Watt-Integration bleibt strikt als Fallback für reine Watt-Sensoren ohne eigenen `kWh`-Zähler bestehen.
+  - `computeSankeyFlowData()` übernimmt die Werte aus `getUnifiedEnergyLedger()` 1:1 ohne abweichende Nachberechnung oder divergierende Rundungen.
+
+#### 2. Einheitlicher Kalendermonat ab 01. des Monats (`telemetry.js`)
+* **Synchronisierte Monatswerte in Chart, Sankey, Logbuch & Live-Cockpit (`getEffectiveTimeframeWindow`, `getAvailableCurveDefinitions`, `renderIntradayCurveSection`):**
+  - Der Diagramm-Zeitraum `Monat` beginnt ab sofort am **01. des laufenden Kalendermonats um 00:00:00 Uhr** (begrenzt durch `trackingStartDate`, falls dieses im selben Monat später liegt) statt als gleitendes 30-Tage-Fenster.
+  - Die Diagramm-Überschrift (`Monat ab 01.MM.`) und die Kachel-Zeitraum-Beschriftungen (`ab 01.MM.`) weisen das exakte Startdatum transparent aus.
+
+#### 3. Wallbox-Session-Fix & echte session-basierte PV-Anteile (`telemetry.js`)
+* **Kein vorzeitiges Abschneiden vergangener Ladesessions bei 12:35 Uhr (`extractSessionsFromCurveDataset`):**
+  - Behebt den Fehler, bei dem `intradayRealBucketsCount` (ein reiner Tages-Zähler) fälschlicherweise auf die 7-Tage- und Monats-Kurven angewendet wurde und dadurch z. B. eine gestrige 34-kWh-Ladesession in der Wochen-/Monatsansicht mitten im Ladevorgang abschnitt (`11,17 kWh`).
+* **EV-gerechte Zähler-Schrittlimits (`getEnergyCounterStepLimits`) & reparierter Rescan (`rescanWallboxSessionsHistory`):**
+  - Zentrale Schrittlimit-Prüfung für Long-Term-Statistics und REST-Historie: Wallbox-Zähler erlauben bis zu `25 kWh/h` (stündlich) bzw. `260 kWh/Tag` (täglich), sodass `10,4 kW`-Ladungen niemals als Zählersprung verworfen werden.
+  - `rescanWallboxSessionsHistory()` ruft nun das korrekte `fetchTimeframeDataset(tf, null)` auf und baut die letzten 30 Tage sauber neu auf.
+  - Archiv-Migration von `pvpro_wallbox_sessions_archive_v12_7` auf `pvpro_wallbox_sessions_archive_v13_1` behält ältere Sessions (> 30 Tage) bei und korrigiert jüngere Sessions automatisch.
+* **Echter monatlicher & jährlicher Wallbox-PV-Anteil (`getUnifiedEnergyLedger`):**
+  - `ledger.month` und neu `ledger.year` leiten den Solar- und Netzanteil der Wallbox direkt aus den realen Wallbox-Sessions des jeweiligen Monats bzw. Jahres ab statt pauschal die allgemeine Haus-Autarkie anzuwenden.
+
+#### 4. Relative String-Performance in `%` vs. Anlagen-Durchschnitt (`telemetry.js`)
+* **Kompakte, mobil-sichere Vergleichskennzahl auf den String-Kacheln (`getAvailableCurveDefinitions`):**
+  - Ersetzt die verzerrte `specYield * 100`-Anzeige (z. B. `690%`, `1802%`) durch die echte **relative Performance jedes Strings im Vergleich zum Anlagen-Durchschnitt (`100%`)**: `(String kWh/kWp) / (Ø kWh/kWp aller Strings) × 100` (z. B. `98%`, `103%`, `95%`).
+  - Die Kachel `PV gesamt · DC` zeigt den absoluten Referenzwert kompakt als spezifischen Ertrag (`X,X/kWp`, z. B. `7,1/kWp`).
+
+#### 5. Planungs-Hub-Amortisation & bereinigte Server-Defaults (`app.js`, `server.js`)
+* **Einheitliche Amortisation im Planungs-Hub (`updatePlanungHubCards`):**
+  - Ersetzt die alte Näherungsformel (`selfShare = 0.58 / 0.34`) durch die zentrale Finanz-Engine `getUnifiedFinanceAndRoiSummary()`, sodass Planungs-Hub, Finanzen-Tab und DIN-VDE-Dossier identische Werte ausgeben.
+* **Saubere Server-Defaults (`server.js`):**
+  - `APP_VERSION` auf `13.1` synchronisiert sowie letzte verbliebene Demo-/Sensor-Vorbelegungen aus `getDefaultCustomStrings()`, `getDefaultCustomConsumers()` und `createDefaultHaConfig()` entfernt.
+
+---
+
 ## [Version 13.0] – 2026-11-18
 
 ### ✨ Echte Zählerstand-Differenz (`state`) statt fehleranfälliger HA-Summierung (`sum`/`change`), Schutz abgeschlossener Monate bei Sensorwechsel & Bereinigung persönlicher Vorbelegungen

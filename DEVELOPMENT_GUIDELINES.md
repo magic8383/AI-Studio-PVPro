@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 13.0 (Echte Zählerstand-Differenz statt fehleranfälliger Home-Assistant-Summe gegen Doppelzählungen, Schutz abgeschlossener Monate bei Sensorwechsel & Bereinigung sämtlicher persönlicher Sensor-/Domain-Vorbelegungen aus dem öffentlichen Quellcode)  
+**Aktuelle Version:** 13.2 (Kollisionsfreier Port-3000-Schutz in server.js gegen NGINX_PORT=8080-Konflikte beim Container-Kaltstart & dedizierter /api/health-Endpunkt)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 
