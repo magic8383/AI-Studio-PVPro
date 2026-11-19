@@ -44,6 +44,7 @@ let haConfigState = typeof createDefaultHaConfigSchema === 'function'
         monitoredDevices: [],
         homeCameras: [],
         homeLights: [],
+        homeClimateDevices: [],
         customStrings: [],
         customConsumers: []
     };
@@ -3730,6 +3731,15 @@ async function refreshLiveTelemetryNow() {
             });
             renderHomeLightsSection();
             syncOpenHomeLightControlModal();
+        }
+        if (data.climateTelemetry && typeof data.climateTelemetry === 'object') {
+            Object.entries(data.climateTelemetry).forEach(([entId, stObj]) => {
+                if (entId && stObj) {
+                    homeHaStatesCache.set(entId, stObj);
+                }
+            });
+            renderHomeClimateControlsSection();
+            syncOpenHomeClimateControlModal();
         }
 
         if (haConfigState.autoSyncMonthly && currentLiveTelemetry.pvEnergyMonthKwh !== null && currentLiveTelemetry.pvEnergyMonthKwh > 0) {
@@ -9501,6 +9511,13 @@ function switchHaModalTab(tab = 'config') {
             if (box) box.classList.add('hidden');
             ensureMonitoredDevicesStatesLoaded();
         }
+    } else if (tab === 'climate') {
+        renderHaWeatherSensorsEditor();
+        renderHaHomeClimateDevicesEditor();
+        renderHaAvailableClimateDevicesPickerList();
+        if (homeHaStatesCache.size === 0 && haConfigState.baseUrl && haConfigState.accessToken) {
+            loadAvailableHaClimateDevicesIntoPicker(false);
+        }
     } else if (tab === 'cameras') {
         renderHaHomeCamerasEditor();
         ensureMonitoredDevicesStatesLoaded();
@@ -9664,6 +9681,8 @@ function openHaConfigModal(focusSection = null, scrollTargetId = null) {
     renderHaCustomStringsEditor();
     renderHaCustomConsumersEditor();
     renderHaWeatherSensorsEditor();
+    renderHaHomeClimateDevicesEditor();
+    renderHaAvailableClimateDevicesPickerList();
     renderHaMonitoredDevicesEditor();
     renderHaHomeCamerasEditor();
     renderHaPvEnergyExtraList();
@@ -11388,6 +11407,7 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
                 s.entity_id.startsWith('camera.') ||
                 s.entity_id.startsWith('light.') ||
                 s.entity_id.startsWith('switch.') ||
+                s.entity_id.startsWith('climate.') ||
                 s.entity_id.startsWith('number.') ||
                 s.entity_id.startsWith('input_number.') ||
                 s.entity_id.startsWith('counter.')
@@ -11398,15 +11418,18 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
             const isCamera = s.entity_id.startsWith('camera.');
             const isLight = s.entity_id.startsWith('light.');
             const isSwitch = s.entity_id.startsWith('switch.');
+            const isClimate = s.entity_id.startsWith('climate.');
             const unit = isCamera
                 ? 'Kamera'
-                : (isLight
-                    ? 'Licht'
-                    : (isSwitch
-                        ? 'Schalter'
-                        : (isWeather
-                            ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
-                            : String(s.attributes?.unit_of_measurement || '').trim())));
+                : (isClimate
+                    ? 'Klima'
+                    : (isLight
+                        ? 'Licht'
+                        : (isSwitch
+                            ? 'Schalter'
+                            : (isWeather
+                                ? (s.attributes?.temperature !== undefined ? `${s.attributes.temperature} °C` : 'Wetter')
+                                : String(s.attributes?.unit_of_measurement || '').trim()))));
             const unitLower = unit.toLowerCase();
             const devClass = String(s.attributes?.device_class || '').toLowerCase();
             const groupInfo = classifyHaEntityGroup(s, tplDeviceMap);
@@ -11414,6 +11437,8 @@ function buildEnrichedSensorList(statesArray, tplDeviceMap = {}) {
             let unitCategory = 'other';
             if (isCamera) {
                 unitCategory = 'camera';
+            } else if (isClimate) {
+                unitCategory = 'climate';
             } else if (isLight || isSwitch) {
                 unitCategory = 'light';
             } else if (unitLower === 'w' || unitLower === 'kw' || unitLower === 'mw' || unitLower === 'va' || devClass === 'power') {
@@ -11607,6 +11632,8 @@ async function openHaEntityPicker(options = {}) {
         currentEntityId = String(haConfigState.homeCameras?.[options.index]?.entityId || '').trim();
     } else if (options.customType === 'lightEntity' && options.index !== undefined) {
         currentEntityId = String(haConfigState.homeLights?.[options.index]?.entityId || '').trim();
+    } else if (options.customType === 'climateEntity' && options.index !== undefined) {
+        currentEntityId = String(haConfigState.homeClimateDevices?.[options.index]?.entityId || '').trim();
     }
 
     haPickerState = {
@@ -11987,6 +12014,15 @@ function pickHaEntityFromModal(entityId) {
         }
         renderHaHomeLightsEditor();
         renderHaAvailableLightsPickerList();
+    } else if (haPickerState.customType === 'climateEntity' && haPickerState.index !== null) {
+        updateHaHomeClimateDeviceField(haPickerState.index, 'entityId', entityId);
+        const curName = haConfigState.homeClimateDevices?.[haPickerState.index]?.name || '';
+        const cleanClimName = sensorObj ? String(sensorObj.name || '').trim() : '';
+        if (cleanClimName && (!curName || /^Klimagerät \d+/i.test(curName))) {
+            updateHaHomeClimateDeviceField(haPickerState.index, 'name', cleanClimName);
+        }
+        renderHaHomeClimateDevicesEditor();
+        renderHaAvailableClimateDevicesPickerList();
     }
 
     closeHaEntityPicker();
@@ -12708,6 +12744,8 @@ function updateHomeStatesFromHaArray(statesArray) {
 
     renderHomeWeatherWidget();
     renderHomeCustomWeatherSensors();
+    renderHomeClimateControlsSection();
+    syncOpenHomeClimateControlModal();
     renderHomeMonitoredDevicesBar();
     renderHomeCamerasSection();
     renderHomeLightsSection();
@@ -12910,11 +12948,13 @@ function getRoomClimateIcon(ws) {
 
 function renderHomeCustomWeatherSensors() {
     const grid = document.getElementById('homeCustomWeatherGrid');
+    const scrollHint = document.getElementById('homeClimateSensorsScrollHint');
     if (!grid) return;
 
     const list = Array.isArray(haConfigState.customWeatherSensors) ? haConfigState.customWeatherSensors : [];
     if (list.length === 0) {
         grid.className = 'grid grid-cols-1 gap-2';
+        if (scrollHint) scrollHint.classList.add('hidden');
         grid.innerHTML = `
             <div onclick="openHaConfigModal('climate')" role="button" tabindex="0"
                 class="rounded-[18px] p-3 bg-sky-500/[0.08] dark:bg-sky-500/[0.14] border border-sky-500/20 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
@@ -12922,7 +12962,7 @@ function renderHomeCustomWeatherSensors() {
                     <span class="material-symbols-rounded text-sky-600 dark:text-sky-400 text-[18px] shrink-0">device_thermostat</span>
                     <div class="min-w-0">
                         <p class="text-[13px] font-semibold text-slate-900 dark:text-white truncate">Raumklima &amp; Temperatursensoren auswählen</p>
-                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Wohnzimmer, Esszimmer (°C &amp; % rF) als kompakte Kachelleiste</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Wohnzimmer, Esszimmer (°C &amp; % rF) als wischbare 3er-Leiste</p>
                     </div>
                 </div>
                 <span class="material-symbols-rounded text-slate-400 text-[18px] shrink-0">add_circle</span>
@@ -12930,15 +12970,12 @@ function renderHomeCustomWeatherSensors() {
         return;
     }
 
-    // Dynamic multi-column horizontal strip layout matching Energie · Kurzüberblick
-    const colsClass = list.length === 1
-        ? 'grid grid-cols-1 gap-2 sm:gap-2.5'
-        : (list.length === 2
-            ? 'grid grid-cols-2 gap-2 sm:gap-2.5'
-            : (list.length === 3
-                ? 'grid grid-cols-3 gap-2 sm:gap-2.5'
-                : 'grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5'));
-    grid.className = colsClass;
+    // V13.7: Exakt 3 Kacheln sichtbar in Zeile 1, horizontal wischbar bei > 3 Sensoren
+    grid.className = 'flex items-stretch gap-2 sm:gap-2.5 overflow-x-auto hide-scroll snap-x snap-mandatory pb-0.5';
+    if (scrollHint) {
+        if (list.length > 3) scrollHint.classList.remove('hidden');
+        else scrollHint.classList.add('hidden');
+    }
 
     grid.innerHTML = list.map((ws, idx) => {
         const entId = String(ws.entityId || '').trim();
@@ -12952,36 +12989,39 @@ function renderHomeCustomWeatherSensors() {
         const humEntId = resolveRoomHumidityEntity(ws);
         const humReading = humEntId ? getClimateReadingWithFallback(humEntId, '%') : { val: NaN, unit: '%' };
         const hasHumidity = Number.isFinite(humReading.val);
-        const humCompactHtml = hasHumidity
-            ? `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-sky-500/12 dark:bg-sky-400/15 text-sky-700 dark:text-sky-300 text-[11px] font-semibold tabular-nums shrink-0" title="Luftfeuchtigkeit (${escapeHtml(humEntId)})">
-                <span class="material-symbols-rounded text-[11.5px]">water_drop</span>
-                <span>${Math.round(humReading.val)}%</span>
-               </span>`
-            : `<span class="material-symbols-rounded text-[13px] text-slate-400 group-hover:text-teal-500 transition-colors shrink-0">show_chart</span>`;
 
         const mm = entId ? homeSensorMinMaxCache.byEntity[entId] : null;
-        let subText = entId ? '24h-Verlauf →' : 'Sensor wählen';
+        let minMaxShort = '';
         if (mm && Number.isFinite(mm.min) && Number.isFinite(mm.max)) {
             const minVal = Number.isFinite(rawVal) ? Math.min(mm.min, rawVal) : mm.min;
             const maxVal = Number.isFinite(rawVal) ? Math.max(mm.max, rawVal) : mm.max;
             const degSuffix = unit === '°C' ? '°' : '';
-            subText = `↓ ${minVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix} · ↑ ${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}${degSuffix}`;
+            minMaxShort = `↓${minVal.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}${degSuffix} ↑${maxVal.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}${degSuffix}`;
         }
+
+        const bottomRowHtml = hasHumidity
+            ? `<div class="flex items-center justify-between gap-1 mt-1 min-w-0">
+                    <span class="inline-flex items-center gap-0.5 text-sky-700 dark:text-sky-300 text-[10.5px] font-bold tabular-nums shrink-0" title="Luftfeuchtigkeit (${escapeHtml(humEntId)})">
+                        <span class="material-symbols-rounded text-[11px] leading-none">water_drop</span>
+                        <span>${Math.round(humReading.val)}%</span>
+                    </span>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400 tabular-nums truncate">${escapeHtml(minMaxShort || '24h')}</span>
+               </div>`
+            : `<p class="text-[10.5px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-1">${escapeHtml(minMaxShort || (entId ? '24h-Verlauf →' : 'Sensor wählen'))}</p>`;
 
         const iconName = getRoomClimateIcon(ws);
 
         return `
         <div onclick="openClimateHistoryModal(${idx})" role="button" tabindex="0" title="Tippen für 24h Temperatur- &amp; Feuchte-Verlauf (${escapeHtml(ws.name || `Raum ${idx + 1}`)})"
-            class="rounded-[18px] p-2.5 sm:p-3 bg-sky-500/[0.08] dark:bg-sky-500/[0.14] border border-sky-500/20 flex flex-col justify-between min-w-0 cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.99] transition-all group">
-            <div class="flex items-center justify-between gap-1 text-[12px] font-medium text-slate-700 dark:text-slate-200">
-                <div class="flex items-center gap-1 min-w-0">
-                    <span class="material-symbols-rounded text-sky-600 dark:text-sky-400 text-[16px] shrink-0">${escapeHtml(iconName)}</span>
-                    <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
-                </div>
-                ${humCompactHtml}
+            class="shrink-0 snap-start w-[calc((100%-16px)/3)] sm:w-[calc((100%-20px)/3)] min-w-0 overflow-hidden rounded-[18px] p-2.5 sm:p-3 bg-sky-500/[0.08] dark:bg-sky-500/[0.14] border border-sky-500/20 flex flex-col justify-between cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.98] transition-all group">
+            <div class="flex items-center gap-1 text-[11.5px] font-semibold text-slate-700 dark:text-slate-200 min-w-0">
+                <span class="w-4 h-4 inline-flex items-center justify-center overflow-hidden shrink-0">
+                    <span class="material-symbols-rounded text-sky-600 dark:text-sky-400 text-[15px] leading-none">${escapeHtml(iconName)}</span>
+                </span>
+                <span class="truncate">${escapeHtml(ws.name || `Raum ${idx + 1}`)}</span>
             </div>
-            <p class="text-[16px] sm:text-[19px] font-bold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">${escapeHtml(valText)}</p>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums truncate mt-0.5">${escapeHtml(subText)}</p>
+            <p class="text-[15px] sm:text-[18px] font-extrabold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">${escapeHtml(valText)}</p>
+            ${bottomRowHtml}
         </div>`;
     }).join('');
 }
@@ -13393,6 +13433,8 @@ function refreshHomeWeatherAndSensors(force = false) {
     updateHomeEnergyOverview();
     fetchOpenMeteoForecastForHome(force);
     renderHomeCustomWeatherSensors();
+    renderHomeClimateControlsSection();
+    syncOpenHomeClimateControlModal();
     renderHomeMonitoredDevicesBar();
     renderDevicesDiagnosticsTab();
     renderHomeCamerasSection();
@@ -13408,6 +13450,7 @@ function renderHomeTab() {
     updateHomeEnergyOverview();
     fetchOpenMeteoForecastForHome(false);
     renderHomeCustomWeatherSensors();
+    renderHomeClimateControlsSection();
     renderHomeMonitoredDevicesBar();
     renderHomeCamerasSection();
     renderHomeLightsSection();
@@ -17575,6 +17618,994 @@ function renderHaAvailableLightsPickerList() {
     }).join('');
 }
 
+// ============================================================================
+// 12. STARTSEITEN-KLIMASTEUERUNG (THERMOSTATE & KLIMAANLAGEN · V13.7)
+//     Zeile 2 (2 breite Kacheln, wischbar) + Sicheres Steuer-Popup (kein Direkt-Schalten)
+// ============================================================================
+
+let activeHomeClimateControlId = null;
+let homeClimateCommandInFlight = false;
+let homeClimateVerifyRefreshTimer = null;
+let haClimatePickerSearchQuery = '';
+
+const HOME_CLIMATE_ICON_OPTIONS = [
+    { icon: 'thermostat', label: 'Thermostat' },
+    { icon: 'ac_unit', label: 'Klimaanlage' },
+    { icon: 'local_fire_department', label: 'Heizung' },
+    { icon: 'heat_pump', label: 'Wärmepumpe' },
+    { icon: 'mode_fan', label: 'Lüftung' },
+    { icon: 'air', label: 'Luftstrom' },
+    { icon: 'device_thermostat', label: 'Raumregler' },
+    { icon: 'home', label: 'Hausklima' }
+];
+const VALID_HOME_CLIMATE_ICONS = new Set(HOME_CLIMATE_ICON_OPTIONS.map(o => o.icon));
+
+function inferDefaultClimateIcon(entityId = '', friendlyName = '') {
+    const s = `${entityId} ${friendlyName}`.toLowerCase();
+    if (/klima|aircon|ac_|cool|split|daikin|mitsubishi|panasonic|midea|toshiba/.test(s)) return 'ac_unit';
+    if (/waermepumpe|wärmepumpe|heat_pump|heatpump|wp_/.test(s)) return 'heat_pump';
+    if (/heiz|radiator|fussboden|fußboden|floor|ofen|kamin|boiler/.test(s)) return 'local_fire_department';
+    if (/lueft|lüft|fan|vent/.test(s)) return 'mode_fan';
+    return 'thermostat';
+}
+
+function sanitizeHomeClimateIcon(rawIcon, entityId = '', friendlyName = '') {
+    const key = String(rawIcon || '').trim();
+    if (VALID_HOME_CLIMATE_ICONS.has(key)) return key;
+    return inferDefaultClimateIcon(entityId, friendlyName);
+}
+
+function ensureDefaultHomeClimateDevicesArray() {
+    if (!Array.isArray(haConfigState.homeClimateDevices)) {
+        haConfigState.homeClimateDevices = [];
+    }
+    let healed = false;
+    haConfigState.homeClimateDevices.forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        const cleanIcon = sanitizeHomeClimateIcon(item.icon, item.entityId, item.name);
+        if (item.icon !== cleanIcon) {
+            item.icon = cleanIcon;
+            healed = true;
+        }
+    });
+    if (healed) {
+        try {
+            localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+        } catch (e) {}
+    }
+    return haConfigState.homeClimateDevices;
+}
+
+const CLIMATE_HVAC_MODE_META = {
+    off: { label: 'Aus', shortLabel: 'Aus', icon: 'power_settings_new', tone: 'neutral' },
+    heat: { label: 'Heizen', shortLabel: 'Heizen', icon: 'local_fire_department', tone: 'heat' },
+    cool: { label: 'Kühlen', shortLabel: 'Kühlen', icon: 'ac_unit', tone: 'cool' },
+    heat_cool: { label: 'Heizen/Kühlen', shortLabel: 'Auto', icon: 'thermostat_auto', tone: 'auto' },
+    auto: { label: 'Auto', shortLabel: 'Auto', icon: 'hdr_auto', tone: 'auto' },
+    dry: { label: 'Entfeuchten', shortLabel: 'Entfeucht.', icon: 'water_drop', tone: 'dry' },
+    fan_only: { label: 'Lüften', shortLabel: 'Lüften', icon: 'mode_fan', tone: 'fan' }
+};
+
+function getClimateHvacMeta(mode) {
+    const key = String(mode || '').trim().toLowerCase();
+    return CLIMATE_HVAC_MODE_META[key] || {
+        label: key ? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ') : 'Unbekannt',
+        shortLabel: key ? key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ') : '—',
+        icon: 'thermostat',
+        tone: 'neutral'
+    };
+}
+
+function translateClimateSubMode(raw) {
+    const key = String(raw || '').trim();
+    const map = {
+        auto: 'Auto', low: 'Niedrig', medium: 'Mittel', mid: 'Mittel', high: 'Hoch',
+        quiet: 'Leise', silent: 'Leise', turbo: 'Turbo', strong: 'Stark', diffuse: 'Sanft',
+        off: 'Aus', on: 'An', vertical: 'Vertikal', horizontal: 'Horizontal', both: 'Beide',
+        none: 'Standard', eco: 'Eco', comfort: 'Komfort', boost: 'Boost', away: 'Abwesend',
+        home: 'Zuhause', sleep: 'Schlaf', activity: 'Aktiv', frost_protection: 'Frostschutz'
+    };
+    return map[key.toLowerCase()] || key;
+}
+
+function translateClimateAction(action, stateStr) {
+    const act = String(action || '').trim().toLowerCase();
+    const map = {
+        heating: 'Heizt aktiv',
+        cooling: 'Kühlt aktiv',
+        drying: 'Entfeuchtet',
+        fan: 'Lüfter aktiv',
+        idle: 'Bereit (Ziel erreicht)',
+        off: 'Ausgeschaltet',
+        preheating: 'Vorheizen',
+        defrosting: 'Abtauen'
+    };
+    if (act && map[act]) return map[act];
+    if (stateStr === 'off') return 'Ausgeschaltet';
+    if (stateStr === 'unavailable' || stateStr === 'unknown') return 'Nicht erreichbar';
+    return getClimateHvacMeta(stateStr).label;
+}
+
+function getClimateCapabilities(entityId, stateObj = null) {
+    const st = stateObj || (entityId ? homeHaStatesCache.get(entityId) : null);
+    const attrs = st && st.attributes ? st.attributes : {};
+    const rawState = st ? String(st.state || '').trim().toLowerCase() : 'unavailable';
+    const isOffline = !st || rawState === 'unavailable' || rawState === 'unknown';
+    const isOff = rawState === 'off';
+    const isActive = !isOffline && !isOff;
+
+    const currentTemp = (attrs.current_temperature !== undefined && attrs.current_temperature !== null && attrs.current_temperature !== '')
+        ? Number(attrs.current_temperature) : NaN;
+    const targetTemp = (attrs.temperature !== undefined && attrs.temperature !== null && attrs.temperature !== '')
+        ? Number(attrs.temperature)
+        : (Number.isFinite(Number(attrs.target_temp_low)) ? Number(attrs.target_temp_low) : NaN);
+
+    const minTempRaw = Number(attrs.min_temp);
+    const maxTempRaw = Number(attrs.max_temp);
+    const stepRaw = Number(attrs.target_temp_step);
+
+    const minTemp = Number.isFinite(minTempRaw) ? minTempRaw : 10;
+    const maxTemp = Number.isFinite(maxTempRaw) && maxTempRaw > minTemp ? maxTempRaw : 30;
+    const step = (Number.isFinite(stepRaw) && stepRaw > 0 && stepRaw <= 2) ? stepRaw : 0.5;
+
+    const hvacModes = Array.isArray(attrs.hvac_modes) && attrs.hvac_modes.length > 0
+        ? attrs.hvac_modes.map(m => String(m).trim().toLowerCase()).filter(Boolean)
+        : ['off', 'heat', 'cool', 'auto'];
+
+    const fanModes = Array.isArray(attrs.fan_modes) ? attrs.fan_modes.map(String).filter(Boolean) : [];
+    const swingModes = Array.isArray(attrs.swing_modes) ? attrs.swing_modes.map(String).filter(Boolean) : [];
+    const presetModes = Array.isArray(attrs.preset_modes) ? attrs.preset_modes.map(String).filter(Boolean) : [];
+    const currentHumidity = (attrs.current_humidity !== undefined && attrs.current_humidity !== null && attrs.current_humidity !== '')
+        ? Number(attrs.current_humidity) : NaN;
+
+    const hvacAction = attrs.hvac_action ? String(attrs.hvac_action).trim().toLowerCase() : '';
+    const effectiveTone = isOffline
+        ? 'offline'
+        : (hvacAction === 'heating' ? 'heat'
+            : (hvacAction === 'cooling' ? 'cool'
+                : getClimateHvacMeta(rawState).tone));
+
+    return {
+        state: rawState,
+        isOffline,
+        isOff,
+        isActive,
+        hvacAction,
+        effectiveTone,
+        currentTemp,
+        targetTemp,
+        minTemp,
+        maxTemp,
+        step,
+        hvacModes,
+        fanMode: attrs.fan_mode ? String(attrs.fan_mode) : '',
+        fanModes,
+        swingMode: attrs.swing_mode ? String(attrs.swing_mode) : '',
+        swingModes,
+        presetMode: attrs.preset_mode ? String(attrs.preset_mode) : '',
+        presetModes,
+        currentHumidity,
+        friendlyName: attrs.friendly_name || ''
+    };
+}
+
+function formatClimateTempDe(val) {
+    if (!Number.isFinite(val)) return '—';
+    return `${val.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} °C`;
+}
+
+function getClimateToneClasses(tone) {
+    switch (tone) {
+        case 'heat':
+            return {
+                tile: 'bg-orange-500/[0.12] dark:bg-orange-500/[0.18] border-orange-500/40 dark:border-orange-400/45 shadow-xs',
+                icon: 'text-orange-600 dark:text-orange-300',
+                badge: 'bg-orange-500/20 text-orange-800 dark:text-orange-200 border-orange-500/30',
+                hero: 'bg-gradient-to-br from-orange-500/18 via-amber-500/10 to-transparent',
+                heroIconWrap: 'bg-orange-500/20 text-orange-600 dark:text-orange-300 border-orange-500/40'
+            };
+        case 'cool':
+            return {
+                tile: 'bg-sky-500/[0.12] dark:bg-sky-500/[0.18] border-sky-500/40 dark:border-sky-400/45 shadow-xs',
+                icon: 'text-sky-600 dark:text-sky-300',
+                badge: 'bg-sky-500/20 text-sky-800 dark:text-sky-200 border-sky-500/30',
+                hero: 'bg-gradient-to-br from-sky-500/18 via-cyan-500/10 to-transparent',
+                heroIconWrap: 'bg-sky-500/20 text-sky-600 dark:text-sky-300 border-sky-500/40'
+            };
+        case 'auto':
+            return {
+                tile: 'bg-teal-500/[0.12] dark:bg-teal-500/[0.18] border-teal-500/40 dark:border-teal-400/45 shadow-xs',
+                icon: 'text-teal-600 dark:text-teal-300',
+                badge: 'bg-teal-500/20 text-teal-800 dark:text-teal-200 border-teal-500/30',
+                hero: 'bg-gradient-to-br from-teal-500/18 via-emerald-500/10 to-transparent',
+                heroIconWrap: 'bg-teal-500/20 text-teal-600 dark:text-teal-300 border-teal-500/40'
+            };
+        case 'dry':
+            return {
+                tile: 'bg-indigo-500/[0.11] dark:bg-indigo-500/[0.18] border-indigo-500/35 dark:border-indigo-400/40 shadow-xs',
+                icon: 'text-indigo-600 dark:text-indigo-300',
+                badge: 'bg-indigo-500/20 text-indigo-800 dark:text-indigo-200 border-indigo-500/30',
+                hero: 'bg-gradient-to-br from-indigo-500/16 via-sky-500/8 to-transparent',
+                heroIconWrap: 'bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 border-indigo-500/40'
+            };
+        case 'fan':
+            return {
+                tile: 'bg-emerald-500/[0.11] dark:bg-emerald-500/[0.18] border-emerald-500/35 dark:border-emerald-400/40 shadow-xs',
+                icon: 'text-emerald-600 dark:text-emerald-300',
+                badge: 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 border-emerald-500/30',
+                hero: 'bg-gradient-to-br from-emerald-500/16 via-teal-500/8 to-transparent',
+                heroIconWrap: 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 border-emerald-500/40'
+            };
+        case 'offline':
+            return {
+                tile: 'bg-slate-100/75 dark:bg-slate-800/40 border-slate-300/70 dark:border-white/10 border-dashed opacity-75',
+                icon: 'text-slate-400 dark:text-slate-500',
+                badge: 'bg-slate-200/80 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-300/60 dark:border-white/10',
+                hero: 'bg-slate-50 dark:bg-slate-950/60',
+                heroIconWrap: 'bg-slate-200/70 dark:bg-slate-800 text-slate-400 border-slate-300/70 dark:border-white/10'
+            };
+        default:
+            return {
+                tile: 'bg-slate-500/[0.06] dark:bg-white/[0.05] border-slate-200/90 dark:border-white/10',
+                icon: 'text-slate-500 dark:text-slate-400',
+                badge: 'bg-slate-200/80 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300/60 dark:border-white/10',
+                hero: 'bg-slate-50 dark:bg-slate-950/60',
+                heroIconWrap: 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-300 border-slate-300/70 dark:border-white/10'
+            };
+    }
+}
+
+function renderHomeClimateControlsSection() {
+    const grid = document.getElementById('homeClimateControlsGrid');
+    const activeBadge = document.getElementById('homeClimateControlsActiveBadge');
+    const scrollHint = document.getElementById('homeClimateControlsScrollHint');
+    if (!grid) return;
+
+    const list = ensureDefaultHomeClimateDevicesArray();
+    if (list.length === 0) {
+        if (activeBadge) activeBadge.classList.add('hidden');
+        if (scrollHint) scrollHint.classList.add('hidden');
+        grid.className = 'grid grid-cols-1 gap-2';
+        grid.innerHTML = `
+            <div onclick="openHaConfigModal('climate')" role="button" tabindex="0"
+                class="rounded-[18px] p-3 bg-teal-500/[0.07] dark:bg-teal-500/[0.12] border border-teal-500/20 flex items-center justify-between gap-3 cursor-pointer hover:ring-2 hover:ring-teal-400/40 transition-all">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="material-symbols-rounded text-teal-600 dark:text-teal-400 text-[18px] shrink-0">thermostat</span>
+                    <div class="min-w-0">
+                        <p class="text-[13px] font-semibold text-slate-900 dark:text-white truncate">Smart Thermostate &amp; Klimaanlagen hinzufügen</p>
+                        <p class="text-[11.5px] text-slate-500 dark:text-slate-400 truncate">Strenges Opt-In (climate.*) · 2 breite Kacheln, wischbar &amp; sicheres Popup</p>
+                    </div>
+                </div>
+                <span class="material-symbols-rounded text-slate-400 text-[18px] shrink-0">add_circle</span>
+            </div>`;
+        return;
+    }
+
+    let activeCount = 0;
+    grid.className = 'flex items-stretch gap-2 sm:gap-2.5 overflow-x-auto hide-scroll snap-x snap-mandatory pb-0.5';
+    if (scrollHint) {
+        if (list.length > 2) scrollHint.classList.remove('hidden');
+        else scrollHint.classList.add('hidden');
+    }
+
+    grid.innerHTML = list.map((item, idx) => {
+        const entId = String(item.entityId || '').trim();
+        const caps = getClimateCapabilities(entId);
+        if (caps.isActive) activeCount++;
+
+        const toneCls = getClimateToneClasses(caps.effectiveTone);
+        const modeMeta = caps.isOffline
+            ? { shortLabel: 'Offline', icon: 'cloud_off' }
+            : getClimateHvacMeta(caps.state);
+        const iconName = sanitizeHomeClimateIcon(item.icon, entId, item.name);
+        const displayName = item.name || caps.friendlyName || `Klimagerät ${idx + 1}`;
+
+        const curTempText = Number.isFinite(caps.currentTemp)
+            ? `${caps.currentTemp.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}°`
+            : '—';
+        const targetTempText = Number.isFinite(caps.targetTemp)
+            ? `${caps.targetTemp.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}°`
+            : '';
+
+        const tempDisplayHtml = targetTempText && !caps.isOff
+            ? `<div class="flex items-baseline gap-1 mt-1.5 min-w-0">
+                    <span class="text-[16px] sm:text-[18px] font-extrabold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight">${escapeHtml(curTempText)}</span>
+                    <span class="text-[12px] text-slate-400 dark:text-slate-500 font-bold">→</span>
+                    <span class="text-[14px] sm:text-[15px] font-extrabold ${toneCls.icon} tabular-nums leading-tight truncate">${escapeHtml(targetTempText)}</span>
+               </div>`
+            : `<p class="text-[16px] sm:text-[18px] font-extrabold text-slate-900 dark:text-white tabular-nums tracking-tight leading-tight mt-1.5 truncate">${escapeHtml(curTempText !== '—' ? `${curTempText}C` : (caps.isOffline ? 'Offline' : 'Aus'))}</p>`;
+
+        const subParts = [translateClimateAction(caps.hvacAction, caps.state)];
+        if (caps.isActive && caps.presetMode && caps.presetMode.toLowerCase() !== 'none') {
+            subParts.push(translateClimateSubMode(caps.presetMode));
+        } else if (caps.isActive && caps.fanMode) {
+            subParts.push(`Lüfter ${translateClimateSubMode(caps.fanMode)}`);
+        }
+        const subText = subParts.join(' · ');
+        const safeId = escapeHtml(String(item.id || idx));
+
+        return `
+        <button type="button" onclick="openHomeClimateControlModal('${safeId}')"
+            title="Tippen öffnet Klimasteuerung für ${escapeHtml(displayName)}"
+            class="shrink-0 snap-start w-[calc((100%-8px)/2)] sm:w-[calc((100%-10px)/2)] min-w-0 overflow-hidden rounded-[18px] p-3 border text-left flex flex-col justify-between cursor-pointer hover:ring-2 hover:ring-teal-400/40 active:scale-[0.98] transition-all ${toneCls.tile}">
+            <div class="flex items-center justify-between gap-1.5 min-w-0">
+                <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="w-5 h-5 inline-flex items-center justify-center overflow-hidden shrink-0">
+                        <span class="material-symbols-rounded text-[18px] leading-none ${toneCls.icon}" ${caps.isActive ? 'style="font-variation-settings: \'FILL\' 1;"' : ''}>${escapeHtml(iconName)}</span>
+                    </span>
+                    <span class="text-[12.5px] font-bold text-slate-900 dark:text-white truncate">${escapeHtml(displayName)}</span>
+                </div>
+                <span class="px-1.5 py-0.5 rounded-md border text-[10px] font-bold shrink-0 ${toneCls.badge}">${escapeHtml(modeMeta.shortLabel)}</span>
+            </div>
+            ${tempDisplayHtml}
+            <p class="text-[10.5px] text-slate-500 dark:text-slate-400 truncate mt-1">${escapeHtml(subText)}</p>
+        </button>`;
+    }).join('');
+
+    if (activeBadge) {
+        if (activeCount > 0) {
+            activeBadge.innerText = `${activeCount} aktiv`;
+            activeBadge.classList.remove('hidden');
+        } else {
+            activeBadge.classList.add('hidden');
+        }
+    }
+}
+
+function getActiveHomeClimateDevice() {
+    if (!activeHomeClimateControlId) return null;
+    return ensureDefaultHomeClimateDevicesArray().find(d => String(d.id) === String(activeHomeClimateControlId)) || null;
+}
+
+function openHomeClimateControlModal(deviceId) {
+    const list = ensureDefaultHomeClimateDevicesArray();
+    const item = list.find(d => String(d.id) === String(deviceId)) || list[Number(deviceId)];
+    if (!item) return;
+
+    activeHomeClimateControlId = String(item.id);
+    const modal = document.getElementById('modal-home-climate-control');
+    if (!modal) return;
+
+    syncOpenHomeClimateControlModal();
+    modal.classList.remove('hidden');
+    if (typeof syncModalHistoryGuardState === 'function') syncModalHistoryGuardState();
+
+    // Fresh single-entity state sync from HA when opening
+    if (item.entityId && haConfigState.baseUrl && haConfigState.accessToken) {
+        fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, `/api/states/${encodeURIComponent(item.entityId)}`)
+            .then(res => {
+                if (res && res.ok && res.data && res.data.entity_id) {
+                    homeHaStatesCache.set(res.data.entity_id, res.data);
+                    renderHomeClimateControlsSection();
+                    syncOpenHomeClimateControlModal();
+                }
+            }).catch(() => {});
+    }
+}
+
+function closeHomeClimateControlModal() {
+    activeHomeClimateControlId = null;
+    const modal = document.getElementById('modal-home-climate-control');
+    if (modal) modal.classList.add('hidden');
+    if (typeof syncModalHistoryGuardState === 'function') syncModalHistoryGuardState();
+}
+
+function syncOpenHomeClimateControlModal() {
+    const modal = document.getElementById('modal-home-climate-control');
+    if (!modal || !activeHomeClimateControlId) return;
+    const item = getActiveHomeClimateDevice();
+    if (!item) return;
+
+    const entId = String(item.entityId || '').trim();
+    const caps = getClimateCapabilities(entId);
+    const toneCls = getClimateToneClasses(caps.effectiveTone);
+    const modeMeta = caps.isOffline ? { label: 'Offline' } : getClimateHvacMeta(caps.state);
+    const iconName = sanitizeHomeClimateIcon(item.icon, entId, item.name);
+
+    setElText('homeClimateModalTitle', item.name || caps.friendlyName || 'Klimagerät');
+    setElText('homeClimateModalSubtitle', entId || 'Keine Entität gewählt');
+    setElText('homeClimateModalIcon', iconName);
+
+    const hero = document.getElementById('homeClimateModalHero');
+    if (hero) {
+        hero.className = `relative px-5 pt-4 pb-4 border-b border-slate-200/75 dark:border-white/10 transition-colors duration-300 shrink-0 ${toneCls.hero}`;
+    }
+    const iconWrap = document.getElementById('homeClimateModalIconWrap');
+    if (iconWrap) {
+        iconWrap.className = `w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all duration-300 border ${toneCls.heroIconWrap}`;
+    }
+    const badge = document.getElementById('homeClimateModalStateBadge');
+    if (badge) {
+        badge.innerText = modeMeta.label;
+        badge.className = `px-2 py-0.5 rounded-full text-[11px] font-bold border shrink-0 ${toneCls.badge}`;
+    }
+
+    // 1. KPI Strip
+    setElText('homeClimateModalCurrentTemp', formatClimateTempDe(caps.currentTemp));
+    setElText('homeClimateModalTargetTempKpi', Number.isFinite(caps.targetTemp) ? formatClimateTempDe(caps.targetTemp) : '—');
+    if (Number.isFinite(caps.currentHumidity)) {
+        setElText('homeClimateModalThirdKpiLabel', 'Luftfeuchte');
+        setElText('homeClimateModalThirdKpiVal', `${Math.round(caps.currentHumidity)} %`);
+    } else {
+        setElText('homeClimateModalThirdKpiLabel', 'Aktivität');
+        setElText('homeClimateModalThirdKpiVal', translateClimateAction(caps.hvacAction, caps.state));
+    }
+
+    // 2. Soll-Temperatur Control
+    const slider = document.getElementById('homeClimateModalTempSlider');
+    const effTarget = Number.isFinite(caps.targetTemp)
+        ? caps.targetTemp
+        : (Number.isFinite(caps.currentTemp) ? Math.round(caps.currentTemp * 2) / 2 : 21);
+    if (slider) {
+        slider.min = String(caps.minTemp);
+        slider.max = String(caps.maxTemp);
+        slider.step = String(caps.step);
+        slider.value = String(Math.max(caps.minTemp, Math.min(caps.maxTemp, effTarget)));
+    }
+    setElText('homeClimateModalTempRangeLabel', `${caps.minTemp} – ${caps.maxTemp} °C`);
+    setElText('homeClimateModalTargetDisplay', formatClimateTempDe(effTarget));
+    const hintEl = document.getElementById('homeClimateModalStatusHint');
+    if (hintEl && !homeClimateCommandInFlight) {
+        hintEl.innerText = caps.isOffline
+            ? 'Gerät aktuell nicht erreichbar'
+            : translateClimateAction(caps.hvacAction, caps.state);
+    }
+
+    // 3. HVAC Modes Grid
+    const modesGrid = document.getElementById('homeClimateModalHvacModesGrid');
+    if (modesGrid) {
+        modesGrid.innerHTML = caps.hvacModes.map(mode => {
+            const m = getClimateHvacMeta(mode);
+            const isSel = !caps.isOffline && caps.state === mode;
+            const mTone = getClimateToneClasses(m.tone);
+            const btnCls = isSel
+                ? `${mTone.tile} ring-2 ring-teal-500/40 font-extrabold text-slate-900 dark:text-white`
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 hover:border-teal-500/40';
+            return `
+            <button type="button" onclick="applyHomeClimateHvacMode('${escapeHtml(mode)}')"
+                class="py-2.5 px-2 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all active:scale-95 cursor-pointer ${btnCls}">
+                <span class="material-symbols-rounded text-[20px] leading-none ${isSel ? mTone.icon : 'text-slate-400 dark:text-slate-500'}">${escapeHtml(m.icon)}</span>
+                <span class="text-[11px] font-bold truncate max-w-full">${escapeHtml(m.shortLabel)}</span>
+            </button>`;
+        }).join('');
+    }
+
+    // 4. Fan Modes (dynamic)
+    const fanBox = document.getElementById('homeClimateModalFanBox');
+    const fanGrid = document.getElementById('homeClimateModalFanModesGrid');
+    if (fanBox && fanGrid) {
+        if (caps.fanModes.length > 0) {
+            fanBox.classList.remove('hidden');
+            setElText('homeClimateModalFanValue', caps.fanMode ? translateClimateSubMode(caps.fanMode) : '—');
+            fanGrid.innerHTML = caps.fanModes.map(fm => {
+                const isSel = caps.fanMode === fm;
+                const safeFm = fm.replace(/'/g, "\\'");
+                return `
+                <button type="button" onclick="applyHomeClimateFanMode('${safeFm}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
+                        isSel
+                            ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:border-sky-500/50'
+                    }">${escapeHtml(translateClimateSubMode(fm))}</button>`;
+            }).join('');
+        } else {
+            fanBox.classList.add('hidden');
+        }
+    }
+
+    // 5. Swing Modes (dynamic)
+    const swingBox = document.getElementById('homeClimateModalSwingBox');
+    const swingGrid = document.getElementById('homeClimateModalSwingModesGrid');
+    if (swingBox && swingGrid) {
+        if (caps.swingModes.length > 0) {
+            swingBox.classList.remove('hidden');
+            setElText('homeClimateModalSwingValue', caps.swingMode ? translateClimateSubMode(caps.swingMode) : '—');
+            swingGrid.innerHTML = caps.swingModes.map(sm => {
+                const isSel = caps.swingMode === sm;
+                const safeSm = sm.replace(/'/g, "\\'");
+                return `
+                <button type="button" onclick="applyHomeClimateSwingMode('${safeSm}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
+                        isSel
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:border-indigo-500/50'
+                    }">${escapeHtml(translateClimateSubMode(sm))}</button>`;
+            }).join('');
+        } else {
+            swingBox.classList.add('hidden');
+        }
+    }
+
+    // 6. Preset Modes (dynamic)
+    const presetBox = document.getElementById('homeClimateModalPresetBox');
+    const presetGrid = document.getElementById('homeClimateModalPresetModesGrid');
+    if (presetBox && presetGrid) {
+        if (caps.presetModes.length > 0) {
+            presetBox.classList.remove('hidden');
+            setElText('homeClimateModalPresetValue', caps.presetMode ? translateClimateSubMode(caps.presetMode) : '—');
+            presetGrid.innerHTML = caps.presetModes.map(pm => {
+                const isSel = caps.presetMode === pm;
+                const safePm = pm.replace(/'/g, "\\'");
+                return `
+                <button type="button" onclick="applyHomeClimatePresetMode('${safePm}')"
+                    class="px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 cursor-pointer ${
+                        isSel
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                            : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:border-emerald-500/50'
+                    }">${escapeHtml(translateClimateSubMode(pm))}</button>`;
+            }).join('');
+        } else {
+            presetBox.classList.add('hidden');
+        }
+    }
+}
+
+async function callHaClimateService(entityId, service, serviceData = {}, optimisticPatch = {}) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId.startsWith('climate.')) {
+        return { ok: false, error: 'Ungültige climate.* Entität.' };
+    }
+    const baseUrl = String(haConfigState.baseUrl || '').trim();
+    const token = String(haConfigState.accessToken || '').trim();
+    if (!baseUrl || !token) {
+        if (typeof showToastNotification === 'function') {
+            showToastNotification('Bitte zuerst Home Assistant URL & Token einrichten.', 'error');
+        }
+        return { ok: false, error: 'HA Zugangsdaten fehlen.' };
+    }
+
+    const prevState = homeHaStatesCache.get(cleanId) ? JSON.parse(JSON.stringify(homeHaStatesCache.get(cleanId))) : null;
+    const optimistic = prevState ? JSON.parse(JSON.stringify(prevState)) : { entity_id: cleanId, state: 'auto', attributes: {} };
+    optimistic.attributes = optimistic.attributes || {};
+    if (optimisticPatch.state) optimistic.state = optimisticPatch.state;
+    if (optimisticPatch.attributes) Object.assign(optimistic.attributes, optimisticPatch.attributes);
+    homeHaStatesCache.set(cleanId, optimistic);
+
+    homeClimateCommandInFlight = true;
+    const hintEl = document.getElementById('homeClimateModalStatusHint');
+    if (hintEl) hintEl.innerText = 'Sende Befehl an Home Assistant…';
+    renderHomeClimateControlsSection();
+    syncOpenHomeClimateControlModal();
+
+    const payload = { entity_id: cleanId, ...(serviceData || {}) };
+    let resOk = false;
+    let returnedStates = [];
+    let lastError = '';
+
+    // 1. Direct browser call first
+    try {
+        const cleanBase = baseUrl.replace(/\/+$/, '');
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = controller ? setTimeout(() => controller.abort(), 5000) : null;
+        const directResp = await fetch(`${cleanBase}/api/services/climate/${encodeURIComponent(service)}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload),
+            signal: controller ? controller.signal : undefined
+        });
+        if (timer) clearTimeout(timer);
+        if (directResp.ok) {
+            resOk = true;
+            try {
+                const json = await directResp.json();
+                if (Array.isArray(json)) returnedStates = json;
+            } catch (e) {}
+        } else {
+            lastError = `HA HTTP ${directResp.status}`;
+        }
+    } catch (err) {
+        lastError = err?.message || 'Direktzugriff fehlgeschlagen';
+    }
+
+    // 2. Backend proxy fallback
+    if (!resOk) {
+        const proxyRes = await safeFetchBackendJson('/api/ha/service', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                baseUrl,
+                accessToken: token,
+                domain: 'climate',
+                service,
+                entityId: cleanId,
+                serviceData: payload
+            })
+        });
+        if (proxyRes.ok && proxyRes.data && proxyRes.data.success) {
+            resOk = true;
+            if (Array.isArray(proxyRes.data.states)) returnedStates = proxyRes.data.states;
+        } else {
+            lastError = proxyRes.data?.error || lastError || 'Steuerbefehl fehlgeschlagen';
+        }
+    }
+
+    homeClimateCommandInFlight = false;
+
+    if (resOk) {
+        if (Array.isArray(returnedStates) && returnedStates.length > 0) {
+            returnedStates.forEach(stObj => {
+                if (stObj && stObj.entity_id) homeHaStatesCache.set(stObj.entity_id, stObj);
+            });
+        }
+        renderHomeClimateControlsSection();
+        syncOpenHomeClimateControlModal();
+
+        if (homeClimateVerifyRefreshTimer) clearTimeout(homeClimateVerifyRefreshTimer);
+        homeClimateVerifyRefreshTimer = setTimeout(async () => {
+            try {
+                const verifyRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, `/api/states/${encodeURIComponent(cleanId)}`);
+                if (verifyRes.ok && verifyRes.data && verifyRes.data.entity_id) {
+                    homeHaStatesCache.set(verifyRes.data.entity_id, verifyRes.data);
+                    renderHomeClimateControlsSection();
+                    syncOpenHomeClimateControlModal();
+                }
+            } catch (e) {}
+        }, 850);
+
+        return { ok: true };
+    } else {
+        if (prevState) homeHaStatesCache.set(cleanId, prevState);
+        renderHomeClimateControlsSection();
+        syncOpenHomeClimateControlModal();
+        if (hintEl) hintEl.innerText = `Fehler: ${lastError}`;
+        if (typeof showToastNotification === 'function') {
+            showToastNotification(`Klimasteuerung fehlgeschlagen: ${lastError}`, 'error');
+        }
+        return { ok: false, error: lastError };
+    }
+}
+
+function stepActiveHomeClimateTargetTemp(deltaSteps) {
+    const item = getActiveHomeClimateDevice();
+    if (!item || !item.entityId) return;
+    const caps = getClimateCapabilities(item.entityId);
+    const cur = Number.isFinite(caps.targetTemp) ? caps.targetTemp : (Number.isFinite(caps.currentTemp) ? Math.round(caps.currentTemp * 2) / 2 : 21);
+    const next = Math.max(caps.minTemp, Math.min(caps.maxTemp, Math.round((cur + deltaSteps * caps.step) * 10) / 10));
+    commitHomeClimateTargetTemp(next);
+}
+
+function onHomeClimateTempInput(rawVal) {
+    const temp = Number(rawVal);
+    if (!Number.isFinite(temp)) return;
+    setElText('homeClimateModalTargetDisplay', formatClimateTempDe(temp));
+    setElText('homeClimateModalTargetTempKpi', formatClimateTempDe(temp));
+}
+
+function commitHomeClimateTargetTemp(rawVal) {
+    const item = getActiveHomeClimateDevice();
+    if (!item || !item.entityId) return;
+    const caps = getClimateCapabilities(item.entityId);
+    const temp = Math.max(caps.minTemp, Math.min(caps.maxTemp, Math.round(Number(rawVal) * 10) / 10));
+    if (!Number.isFinite(temp)) return;
+    callHaClimateService(item.entityId, 'set_temperature', { temperature: temp }, {
+        attributes: { temperature: temp }
+    });
+}
+
+function applyHomeClimateHvacMode(mode) {
+    const item = getActiveHomeClimateDevice();
+    if (!item || !item.entityId) return;
+    const cleanMode = String(mode || '').trim().toLowerCase();
+    if (!cleanMode) return;
+    callHaClimateService(item.entityId, 'set_hvac_mode', { hvac_mode: cleanMode }, {
+        state: cleanMode
+    });
+}
+
+function applyHomeClimateFanMode(mode) {
+    const item = getActiveHomeClimateDevice();
+    if (!item || !item.entityId) return;
+    const fm = String(mode || '').trim();
+    if (!fm) return;
+    callHaClimateService(item.entityId, 'set_fan_mode', { fan_mode: fm }, {
+        attributes: { fan_mode: fm }
+    });
+}
+
+function applyHomeClimateSwingMode(mode) {
+    const item = getActiveHomeClimateDevice();
+    if (!item || !item.entityId) return;
+    const sm = String(mode || '').trim();
+    if (!sm) return;
+    callHaClimateService(item.entityId, 'set_swing_mode', { swing_mode: sm }, {
+        attributes: { swing_mode: sm }
+    });
+}
+
+function applyHomeClimatePresetMode(mode) {
+    const item = getActiveHomeClimateDevice();
+    if (!item || !item.entityId) return;
+    const pm = String(mode || '').trim();
+    if (!pm) return;
+    callHaClimateService(item.entityId, 'set_preset_mode', { preset_mode: pm }, {
+        attributes: { preset_mode: pm }
+    });
+}
+
+// ============================================================================
+// 12B. HA-TAB "KLIMA" — OPT-IN EDITOR FÜR KLIMAGERÄTE (climate.*)
+// ============================================================================
+
+function renderHaHomeClimateDevicesEditor() {
+    const container = document.getElementById('haHomeClimateDevicesMappingContainer');
+    const badge = document.getElementById('haHomeClimateDevicesActiveCountBadge');
+    const list = ensureDefaultHomeClimateDevicesArray();
+    if (badge) badge.innerText = `${list.length} gewählt`;
+    if (!container) return;
+
+    if (list.length === 0) {
+        container.innerHTML = `
+            <div class="p-3.5 rounded-xl bg-white dark:bg-slate-900 border border-dashed border-slate-300 dark:border-slate-700 text-xs text-slate-500 dark:text-slate-400">
+                Noch keine Thermostate oder Klimaanlagen ausgewählt. Klicke oben auf <strong>„Aus HA laden“</strong> und wähle gezielt deine <code>climate.*</code>-Geräte aus.
+            </div>`;
+        return;
+    }
+
+    container.innerHTML = list.map((item, idx) => {
+        const curIcon = sanitizeHomeClimateIcon(item.icon, item.entityId, item.name);
+        const caps = getClimateCapabilities(item.entityId);
+        const capTags = [];
+        if (caps.hvacModes.includes('heat')) capTags.push('Heizen');
+        if (caps.hvacModes.includes('cool')) capTags.push('Kühlen');
+        if (caps.fanModes.length > 0) capTags.push('Lüfter');
+        if (caps.swingModes.length > 0) capTags.push('Swing');
+        if (caps.presetModes.length > 0) capTags.push('Presets');
+
+        return `
+        <div class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-7 h-7 rounded-lg bg-teal-500/15 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                        <span class="material-symbols-rounded text-base">${escapeHtml(curIcon)}</span>
+                    </span>
+                    <span class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">${escapeHtml(item.name || `Klimagerät ${idx + 1}`)}</span>
+                    ${capTags.length > 0 ? `<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">${escapeHtml(capTags.join(' · '))}</span>` : ''}
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button type="button" onclick="moveHaHomeClimateDevice(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Nach vorne">
+                        <span class="material-symbols-rounded text-sm">arrow_upward</span>
+                    </button>
+                    <button type="button" onclick="moveHaHomeClimateDevice(${idx}, 1)" ${idx === list.length - 1 ? 'disabled' : ''} class="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 text-slate-600 dark:text-slate-300 flex items-center justify-center cursor-pointer" title="Nach hinten">
+                        <span class="material-symbols-rounded text-sm">arrow_downward</span>
+                    </button>
+                    <button type="button" onclick="removeHaHomeClimateDevice(${idx})" class="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center cursor-pointer" title="Entfernen">
+                        <span class="material-symbols-rounded text-sm">delete</span>
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                <div class="sm:col-span-4">
+                    <label class="block text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Anzeigename</label>
+                    <input type="text" value="${escapeHtml(item.name || '')}" onchange="updateHaHomeClimateDeviceField(${idx}, 'name', this.value)"
+                        placeholder="z. B. Wohnzimmer Klima" class="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+                </div>
+                <div class="sm:col-span-3">
+                    <label class="block text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Symbol</label>
+                    <select onchange="updateHaHomeClimateDeviceField(${idx}, 'icon', this.value); renderHaHomeClimateDevicesEditor();"
+                        class="w-full text-xs px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+                        ${HOME_CLIMATE_ICON_OPTIONS.map(opt => `<option value="${opt.icon}" ${curIcon === opt.icon ? 'selected' : ''}>${escapeHtml(opt.label)}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="sm:col-span-5">
+                    <label class="block text-[10.5px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">HA-Entität (climate.*)</label>
+                    <div class="flex items-center gap-1">
+                        <input type="text" value="${escapeHtml(item.entityId || '')}" onchange="updateHaHomeClimateDeviceField(${idx}, 'entityId', this.value)"
+                            placeholder="climate.wohnzimmer" class="flex-1 min-w-0 font-mono text-[11px] px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-950">
+                        <button type="button" onclick="openHaEntityPicker({ customType: 'climateEntity', index: ${idx}, title: 'Klimagerät (climate.*)', unitFilter: 'climate' })"
+                            class="w-8 h-8 rounded-lg bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/35 text-teal-700 dark:text-teal-300 flex items-center justify-center shrink-0 cursor-pointer" title="Aus HA wählen">
+                            <span class="material-symbols-rounded text-base">list_alt</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function addHaHomeClimateDeviceManual() {
+    const list = ensureDefaultHomeClimateDevicesArray();
+    list.push({
+        id: `clim_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        name: `Klimagerät ${list.length + 1}`,
+        entityId: '',
+        icon: 'thermostat'
+    });
+    renderHaHomeClimateDevicesEditor();
+    renderHomeClimateControlsSection();
+}
+
+function updateHaHomeClimateDeviceField(idx, field, val) {
+    const list = ensureDefaultHomeClimateDevicesArray();
+    if (!list[idx]) return;
+    list[idx][field] = typeof val === 'string' ? val.trim() : val;
+    renderHomeClimateControlsSection();
+}
+
+function moveHaHomeClimateDevice(idx, delta) {
+    const list = ensureDefaultHomeClimateDevicesArray();
+    const target = idx + delta;
+    if (target < 0 || target >= list.length) return;
+    const tmp = list[idx];
+    list[idx] = list[target];
+    list[target] = tmp;
+    renderHaHomeClimateDevicesEditor();
+    renderHomeClimateControlsSection();
+}
+
+function removeHaHomeClimateDevice(idx) {
+    const list = ensureDefaultHomeClimateDevicesArray();
+    list.splice(idx, 1);
+    renderHaHomeClimateDevicesEditor();
+    renderHaAvailableClimateDevicesPickerList();
+    renderHomeClimateControlsSection();
+}
+
+function onHaClimatePickerSearchInput(val) {
+    haClimatePickerSearchQuery = String(val || '').trim().toLowerCase();
+    renderHaAvailableClimateDevicesPickerList();
+}
+
+async function loadAvailableHaClimateDevicesIntoPicker(showFeedback = true) {
+    readHaModalIntoState();
+    const listEl = document.getElementById('haAvailableClimatePickerList');
+    if (listEl) {
+        listEl.innerHTML = `<div class="col-span-full py-3 text-center text-xs text-slate-500 dark:text-slate-400 flex items-center justify-center gap-2"><span class="material-symbols-rounded text-base animate-spin text-teal-500">progress_activity</span><span>Lade Thermostate &amp; Klimaanlagen aus Home Assistant…</span></div>`;
+    }
+
+    const directRes = await fetchHaDirectFromBrowser(haConfigState.baseUrl, haConfigState.accessToken, '/api/states');
+    if (directRes.ok && Array.isArray(directRes.data)) {
+        directRes.data.forEach(s => {
+            if (s && s.entity_id) homeHaStatesCache.set(s.entity_id, s);
+        });
+        const tplDeviceMap = await fetchHaTemplateDeviceMapInBrowser(haConfigState.baseUrl, haConfigState.accessToken);
+        discoveredHaSensors = buildEnrichedSensorList(directRes.data, tplDeviceMap);
+        updateHaEntitiesDatalistElement();
+        renderHaHomeClimateDevicesEditor();
+        renderHaAvailableClimateDevicesPickerList();
+        renderHomeClimateControlsSection();
+        if (showFeedback && typeof showToastNotification === 'function') {
+            const count = directRes.data.filter(s => s && typeof s.entity_id === 'string' && s.entity_id.startsWith('climate.')).length;
+            showToastNotification(`${count} Klimageräte / Thermostate gefunden — wähle nur die gewünschten aus.`, 'success');
+        }
+        return;
+    }
+
+    // Backend proxy fallback via /api/ha/test
+    const testRes = await safeFetchBackendJson('/api/ha/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: haConfigState.baseUrl, accessToken: haConfigState.accessToken })
+    });
+    if (testRes.ok && testRes.data && testRes.data.success && Array.isArray(testRes.data.sensors)) {
+        testRes.data.sensors.forEach(s => {
+            if (s && s.entity_id && s.entity_id.startsWith('climate.')) {
+                homeHaStatesCache.set(s.entity_id, {
+                    entity_id: s.entity_id,
+                    state: s.state,
+                    attributes: {
+                        friendly_name: s.name,
+                        hvac_modes: s.hvac_modes,
+                        hvac_action: s.hvac_action,
+                        current_temperature: s.current_temperature,
+                        temperature: s.temperature,
+                        min_temp: s.min_temp,
+                        max_temp: s.max_temp,
+                        target_temp_step: s.target_temp_step,
+                        fan_mode: s.fan_mode,
+                        fan_modes: s.fan_modes,
+                        swing_mode: s.swing_mode,
+                        swing_modes: s.swing_modes,
+                        preset_mode: s.preset_mode,
+                        preset_modes: s.preset_modes,
+                        current_humidity: s.current_humidity
+                    }
+                });
+            }
+        });
+        renderHaHomeClimateDevicesEditor();
+        renderHaAvailableClimateDevicesPickerList();
+        renderHomeClimateControlsSection();
+        if (showFeedback && typeof showToastNotification === 'function') {
+            showToastNotification('Verfügbare Thermostate & Klimaanlagen geladen — wähle nur die gewünschten aus.', 'success');
+        }
+    } else {
+        renderHaAvailableClimateDevicesPickerList();
+        if (showFeedback && typeof showToastNotification === 'function') {
+            showToastNotification('Konnte climate.* Entitäten nicht laden — bitte HA-Verbindung prüfen.', 'error');
+        }
+    }
+}
+
+function toggleOptInHaClimateEntity(entityId) {
+    const cleanId = String(entityId || '').trim();
+    if (!cleanId.startsWith('climate.')) return;
+    const list = ensureDefaultHomeClimateDevicesArray();
+    const existingIdx = list.findIndex(d => String(d.entityId || '').trim() === cleanId);
+    if (existingIdx >= 0) {
+        list.splice(existingIdx, 1);
+    } else {
+        const stObj = homeHaStatesCache.get(cleanId);
+        const friendly = String(stObj?.attributes?.friendly_name || cleanId.replace(/^climate\./, '').replace(/_/g, ' ')).trim();
+        list.push({
+            id: `clim_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            name: friendly,
+            entityId: cleanId,
+            icon: inferDefaultClimateIcon(cleanId, friendly)
+        });
+    }
+    try {
+        localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+    } catch (e) {}
+    renderHaHomeClimateDevicesEditor();
+    renderHaAvailableClimateDevicesPickerList();
+    renderHomeClimateControlsSection();
+}
+
+function renderHaAvailableClimateDevicesPickerList() {
+    const listEl = document.getElementById('haAvailableClimatePickerList');
+    if (!listEl) return;
+
+    const selectedSet = new Set(ensureDefaultHomeClimateDevicesArray().map(d => String(d.entityId || '').trim()));
+    const candidates = [];
+    homeHaStatesCache.forEach((stObj, entId) => {
+        if (!entId || !entId.startsWith('climate.')) return;
+        const friendly = String(stObj?.attributes?.friendly_name || entId).trim();
+        if (haClimatePickerSearchQuery) {
+            const hay = `${entId} ${friendly}`.toLowerCase();
+            if (!hay.includes(haClimatePickerSearchQuery)) return;
+        }
+        candidates.push({ entId, friendly, stObj });
+    });
+
+    candidates.sort((a, b) => a.friendly.localeCompare(b.friendly, 'de'));
+
+    if (candidates.length === 0) {
+        listEl.innerHTML = `<div class="col-span-full py-3 text-center text-xs text-slate-500 dark:text-slate-400">
+            ${homeHaStatesCache.size === 0
+                ? 'Noch keine HA-Entitäten geladen. Klicke oben auf <strong>„Aus HA laden“</strong>.'
+                : 'Keine passenden <code>climate.*</code>-Entitäten gefunden.'}
+        </div>`;
+        return;
+    }
+
+    listEl.innerHTML = candidates.map(({ entId, friendly, stObj }) => {
+        const isSelected = selectedSet.has(entId);
+        const caps = getClimateCapabilities(entId, stObj);
+        const modeMeta = getClimateHvacMeta(caps.state);
+        const safeIdJs = entId.replace(/'/g, "\\'");
+        const tempInfo = Number.isFinite(caps.currentTemp)
+            ? `${caps.currentTemp.toFixed(1)}°C${Number.isFinite(caps.targetTemp) ? ` → ${caps.targetTemp.toFixed(1)}°C` : ''}`
+            : modeMeta.shortLabel;
+
+        return `
+        <div class="p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+            isSelected
+                ? 'bg-teal-500/10 border-teal-500/40'
+                : 'bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800'
+        }">
+            <div class="min-w-0">
+                <p class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHtml(friendly)}</p>
+                <div class="flex items-center gap-1.5 mt-0.5 text-[10.5px] text-slate-500 dark:text-slate-400">
+                    <span class="font-mono truncate">${escapeHtml(entId)}</span>
+                    <span class="shrink-0 font-semibold text-teal-700 dark:text-teal-300">· ${escapeHtml(tempInfo)}</span>
+                </div>
+            </div>
+            <button type="button" onclick="toggleOptInHaClimateEntity('${safeIdJs}')"
+                class="px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-all ${
+                    isSelected
+                        ? 'bg-teal-600 text-white hover:bg-rose-600'
+                        : 'bg-white dark:bg-slate-800 hover:bg-teal-600 hover:text-white text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                }">
+                <span class="material-symbols-rounded text-sm">${isSelected ? 'check' : 'add'}</span>
+                <span>${isSelected ? 'Ausgewählt' : 'Hinzufügen'}</span>
+            </button>
+        </div>`;
+    }).join('');
+}
+
 window.renderHaHomeCamerasEditor = renderHaHomeCamerasEditor;
 window.addHaHomeCamera = addHaHomeCamera;
 window.updateHaHomeCameraField = updateHaHomeCameraField;
@@ -17612,6 +18643,31 @@ window.onHaLightsPickerSearchInput = onHaLightsPickerSearchInput;
 window.loadAvailableHaLightsIntoPicker = loadAvailableHaLightsIntoPicker;
 window.toggleOptInHaLightEntity = toggleOptInHaLightEntity;
 window.renderHaAvailableLightsPickerList = renderHaAvailableLightsPickerList;
+window.getClimateCapabilities = getClimateCapabilities;
+window.sanitizeHomeClimateIcon = sanitizeHomeClimateIcon;
+window.inferDefaultClimateIcon = inferDefaultClimateIcon;
+window.ensureDefaultHomeClimateDevicesArray = ensureDefaultHomeClimateDevicesArray;
+window.renderHomeClimateControlsSection = renderHomeClimateControlsSection;
+window.openHomeClimateControlModal = openHomeClimateControlModal;
+window.closeHomeClimateControlModal = closeHomeClimateControlModal;
+window.syncOpenHomeClimateControlModal = syncOpenHomeClimateControlModal;
+window.callHaClimateService = callHaClimateService;
+window.stepActiveHomeClimateTargetTemp = stepActiveHomeClimateTargetTemp;
+window.onHomeClimateTempInput = onHomeClimateTempInput;
+window.commitHomeClimateTargetTemp = commitHomeClimateTargetTemp;
+window.applyHomeClimateHvacMode = applyHomeClimateHvacMode;
+window.applyHomeClimateFanMode = applyHomeClimateFanMode;
+window.applyHomeClimateSwingMode = applyHomeClimateSwingMode;
+window.applyHomeClimatePresetMode = applyHomeClimatePresetMode;
+window.renderHaHomeClimateDevicesEditor = renderHaHomeClimateDevicesEditor;
+window.addHaHomeClimateDeviceManual = addHaHomeClimateDeviceManual;
+window.updateHaHomeClimateDeviceField = updateHaHomeClimateDeviceField;
+window.moveHaHomeClimateDevice = moveHaHomeClimateDevice;
+window.removeHaHomeClimateDevice = removeHaHomeClimateDevice;
+window.onHaClimatePickerSearchInput = onHaClimatePickerSearchInput;
+window.loadAvailableHaClimateDevicesIntoPicker = loadAvailableHaClimateDevicesIntoPicker;
+window.toggleOptInHaClimateEntity = toggleOptInHaClimateEntity;
+window.renderHaAvailableClimateDevicesPickerList = renderHaAvailableClimateDevicesPickerList;
 window.getDailyPvgisSollForMonth = getDailyPvgisSollForMonth;
 window.getHourlyPvgisSollForDate = getHourlyPvgisSollForDate;
 

@@ -4,7 +4,7 @@
 > **DIESE GUIDELINES MÜSSEN BEI JEDER AUFGABE UND VOR JEDER CODE-MODIFIKATION ZUERST VOLLSTÄNDIG GELESEN WERDEN.**  
 > Sie definieren die verbindliche Projekt-Governance, Modularisierung, Code-Standards und den Release-Prozess.
 
-**Aktuelle Version:** 13.6 (Verifizierte Material-Symbols-Rounded-Icons für Licht & Schalter mit automatischer Selbstheilung gespeicherter Einträge, bündige 4er-Kachelbreite mit Overflow-Schutz & sauberer Überschriften-Abstand)  
+**Aktuelle Version:** 13.7 (Überarbeitete 3er-Raumklima-Leiste, neue 2er-Klimasteuerung für Thermostate & Klimaanlagen mit sicherem Steuer-Popup sowie einheitlicher Popup-Stil-Umschalter im Design-Studio)  
 **Repository:** `https://github.com/magic8383/PVPro.git`  
 **Standard-Branch:** `main` (Production) | `New` (Feature / Refactor Staging)
 

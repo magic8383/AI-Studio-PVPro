@@ -1,8 +1,8 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.6)
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.7)
 // Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '13.6';
+const APP_VERSION = '13.7';
 const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
 const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
 const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);
@@ -67,6 +67,7 @@ function createDefaultHaConfigSchema() {
         monitoredDevices: [],
         homeCameras: [],
         homeLights: [],
+        homeClimateDevices: [],
         customStrings: [],
         customConsumers: []
     };
@@ -118,6 +119,11 @@ function normalizeHaConfigSchema(incoming = {}, current = null, options = {}) {
             : (Array.isArray(src.homeLights) && (src.homeLights.length > 0 || !Array.isArray(base.homeLights) || base.homeLights.length === 0)
                 ? cloneArr(src.homeLights, [])
                 : cloneArr(base.homeLights, [])),
+        homeClimateDevices: options.allowEmptyArrays
+            ? cloneArr(src.homeClimateDevices, base.homeClimateDevices)
+            : (Array.isArray(src.homeClimateDevices) && (src.homeClimateDevices.length > 0 || !Array.isArray(base.homeClimateDevices) || base.homeClimateDevices.length === 0)
+                ? cloneArr(src.homeClimateDevices, [])
+                : cloneArr(base.homeClimateDevices, [])),
         customStrings: options.allowEmptyArrays
             ? cloneArr(src.customStrings, base.customStrings)
             : cloneNonEmptyArr(src.customStrings, base.customStrings || def.customStrings),
@@ -184,7 +190,8 @@ const DEFAULT_THEME = {
     preset: 'turquoise',   // 'turquoise' | 'emerald' | 'cyber-sky' | 'indigo' | 'amber' | 'coral' | 'lime' | 'custom'
     fontFamily: 'Plus Jakarta Sans', // 'Plus Jakarta Sans' | 'Outfit' | 'DM Sans' | 'Manrope'
     fontScale: 'normal',   // 'compact' | 'normal' | 'large' | 'xlarge'
-    density: 'normal'      // 'compact' | 'normal' | 'spacious'
+    density: 'normal',     // 'compact' | 'normal' | 'spacious'
+    popupStyle: 'sheet'    // 'sheet' (Bottom-Sheet mobil, Standard) | 'centered' (mittig zentriert)
 };
 
 function readJsonStorage(key, fallback) {
@@ -213,7 +220,8 @@ function getThemeSettings() {
         preset: stored.preset || DEFAULT_THEME.preset,
         fontFamily: ['Plus Jakarta Sans', 'Outfit', 'DM Sans', 'Manrope'].includes(stored.fontFamily) ? stored.fontFamily : DEFAULT_THEME.fontFamily,
         fontScale: ['compact', 'normal', 'large', 'xlarge'].includes(stored.fontScale) ? stored.fontScale : DEFAULT_THEME.fontScale,
-        density: ['compact', 'normal', 'spacious'].includes(stored.density) ? stored.density : DEFAULT_THEME.density
+        density: ['compact', 'normal', 'spacious'].includes(stored.density) ? stored.density : DEFAULT_THEME.density,
+        popupStyle: ['sheet', 'centered'].includes(stored.popupStyle) ? stored.popupStyle : DEFAULT_THEME.popupStyle
     };
 }
 
@@ -3283,6 +3291,15 @@ function getTopmostOpenModalEntry() {
             }
         };
     }
+    if (isVisible('modal-home-climate-control')) {
+        return {
+            id: 'modal-home-climate-control',
+            close: () => {
+                if (typeof closeHomeClimateControlModal === 'function') closeHomeClimateControlModal();
+                else document.getElementById('modal-home-climate-control')?.classList.add('hidden');
+            }
+        };
+    }
     if (isVisible('modal-home-light-control')) {
         return {
             id: 'modal-home-light-control',
@@ -3408,6 +3425,10 @@ function closeAllTransientOverlaysOnBack() {
         const climateModal = document.getElementById('modal-climate-curve');
         if (climateModal && !climateModal.classList.contains('hidden') && typeof closeClimateHistoryModal === 'function') {
             closeClimateHistoryModal();
+        }
+        const climateCtrlModal = document.getElementById('modal-home-climate-control');
+        if (climateCtrlModal && !climateCtrlModal.classList.contains('hidden') && typeof closeHomeClimateControlModal === 'function') {
+            closeHomeClimateControlModal();
         }
         const lightModal = document.getElementById('modal-home-light-control');
         if (lightModal && !lightModal.classList.contains('hidden') && typeof closeHomeLightControlModal === 'function') {
@@ -7843,6 +7864,8 @@ function applyThemeSettingsObj(themeObj) {
     // Preserve classic Liquid-Glass standard theme with calm, understated pastel background
     html.setAttribute('data-design-style', 'liquid-glass');
     html.setAttribute('data-ui-density', 'normal');
+    const resolvedPopupStyle = t.popupStyle === 'centered' ? 'centered' : 'sheet';
+    html.setAttribute('data-popup-style', resolvedPopupStyle);
     const fontName = ['Plus Jakarta Sans', 'Outfit', 'Manrope'].includes(t.fontFamily)
         ? t.fontFamily
         : 'Plus Jakarta Sans';
@@ -7998,6 +8021,47 @@ function applyThemeSettingsObj(themeObj) {
         }
         html.dark body .consumer-progress-fill-idle {
             background: linear-gradient(90deg, rgba(${tintRgb}, 0.17) 0%, rgba(51, 65, 85, 0.22) 72%, transparent 100%) !important;
+        }
+
+        /* Unified Home Popup Style (V13.7: Bottom-Sheet default vs. Centered toggle in Design Studio) */
+        html[data-popup-style="sheet"] .pvpro-home-popup-backdrop {
+            align-items: flex-end !important;
+            padding: 0 !important;
+        }
+        html[data-popup-style="sheet"] .pvpro-home-popup-card {
+            border-radius: 28px 28px 0 0 !important;
+            max-height: 90dvh !important;
+        }
+        html[data-popup-style="sheet"] .pvpro-home-popup-handle {
+            display: flex !important;
+        }
+        @media (min-width: 640px) {
+            html[data-popup-style="sheet"] .pvpro-home-popup-backdrop {
+                align-items: center !important;
+                padding: 1.25rem !important;
+            }
+            html[data-popup-style="sheet"] .pvpro-home-popup-card {
+                border-radius: 28px !important;
+            }
+            html[data-popup-style="sheet"] .pvpro-home-popup-handle {
+                display: none !important;
+            }
+        }
+        html[data-popup-style="centered"] .pvpro-home-popup-backdrop {
+            align-items: center !important;
+            padding: 0.75rem !important;
+        }
+        @media (min-width: 640px) {
+            html[data-popup-style="centered"] .pvpro-home-popup-backdrop {
+                padding: 1.5rem !important;
+            }
+        }
+        html[data-popup-style="centered"] .pvpro-home-popup-card {
+            border-radius: 28px !important;
+            max-height: 88dvh !important;
+        }
+        html[data-popup-style="centered"] .pvpro-home-popup-handle {
+            display: none !important;
         }
     `;
 
@@ -8221,6 +8285,49 @@ function renderDesignStudioModalContent() {
                         <input type="color" value="${t.accent}" onchange="updateThemeColors(null, this.value)" class="w-7 h-7 rounded-lg cursor-pointer border-0 bg-transparent">
                     </label>
                 </div>
+            </div>
+        </div>
+
+        <!-- 5. Einheitlicher Popup-Stil (Startseite · Raumklima, Klimasteuerung & Lichtschalter) -->
+        <div class="space-y-2.5">
+            <h4 class="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                <span class="material-symbols-rounded text-lg text-teal-600 dark:text-teal-400">layers</span>
+                <span>5. Popup-Stil (Startseite · Mobil)</span>
+            </h4>
+            <p class="text-xs text-slate-500 dark:text-slate-400 -mt-1">
+                Steuert einheitlich alle Startseiten-Popups (Raumklima-Verlauf, Klimasteuerung &amp; Lichtschalter).
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <button type="button" onclick="setDesignStudioSetting({ popupStyle: 'sheet' })"
+                    class="p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                        (t.popupStyle || 'sheet') === 'sheet'
+                            ? 'border-2 border-teal-600 dark:border-teal-400 bg-teal-500/12 text-slate-900 dark:text-white shadow-2xs'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-teal-500/40'
+                    }">
+                    <span class="material-symbols-rounded text-xl text-teal-600 dark:text-teal-400 shrink-0 mt-0.5">vertical_align_bottom</span>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <p class="text-sm font-bold">Bottom-Sheet</p>
+                            ${(t.popupStyle || 'sheet') === 'sheet' ? '<span class="text-[11px] font-bold text-teal-600 dark:text-teal-400">✓ Aktiv</span>' : ''}
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Öffnet modern von unten (Standard · optimal einhändig)</p>
+                    </div>
+                </button>
+                <button type="button" onclick="setDesignStudioSetting({ popupStyle: 'centered' })"
+                    class="p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex items-start gap-3 ${
+                        t.popupStyle === 'centered'
+                            ? 'border-2 border-teal-600 dark:border-teal-400 bg-teal-500/12 text-slate-900 dark:text-white shadow-2xs'
+                            : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-slate-700 dark:text-slate-300 hover:border-teal-500/40'
+                    }">
+                    <span class="material-symbols-rounded text-xl text-teal-600 dark:text-teal-400 shrink-0 mt-0.5">center_focus_strong</span>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <p class="text-sm font-bold">Zentriert</p>
+                            ${t.popupStyle === 'centered' ? '<span class="text-[11px] font-bold text-teal-600 dark:text-teal-400">✓ Aktiv</span>' : ''}
+                        </div>
+                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Öffnet mittig als klassisches Dialogfenster</p>
+                    </div>
+                </button>
             </div>
         </div>
     `;

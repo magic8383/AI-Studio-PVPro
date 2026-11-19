@@ -4,6 +4,22 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.7] – 2026-11-19
+
+### ✨ Überarbeitete Klima-Kacheln (3er-Sensoren + 2er-Klimasteuerung) & einheitlicher Popup-Stil
+
+* **Zeile 1 – Raumklima-Sensoren als wischbare 3er-Leiste (`index.html`, `telemetry.js`):**
+  - Umbau von `#homeCustomWeatherGrid` auf eine horizontale Snap-Scroll-Leiste mit exakt **3 sichtbaren Sensor-Kacheln** (`w-[calc((100%-16px)/3)] sm:w-[calc((100%-20px)/3)] min-w-0 overflow-hidden`) inkl. geklippter Icon-Box, Temperatur, Luftfeuchte, Min/Max und *„Wischen >“*-Hinweis bei mehr als 3 Räumen.
+* **Zeile 2 – Neue Klimasteuerung für Smart Thermostate & Klimaanlagen (`index.html`, `telemetry.js`, `server.js`):**
+  - Neue 2er-Leiste (`#homeClimateControlsGrid`, `w-[calc((100%-8px)/2)] sm:w-[calc((100%-10px)/2)]`, horizontal wischbar) direkt unterhalb der Raum-Sensoren mit Ist- → Soll-Temperatur, Modus-Badge, Aktivitätsanzeige und farblichem Modus-Akzent (*Heizen* Orange, *Kühlen* Blau, *Auto* Türkis, *Entfeuchten* Indigo, *Lüften* Smaragd, *Aus* neutral).
+  - **Sicheres Steuer-Popup (`#modal-home-climate-control`):** Kein Direkt-Schalten beim Scrollen – Tippen öffnet das moderne Steuer-Popup mit Soll-Temperatur (`−/+` Tasten + Slider gemäß `min_temp`/`max_temp`/`target_temp_step`), Betriebsmodus (`hvac_modes`) sowie dynamischen Bereichen für **Lüfterstufe (`fan_modes`)**, **Swing (`swing_modes`)** und **Presets (`preset_modes`)** – inkl. Android-Zurück-Wischgeste.
+  - **Strenges Opt-In im HA-Tab „Klima“ & Backend-Whitelist (`server.js`):** Manuelle Auswahl von `climate.*`-Entitäten im Tab `#ha-modal-panel-climate` (`haConfigState.homeClimateDevices`), Live-Auslieferung via `climateTelemetry` in `/api/ha/live` sowie abgesicherte `climate.*`-Services (`set_hvac_mode`, `set_temperature`, `set_fan_mode`, `set_swing_mode`, `set_preset_mode`, `turn_on`, `turn_off`) in `POST /api/ha/service`.
+* **Einheitlicher Popup-Stil & Umschalter im Design-Studio (`app.js`, `index.html`):**
+  - Alle drei Startseiten-Popups (*Raumklima-Verlauf* `#modal-climate-curve`, *Klimasteuerung* `#modal-home-climate-control` und *Licht & Schalter* `#modal-home-light-control`) teilen jetzt ein einheitliches Design inkl. Bottom-Sheet-Griffbalken.
+  - Neuer 2-Wege-Umschalter im **Design- & Darstellungs-Studio** (*„5. Popup-Stil (Startseite · Mobil)“*): **Bottom-Sheet (Standard)** oder **Zentriert**, persistent gespeichert über `pvpro_theme.popupStyle`.
+
+---
+
 ## [Version 13.6] – 2026-11-19
 
 ### 🛠️ Symbol-Fix für „Licht & Schalter“, automatische Icon-Selbstheilung & bündige 4er-Kachelbreite

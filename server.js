@@ -16,7 +16,7 @@ const nginxPort = Number(process.env.NGINX_PORT);
 const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
 const PORT = (!rawPort || (nginxPort && rawPort === nginxPort)) ? defaultAppPort : rawPort;
 const HOST = '0.0.0.0';
-const APP_VERSION = '13.6';
+const APP_VERSION = '13.7';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -692,7 +692,8 @@ function createDefaultHaConfig() {
     customWeatherSensors: [],
     monitoredDevices: [],
     homeCameras: [],
-    homeLights: []
+    homeLights: [],
+    homeClimateDevices: []
   };
 }
 
@@ -722,7 +723,8 @@ function loadHaConfig() {
         customWeatherSensors: Array.isArray(parsed.customWeatherSensors) ? parsed.customWeatherSensors : [],
         monitoredDevices: Array.isArray(parsed.monitoredDevices) ? parsed.monitoredDevices : [],
         homeCameras: Array.isArray(parsed.homeCameras) ? parsed.homeCameras : [],
-        homeLights: Array.isArray(parsed.homeLights) ? parsed.homeLights : []
+        homeLights: Array.isArray(parsed.homeLights) ? parsed.homeLights : [],
+        homeClimateDevices: Array.isArray(parsed.homeClimateDevices) ? parsed.homeClimateDevices : []
       };
     }
   } catch (err) {
@@ -926,6 +928,7 @@ app.post('/api/ha/config', (req, res) => {
       monitoredDevices: Array.isArray(incoming.monitoredDevices) ? incoming.monitoredDevices : (current.monitoredDevices || []),
       homeCameras: Array.isArray(incoming.homeCameras) ? incoming.homeCameras : (current.homeCameras || []),
       homeLights: Array.isArray(incoming.homeLights) ? incoming.homeLights : (current.homeLights || []),
+      homeClimateDevices: Array.isArray(incoming.homeClimateDevices) ? incoming.homeClimateDevices : (current.homeClimateDevices || []),
       updatedAt: new Date().toISOString()
     };
     saveHaConfig(merged);
@@ -1029,7 +1032,8 @@ app.post('/api/ha/test', async (req, res) => {
         s.entity_id.startsWith('number.') ||
         s.entity_id.startsWith('input_number.') ||
         s.entity_id.startsWith('light.') ||
-        s.entity_id.startsWith('switch.')
+        s.entity_id.startsWith('switch.') ||
+        s.entity_id.startsWith('climate.')
       ))
       .map(s => ({
         entity_id: s.entity_id,
@@ -1042,7 +1046,21 @@ app.post('/api/ha/test', async (req, res) => {
         color_temp_kelvin: s.attributes?.color_temp_kelvin,
         min_color_temp_kelvin: s.attributes?.min_color_temp_kelvin,
         max_color_temp_kelvin: s.attributes?.max_color_temp_kelvin,
-        rgb_color: Array.isArray(s.attributes?.rgb_color) ? s.attributes.rgb_color : undefined
+        rgb_color: Array.isArray(s.attributes?.rgb_color) ? s.attributes.rgb_color : undefined,
+        hvac_modes: Array.isArray(s.attributes?.hvac_modes) ? s.attributes.hvac_modes : undefined,
+        hvac_action: s.attributes?.hvac_action || undefined,
+        current_temperature: s.attributes?.current_temperature,
+        temperature: s.attributes?.temperature,
+        min_temp: s.attributes?.min_temp,
+        max_temp: s.attributes?.max_temp,
+        target_temp_step: s.attributes?.target_temp_step,
+        fan_mode: s.attributes?.fan_mode || undefined,
+        fan_modes: Array.isArray(s.attributes?.fan_modes) ? s.attributes.fan_modes : undefined,
+        swing_mode: s.attributes?.swing_mode || undefined,
+        swing_modes: Array.isArray(s.attributes?.swing_modes) ? s.attributes.swing_modes : undefined,
+        preset_mode: s.attributes?.preset_mode || undefined,
+        preset_modes: Array.isArray(s.attributes?.preset_modes) ? s.attributes.preset_modes : undefined,
+        current_humidity: s.attributes?.current_humidity
       }));
 
     res.json({
@@ -1296,6 +1314,43 @@ app.all('/api/ha/states', async (req, res) => {
       };
     });
 
+    // Map explicitly configured homeClimateDevices (climate.* — strict opt-in only)
+    const homeClimateList = Array.isArray(cfg.homeClimateDevices) ? cfg.homeClimateDevices : [];
+    const climateTelemetry = {};
+    homeClimateList.forEach(item => {
+      const entId = String(item?.entityId || '').trim();
+      if (!entId || !entId.startsWith('climate.')) return;
+      const stObj = stateMap.get(entId);
+      if (!stObj) return;
+      const attrs = stObj.attributes || {};
+      climateTelemetry[entId] = {
+        entity_id: entId,
+        state: stObj.state,
+        last_changed: stObj.last_changed || null,
+        last_updated: stObj.last_updated || null,
+        attributes: {
+          friendly_name: attrs.friendly_name || '',
+          hvac_modes: Array.isArray(attrs.hvac_modes) ? attrs.hvac_modes : undefined,
+          hvac_action: attrs.hvac_action || undefined,
+          current_temperature: attrs.current_temperature,
+          temperature: attrs.temperature,
+          target_temp_high: attrs.target_temp_high,
+          target_temp_low: attrs.target_temp_low,
+          min_temp: attrs.min_temp,
+          max_temp: attrs.max_temp,
+          target_temp_step: attrs.target_temp_step,
+          fan_mode: attrs.fan_mode || undefined,
+          fan_modes: Array.isArray(attrs.fan_modes) ? attrs.fan_modes : undefined,
+          swing_mode: attrs.swing_mode || undefined,
+          swing_modes: Array.isArray(attrs.swing_modes) ? attrs.swing_modes : undefined,
+          preset_mode: attrs.preset_mode || undefined,
+          preset_modes: Array.isArray(attrs.preset_modes) ? attrs.preset_modes : undefined,
+          current_humidity: attrs.current_humidity,
+          supported_features: attrs.supported_features
+        }
+      };
+    });
+
     res.json({
       success: true,
       mode: 'poll',
@@ -1304,7 +1359,8 @@ app.all('/api/ha/states', async (req, res) => {
       stringTelemetry,
       customStringsTelemetry,
       consumersTelemetry,
-      lightsTelemetry
+      lightsTelemetry,
+      climateTelemetry
     });
   } catch (err) {
     res.status(200).json({
@@ -1314,9 +1370,12 @@ app.all('/api/ha/states', async (req, res) => {
   }
 });
 
-// POST /api/ha/service: Whitelisted Home Assistant Light & Switch service proxy (strictly light.* & switch.*)
-const ALLOWED_HA_SERVICE_DOMAINS = new Set(['light', 'switch']);
-const ALLOWED_HA_SERVICES = new Set(['turn_on', 'turn_off', 'toggle']);
+// POST /api/ha/service: Whitelisted Home Assistant Light, Switch & Climate service proxy (strictly light.*, switch.*, climate.*)
+const ALLOWED_HA_SERVICES_BY_DOMAIN = {
+  light: new Set(['turn_on', 'turn_off', 'toggle']),
+  switch: new Set(['turn_on', 'turn_off', 'toggle']),
+  climate: new Set(['set_hvac_mode', 'set_temperature', 'set_fan_mode', 'set_swing_mode', 'set_preset_mode', 'turn_on', 'turn_off'])
+};
 
 app.post('/api/ha/service', async (req, res) => {
   try {
@@ -1330,11 +1389,12 @@ app.post('/api/ha/service', async (req, res) => {
     const rawData = (req.body && typeof req.body.serviceData === 'object' && req.body.serviceData !== null) ? req.body.serviceData : {};
     const entityId = String(req.body?.entityId || rawData.entity_id || '').trim();
 
-    if (!ALLOWED_HA_SERVICE_DOMAINS.has(domain)) {
-      return res.status(400).json({ success: false, error: `Unzulässige Domain "${domain}". Nur light und switch sind erlaubt.` });
+    const allowedForDomain = ALLOWED_HA_SERVICES_BY_DOMAIN[domain];
+    if (!allowedForDomain) {
+      return res.status(400).json({ success: false, error: `Unzulässige Domain "${domain}". Nur light, switch und climate sind erlaubt.` });
     }
-    if (!ALLOWED_HA_SERVICES.has(service)) {
-      return res.status(400).json({ success: false, error: `Unzulässiger Service "${service}". Nur turn_on, turn_off und toggle sind erlaubt.` });
+    if (!allowedForDomain.has(service)) {
+      return res.status(400).json({ success: false, error: `Unzulässiger Service "${service}" für Domain "${domain}".` });
     }
     if (!entityId || !entityId.startsWith(`${domain}.`) || !/^[a-z0-9_]+\.[a-z0-9_]+$/i.test(entityId)) {
       return res.status(400).json({ success: false, error: `Ungültige Entitäts-ID "${entityId}" für Domain "${domain}".` });
@@ -1356,6 +1416,42 @@ app.post('/api/ha/service', async (req, res) => {
       if (Array.isArray(rawData.rgb_color) && rawData.rgb_color.length === 3) {
         const rgb = rawData.rgb_color.map(v => Math.max(0, Math.min(255, Math.round(Number(v)))));
         if (rgb.every(Number.isFinite)) cleanPayload.rgb_color = rgb;
+      }
+    } else if (domain === 'climate') {
+      if (service === 'set_hvac_mode') {
+        const mode = String(rawData.hvac_mode || '').trim().toLowerCase();
+        if (!mode || !/^[a-z0-9_]{1,40}$/.test(mode)) {
+          return res.status(400).json({ success: false, error: `Ungültiger HVAC-Modus "${mode}".` });
+        }
+        cleanPayload.hvac_mode = mode;
+      } else if (service === 'set_temperature') {
+        const temp = Number(rawData.temperature);
+        if (!Number.isFinite(temp)) {
+          return res.status(400).json({ success: false, error: 'Ungültige Soll-Temperatur.' });
+        }
+        cleanPayload.temperature = Math.max(4, Math.min(45, Math.round(temp * 10) / 10));
+        if (rawData.hvac_mode) {
+          const mode = String(rawData.hvac_mode).trim().toLowerCase();
+          if (/^[a-z0-9_]{1,40}$/.test(mode)) cleanPayload.hvac_mode = mode;
+        }
+      } else if (service === 'set_fan_mode') {
+        const fm = String(rawData.fan_mode || '').trim();
+        if (!fm || fm.length > 60) {
+          return res.status(400).json({ success: false, error: 'Ungültiger Lüfter-Modus.' });
+        }
+        cleanPayload.fan_mode = fm;
+      } else if (service === 'set_swing_mode') {
+        const sm = String(rawData.swing_mode || '').trim();
+        if (!sm || sm.length > 60) {
+          return res.status(400).json({ success: false, error: 'Ungültiger Swing-Modus.' });
+        }
+        cleanPayload.swing_mode = sm;
+      } else if (service === 'set_preset_mode') {
+        const pm = String(rawData.preset_mode || '').trim();
+        if (!pm || pm.length > 60) {
+          return res.status(400).json({ success: false, error: 'Ungültiges Preset.' });
+        }
+        cleanPayload.preset_mode = pm;
       }
     }
 
