@@ -1,8 +1,8 @@
 // ==========================================
-// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.2)
+// ZENTRALE SINGLE SOURCE OF TRUTH: PVProCore (V13.3)
 // Alle Kalender-Konstanten, Farb-Tokens, Schemata & Hilfsfunktionen an einem Ort
 // ==========================================
-const APP_VERSION = '13.2';
+const APP_VERSION = '13.3';
 const MONTH_START_HOURS = Object.freeze([0, 744, 1416, 2160, 2880, 3624, 4344, 5088, 5832, 6552, 7296, 8016]);
 const DAYS_IN_MONTH = Object.freeze([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]);
 const MONTH_START_DAYS = Object.freeze([0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]);

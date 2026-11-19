@@ -431,7 +431,7 @@ function persistBarExplorerCacheToIdb() {
     try {
         if (typeof analyseBarExplorerState !== 'undefined' && analyseBarExplorerState.cacheByPeriodKey) {
             PVProPersistentDB.set('bar_explorer_cache', {
-                schemaVersion: '11.3',
+                schemaVersion: '13.3',
                 savedAtMs: Date.now(),
                 cacheByPeriodKey: analyseBarExplorerState.cacheByPeriodKey
             });
@@ -586,7 +586,7 @@ async function hydrateFromPersistentIndexedDB() {
         }
 
         // 6. Hydrate Bar Explorer cache for instant bar chart rendering
-        if (idbBarExplorer && idbBarExplorer.schemaVersion === '11.3' && idbBarExplorer.cacheByPeriodKey && typeof idbBarExplorer.cacheByPeriodKey === 'object') {
+        if (idbBarExplorer && idbBarExplorer.schemaVersion === '13.3' && idbBarExplorer.cacheByPeriodKey && typeof idbBarExplorer.cacheByPeriodKey === 'object') {
             if (typeof analyseBarExplorerState !== 'undefined') {
                 analyseBarExplorerState.cacheByPeriodKey = {
                     ...idbBarExplorer.cacheByPeriodKey,
@@ -1879,6 +1879,14 @@ function fetchHaLongTermStatisticsWs(rawBaseUrl, rawToken, statisticIds, startTi
 function getEnergyCounterStepLimits(entId, cfg = haConfigState, granularity = 'hour') {
     const isConsumer = isConsumerEnergyEntity(entId, cfg);
     const isWb = isWallboxEnergyEntity(entId, cfg);
+    if (granularity === 'month') {
+        return {
+            isConsumer,
+            isWb,
+            maxStepKwh: isWb ? 3500.0 : (isConsumer ? 1200.0 : 4500.0),
+            initJumpMinKwh: isWb ? 1500.0 : (isConsumer ? 300.0 : 1000.0)
+        };
+    }
     if (granularity === 'day') {
         return {
             isConsumer,
@@ -5634,6 +5642,17 @@ function renderIntradayCurveSection(baseline) {
             ? `Ab Mess-Start ${startStr} · ${stepHours}h-Auflösung (bis ${dateStr})`
             : `Monat ab ${startStr} · ${stepHours}h-Auflösung (bis ${dateStr})`;
     }
+    const channelsHeaderTitleEl = document.getElementById('intraday_channels_section_title');
+    if (channelsHeaderTitleEl) {
+        if (currentCurveTimeframe === 'week') {
+            channelsHeaderTitleEl.innerText = 'Messkanäle · 7-Tage-Ertrag';
+        } else if (currentCurveTimeframe === 'month') {
+            const shortStart = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+            channelsHeaderTitleEl.innerText = `Messkanäle · Ertrag ab ${shortStart}.`;
+        } else {
+            channelsHeaderTitleEl.innerText = 'Messkanäle · Tagesertrag';
+        }
+    }
 
     const rangeEl = document.getElementById('dash_curve_timerange');
     if (rangeEl) rangeEl.innerText = rangeString;
@@ -7196,36 +7215,75 @@ function extractStatBucketDeltaKwh(statRow, entityId, hoursInBucket = 1, prevSta
     }
 
     const eScale = getEnergyScaleForEntity(entityId, null);
-    const isConsumer = isConsumerEnergyEntity(entityId, haConfigState);
-    const isWb = isWallboxEnergyEntity(entityId, haConfigState);
-    const maxStepKwh = isWb ? Math.max(45.0, hoursInBucket * 25.0) : (isConsumer ? Math.max(15.0, hoursInBucket * 6.0) : Math.max(25.0, hoursInBucket * 14.0));
-    const initJumpMinKwh = isWb ? 200.0 : (isConsumer ? 40.0 : 50.0);
-    const rawNum = typeof statRow.state === 'number'
-        ? statRow.state
-        : (typeof statRow.sum === 'number'
-            ? statRow.sum
-            : (typeof statRow.max === 'number' ? statRow.max : null));
-    const curStateKwh = (rawNum !== null && Number.isFinite(rawNum)) ? (rawNum * eScale) : null;
+    const isCum = isEntityCumulativeTotal(entityId, null, false);
+    const granularity = hoursInBucket >= 200 ? 'month' : (hoursInBucket >= 20 ? 'day' : 'hour');
+    const { isWb, maxStepKwh, initJumpMinKwh } = getEnergyCounterStepLimits(entityId, haConfigState, granularity);
 
-    if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
-        const dKwh = Math.max(0, statRow.change * eScale);
-        const isInitJump = !isWb && (((prevStateKwh === null || prevStateKwh <= 0.5) && dKwh >= initJumpMinKwh)
-            || dKwh >= maxStepKwh);
-        if (isInitJump) {
-            return { deltaKwh: 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
+    // Pure HA sensor state reading: strictly prefer statRow.state (fallback statRow.max, NEVER statRow.sum)
+    const rawStateNum = (typeof statRow.state === 'number' && Number.isFinite(statRow.state))
+        ? statRow.state
+        : ((typeof statRow.max === 'number' && Number.isFinite(statRow.max)) ? statRow.max : null);
+    const curStateKwh = rawStateNum !== null ? (rawStateNum * eScale) : null;
+
+    if (isCum) {
+        if (curStateKwh !== null) {
+            // Ignore temporary 0 / unavailable glitches without resetting the monotonic watermark
+            if (curStateKwh <= 0.001) {
+                return { deltaKwh: 0, currentStateKwh: prevStateKwh };
+            }
+            if (prevStateKwh !== null && prevStateKwh > 0.001) {
+                if (curStateKwh >= prevStateKwh) {
+                    const stepDiff = curStateKwh - prevStateKwh;
+                    const isStepJump = !isWb && (((prevStateKwh <= 2.0) && stepDiff >= initJumpMinKwh) || stepDiff >= maxStepKwh);
+                    return {
+                        deltaKwh: (!isStepJump && stepDiff >= 0) ? stepDiff : 0,
+                        currentStateKwh: Math.max(prevStateKwh, curStateKwh)
+                    };
+                }
+                // Counter temporarily dipped below prior monotonic watermark: preserve watermark & do not fabricate a jump
+                return { deltaKwh: 0, currentStateKwh: prevStateKwh };
+            }
+            // First valid reading seen (no pre-window baseline yet): seed watermark cleanly.
+            // Only accept row.change if it is a small genuine first-bucket increment below initJumpMinKwh.
+            if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
+                const dKwh = Math.max(0, statRow.change * eScale);
+                if (dKwh > 0 && dKwh < initJumpMinKwh && dKwh < maxStepKwh && dKwh <= curStateKwh + 0.01) {
+                    return { deltaKwh: dKwh, currentStateKwh: curStateKwh };
+                }
+            }
+            return { deltaKwh: 0, currentStateKwh: curStateKwh };
         }
-        return { deltaKwh: dKwh, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
+
+        // Fallback only if statRow provides neither state nor max
+        if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
+            const dKwh = Math.max(0, statRow.change * eScale);
+            const isInitJump = !isWb && (((prevStateKwh === null || prevStateKwh <= 0.5) && dKwh >= initJumpMinKwh) || dKwh >= maxStepKwh);
+            return { deltaKwh: isInitJump ? 0 : dKwh, currentStateKwh: prevStateKwh };
+        }
+        return { deltaKwh: 0, currentStateKwh: prevStateKwh };
     }
 
-    if (curStateKwh !== null && prevStateKwh !== null && prevStateKwh > 0.5) {
+    // Non-cumulative / daily-resetting counter (e.g. energy_today)
+    if (hoursInBucket >= 20) {
+        const rawMax = (typeof statRow.max === 'number' && Number.isFinite(statRow.max)) ? (statRow.max * eScale) : null;
+        if (rawMax !== null && rawMax >= 0 && rawMax < maxStepKwh) {
+            return { deltaKwh: rawMax, currentStateKwh: curStateKwh !== null ? curStateKwh : rawMax };
+        }
+    }
+    if (curStateKwh !== null && prevStateKwh !== null && hoursInBucket < 20) {
         const stepDiff = curStateKwh >= prevStateKwh
             ? (curStateKwh - prevStateKwh)
-            : ((curStateKwh < 0.5 && prevStateKwh > 2.0) ? curStateKwh : 0);
-        const isStepJump = ((prevStateKwh <= 2.0) && stepDiff >= initJumpMinKwh) || stepDiff >= maxStepKwh;
-        return { deltaKwh: (!isStepJump && stepDiff >= 0) ? stepDiff : 0, currentStateKwh: curStateKwh };
+            : (curStateKwh < maxStepKwh ? curStateKwh : 0);
+        return { deltaKwh: (stepDiff >= 0 && stepDiff < maxStepKwh) ? stepDiff : 0, currentStateKwh: curStateKwh };
     }
-
-    return { deltaKwh: 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
+    if (typeof statRow.change === 'number' && Number.isFinite(statRow.change)) {
+        const dKwh = Math.max(0, statRow.change * eScale);
+        return { deltaKwh: dKwh < maxStepKwh ? dKwh : 0, currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh };
+    }
+    return {
+        deltaKwh: (curStateKwh !== null && curStateKwh >= 0 && curStateKwh < maxStepKwh) ? curStateKwh : 0,
+        currentStateKwh: curStateKwh !== null ? curStateKwh : prevStateKwh
+    };
 }
 
 async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
@@ -7264,8 +7322,17 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         if (cs?.powerEntity) allStatEntities.add(cs.powerEntity);
     });
 
-    // 1. Query Home Assistant Long-Term Statistics WS with the exact parameter signature:
-    // (rawBaseUrl, rawToken, statisticIds, startTimeIso, endTimeIso, period, customTypes)
+    // 1. Query Home Assistant Long-Term Statistics WS starting 1 interval BEFORE win.start
+    // so bucket 0 always has a real pre-window counter baseline (prevState) for exact state deltas.
+    let wsQueryStart = new Date(win.start.getTime());
+    if (analyseBarExplorerState.horizon === 'day') {
+        wsQueryStart = new Date(win.start.getTime() - 3600000);
+    } else if (analyseBarExplorerState.horizon === 'week' || analyseBarExplorerState.horizon === 'month') {
+        wsQueryStart = new Date(win.start.getFullYear(), win.start.getMonth(), win.start.getDate() - 1, 0, 0, 0);
+    } else if (analyseBarExplorerState.horizon === 'year') {
+        wsQueryStart = new Date(win.year - 1, 11, 1, 0, 0, 0);
+    }
+
     let wsStats = null;
     if (haConfigState.baseUrl && haConfigState.accessToken && allStatEntities.size > 0) {
         try {
@@ -7273,10 +7340,10 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
                 haConfigState.baseUrl,
                 haConfigState.accessToken,
                 [...allStatEntities],
-                win.start.toISOString(),
+                wsQueryStart.toISOString(),
                 win.end.toISOString(),
                 win.wsPeriod,
-                ['change', 'state', 'sum', 'max', 'mean']
+                ['state', 'max', 'change', 'mean']
             );
             if (wsRes && wsRes.ok && wsRes.data) {
                 wsStats = wsRes.data;
@@ -7322,6 +7389,8 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
                         }
                     } else {
                         const eScale = getEnergyScaleForEntity(entId, null);
+                        const isCumRest = isEntityCumulativeTotal(entId, null, false);
+                        const { isWb: restIsWb, maxStepKwh: restMaxStepKwh, initJumpMinKwh: restInitJump } = getEnergyCounterStepLimits(entId, haConfigState, 'hour');
                         const pts = [];
                         entityHistoryArr.forEach(pt => {
                             const val = parseFloat(String(pt.state).replace(',', '.'));
@@ -7329,27 +7398,48 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
                             if (!isNaN(val) && val >= 0 && !isNaN(ts)) pts.push({ ts, kwh: val * eScale });
                         });
                         pts.sort((a, b) => a.ts - b.ts);
-                        for (let i = 1; i < pts.length; i++) {
-                            const prev = pts[i - 1];
+                        let highWaterKwh = null;
+                        for (let i = 0; i < pts.length; i++) {
                             const cur = pts[i];
-                            const diff = cur.kwh >= prev.kwh
-                                ? (cur.kwh - prev.kwh)
-                                : ((cur.kwh < 0.5 && prev.kwh > 2.0) ? cur.kwh : 0);
-                            if (diff > 0 && diff < 250) {
-                                const hIdx = new Date(cur.ts).getHours();
-                                if (hIdx >= 0 && hIdx < 24) {
-                                    hourlyArr[hIdx] += diff;
-                                    hasData = true;
+                            if (isCumRest) {
+                                if (cur.kwh <= 0.001) continue;
+                                if (highWaterKwh === null) {
+                                    highWaterKwh = cur.kwh;
+                                    continue;
+                                }
+                                if (cur.kwh > highWaterKwh) {
+                                    const diff = cur.kwh - highWaterKwh;
+                                    const isJump = !restIsWb && (((highWaterKwh <= 2.0) && diff >= restInitJump) || diff >= restMaxStepKwh);
+                                    highWaterKwh = cur.kwh;
+                                    if (!isJump && diff > 0) {
+                                        const hIdx = new Date(cur.ts).getHours();
+                                        if (hIdx >= 0 && hIdx < 24) {
+                                            hourlyArr[hIdx] += diff;
+                                            hasData = true;
+                                        }
+                                    }
+                                }
+                            } else if (i > 0) {
+                                const prev = pts[i - 1];
+                                const diff = cur.kwh >= prev.kwh
+                                    ? (cur.kwh - prev.kwh)
+                                    : (cur.kwh < restMaxStepKwh ? cur.kwh : 0);
+                                if (diff > 0 && diff < restMaxStepKwh) {
+                                    const hIdx = new Date(cur.ts).getHours();
+                                    if (hIdx >= 0 && hIdx < 24) {
+                                        hourlyArr[hIdx] += diff;
+                                        hasData = true;
+                                    }
                                 }
                             }
                         }
                         // Also include live reading delta since last history point if viewing today
                         if (win.isToday && pts.length > 0 && lastKnownHaReadingMap.has(entId)) {
                             const liveKwh = Number(lastKnownHaReadingMap.get(entId)) * eScale;
-                            const lastPt = pts[pts.length - 1];
-                            if (Number.isFinite(liveKwh) && liveKwh > lastPt.kwh && (liveKwh - lastPt.kwh) < 100) {
+                            const refKwh = (isCumRest && highWaterKwh !== null) ? highWaterKwh : pts[pts.length - 1].kwh;
+                            if (Number.isFinite(liveKwh) && liveKwh > refKwh && (liveKwh - refKwh) < restMaxStepKwh) {
                                 const curHour = now.getHours();
-                                hourlyArr[curHour] += (liveKwh - lastPt.kwh);
+                                hourlyArr[curHour] += (liveKwh - refKwh);
                                 hasData = true;
                             }
                         }
@@ -7430,8 +7520,9 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         let filled = false;
 
         if (wsStats && energyId && Array.isArray(wsStats[energyId]) && wsStats[energyId].length > 0) {
+            const sortedRows = [...wsStats[energyId]].sort((a, b) => (parseHaStatTimestampMs(a?.start) || 0) - (parseHaStatTimestampMs(b?.start) || 0));
             let prevState = null;
-            wsStats[energyId].forEach(row => {
+            sortedRows.forEach(row => {
                 const bIdx = getBucketIdx(row.start);
                 const step = extractStatBucketDeltaKwh(row, energyId, hoursPerBucket, prevState);
                 prevState = step.currentStateKwh;
@@ -7454,8 +7545,9 @@ async function fetchAnalyseBarExplorerPeriodData(win, baseline, metrics) {
         }
 
         if (!filled && wsStats && powerId && Array.isArray(wsStats[powerId]) && wsStats[powerId].length > 0) {
+            const sortedPowerRows = [...wsStats[powerId]].sort((a, b) => (parseHaStatTimestampMs(a?.start) || 0) - (parseHaStatTimestampMs(b?.start) || 0));
             let prevState = null;
-            wsStats[powerId].forEach(row => {
+            sortedPowerRows.forEach(row => {
                 const bIdx = getBucketIdx(row.start);
                 const step = extractStatBucketDeltaKwh(row, powerId, hoursPerBucket, prevState);
                 prevState = step.currentStateKwh;
@@ -7834,7 +7926,7 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
     if (kpiBox) {
         if (!fgId) {
             kpiBox.innerHTML = `
-                <div class="col-span-2 sm:col-span-4 p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10 text-xs text-slate-500 dark:text-slate-400 flex items-center justify-between">
+                <div class="col-span-2 lg:col-span-4 dash-sub-tile rounded-[18px] p-3.5 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between gap-2">
                     <span>Kein Kanal aktiv — Wähle unten 1 Kachel (Balken) oder 2 Kacheln (1. = Flächenlinie im Hintergrund, 2. = Balken im Vordergrund).</span>
                     <span class="font-bold text-emerald-600 dark:text-emerald-400 shrink-0 ml-2">Autarkie: ${fmtNum(autarkyPeriod, 1)} %</span>
                 </div>`;
@@ -7845,40 +7937,46 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             const bgNz = bgArr.filter(v => Number(v) > 0).length;
             const bgDispVal = bgCh ? (bgCh.unit === '%' ? (bgNz > 0 ? bgSumVal / bgNz : 0) : bgSumVal) : 0;
             const secondCardHtml = bgCh
-                ? `<div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10" style="border-left: 3px solid ${bgCh.color}">
-                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">1. Fläche: ${escapeHtml(bgCh.shortLabel || bgCh.label)}</p>
-                    <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                ? `<div class="dash-sub-tile rounded-[18px] p-3.5">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${bgCh.color}"></span>
+                        <span class="truncate">1. Fläche: ${escapeHtml(bgCh.shortLabel || bgCh.label)}</span>
+                    </p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-1">
                         ${fmtNum(bgDispVal, bgCh.unit === 'kWh' && bgDispVal < 10 ? 2 : 1)} ${bgCh.unit}
                     </p>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">Hintergrund-Flächenlinie</p>
                 </div>`
-                : `<div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                : `<div class="dash-sub-tile rounded-[18px] p-3.5">
                     <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Ø pro ${bucketUnitName}</p>
-                    <p class="text-lg sm:text-xl font-bold tabular-nums text-teal-700 dark:text-teal-300 mt-0.5">
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-teal-700 dark:text-teal-300 mt-1">
                         ${fmtNum(avgVal, avgVal < 10 ? 2 : 1)} ${unitLabel}
                     </p>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${nonZeroBuckets} aktive Intervalle</p>
                 </div>`;
 
             kpiBox.innerHTML = `
-                <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10" style="border-left: 3px solid ${primaryCh.color}">
-                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">${hasTwoChannels ? '2. Balken: ' : ''}${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</p>
-                    <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-0.5">
+                <div class="dash-sub-tile rounded-[18px] p-3.5">
+                    <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full shrink-0" style="background:${primaryCh.color}"></span>
+                        <span class="truncate">${hasTwoChannels ? '2. Balken: ' : ''}${escapeHtml(primaryCh.shortLabel || primaryCh.label)} · ${primaryCh.unit === '%' ? 'Mittel' : 'Summe'}</span>
+                    </p>
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-slate-900 dark:text-white mt-1">
                         ${fmtNum(primaryCh.unit === '%' ? avgVal : sumVal, primaryCh.unit === 'kWh' && sumVal < 10 ? 2 : 1)} ${unitLabel}
                     </p>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">${escapeHtml(win.label)}</p>
                 </div>
                 ${secondCardHtml}
-                <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                <div class="dash-sub-tile rounded-[18px] p-3.5">
                     <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Spitzenwert (Peak)</p>
-                    <p class="text-lg sm:text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-0.5">
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-amber-600 dark:text-amber-400 mt-1">
                         ${fmtNum(peakVal, peakVal < 10 ? 2 : 1)} ${unitLabel}
                     </p>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">Zeit: ${escapeHtml(peakLabel)}</p>
                 </div>
-                <div class="p-3 rounded-[20px] bg-white/85 dark:bg-slate-900/75 border border-slate-200/80 dark:border-white/10">
+                <div class="dash-sub-tile rounded-[18px] p-3.5">
                     <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate">Autarkie im Zeitraum</p>
-                    <p class="text-lg sm:text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    <p class="text-lg sm:text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
                         ${fmtNum(autarkyPeriod, 1)} %
                     </p>
                     <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">PV: ${fmtNum(pvSumPeriod, 1)} · Haus: ${fmtNum(houseSumPeriod, 1)} kWh</p>
@@ -7887,11 +7985,28 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
         }
     }
 
-    // 2. Render 3-Column Channel Selector Tiles (Supports up to 2 channels: 1. Fläche + 2. Balken, plus right-aligned String kWp performance!)
+    // 2. Render 3-Column Channel Selector Tiles (Supports up to 2 channels: 1. Fläche + 2. Balken, plus relative String Performance %!)
     const isDark = document.documentElement.classList.contains('dark');
     const gridEl = document.getElementById('analysisExplorerChannelsGrid');
     if (gridEl) {
         const entCfg = haConfigState.entities || {};
+        // Precompute plant-wide weighted average specific yield (kWh/kWp) across configured PV strings for relative performance %
+        let totalStrKwh = 0;
+        let totalStrKwp = 0;
+        catalog.forEach(chItem => {
+            if (chItem.group !== 'string') return;
+            const sIdx = parseInt(String(chItem.id).replace('str_', ''), 10);
+            const csObj = (haConfigState.customStrings || [])[sIdx];
+            const sKwp = resolveCustomStringKwp(csObj, sIdx, baseline);
+            if (sKwp > 0) {
+                const sArr = seriesById[chItem.id] || [];
+                const sTot = sArr.reduce((a, b) => a + (Number(b) || 0), 0);
+                totalStrKwh += sTot;
+                totalStrKwp += sKwp;
+            }
+        });
+        const avgStrSpecYield = (totalStrKwp > 0 && totalStrKwh > 0.001) ? (totalStrKwh / totalStrKwp) : 0;
+
         gridEl.innerHTML = catalog.map(ch => {
             const selOrderIdx = activeIds.indexOf(ch.id);
             const isSelected = selOrderIdx !== -1;
@@ -7915,7 +8030,7 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             else if (ch.id === 'batDis') chDiag = getChannelEnergyDiagnosticBadge(entCfg.batteryDischargeMonth, total, total);
             else if (ch.group === 'string') chDiag = getChannelEnergyDiagnosticBadge(ch.energyEntity, total, total);
 
-            // Right-aligned kWp performance badge for PV strings in Analyse Bar Explorer too
+            // Right-aligned relative performance % badge (vs. plant average kWh/kWp = 100%)
             let strKwpPerfBadge = '';
             if (ch.group === 'string') {
                 const sIdx = parseInt(String(ch.id).replace('str_', ''), 10);
@@ -7923,8 +8038,10 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
                 const sKwp = resolveCustomStringKwp(csObj, sIdx, baseline);
                 if (sKwp > 0) {
                     const specY = displayVal / sKwp;
-                    const specPct = Math.round(specY * 100);
-                    strKwpPerfBadge = `<span class="text-[10.5px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0 tabular-nums" title="Spezifischer Ertrag im Zeitraum bezogen auf ${fmtNum(sKwp, 2)} kWp">${specPct}% · ${fmtNum(specY, 2)}/kWp</span>`;
+                    const relPerfPct = avgStrSpecYield > 0.001
+                        ? Math.round((specY / avgStrSpecYield) * 100)
+                        : (displayVal > 0 ? 100 : 0);
+                    strKwpPerfBadge = `<span class="text-[10.5px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0 tabular-nums" title="Relative Performance vs. Anlagen-Ø: ${relPerfPct} % (${fmtNum(specY, 2)} kWh/kWp vs. Ø ${fmtNum(avgStrSpecYield, 2)} kWh/kWp bei ${fmtNum(sKwp, 2)} kWp)">${relPerfPct}%</span>`;
                 }
             }
 

@@ -4,6 +4,30 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.3] – 2026-11-19
+
+### ✨ Reine HA-Sensor-Zählerdifferenz im Balken-Explorer & einheitliche Startseiten-Abschnittskarten auf allen Seiten
+
+#### 1. Unverfälschte Zählerstand-Differenz im Analyse-Balken-Explorer (`telemetry.js`)
+* **Direkte `state`-Differenz statt fehlerhafter HA-`change`-Werte (`extractStatBucketDeltaKwh`, `fetchAnalyseBarExplorerPeriodData`):**
+  - Bei kumulativen Home-Assistant-Gesamtzählern wertet der Balken-Explorer ab sofort strikt die reale Differenz der aufeinanderfolgenden Zählerstände (`curStateKwh - prevStateKwh`, Fallback `max`, niemals `sum`) aus statt Home Assistants `statRow.change`.
+  - Dadurch werden doppelte Geisterbalken (z. B. `~92,5 kWh` durch `0 → Gesamtwert`-Neustarts eines Wechselrichters oder Gateways) vollständig verhindert – ganz ohne künstliches Nachskalieren oder Querverrechnen zwischen Sensoren.
+  - Vor jedem Abfragezeitraum wird automatisch ein zusätzliches Basis-Intervall (`-1h` bei Tag, `-1d` bei Woche/Monat, Dezember des Vorjahres bei Jahr) geladen, damit der allererste sichtbare Balken eine exakte Vor-Baseline (`prevState`) erhält.
+  - Für täglich/periodisch rücksetzende nicht-kumulative Zähler bleibt der echte Höchststand (`max` / `state`) erhalten; auch die REST-Stundenhistorie nutzt nun denselben monotonen Hochwasser-Delta-Filter.
+* **Automatische Cache-Invalidierung (`schemaVersion: '13.3'`):**
+  - Veraltete Balken-Explorer-Einträge aus IndexedDB (`schemaVersion: '11.3'`) werden beim Start automatisch verworfen und sauber neu aus Home Assistant gelesen.
+* **Synchronisierte String-Performance & dynamische Diagramm-Überschriften (`renderIntradayCurveSection`, `drawAnalyseBarExplorerView`):**
+  - Die PV-String-Kacheln im Analyse-Balken-Explorer zeigen nun exakt dieselbe relative Performance in `%` gegenüber dem Anlagen-Durchschnitt (`kWh/kWp`, `100%` = Anlagen-Ø) wie das Live-Diagramm.
+  - Die Abschnitts-Überschrift unter dem Live-Diagramm (`#intraday_channels_section_title`) passt sich dynamisch an den aktiven Zeitraum an (`Messkanäle · Tagesertrag`, `Messkanäle · 7-Tage-Ertrag`, `Messkanäle · Ertrag ab DD.MM.`).
+
+#### 2. Einheitliche Startseiten-Abschnittsarchitektur auf allen Haupt- und Detailseiten (`index.html`, `telemetry.js`)
+* **Klare optische Trennung nach dem Startseiten-Vorbild (`#tab-home`):**
+  - Sämtliche Haupt- und Detailseiten (`#tab-live`, `#tab-analyse`, `#tab-planung-hub`, `#tab-database`, `#tab-system`, `#tab-verbrauch`, `#tab-invest`, `#tab-finance`, `#tab-uebersicht`, `#tab-auswertung`, `#tab-devices`) wurden einheitlich strukturiert: Jeder Themenbereich besitzt nun eine eigene externe Abschnittszeile (Teal-Icon + Titel + optionale Kontext-Aktion) gefolgt von einer dedizierten `.dash-main-card rounded-[26px]`-Karte mit klarem `space-y-5`-Abstand.
+  - Die KPI-Kacheln im Analyse-Balken-Explorer (`#barExplorerSummaryKpis`) sind innerhalb einer eigenen Karte *„Kennzahlen im Zeitraum“* als ruhige `.dash-sub-tile rounded-[18px]`-Kacheln mit Farbpunkten gestaltet.
+  - Im Live-Dashboard wurde der neutrale Speicher-Default (`Speicher` statt herstellerspezifischem Standardtext) bereinigt und alle temporären Entwickler-Screenshots wurden entfernt.
+
+---
+
 ## [Version 13.2] – 2026-11-19
 
 ### 🛠️ Kollisionsfreier Server-Port-3000-Schutz & `/api/health`-Endpunkt
