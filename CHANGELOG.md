@@ -4,6 +4,17 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.4] – 2026-11-19
+
+### ✨ Einheitlicher spezifischer Ertrag (`kWh/kWp`) je String & für `PV gesamt`
+
+* **Eigener spezifischer Ertrag auf jeder PV-Kachel (`telemetry.js`):**
+  - Sowohl im Live-Verlaufsdiagramm (`getAvailableCurveDefinitions`) als auch im Analyse-Balken-Explorer (`drawAnalyseBarExplorerView`) zeigt jeder einzelne PV-String **und** `PV gesamt · DC` / `PV-Erzeugung` ab sofort einheitlich seinen eigenen spezifischen Ertrag (`kWh ÷ kWp`) im rechten Badge.
+  - **Feinere Auflösung bei kleinen Tageserträgen:** Unter `10 kWh/kWp` werden immer **2 Nachkommastellen** angezeigt (z. B. `0,12/kWp`, `0,11/kWp`, `0,15/kWp` statt grob gerundetem `0,1/kWp`); ab `10 kWh/kWp` (z. B. Sommermonat oder Jahr) automatisch **1 Nachkommastelle** (`84,5/kWp`).
+  - **Kein Abschneiden in schmalen Kacheln:** Auf PV-Kacheln mit `/kWp`-Badge wird links kompakt der volle Ertragswert (`0,85 kWh ✓`, `1,95 kWh ✓`) dargestellt, da der aktive Zeitraum bereits klar in der Abschnitts-Überschrift steht.
+
+---
+
 ## [Version 13.3] – 2026-11-19
 
 ### ✨ Reine HA-Sensor-Zählerdifferenz im Balken-Explorer & einheitliche Startseiten-Abschnittskarten auf allen Seiten

@@ -5163,10 +5163,29 @@ function getAvailableCurveDefinitions() {
     let sumStringKwp = 0;
 
     // 1. Custom PV Strings / Inverters:
-    // Pre-pass to compute SSoT kWh & kWp per string so we can express each string's relative performance (%) vs. plant average (100% = Ø kWh/kWp)!
-    let sumRatedStrKwh = 0;
-    let sumRatedStrKwp = 0;
-    const preparedStrings = customStrings.map((cs, idx) => {
+    // Single Source of Truth: each PV string and PV gesamt displays its own specific yield (kWh/kWp).
+    const formatSpecificYieldBadge = (kwhVal, kwp) => {
+        const safeKwp = Number(kwp) || 0;
+        if (safeKwp <= 0) return { badge: '', specYield: 0, specFmt: '', kwpFmt: '', title: '' };
+        const safeKwh = Math.max(0, Number(kwhVal) || 0);
+        const specYield = safeKwh / safeKwp;
+        const decimals = specYield < 10 ? 2 : 1;
+        const badgeNum = specYield.toLocaleString('de-DE', {
+            minimumFractionDigits: decimals,
+            maximumFractionDigits: decimals
+        });
+        const specFmt = specYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const kwpFmt = safeKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return {
+            badge: `${badgeNum}/kWp`,
+            specYield,
+            specFmt,
+            kwpFmt,
+            title: `Spezifischer Ertrag: ${specFmt} kWh/kWp (${formatKwhDe(safeKwh, 2)} bei ${kwpFmt} kWp)`
+        };
+    };
+
+    customStrings.forEach((cs, idx) => {
         const teleItem = (t.customStringsTelemetry || []).find(x => x.id === cs.id);
         const liveW = teleItem ? teleItem.powerW : (t.stringTelemetry?.[cs.id]?.powerW || 0);
         const rawTodayCounter = teleItem?.energyTodayKwh ?? teleItem?.energyKwh ?? t.stringTelemetry?.[cs.id]?.energyKwh ?? null;
@@ -5181,32 +5200,12 @@ function getAvailableCurveDefinitions() {
         const diagRefKwh = isDay ? rawTodayCounter : (isMonth ? rawMonthCounter : kwhVal);
         const diag = getChannelEnergyDiagnosticBadge(cs.energyEntity, diagRefKwh, calcKwh);
         const strKwp = resolveCustomStringKwp(cs, idx, baseline);
-        if (strKwp > 0) {
-            sumStringKwp += strKwp;
-            sumRatedStrKwh += Math.max(0, kwhVal);
-            sumRatedStrKwp += strKwp;
-        }
-        return { cs, idx, liveW, kwhVal, peakW, diag, strKwp };
-    });
+        if (strKwp > 0) sumStringKwp += strKwp;
 
-    const avgStringSpecYield = sumRatedStrKwp > 0 ? (sumRatedStrKwh / sumRatedStrKwp) : 0;
-    const avgSpecFmt = avgStringSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-    preparedStrings.forEach(({ cs, idx, liveW, kwhVal, peakW, diag, strKwp }) => {
-        let rightBadgeLine1 = '';
-        let rightBadgeLine2 = '';
-        let rightBadgeTitle = '';
-        if (strKwp > 0) {
-            const specYield = kwhVal / strKwp;
-            const relPerfPct = avgStringSpecYield > 0.0001
-                ? Math.round((specYield / avgStringSpecYield) * 100)
-                : 0;
-            const specYieldFmt = specYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            const kwpFmt = strKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            rightBadgeLine1 = `${relPerfPct}%`;
-            rightBadgeLine2 = `${kwpFmt} kWp`;
-            rightBadgeTitle = `Relative Performance vs. Anlagen-Ø: ${relPerfPct} % (${specYieldFmt} kWh/kWp vs. Ø ${avgSpecFmt} kWh/kWp bei ${kwpFmt} kWp)`;
-        }
+        const specInfo = formatSpecificYieldBadge(kwhVal, strKwp);
+        const rightBadgeLine1 = specInfo.badge;
+        const rightBadgeLine2 = specInfo.kwpFmt ? `${specInfo.kwpFmt} kWp` : '';
+        const rightBadgeTitle = specInfo.title;
 
         defs.push({
             key: cs.id,
@@ -5217,7 +5216,7 @@ function getAvailableCurveDefinitions() {
             category: 'pv',
             kwp: strKwp,
             liveDisplay: formatPowerDe(liveW, true),
-            subLine1: `${formatKwhDe(kwhVal, 2)} ${periodSuffix}`,
+            subLine1: rightBadgeLine1 ? formatKwhDe(kwhVal, 2) : `${formatKwhDe(kwhVal, 2)} ${periodSuffix}`,
             subLine2: `${formatPowerDe(peakW, true)} Max`,
             subDisplay: `${formatKwhDe(kwhVal, 2)} · Max ${formatPowerDe(peakW, true)}`,
             rightBadgeLine1,
@@ -5238,18 +5237,10 @@ function getAvailableCurveDefinitions() {
     const pvPeakW = Math.max(t.pvPowerW || 0, peaks.pv_total || 0, isDay ? 0 : (dayPeakCache.pv_total || 0));
     const pvDiag = getChannelEnergyDiagnosticBadge(pvCounterIds, isMonth ? t.pvEnergyMonthKwh : t.pvEnergyTodayKwh, intKwh.pv_total ?? 0);
     const totalSysKwp = +(Number(baseline?.totalKwp) > 0 ? Number(baseline.totalKwp) : sumStringKwp).toFixed(2);
-    let pvRightBadge1 = '';
-    let pvRightBadge2 = '';
-    let pvRightTitle = '';
-    if (totalSysKwp > 0) {
-        const pvSpecYield = pvTotalKwh / totalSysKwp;
-        const pvSpecShort = pvSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-        const pvSpecFmt = pvSpecYield.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        const totKwpFmt = totalSysKwp.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        pvRightBadge1 = `${pvSpecShort}/kWp`;
-        pvRightBadge2 = `${totKwpFmt} kWp`;
-        pvRightTitle = `Spezifischer Gesamtertrag: ${pvSpecFmt} kWh/kWp (100 % Anlagen-Ø bei ${totKwpFmt} kWp)`;
-    }
+    const pvSpecInfo = formatSpecificYieldBadge(pvTotalKwh, totalSysKwp);
+    const pvRightBadge1 = pvSpecInfo.badge;
+    const pvRightBadge2 = pvSpecInfo.kwpFmt ? `${pvSpecInfo.kwpFmt} kWp` : '';
+    const pvRightTitle = pvSpecInfo.title;
     defs.push({
         key: 'pv_total',
         name: 'PV gesamt · DC',
@@ -5259,7 +5250,7 @@ function getAvailableCurveDefinitions() {
         category: 'pv',
         kwp: totalSysKwp,
         liveDisplay: formatPowerDe(t.pvPowerW, t.pvPowerW < 1000),
-        subLine1: `${formatKwhDe(pvTotalKwh, 2)} ${periodSuffix}`,
+        subLine1: pvRightBadge1 ? formatKwhDe(pvTotalKwh, 2) : `${formatKwhDe(pvTotalKwh, 2)} ${periodSuffix}`,
         subLine2: `${formatPowerDe(pvPeakW, true)} Max`,
         subDisplay: `${formatKwhDe(pvTotalKwh, 2)} · Max ${formatPowerDe(pvPeakW, true)}`,
         rightBadgeLine1: pvRightBadge1,
@@ -7990,22 +7981,16 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
     const gridEl = document.getElementById('analysisExplorerChannelsGrid');
     if (gridEl) {
         const entCfg = haConfigState.entities || {};
-        // Precompute plant-wide weighted average specific yield (kWh/kWp) across configured PV strings for relative performance %
-        let totalStrKwh = 0;
-        let totalStrKwp = 0;
+        // Precompute configured sum of string kWp as fallback for totalSysKwp
+        let sumStrKwpBar = 0;
         catalog.forEach(chItem => {
             if (chItem.group !== 'string') return;
             const sIdx = parseInt(String(chItem.id).replace('str_', ''), 10);
             const csObj = (haConfigState.customStrings || [])[sIdx];
             const sKwp = resolveCustomStringKwp(csObj, sIdx, baseline);
-            if (sKwp > 0) {
-                const sArr = seriesById[chItem.id] || [];
-                const sTot = sArr.reduce((a, b) => a + (Number(b) || 0), 0);
-                totalStrKwh += sTot;
-                totalStrKwp += sKwp;
-            }
+            if (sKwp > 0) sumStrKwpBar += sKwp;
         });
-        const avgStrSpecYield = (totalStrKwp > 0 && totalStrKwh > 0.001) ? (totalStrKwh / totalStrKwp) : 0;
+        const totalSysKwpBar = +(Number(baseline?.totalKwp) > 0 ? Number(baseline.totalKwp) : sumStrKwpBar).toFixed(2);
 
         gridEl.innerHTML = catalog.map(ch => {
             const selOrderIdx = activeIds.indexOf(ch.id);
@@ -8030,19 +8015,21 @@ function drawAnalyseBarExplorerView(data, baseline, metrics) {
             else if (ch.id === 'batDis') chDiag = getChannelEnergyDiagnosticBadge(entCfg.batteryDischargeMonth, total, total);
             else if (ch.group === 'string') chDiag = getChannelEnergyDiagnosticBadge(ch.energyEntity, total, total);
 
-            // Right-aligned relative performance % badge (vs. plant average kWh/kWp = 100%)
+            // Right-aligned specific yield (kWh/kWp) badge for every PV string AND PV total (consistent with Live-Diagramm)
             let strKwpPerfBadge = '';
+            let kwpForSpec = 0;
             if (ch.group === 'string') {
                 const sIdx = parseInt(String(ch.id).replace('str_', ''), 10);
                 const csObj = (haConfigState.customStrings || [])[sIdx];
-                const sKwp = resolveCustomStringKwp(csObj, sIdx, baseline);
-                if (sKwp > 0) {
-                    const specY = displayVal / sKwp;
-                    const relPerfPct = avgStrSpecYield > 0.001
-                        ? Math.round((specY / avgStrSpecYield) * 100)
-                        : (displayVal > 0 ? 100 : 0);
-                    strKwpPerfBadge = `<span class="text-[10.5px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0 tabular-nums" title="Relative Performance vs. Anlagen-Ø: ${relPerfPct} % (${fmtNum(specY, 2)} kWh/kWp vs. Ø ${fmtNum(avgStrSpecYield, 2)} kWh/kWp bei ${fmtNum(sKwp, 2)} kWp)">${relPerfPct}%</span>`;
-                }
+                kwpForSpec = resolveCustomStringKwp(csObj, sIdx, baseline);
+            } else if (ch.id === 'pvTotal') {
+                kwpForSpec = totalSysKwpBar;
+            }
+            if (kwpForSpec > 0) {
+                const specY = Math.max(0, displayVal) / kwpForSpec;
+                const specDecimals = specY < 10 ? 2 : 1;
+                const specBadgeTxt = `${fmtNum(specY, specDecimals)}/kWp`;
+                strKwpPerfBadge = `<span class="text-[10.5px] font-bold px-1.5 py-0.5 rounded-md ${isSelected ? 'bg-teal-500/15 text-teal-800 dark:text-teal-300 border border-teal-500/25' : 'bg-slate-200/70 dark:bg-slate-800 text-slate-500 dark:text-slate-400'} shrink-0 tabular-nums" title="Spezifischer Ertrag: ${fmtNum(specY, 2)} kWh/kWp (${fmtNum(displayVal, 2)} kWh bei ${fmtNum(kwpForSpec, 2)} kWp)">${specBadgeTxt}</span>`;
             }
 
             let roleBadgeText = 'AUS';
