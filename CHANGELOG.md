@@ -4,6 +4,19 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.6] – 2026-11-19
+
+### 🛠️ Symbol-Fix für „Licht & Schalter“, automatische Icon-Selbstheilung & bündige 4er-Kachelbreite
+
+* **Verifizierte Google Material Symbols Rounded Icons (`telemetry.js`):**
+  - Ersetzt das nicht existierende Ligatur-Wort `ceiling_lamp` (das als überlaufender Rohtext `CEILING_LAMP` gerendert wurde) durch das offizielle Deckenleuchten-Icon `light`, `outdoor_garden` durch `yard` und `wb_incandescent` durch `tungsten`.
+  - **Automatische Selbstheilung (`sanitizeHomeLightIcon`, `ensureDefaultHomeLightsArray`):** Bereits gespeicherte Lichter mit `ceiling_lamp` werden beim Laden automatisch auf `light` korrigiert — kein manuelles Neueinrichten erforderlich.
+* **Bündige 4er-Kachelbreite & Overflow-Schutz (`telemetry.js`, `index.html`):**
+  - Jede Licht-Kachel nutzt nun exakt `w-[calc((100%-24px)/4)] sm:w-[calc((100%-30px)/4)] min-w-0 overflow-hidden` sowie eine geklippte `w-6 h-6`-Icon-Box, sodass exakt 4 Kacheln bündig in eine Reihe passen und niemals Text oder Symbole über Nachbarkacheln ragen.
+  - Die Überschrift **„Meine Geräte & Hardware“** auf der Startseite erhält `gap-2`, `min-w-0` und `truncate`, damit sie auf schmalen Smartphones sauber Abstand zu *„Auswahl“* hält.
+
+---
+
 ## [Version 13.5] – 2026-11-19
 
 ### ✨ Moderner Startseiten-Abschnitt „Licht & Schalter“ mit sicherem Steuer-Popup & neuer Startseiten-Reihenfolge

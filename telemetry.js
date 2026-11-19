@@ -16506,18 +16506,27 @@ function closeHomeCameraFullscreenModal() {
 
 const HOME_LIGHT_ICON_OPTIONS = Object.freeze([
     { icon: 'lightbulb', label: 'Lampe' },
-    { icon: 'ceiling_lamp', label: 'Decke' },
+    { icon: 'light', label: 'Decke' },
     { icon: 'floor_lamp', label: 'Stehlampe' },
     { icon: 'table_lamp', label: 'Tischlampe' },
     { icon: 'wall_lamp', label: 'Wandlampe' },
+    { icon: 'tungsten', label: 'Glühbirne' },
     { icon: 'highlight', label: 'Spot' },
-    { icon: 'wb_incandescent', label: 'Glühbirne' },
-    { icon: 'outdoor_garden', label: 'Außen / Garten' },
+    { icon: 'yard', label: 'Außen / Garten' },
     { icon: 'bedtime', label: 'Nachtlicht' },
     { icon: 'power_settings_new', label: 'Shelly / Schalter' },
     { icon: 'toggle_on', label: 'Relais' },
     { icon: 'bolt', label: 'Steckdose' }
 ]);
+
+const VALID_HOME_LIGHT_ICONS = new Set(HOME_LIGHT_ICON_OPTIONS.map(o => o.icon));
+const HOME_LIGHT_LEGACY_ICON_MAP = Object.freeze({
+    ceiling_lamp: 'light',
+    ceiling_light: 'light',
+    outdoor_garden: 'yard',
+    wb_incandescent: 'tungsten',
+    lamp: 'lightbulb'
+});
 
 const HOME_LIGHT_RGB_SWATCHES = Object.freeze([
     { label: 'Warmweiß', hex: '#fff1d6', rgb: [255, 241, 214] },
@@ -16538,13 +16547,6 @@ let homeLightVerifyRefreshTimer = null;
 let haLightsPickerSearchQuery = '';
 let haLightsPickerDomainFilter = 'all'; // 'all' | 'light' | 'switch'
 
-function ensureDefaultHomeLightsArray() {
-    if (!Array.isArray(haConfigState.homeLights)) {
-        haConfigState.homeLights = [];
-    }
-    return haConfigState.homeLights;
-}
-
 function inferDefaultLightIcon(entityId = '', friendlyName = '') {
     const id = String(entityId || '').toLowerCase();
     const hay = `${id} ${String(friendlyName || '').toLowerCase()}`;
@@ -16552,13 +16554,42 @@ function inferDefaultLightIcon(entityId = '', friendlyName = '') {
         if (/licht|lamp|led|spot|garten|terrasse|flur|k[uü]che|decke|wand/.test(hay)) return 'lightbulb';
         return 'power_settings_new';
     }
-    if (/decke|ceiling|esszimmer|wohnzimmer/.test(hay)) return 'ceiling_lamp';
+    if (/decke|ceiling|esszimmer|wohnzimmer/.test(hay)) return 'light';
     if (/steh|floor/.test(hay)) return 'floor_lamp';
     if (/tisch|nacht|schreib|bed/.test(hay)) return 'table_lamp';
     if (/wand|wall/.test(hay)) return 'wall_lamp';
     if (/spot|strahler|led|strip|band/.test(hay)) return 'highlight';
-    if (/garten|terrasse|aussen|außen|einfahrt|balkon|hof/.test(hay)) return 'outdoor_garden';
+    if (/garten|terrasse|aussen|außen|einfahrt|balkon|hof/.test(hay)) return 'yard';
     return 'lightbulb';
+}
+
+function sanitizeHomeLightIcon(rawIcon = '', entityId = '', friendlyName = '') {
+    const key = String(rawIcon || '').trim().toLowerCase();
+    if (key && VALID_HOME_LIGHT_ICONS.has(key)) return key;
+    if (key && HOME_LIGHT_LEGACY_ICON_MAP[key]) return HOME_LIGHT_LEGACY_ICON_MAP[key];
+    return inferDefaultLightIcon(entityId, friendlyName);
+}
+
+function ensureDefaultHomeLightsArray() {
+    if (!Array.isArray(haConfigState.homeLights)) {
+        haConfigState.homeLights = [];
+    }
+    // Automatically heal any legacy invalid icon names (e.g. ceiling_lamp -> light)
+    let healed = false;
+    haConfigState.homeLights.forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        const cleanIcon = sanitizeHomeLightIcon(item.icon, item.entityId, item.name);
+        if (item.icon !== cleanIcon) {
+            item.icon = cleanIcon;
+            healed = true;
+        }
+    });
+    if (healed) {
+        try {
+            localStorage.setItem('pvpro_ha_config', JSON.stringify(haConfigState));
+        } catch (e) {}
+    }
+    return haConfigState.homeLights;
 }
 
 function hsToRgbArray(hDeg, sPct) {
@@ -16727,16 +16758,16 @@ function renderHomeLightsSection() {
 
         const safeName = escapeHtml(item.name || item.entityId.replace(/^(light|switch)\./, '') || `Licht ${idx + 1}`);
         const safeIdJs = String(item.id || `light_${idx}`).replace(/'/g, "\\'");
-        const iconName = escapeHtml(item.icon || inferDefaultLightIcon(item.entityId, item.name));
+        const iconName = escapeHtml(sanitizeHomeLightIcon(item.icon, item.entityId, item.name));
 
         const hasCustomRgb = caps.isOn && caps.canColor && Array.isArray(caps.rgb);
         const rgbCss = hasCustomRgb ? `rgb(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]})` : '';
         const rgbSoftBg = hasCustomRgb ? `rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.16)` : '';
         const rgbBorder = hasCustomRgb ? `rgba(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]}, 0.55)` : '';
 
-        let tileCls = 'flex-none snap-start w-[calc((100%-24px)/4)] sm:w-[calc((100%-30px)/4)] min-w-[78px] rounded-[18px] p-2.5 sm:p-3 border flex flex-col justify-between text-left transition-all duration-200 cursor-pointer active:scale-[0.97] min-w-0 select-none ';
+        let tileCls = 'flex-none snap-start w-[calc((100%-24px)/4)] sm:w-[calc((100%-30px)/4)] min-w-0 overflow-hidden rounded-[18px] p-2.5 sm:p-3 border flex flex-col justify-between text-left transition-all duration-200 cursor-pointer active:scale-[0.97] select-none ';
         let tileInlineStyle = '';
-        let iconCls = 'material-symbols-rounded text-[20px] shrink-0 transition-all ';
+        let iconCls = 'material-symbols-rounded text-[20px] leading-none shrink-0 transition-all ';
         let statusText = 'Aus';
         let statusCls = 'text-[11px] font-semibold tabular-nums truncate mt-0.5 ';
         let dotHtml = '';
@@ -16774,12 +16805,14 @@ function renderHomeLightsSection() {
             style="${tileInlineStyle}"
             title="${safeName} · Tippen öffnet sicheres Steuer-Popup (${escapeHtml(caps.modeSummary)})"
             class="${tileCls}">
-            <div class="flex items-center justify-between gap-1 w-full">
-                <span class="${iconCls}" ${iconStyle}>${iconName}</span>
+            <div class="flex items-center justify-between gap-1 w-full min-w-0">
+                <span class="inline-flex items-center justify-center w-6 h-6 overflow-hidden shrink-0">
+                    <span class="${iconCls}" ${iconStyle}>${iconName}</span>
+                </span>
                 ${dotHtml}
             </div>
             <div class="mt-2 min-w-0 w-full">
-                <p class="text-[12.5px] sm:text-[13px] font-bold text-slate-900 dark:text-white leading-tight truncate">${safeName}</p>
+                <p class="text-[12px] sm:text-[13px] font-bold text-slate-900 dark:text-white leading-tight truncate">${safeName}</p>
                 <p class="${statusCls}">${escapeHtml(statusText)}</p>
             </div>
         </button>`;
@@ -16860,7 +16893,7 @@ function syncOpenHomeLightControlModal() {
 
     if (titleEl) titleEl.innerText = item.name || item.entityId;
     if (subEl) subEl.innerText = `${item.entityId} · ${caps.modeSummary}`;
-    if (iconEl) iconEl.innerText = item.icon || inferDefaultLightIcon(item.entityId, item.name);
+    if (iconEl) iconEl.innerText = sanitizeHomeLightIcon(item.icon, item.entityId, item.name);
 
     const hasCustomRgb = caps.isOn && caps.canColor && Array.isArray(caps.rgb);
     const rgbCss = hasCustomRgb ? `rgb(${caps.rgb[0]}, ${caps.rgb[1]}, ${caps.rgb[2]})` : '#f59e0b';
@@ -17251,7 +17284,7 @@ function renderHaHomeLightsEditor() {
     container.innerHTML = list.map((item, idx) => {
         const safeName = escapeHtml(item.name || '');
         const safeEntity = escapeHtml(item.entityId || '');
-        const curIcon = item.icon || inferDefaultLightIcon(item.entityId, item.name);
+        const curIcon = sanitizeHomeLightIcon(item.icon, item.entityId, item.name);
         const caps = getLightCapabilities(item.entityId);
         const stateBadgeCls = caps.isOn
             ? 'bg-amber-500/18 text-amber-800 dark:text-amber-200 border-amber-500/35'
@@ -17266,8 +17299,8 @@ function renderHaHomeLightsEditor() {
         <div class="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-2.5">
             <div class="flex items-center justify-between gap-2">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
-                    <span class="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-300 flex items-center justify-center shrink-0">
-                        <span class="material-symbols-rounded text-lg">${escapeHtml(curIcon)}</span>
+                    <span class="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-300 flex items-center justify-center overflow-hidden shrink-0">
+                        <span class="material-symbols-rounded text-lg leading-none">${escapeHtml(curIcon)}</span>
                     </span>
                     <input type="text" value="${safeName}" oninput="updateHaHomeLightField(${idx}, 'name', this.value)"
                         placeholder="Anzeigename (z. B. Wohnzimmer, Terrasse)"

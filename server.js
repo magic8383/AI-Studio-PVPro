@@ -16,7 +16,7 @@ const nginxPort = Number(process.env.NGINX_PORT);
 const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
 const PORT = (!rawPort || (nginxPort && rawPort === nginxPort)) ? defaultAppPort : rawPort;
 const HOST = '0.0.0.0';
-const APP_VERSION = '13.5';
+const APP_VERSION = '13.6';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
