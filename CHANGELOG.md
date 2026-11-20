@@ -4,6 +4,24 @@ Alle relevanten Änderungen, Neuerungen und Korrekturen werden in dieser Datei c
 
 ---
 
+## [Version 13.8] – 2026-11-20
+
+### ✨ Schwebende Werte-Box im Diagramm, repariertes 90°-Vollbild & kalenderbasierte Woche/Monat
+
+* **Schwebende Glas-Wertebox direkt im Diagramm statt abgeschnittener Top-Leiste (`index.html`, `telemetry.js`):**
+  - Entfernt die auf schmalen Displays abgeschnittene Werte-Zeile (`#dash_curve_hover_readout` / `#fs_curve_hover_readout`) aus der oberen Werkzeugleiste und platziert sie als kompakte, halbtransparente Glas-Box (`#dash_curve_hover_overlay` / `#fs_curve_hover_overlay`, `pointer-events-none`) direkt **oben links im Diagramm**.
+  - Alle aktiven Kanäle werden sauber gestapelt mit Zeitstempel, Live-Indikator, Farbpunkt und Wert angezeigt (ab 5 aktiven Kanälen automatisch im platzsparenden 2-Spalten-Raster).
+  - **Auto-Flip nach oben rechts:** Sobald beim Wischen/Scrubben der Finger oder Cursor im linken Diagrammbereich (`< 45 %`) liegt, springt die Werte-Box automatisch nach oben rechts und verdeckt niemals die Kurve unter dem Finger.
+* **Reparatur der 90°-Vollbildansicht (`index.html`, `telemetry.js`):**
+  - Behebt das Abschneiden des unteren Diagrammbereichs im 90°-Querformat-Vollbild (`#modal-intraday-fullscreen`): Im gedrehten Zustand misst `renderIntradayCanvasInstance` nun die ungedrehten Container-Abmessungen (`clientWidth`/`clientHeight` + `visualViewport` mit Safe-Area-Abständen) statt Chart.js' vertauschter `getBoundingClientRect()`-Werte und nutzt explizites `responsive: false` + `chart.resize(layoutW, layoutH)` inkl. Resize-/Orientation-Listener.
+  - **Korrigiertes 90°-Touch-/Pointer-Scrubbing:** `computeIntradayScrubFromPointer` bildet im 90°-Modus die Bildschirm-Y-Achse exakt auf die gedrehte Diagramm-X-Achse ab, sodass das Fadenkreuz sauber unter dem Finger mitläuft.
+* **Klare Trennung Live-Diagramm vs. Balken-Explorer & kalenderbasierte Zeiträume (`index.html`, `telemetry.js`, `server.js`):**
+  - **Live-Diagramm (Leistungsverlauf in `W` / `% SoC`):** Fokussiert auf **`Tag`** und **`Woche`** plus Direkt-Button **`Balken ↗`** (wechselt direkt in die Monats-/Jahres-Balkenanalyse `openAnalyseBarExplorer('month')`).
+  - **Kalenderbasiert statt rollierend (Backend `/api/ha/history`, Frontend Live & Balken-Explorer):** **Woche** beginnt ab sofort immer am **Montag `00:00`** der jeweiligen ISO-Kalenderwoche (`KW`, Mo → So/jetzt) und **Monat** immer am **01. des Monats `00:00`** (01. → Monatsende/jetzt).
+  - **Perioden-Blättern (`<` / `>`):** Im Live-Diagramm ermöglichen kompakte Navigationspfeile (`shiftIntradayPeriod`) das direkte Blättern in frühere Tage und Kalenderwochen inkl. 1-Tap-Rücksprung auf *Heute* bzw. die aktuelle *KW*.
+
+---
+
 ## [Version 13.7] – 2026-11-19
 
 ### ✨ Überarbeitete Klima-Kacheln (3er-Sensoren + 2er-Klimasteuerung) & einheitlicher Popup-Stil

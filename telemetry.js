@@ -170,7 +170,10 @@ let intradaySeriesState = {
 };
 
 let activeCurveKeys = new Set(['pv_total', 'house_load', 'battery_soc']);
-let currentCurveTimeframe = 'day'; // 'day' | 'week' | 'month'
+let currentCurveTimeframe = 'day'; // 'day' | 'week' (Month/Year live in Bar Explorer)
+let intradayPeriodOffset = 0; // 0 = today/current KW, -1 = yesterday/prev KW, etc.
+let intradayPeriodHistoryCache = {}; // keyed by `${tf}_${offset}` for paged past days/weeks
+let intradayFsResizeListenerBound = false;
 let intradayDayZoomMode = 'auto'; // 'auto' (Ab Aktivität + 1h Zukunft) | 'full' (00:00 – +1h)
 let intradayDayPanOffsetBuckets = 0; // 5-Minuten-Buckets Verschiebung nach links (<0) oder rechts (>0)
 let intradayVisibleStartIdx = 0; // Start-Index des sichtbaren Fensters im Tagesdiagramm
@@ -1744,53 +1747,88 @@ function parseHaStatTimestampMs(rawTs) {
     return NaN;
 }
 
-function getEffectiveTimeframeWindow(cfg = haConfigState, timeframe = currentCurveTimeframe) {
-    const now = new Date();
-    const startOfDayMs = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).getTime();
+function getIsoMondayStart(baseDate) {
+    const d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
+    const dow = d.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+    const diffToMonday = dow === 0 ? -6 : (1 - dow);
+    d.setDate(d.getDate() + diffToMonday);
+    return d;
+}
+
+function getIsoWeekNumber(date) {
+    const tmp = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const dayNum = tmp.getUTCDay() || 7;
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - dayNum);
+    const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    return Math.ceil((((tmp - yearStart) / 86400000) + 1) / 7);
+}
+
+function getEffectiveTimeframeWindow(cfg = haConfigState, timeframe = currentCurveTimeframe, periodOffset = 0) {
+    const actualNow = new Date();
+    const offset = Number.isFinite(Number(periodOffset)) ? Math.min(0, Math.trunc(Number(periodOffset))) : 0;
     const trackDate = getEffectiveTrackingStartDate(cfg);
-    const trackMs = trackDate.getTime();
 
     if (timeframe === 'month') {
-        const startOfMonthMs = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0).getTime();
-        const boundedByTrackingStart = (trackMs <= now.getTime() && trackMs > startOfMonthMs);
-        const effStartMs = Math.min(startOfDayMs, boundedByTrackingStart ? trackMs : startOfMonthMs);
-        const startTime = new Date(effStartMs);
-        const spanDays = Math.max(1, (now.getTime() - effStartMs) / (24 * 3600 * 1000));
+        // Calendar-aligned month: always starts on 1st of the month at 00:00
+        const startTime = new Date(actualNow.getFullYear(), actualNow.getMonth() + offset, 1, 0, 0, 0, 0);
+        const monthEnd = new Date(startTime.getFullYear(), startTime.getMonth() + 1, 0, 23, 59, 59, 999);
+        const endTime = offset === 0 ? actualNow : monthEnd;
+        const spanDays = Math.max(1, (endTime.getTime() - startTime.getTime()) / (24 * 3600 * 1000));
         const stepMs = spanDays <= 14 ? (60 * 60 * 1000) : (3 * 3600 * 1000);
         return {
-            now,
+            now: endTime,
+            actualNow,
             startTime,
+            endTime,
             stepMs,
-            boundedByTrackingStart,
+            boundedByTrackingStart: false,
             trackDate,
-            spanDays
+            spanDays,
+            isCurrentPeriod: offset === 0,
+            periodOffset: offset,
+            kw: getIsoWeekNumber(startTime)
         };
     }
 
     if (timeframe === 'week') {
-        const rawStartMs = now.getTime() - 7 * 24 * 3600 * 1000;
-        const boundedByTrackingStart = (trackMs <= now.getTime() && trackMs > rawStartMs);
-        const effStartMs = Math.min(startOfDayMs, boundedByTrackingStart ? trackMs : rawStartMs);
-        const startTime = new Date(effStartMs);
-        const spanDays = Math.max(1, (now.getTime() - effStartMs) / (24 * 3600 * 1000));
-        const stepMs = 60 * 60 * 1000; // 1-Stunden-Schritte für 7 Tage
+        // Calendar-aligned ISO week: always starts on Monday 00:00
+        const startTime = getIsoMondayStart(actualNow);
+        startTime.setDate(startTime.getDate() + (offset * 7));
+        const sundayEnd = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate() + 6, 23, 59, 59, 999);
+        const endTime = offset === 0 ? actualNow : sundayEnd;
+        const spanDays = Math.max(1, (endTime.getTime() - startTime.getTime()) / (24 * 3600 * 1000));
+        const stepMs = 60 * 60 * 1000; // 1-Stunden-Schritte für Kalenderwoche
         return {
-            now,
+            now: endTime,
+            actualNow,
             startTime,
+            endTime,
             stepMs,
-            boundedByTrackingStart,
+            boundedByTrackingStart: false,
             trackDate,
-            spanDays
+            spanDays,
+            isCurrentPeriod: offset === 0,
+            periodOffset: offset,
+            kw: getIsoWeekNumber(startTime)
         };
     }
 
+    // Calendar-aligned day: 00:00 – now (today) or 00:00 – 23:59:59 (past day)
+    const startTime = new Date(actualNow.getFullYear(), actualNow.getMonth(), actualNow.getDate() + offset, 0, 0, 0, 0);
+    const dayEnd = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate(), 23, 59, 59, 999);
+    const endTime = offset === 0 ? actualNow : dayEnd;
     return {
-        now,
-        startTime: new Date(startOfDayMs),
-        stepMs: 5 * 60 * 1000, // 5-Minuten-Schritte für heute
+        now: endTime,
+        actualNow,
+        startTime,
+        endTime,
+        stepMs: 5 * 60 * 1000, // 5-Minuten-Schritte für Tagesansicht
         boundedByTrackingStart: false,
         trackDate,
-        spanDays: 1
+        spanDays: 1,
+        isCurrentPeriod: offset === 0,
+        periodOffset: offset,
+        kw: getIsoWeekNumber(startTime)
     };
 }
 
@@ -2788,8 +2826,8 @@ async function fetchHaDirectFromBrowser(rawBaseUrl, rawToken, endpointPath = '/a
     };
 }
 
-async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, externalSignal = null) {
-    const win = getEffectiveTimeframeWindow(cfg, timeframe);
+async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, externalSignal = null, periodOffset = 0) {
+    const win = getEffectiveTimeframeWindow(cfg, timeframe, periodOffset);
     const { now, startTime, stepMs } = win;
     const startIso = startTime.toISOString();
     const nowIso = now.toISOString();
@@ -3050,8 +3088,8 @@ async function fetchHaHistoryInBrowser(cfg, timeframe = currentCurveTimeframe, e
                             points.push({ ts, val: val * scale, unavailable: false });
                         }
                     });
-                    // Also if the live state of this power sensor is currently unavailable, append a live 0 W point at 'now'
-                    if (!isSocEnt) {
+                    // Also if viewing the current period and live state is unavailable, append a live 0 W point at 'now'
+                    if (!isSocEnt && win.isCurrentPeriod) {
                         const curAvail = lastKnownHaAvailabilityMap.get(entId);
                         if (curAvail && curAvail !== 'ok') {
                             points.push({ ts: now.getTime(), val: 0, unavailable: true });
@@ -3908,8 +3946,28 @@ function resetToEmptyIntradaySeries() {
     };
 }
 
+function formatIntradayPeriodPagerLabel(tf = currentCurveTimeframe, offset = intradayPeriodOffset) {
+    const win = getEffectiveTimeframeWindow(haConfigState, tf, offset);
+    const fmtDm = (dt) => dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+    if (tf === 'week') {
+        const sun = new Date(win.startTime.getFullYear(), win.startTime.getMonth(), win.startTime.getDate() + 6);
+        return `KW ${win.kw} · ${fmtDm(win.startTime)}–${fmtDm(sun)}`;
+    }
+    if (offset === 0) return `Heute · ${fmtDm(win.startTime)}`;
+    if (offset === -1) return `Gestern · ${fmtDm(win.startTime)}`;
+    const wd = win.startTime.toLocaleDateString('de-DE', { weekday: 'short' });
+    return `${wd} · ${fmtDm(win.startTime)}`;
+}
+
+function updateIntradayPeriodPagerUI(tf = currentCurveTimeframe, offset = intradayPeriodOffset) {
+    const lbl = document.getElementById('intradayPeriodLabel');
+    if (lbl) lbl.innerText = formatIntradayPeriodPagerLabel(tf, offset);
+    const nextBtn = document.getElementById('btnIntradayPeriodNext');
+    if (nextBtn) nextBtn.disabled = (Number(offset) || 0) >= 0;
+}
+
 function updateTimeframeButtonsUI(tf = currentCurveTimeframe, isLoading = false) {
-    ['day', 'week', 'month'].forEach(t => {
+    ['day', 'week'].forEach(t => {
         const btn = document.getElementById(`btn-timerange-${t}`);
         if (btn) {
             if (t === tf) {
@@ -3919,24 +3977,27 @@ function updateTimeframeButtonsUI(tf = currentCurveTimeframe, isLoading = false)
             }
         }
     });
+    updateIntradayPeriodPagerUI(tf, intradayPeriodOffset);
     if (isLoading) {
         const rangeEl = document.getElementById('dash_curve_timerange');
         if (rangeEl) {
-            const labelMap = { day: 'Tagesverlauf', week: '7-Tage-Verlauf', month: '30-Tage-Verlauf' };
+            const labelMap = { day: 'Tagesverlauf', week: 'Wochenverlauf (ab Mo)', month: 'Monatsverlauf (ab 01.)' };
             rangeEl.innerText = `Lade ${labelMap[tf] || 'Verlauf'} aus Home Assistant …`;
         }
     }
 }
 
-async function fetchTimeframeDataset(tf, signal = null) {
+async function fetchTimeframeDataset(tf, signal = null, periodOffset = 0) {
+    const safeOffset = Number.isFinite(Number(periodOffset)) ? Math.min(0, Math.trunc(Number(periodOffset))) : 0;
     // 1. Try Browser-Direct Home Assistant History API first
     try {
-        const directHist = await fetchHaHistoryInBrowser(haConfigState, tf, signal);
+        const directHist = await fetchHaHistoryInBrowser(haConfigState, tf, signal, safeOffset);
         if (signal && signal.aborted) return null;
         if (directHist && Array.isArray(directHist.bucketTimes) && directHist.bucketTimes.length > 0) {
             const labels = directHist.bucketTimes.map(ts => formatHistoryBucketLabel(ts, tf));
             return {
                 timeframe: tf,
+                periodOffset: safeOffset,
                 fetchedAtMs: Date.now(),
                 startOfDayIso: directHist.startOfDay || new Date().toISOString(),
                 nowIso: directHist.now || new Date().toISOString(),
@@ -3956,7 +4017,7 @@ async function fetchTimeframeDataset(tf, signal = null) {
         const backendRes = await safeFetchBackendJson('/api/ha/history', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ config: haConfigState, range: tf }),
+            body: JSON.stringify({ config: haConfigState, range: tf, periodOffset: safeOffset }),
             signal
         });
         if (signal && signal.aborted) return null;
@@ -3971,6 +4032,7 @@ async function fetchTimeframeDataset(tf, signal = null) {
             }
             return {
                 timeframe: tf,
+                periodOffset: safeOffset,
                 fetchedAtMs: Date.now(),
                 startOfDayIso: data.startOfDay,
                 nowIso: data.now,
@@ -4336,6 +4398,8 @@ if (typeof window !== 'undefined') {
 async function fetchAndRenderIntradayHistory(forceRefresh = false) {
     const baseline = getPlannedSystemBaseline();
     const targetTf = currentCurveTimeframe;
+    const targetOffset = Math.min(0, Math.trunc(Number(intradayPeriodOffset) || 0));
+    const periodCacheKey = `${targetTf}_${targetOffset}`;
 
     if (!haConfigState.accessToken && haConfigState.mode !== 'webhook') {
         resetToEmptyIntradaySeries();
@@ -4344,7 +4408,9 @@ async function fetchAndRenderIntradayHistory(forceRefresh = false) {
     }
 
     // Instant render from memory cache if available (Stale-While-Revalidate)
-    const cached = intradayHistoryCache[targetTf];
+    const cached = targetOffset === 0
+        ? intradayHistoryCache[targetTf]
+        : intradayPeriodHistoryCache[periodCacheKey];
     if (cached && Array.isArray(cached.bucketTimes) && cached.bucketTimes.length > 0) {
         intradaySeriesState = {
             startOfDayIso: cached.startOfDayIso,
@@ -4356,7 +4422,7 @@ async function fetchAndRenderIntradayHistory(forceRefresh = false) {
             peakValues: cached.peakValues
         };
         renderIntradayCurveSection(baseline);
-        const maxAgeMs = targetTf === 'day' ? 25000 : 90000;
+        const maxAgeMs = targetOffset < 0 ? 10 * 60 * 1000 : (targetTf === 'day' ? 25000 : 90000);
         if (!forceRefresh && (Date.now() - (cached.fetchedAtMs || 0)) < maxAgeMs) {
             return;
         }
@@ -4372,13 +4438,17 @@ async function fetchAndRenderIntradayHistory(forceRefresh = false) {
 
     setIdbSyncStatus('loading', 'Lade Verlaufsdaten aus Home Assistant …');
     try {
-        const freshDataset = await fetchTimeframeDataset(targetTf, controller.signal);
+        const freshDataset = await fetchTimeframeDataset(targetTf, controller.signal, targetOffset);
         if (controller.signal.aborted) return;
 
         if (freshDataset) {
-            intradayHistoryCache[targetTf] = freshDataset;
-            persistIntradayHistoryCacheToIdb();
-            if (currentCurveTimeframe === targetTf) {
+            if (targetOffset === 0) {
+                intradayHistoryCache[targetTf] = freshDataset;
+                persistIntradayHistoryCacheToIdb();
+            } else {
+                intradayPeriodHistoryCache[periodCacheKey] = freshDataset;
+            }
+            if (currentCurveTimeframe === targetTf && intradayPeriodOffset === targetOffset) {
                 intradaySeriesState = {
                     startOfDayIso: freshDataset.startOfDayIso,
                     nowIso: freshDataset.nowIso,
@@ -4390,7 +4460,7 @@ async function fetchAndRenderIntradayHistory(forceRefresh = false) {
                 };
                 renderIntradayCurveSection(baseline);
             }
-            if (targetTf === 'day') {
+            if (targetTf === 'day' && targetOffset === 0) {
                 renderLiveCockpitUI(baseline);
                 prewarmOtherTimeframesInBackground();
             }
@@ -4416,12 +4486,38 @@ function formatHistoryBucketLabel(ts, tf = currentCurveTimeframe) {
 }
 
 function setIntradayTimeframe(tf) {
-    if (!['day', 'week', 'month'].includes(tf)) tf = 'day';
+    if (tf === 'month') {
+        if (typeof openAnalyseBarExplorer === 'function') {
+            openAnalyseBarExplorer('month');
+            return;
+        }
+        tf = 'week';
+    }
+    if (!['day', 'week'].includes(tf)) tf = 'day';
     currentCurveTimeframe = tf;
+    intradayPeriodOffset = 0;
+    intradayDayPanOffsetBuckets = 0;
     activeCrosshairIndex = null;
+    isIntradayHovering = false;
     // Immediate 0ms visual feedback on buttons
     updateTimeframeButtonsUI(tf, !intradayHistoryCache[tf]);
     fetchAndRenderIntradayHistory(true);
+}
+
+function shiftIntradayPeriod(delta) {
+    const d = Number(delta) || 0;
+    const nextOffset = d === 0 ? 0 : Math.min(0, intradayPeriodOffset + d);
+    if (nextOffset === intradayPeriodOffset && d !== 0) return;
+    intradayPeriodOffset = nextOffset;
+    intradayDayPanOffsetBuckets = 0;
+    activeCrosshairIndex = null;
+    isIntradayHovering = false;
+    updateTimeframeButtonsUI(currentCurveTimeframe, true);
+    fetchAndRenderIntradayHistory(false);
+}
+
+if (typeof window !== 'undefined') {
+    window.shiftIntradayPeriod = shiftIntradayPeriod;
 }
 
 function setLiveTelemetryMode(newMode) {
@@ -5171,13 +5267,14 @@ function getAvailableCurveDefinitions() {
     const customConsumers = Array.isArray(haConfigState.customConsumers) ? haConfigState.customConsumers : [];
     const e = haConfigState.entities || {};
 
-    const isDay = currentCurveTimeframe === 'day';
-    const isMonth = currentCurveTimeframe === 'month';
-    const win = getEffectiveTimeframeWindow(haConfigState, currentCurveTimeframe);
+    const isCurrentPeriod = intradayPeriodOffset === 0;
+    const isDay = currentCurveTimeframe === 'day' && isCurrentPeriod;
+    const isMonth = currentCurveTimeframe === 'month' && isCurrentPeriod;
+    const win = getEffectiveTimeframeWindow(haConfigState, currentCurveTimeframe, intradayPeriodOffset);
     const startShortStr = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
     const periodSuffix = currentCurveTimeframe === 'week'
-        ? (win.boundedByTrackingStart ? `ab ${startShortStr}` : '7 Tage')
-        : (isMonth ? `ab ${startShortStr}` : 'heute');
+        ? `KW ${win.kw}`
+        : (currentCurveTimeframe === 'month' ? `ab ${startShortStr}` : (isCurrentPeriod ? 'heute' : startShortStr));
     const hasNum = (v) => v !== null && v !== undefined && !isNaN(Number(v));
 
     const defs = [];
@@ -5606,11 +5703,12 @@ function renderIntradayCurveSection(baseline) {
     const defs = getAvailableCurveDefinitions();
 
     // 1. Update View Title, Reset-Focus Button, Day Window Controls & Timeframe Pills
+    const win = getEffectiveTimeframeWindow(haConfigState, currentCurveTimeframe, intradayPeriodOffset);
     const titleEl = document.getElementById('intraday_view_title');
     if (titleEl) {
         const defaultTitle = currentCurveTimeframe === 'week'
-            ? '7-Tage-Verlauf · Telemetrie'
-            : (currentCurveTimeframe === 'month' ? 'Monats- & 30-Tage-Verlauf · Telemetrie' : 'Tagesverlauf · Telemetrie');
+            ? `Wochenverlauf · KW ${win.kw}`
+            : 'Tagesverlauf · Telemetrie';
         titleEl.innerText = currentFocusedCurveMode ? currentFocusedCurveTitle : defaultTitle;
     }
     const resetBtn = document.getElementById('btnResetCurveFocus');
@@ -5625,7 +5723,9 @@ function renderIntradayCurveSection(baseline) {
         else dayWinCtrl.classList.add('hidden');
     }
 
-    ['day', 'week', 'month'].forEach(t => {
+    updateIntradayPeriodPagerUI(currentCurveTimeframe, intradayPeriodOffset);
+
+    ['day', 'week'].forEach(t => {
         const btn = document.getElementById(`btn-timerange-${t}`);
         if (btn) {
             if (t === currentCurveTimeframe) {
@@ -5636,33 +5736,29 @@ function renderIntradayCurveSection(baseline) {
         }
     });
 
-    // 2. Update Single-Line Timestamp Range Header (Timeframe- & TrackingStartDate-Aware!)
-    const now = intradaySeriesState.nowIso ? new Date(intradaySeriesState.nowIso) : new Date();
-    const dateStr = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const timeStr = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const win = getEffectiveTimeframeWindow(haConfigState, currentCurveTimeframe);
+    // 2. Update Calendar-Aligned Timestamp Range Header
+    const endRef = intradaySeriesState.nowIso ? new Date(intradaySeriesState.nowIso) : win.endTime;
     const startStr = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const stepHours = Math.max(1, Math.round(win.stepMs / 3600000));
+    const startShort = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+    const endDateStr = endRef.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const endTimeStr = endRef.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
-    let rangeString = `${dateStr} · 00:00 – ${timeStr} Uhr (+1h Vorschau)`;
+    let rangeString = win.isCurrentPeriod
+        ? `${startStr} · 00:00 – ${endTimeStr} Uhr (+1h Vorschau)`
+        : `${startStr} · 00:00 – 23:59 Uhr`;
     if (currentCurveTimeframe === 'week') {
-        rangeString = win.boundedByTrackingStart
-            ? `Ab Mess-Start ${startStr} · 1h-Auflösung (bis ${dateStr}, ${timeStr} Uhr)`
-            : `Letzte 7 Tage · 1h-Auflösung (bis ${dateStr}, ${timeStr} Uhr)`;
-    } else if (currentCurveTimeframe === 'month') {
-        rangeString = win.boundedByTrackingStart
-            ? `Ab Mess-Start ${startStr} · ${stepHours}h-Auflösung (bis ${dateStr})`
-            : `Monat ab ${startStr} · ${stepHours}h-Auflösung (bis ${dateStr})`;
+        rangeString = win.isCurrentPeriod
+            ? `KW ${win.kw} · Mo ${startShort}. – ${endDateStr}, ${endTimeStr} Uhr (1h)`
+            : `KW ${win.kw} · Mo ${startStr} – So ${endDateStr} (1h)`;
     }
     const channelsHeaderTitleEl = document.getElementById('intraday_channels_section_title');
     if (channelsHeaderTitleEl) {
         if (currentCurveTimeframe === 'week') {
-            channelsHeaderTitleEl.innerText = 'Messkanäle · 7-Tage-Ertrag';
-        } else if (currentCurveTimeframe === 'month') {
-            const shortStart = win.startTime.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-            channelsHeaderTitleEl.innerText = `Messkanäle · Ertrag ab ${shortStart}.`;
-        } else {
+            channelsHeaderTitleEl.innerText = `Messkanäle · KW ${win.kw} (ab Mo ${startShort}.)`;
+        } else if (win.isCurrentPeriod) {
             channelsHeaderTitleEl.innerText = 'Messkanäle · Tagesertrag';
+        } else {
+            channelsHeaderTitleEl.innerText = `Messkanäle · ${startStr}`;
         }
     }
 
@@ -5812,10 +5908,10 @@ function renderIntradayCurveSection(baseline) {
     // 5. Render Dual-Axis Chart.js Line Chart first so intradayVisibleStartIdx is up to date
     renderIntradayCanvasInstance('intradayTelemetryChart', defs, false);
 
-    // 6. Update Crosshair Readout Ribbon (only if user is not actively scrubbing)
+    // 6. Update Floating Values Overlay (Top-Left by default when user is not scrubbing)
     if (!isIntradayHovering) {
         const lastLocalIdx = Math.max(0, ((intradaySeriesState.labels.length || 1) - 1) - (currentCurveTimeframe === 'day' ? intradayVisibleStartIdx : 0));
-        updateIntradayHoverReadout(lastLocalIdx, defs);
+        updateIntradayHoverReadout(lastLocalIdx, defs, null);
     }
 
     const fsModal = document.getElementById('modal-intraday-fullscreen');
@@ -5842,8 +5938,8 @@ const intradayCrosshairPlugin = {
         const { top, bottom, left, right } = chart.chartArea || {};
         if (top === undefined || bottom === undefined) return;
 
-        // Draw subtle vertical "Jetzt" marker line at the live point when in 'day' view with +1h future buffer
-        if (currentCurveTimeframe === 'day' && intradayRealBucketsCount > 0) {
+        // Draw subtle vertical "Jetzt" marker line at the live point when in current 'day' view with +1h future buffer
+        if (currentCurveTimeframe === 'day' && intradayPeriodOffset === 0 && intradayRealBucketsCount > 0) {
             const liveLocalIdx = (intradayRealBucketsCount - 1) - intradayVisibleStartIdx;
             const meta0 = chart.getDatasetMeta(0);
             const livePt = meta0?.data?.[liveLocalIdx];
@@ -5896,6 +5992,71 @@ const intradayCrosshairPlugin = {
     }
 };
 
+function computeIntradayScrubFromPointer(canvas, chart, nativeEvt, isRotatedFs = false) {
+    if (!canvas || !chart?.chartArea || !nativeEvt) return null;
+    const rect = canvas.getBoundingClientRect();
+    let clientX = nativeEvt.clientX;
+    let clientY = nativeEvt.clientY;
+    if ((clientX === undefined || clientY === undefined) && nativeEvt.touches && nativeEvt.touches.length > 0) {
+        clientX = nativeEvt.touches[0].clientX;
+        clientY = nativeEvt.touches[0].clientY;
+    }
+    if (clientX === undefined || clientY === undefined) return null;
+
+    const { left, right } = chart.chartArea;
+    const totalVisPts = (chart.data.labels || []).length;
+    if (totalVisPts <= 0 || right <= left) return null;
+
+    let cssX;
+    if (isRotatedFs) {
+        // 90° clockwise rotation: screen Y (top -> bottom) maps directly to chart CSS X (left -> right)
+        const chartCssWidth = chart.width || canvas.clientWidth || rect.height || 1;
+        cssX = rect.height > 0 ? ((clientY - rect.top) / rect.height) * chartCssWidth : 0;
+    } else {
+        const chartCssWidth = chart.width || canvas.clientWidth || rect.width || 1;
+        cssX = rect.width > 0 ? ((clientX - rect.left) / rect.width) * chartCssWidth : 0;
+    }
+
+    const ratio = Math.max(0, Math.min(1, (cssX - left) / (right - left)));
+    const rawLocalIdx = Math.round(ratio * (totalVisPts - 1));
+    const maxRealLocalIdx = currentCurveTimeframe === 'day'
+        ? Math.max(0, (intradayRealBucketsCount - 1) - intradayVisibleStartIdx)
+        : (totalVisPts - 1);
+    const clampedLocalIdx = Math.max(0, Math.min(rawLocalIdx, maxRealLocalIdx));
+    return { clampedLocalIdx, ratio };
+}
+
+function bindIntradayDirectScrubListeners(canvas, isFullscreen) {
+    if (!canvas || canvas.dataset.scrubBound === '1') return;
+    canvas.dataset.scrubBound = '1';
+
+    const onDirectScrub = (evt) => {
+        const chart = isFullscreen ? chartIntradayFullscreen : chartIntraday;
+        if (!chart) return;
+        const isRotatedFs = Boolean(isFullscreen && isIntradayFsRotated);
+        const res = computeIntradayScrubFromPointer(canvas, chart, evt, isRotatedFs);
+        if (!res) return;
+        isIntradayHovering = true;
+        activeCrosshairIndex = res.clampedLocalIdx;
+        updateIntradayHoverReadout(res.clampedLocalIdx, getAvailableCurveDefinitions(), res.ratio);
+        chart.draw();
+    };
+
+    canvas.addEventListener('touchstart', onDirectScrub, { passive: true });
+    canvas.addEventListener('touchmove', onDirectScrub, { passive: true });
+    canvas.addEventListener('pointermove', (evt) => {
+        // Needed especially for 90° rotated fullscreen where Chart.js native hover uses unrotated coordinates
+        if (isFullscreen && isIntradayFsRotated) {
+            onDirectScrub(evt);
+        }
+    });
+    canvas.addEventListener('pointerdown', (evt) => {
+        if (isFullscreen && isIntradayFsRotated) {
+            onDirectScrub(evt);
+        }
+    });
+}
+
 function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     const canvas = document.getElementById(canvasId);
     if (!canvas || typeof Chart === 'undefined') return;
@@ -5903,33 +6064,43 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
 
     const isDark = document.documentElement.classList.contains('dark');
     const ctx = canvas.getContext('2d');
-    const chartHeight = canvas.parentElement?.clientHeight || (isFullscreen ? 420 : (isIntradayChartExpanded ? 320 : 240));
+    const isRotatedFs = Boolean(isFullscreen && isIntradayFsRotated);
+    const parentEl = canvas.parentElement;
+
+    // Pre-transform layout dimensions (clientWidth/clientHeight ignore CSS rotate(90deg) bounding-box swap!)
+    const layoutW = Math.max(240, Math.floor(parentEl?.clientWidth || (isRotatedFs ? window.innerHeight : window.innerWidth) || 360));
+    const layoutH = Math.max(140, Math.floor(parentEl?.clientHeight || (isFullscreen ? (isRotatedFs ? Math.max(180, window.innerWidth - 92) : 420) : (isIntradayChartExpanded ? 320 : 240))));
+    const chartHeight = layoutH;
+
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
     const powerCurvesCount = activeDefs.filter(d => d.axis === 'yPower').length;
 
     // Hide left & right Y-scales when in-place expanded OR in fullscreen mode to gain +20% full-bleed width
     const hideSideScales = isFullscreen || isIntradayChartExpanded;
 
-    // Build visible window & +1h future padding for 'day' view
+    // Build visible window & +1h future padding ONLY for current 'day' view (offset === 0)
     const rawLabels = intradaySeriesState.labels || [];
     const nReal = rawLabels.length;
     intradayRealBucketsCount = nReal;
+    const isCurrentToday = currentCurveTimeframe === 'day' && intradayPeriodOffset === 0;
 
     let futureLabels = [];
     let visStartIdx = 0;
 
     if (currentCurveTimeframe === 'day' && nReal > 0) {
-        const lastBucketMs = intradaySeriesState.bucketTimes?.[nReal - 1] || Date.now();
-        const endOfDay = new Date(lastBucketMs);
-        endOfDay.setHours(23, 59, 59, 999);
-        const endOfDayMs = endOfDay.getTime();
+        if (isCurrentToday) {
+            const lastBucketMs = intradaySeriesState.bucketTimes?.[nReal - 1] || Date.now();
+            const endOfDay = new Date(lastBucketMs);
+            endOfDay.setHours(23, 59, 59, 999);
+            const endOfDayMs = endOfDay.getTime();
 
-        // Add +1 hour (12 x 5-min buckets) into the future so live position is clearly visible with breathing room on the right
-        for (let k = 1; k <= 12; k++) {
-            const futMs = lastBucketMs + k * 300000;
-            if (futMs > endOfDayMs + 60000) break;
-            const futDate = new Date(futMs);
-            futureLabels.push(futDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+            // Add +1 hour (12 x 5-min buckets) into the future so live position is clearly visible with breathing room on the right
+            for (let k = 1; k <= 12; k++) {
+                const futMs = lastBucketMs + k * 300000;
+                if (futMs > endOfDayMs + 60000) break;
+                const futDate = new Date(futMs);
+                futureLabels.push(futDate.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }));
+            }
         }
 
         const autoStart = computeIntradayDayAutoStartIndex(defs);
@@ -5941,12 +6112,13 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         const zoomBtn = document.getElementById('btnIntradayDayZoomMode');
         if (zoomBtn) {
             const startLbl = rawLabels[visStartIdx] || '00:00';
+            const futSuffix = isCurrentToday ? ' +1h' : '';
             if (intradayDayZoomMode === 'full' && intradayDayPanOffsetBuckets === 0) {
-                zoomBtn.innerText = '0–24h +1h';
+                zoomBtn.innerText = `0–24h${futSuffix}`;
             } else if (intradayDayPanOffsetBuckets !== 0) {
-                zoomBtn.innerText = `Ab ${startLbl} +1h`;
+                zoomBtn.innerText = `Ab ${startLbl}${futSuffix}`;
             } else {
-                zoomBtn.innerText = visStartIdx > 0 ? `Aktiv (${startLbl}) +1h` : 'Aktiv +1h';
+                zoomBtn.innerText = visStartIdx > 0 ? `Aktiv (${startLbl})${futSuffix}` : `Aktiv${futSuffix}`;
             }
         }
     } else {
@@ -5959,7 +6131,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
 
     const datasets = activeDefs.map((d) => {
         const rawArr = intradaySeriesState.series[d.key] || [];
-        const paddedArr = currentCurveTimeframe === 'day'
+        const paddedArr = (isCurrentToday && futureLabels.length > 0)
             ? [...rawArr, ...futureLabels.map(() => null)]
             : rawArr;
         const dataArr = paddedArr.slice(visStartIdx);
@@ -5977,8 +6149,8 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             yAxisID: d.axis,
             borderWidth: (isFullscreen || isIntradayChartExpanded) ? 2.4 : (isPrimaryFocus ? 2.3 : 1.9),
             borderDash: d.axis === 'ySoc' ? [4, 3] : [],
-            // Highlight the live "Jetzt" endpoint in 'day' view with a crisp dot
-            pointRadius: currentCurveTimeframe === 'day'
+            // Highlight the live "Jetzt" endpoint in current 'day' view with a crisp dot
+            pointRadius: isCurrentToday
                 ? (ctxPt) => (ctxPt.dataIndex === liveLocalIdx ? 3.2 : 0)
                 : 0,
             pointBackgroundColor: d.color,
@@ -6010,16 +6182,27 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     const tickColorX = isDark ? '#64748b' : '#475569';
     const tickColorSoc = isDark ? '#d8b4fe' : '#9333ea';
 
-    const existingChart = isFullscreen ? chartIntradayFullscreen : chartIntraday;
+    let existingChart = isFullscreen ? chartIntradayFullscreen : chartIntraday;
 
-    // ZERO-FLICKER IN-PLACE UPDATE: If chart already exists on this exact canvas, mutate data and update('none')
+    // If fullscreen rotation mode changed (responsive true <-> false), destroy and recreate cleanly
+    if (existingChart && existingChart.canvas === canvas) {
+        const expectedResponsive = !isRotatedFs;
+        if (Boolean(existingChart.options?.responsive) !== expectedResponsive) {
+            try { existingChart.destroy(); } catch (e) {}
+            existingChart = null;
+            if (isFullscreen) chartIntradayFullscreen = null;
+            else chartIntraday = null;
+        }
+    }
+
+    // ZERO-FLICKER IN-PLACE UPDATE: If chart already exists on this exact canvas with matching responsive mode
     if (existingChart && existingChart.canvas === canvas) {
         existingChart.data.labels = visibleLabels;
         existingChart.data.datasets = datasets;
         if (existingChart.options) {
             existingChart.options.layout = {
                 padding: hideSideScales
-                    ? { left: 0, right: 0, top: 4, bottom: 0 }
+                    ? { left: 2, right: 4, top: 6, bottom: 2 }
                     : { left: 2, right: 2, top: 2, bottom: 0 }
             };
         }
@@ -6045,6 +6228,11 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                 ss.ticks.color = tickColorSoc;
             }
         }
+        if (isRotatedFs) {
+            canvas.style.width = `${layoutW}px`;
+            canvas.style.height = `${layoutH}px`;
+            try { existingChart.resize(layoutW, layoutH); } catch (e) {}
+        }
         existingChart.update('none');
         return;
     }
@@ -6053,28 +6241,26 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         try { existingChart.destroy(); } catch (e) {}
     }
 
+    // Prepare explicit CSS + backing dimensions when rotated 90° so Chart.js never uses swapped getBoundingClientRect()
+    if (isRotatedFs) {
+        canvas.style.width = `${layoutW}px`;
+        canvas.style.height = `${layoutH}px`;
+        canvas.width = layoutW;
+        canvas.height = layoutH;
+    } else {
+        canvas.style.width = '';
+        canvas.style.height = '';
+    }
+
+    bindIntradayDirectScrubListeners(canvas, isFullscreen);
+
     const handleScrubEvent = (event, chart) => {
         const nativeEvt = event?.native || event;
-        if (!nativeEvt || !chart?.chartArea) return;
-        const rect = canvas.getBoundingClientRect();
-        let clientX = nativeEvt.clientX;
-        if (clientX === undefined && nativeEvt.touches && nativeEvt.touches.length > 0) {
-            clientX = nativeEvt.touches[0].clientX;
-        }
-        if (clientX === undefined) return;
-        const relX = clientX - rect.left;
-        const { left, right } = chart.chartArea;
-        const totalVisPts = (chart.data.labels || []).length;
-        if (totalVisPts <= 0 || right <= left) return;
-        const ratio = Math.max(0, Math.min(1, (relX - left) / (right - left)));
-        const rawLocalIdx = Math.round(ratio * (totalVisPts - 1));
-        const maxRealLocalIdx = currentCurveTimeframe === 'day'
-            ? Math.max(0, (intradayRealBucketsCount - 1) - intradayVisibleStartIdx)
-            : (totalVisPts - 1);
-        const clampedLocalIdx = Math.max(0, Math.min(rawLocalIdx, maxRealLocalIdx));
+        const res = computeIntradayScrubFromPointer(canvas, chart, nativeEvt, Boolean(isFullscreen && isIntradayFsRotated));
+        if (!res) return;
         isIntradayHovering = true;
-        activeCrosshairIndex = clampedLocalIdx;
-        updateIntradayHoverReadout(clampedLocalIdx, getAvailableCurveDefinitions());
+        activeCrosshairIndex = res.clampedLocalIdx;
+        updateIntradayHoverReadout(res.clampedLocalIdx, getAvailableCurveDefinitions(), res.ratio);
         chart.draw();
     };
 
@@ -6086,12 +6272,12 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         },
         plugins: [intradayCrosshairPlugin],
         options: {
-            responsive: true,
+            responsive: !isRotatedFs,
             maintainAspectRatio: false,
             animation: false,
             layout: {
                 padding: hideSideScales
-                    ? { left: 0, right: 0, top: 4, bottom: 0 }
+                    ? { left: 2, right: 4, top: 6, bottom: 2 }
                     : { left: 2, right: 2, top: 2, bottom: 0 }
             },
             interaction: {
@@ -6099,14 +6285,21 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
                 intersect: false
             },
             onHover: (event, elements, chart) => {
+                // In 90° rotated fullscreen, ALWAYS map coordinates via rotated scrub math!
+                if (isFullscreen && isIntradayFsRotated) {
+                    handleScrubEvent(event, chart);
+                    return;
+                }
                 if (elements && elements.length > 0) {
                     isIntradayHovering = true;
+                    const totalVisPts = (chart.data.labels || []).length;
                     const maxRealLocalIdx = currentCurveTimeframe === 'day'
                         ? Math.max(0, (intradayRealBucketsCount - 1) - intradayVisibleStartIdx)
-                        : ((chart.data.labels || []).length - 1);
+                        : (totalVisPts - 1);
                     const idx = Math.min(elements[0].index, maxRealLocalIdx);
+                    const ratio = totalVisPts > 1 ? (idx / (totalVisPts - 1)) : 1;
                     activeCrosshairIndex = idx;
-                    updateIntradayHoverReadout(idx, getAvailableCurveDefinitions());
+                    updateIntradayHoverReadout(idx, getAvailableCurveDefinitions(), ratio);
                     chart.draw();
                 } else {
                     handleScrubEvent(event, chart);
@@ -6115,7 +6308,7 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    enabled: false // Disabled so floating popup never blocks the curves; values show in top readout bar!
+                    enabled: false // Values show cleanly in the floating glass overlay inside the chart
                 }
             },
             scales: {
@@ -6160,6 +6353,10 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
         }
     });
 
+    if (isRotatedFs) {
+        try { chartInstance.resize(layoutW, layoutH); } catch (e) {}
+    }
+
     if (isFullscreen) {
         chartIntradayFullscreen = chartInstance;
     } else {
@@ -6167,32 +6364,65 @@ function renderIntradayCanvasInstance(canvasId, defs, isFullscreen = false) {
     }
 }
 
-function updateIntradayHoverReadout(localIndex, defs) {
+function positionFloatingReadoutOverlay(overlayEl, placeRight) {
+    if (!overlayEl) return;
+    if (placeRight) {
+        overlayEl.classList.remove('left-1.5', 'right-auto');
+        overlayEl.classList.add('right-1.5', 'left-auto');
+    } else {
+        overlayEl.classList.remove('right-1.5', 'left-auto');
+        overlayEl.classList.add('left-1.5', 'right-auto');
+    }
+}
+
+function updateIntradayHoverReadout(localIndex, defs, cursorRatio = null) {
     if (!defs) defs = getAvailableCurveDefinitions();
     const isDark = document.documentElement.classList.contains('dark');
 
     const globalIdx = Number(localIndex || 0) + (currentCurveTimeframe === 'day' ? (intradayVisibleStartIdx || 0) : 0);
-    const idx = Math.max(0, Math.min(globalIdx, (intradaySeriesState.labels.length || 1) - 1));
+    const totalLen = intradaySeriesState.labels?.length || 1;
+    const idx = Math.max(0, Math.min(globalIdx, totalLen - 1));
     const ts = intradaySeriesState.bucketTimes?.[idx] || Date.now();
     const dObj = new Date(ts);
     const timePart = dObj.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-    const datePrefix = currentCurveTimeframe !== 'day'
-        ? `${dObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} · `
-        : '';
+    const dayPrefix = currentCurveTimeframe === 'week'
+        ? `${['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'][dObj.getDay()]} ${dObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} · `
+        : (intradayPeriodOffset < 0
+            ? `${dObj.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })} · `
+            : '');
+    const isAtLiveTail = !isIntradayHovering && currentCurveTimeframe === 'day' && intradayPeriodOffset === 0;
 
     const activeDefs = defs.filter(d => activeCurveKeys.has(d.key));
-    const htmlItems = activeDefs.map(d => {
+    const useTwoCols = activeDefs.length >= 5;
+
+    const rowsHtml = activeDefs.map(d => {
         const arr = intradaySeriesState.series[d.key] || [];
-        const val = arr[idx] !== undefined ? arr[idx] : 0;
+        const val = arr[idx] !== undefined && arr[idx] !== null ? arr[idx] : 0;
         const unit = d.axis === 'ySoc' ? '%' : 'W';
         const safeName = typeof escapeHtml === 'function' ? escapeHtml(d.name) : d.name;
         const fmtVal = Number(val).toLocaleString('de-DE', { maximumFractionDigits: d.axis === 'ySoc' ? 1 : 0 });
-        return `<span class="inline-flex items-center gap-1 whitespace-nowrap"><span class="w-1.5 h-1.5 rounded-full" style="background:${d.color}"></span><span class="${isDark ? 'text-slate-400' : 'text-slate-500'}">${safeName}:</span><strong class="${isDark ? 'text-white' : 'text-slate-900'}">${fmtVal} ${unit}</strong></span>`;
+        return `<div class="flex items-center justify-between gap-2 min-w-0">
+            <span class="inline-flex items-center gap-1 min-w-0">
+                <span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${d.color}"></span>
+                <span class="${isDark ? 'text-slate-300' : 'text-slate-600'} truncate">${safeName}</span>
+            </span>
+            <strong class="${isDark ? 'text-white' : 'text-slate-900'} font-bold whitespace-nowrap shrink-0">${fmtVal} ${unit}</strong>
+        </div>`;
     });
 
+    const headerHtml = `<div class="flex items-center justify-between gap-2 pb-0.5 mb-0.5 border-b border-slate-200/70 dark:border-white/10">
+        <span class="text-teal-700 dark:text-teal-300 font-bold whitespace-nowrap">${dayPrefix}${timePart} Uhr</span>
+        ${isAtLiveTail ? '<span class="inline-flex items-center gap-1 text-[9.5px] font-bold text-emerald-600 dark:text-emerald-400 shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Live</span>' : ''}
+    </div>`;
+
     const fullHtml = activeDefs.length > 0
-        ? `<span class="text-teal-600 dark:text-teal-400 font-bold whitespace-nowrap">${datePrefix}${timePart} Uhr</span><span class="text-slate-400 dark:text-slate-600">·</span>${htmlItems.join('<span class="text-slate-300 dark:text-slate-700 mx-0.5">·</span>')}`
-        : `<span class="text-slate-500 dark:text-slate-400 font-medium">Kein Kanal aktiv — Tippe unten auf eine oder mehrere Kacheln (oder oben auf „Alle“)</span>`;
+        ? `${headerHtml}<div class="${useTwoCols ? 'grid grid-cols-2 gap-x-3 gap-y-0.5' : 'space-y-0.5'}">${rowsHtml.join('')}</div>`
+        : `<span class="text-slate-500 dark:text-slate-400 font-medium">Kein Kanal aktiv — Kachel antippen</span>`;
+
+    // Auto-flip to top-right when actively scrubbing on the left half (< 45%) so the box never obscures the curve under the finger
+    const placeRight = (cursorRatio !== null && cursorRatio !== undefined && Number(cursorRatio) < 0.45);
+    positionFloatingReadoutOverlay(document.getElementById('dash_curve_hover_overlay'), placeRight);
+    positionFloatingReadoutOverlay(document.getElementById('fs_curve_hover_overlay'), placeRight);
 
     const readoutEl = document.getElementById('dash_curve_hover_readout');
     if (readoutEl) readoutEl.innerHTML = fullHtml;
@@ -6292,26 +6522,52 @@ if (typeof window !== 'undefined') {
     window.onIntradayStageClick = onIntradayStageClick;
 }
 
+function ensureIntradayFsResizeListener() {
+    if (intradayFsResizeListenerBound || typeof window === 'undefined') return;
+    intradayFsResizeListenerBound = true;
+    let resizeTimer = null;
+    const onViewportChange = () => {
+        const modal = document.getElementById('modal-intraday-fullscreen');
+        if (!modal || modal.classList.contains('hidden')) return;
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            applyIntradayFullscreenRotationStyle();
+            requestAnimationFrame(() => {
+                renderIntradayCanvasInstance('intradayFullscreenChart', getAvailableCurveDefinitions(), true);
+            });
+        }, 80);
+    };
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('orientationchange', onViewportChange);
+}
+
 function openIntradayFullscreenModal(startRotated = false) {
     const modal = document.getElementById('modal-intraday-fullscreen');
     if (!modal) return;
-    if (startRotated === true) {
-        isIntradayFsRotated = true;
-    }
+    ensureIntradayFsResizeListener();
+    isIntradayFsRotated = Boolean(startRotated === true);
     modal.classList.remove('hidden');
     applyIntradayFullscreenRotationStyle();
-    setTimeout(() => {
-        renderIntradayCurveSection();
-        if (chartIntradayFullscreen) {
-            try { chartIntradayFullscreen.resize(); } catch (e) {}
-        }
-    }, 40);
+    if (chartIntradayFullscreen) {
+        try { chartIntradayFullscreen.destroy(); } catch (e) {}
+        chartIntradayFullscreen = null;
+    }
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            applyIntradayFullscreenRotationStyle();
+            renderIntradayCurveSection();
+        }, 50);
+    });
 }
 
 function closeIntradayFullscreenModal() {
     const modal = document.getElementById('modal-intraday-fullscreen');
     if (!modal) return;
     modal.classList.add('hidden');
+    if (chartIntradayFullscreen) {
+        try { chartIntradayFullscreen.destroy(); } catch (e) {}
+        chartIntradayFullscreen = null;
+    }
     if (isIntradayFsRotated) {
         isIntradayFsRotated = false;
         applyIntradayFullscreenRotationStyle();
@@ -6320,14 +6576,18 @@ function closeIntradayFullscreenModal() {
 
 function toggleIntradayFullscreenRotate() {
     isIntradayFsRotated = !isIntradayFsRotated;
+    if (chartIntradayFullscreen) {
+        try { chartIntradayFullscreen.destroy(); } catch (e) {}
+        chartIntradayFullscreen = null;
+    }
     applyIntradayFullscreenRotationStyle();
-    setTimeout(() => {
-        const defs = getAvailableCurveDefinitions();
-        renderIntradayCanvasInstance('intradayFullscreenChart', defs, true);
-        if (chartIntradayFullscreen) {
-            try { chartIntradayFullscreen.resize(); } catch (e) {}
-        }
-    }, 120);
+    requestAnimationFrame(() => {
+        setTimeout(() => {
+            applyIntradayFullscreenRotationStyle();
+            const defs = getAvailableCurveDefinitions();
+            renderIntradayCanvasInstance('intradayFullscreenChart', defs, true);
+        }, 60);
+    });
 }
 
 function applyIntradayFullscreenRotationStyle() {
@@ -6336,11 +6596,17 @@ function applyIntradayFullscreenRotationStyle() {
     if (!inner) return;
 
     if (isIntradayFsRotated) {
+        const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+        const vw = Math.round((vv && vv.width) || (typeof window !== 'undefined' ? window.innerWidth : 390));
+        const vh = Math.round((vv && vv.height) || (typeof window !== 'undefined' ? window.innerHeight : 844));
         inner.style.position = 'fixed';
         inner.style.top = '50%';
         inner.style.left = '50%';
-        inner.style.width = '100dvh';
-        inner.style.height = '100dvw';
+        inner.style.width = `${vh}px`;
+        inner.style.height = `${vw}px`;
+        inner.style.boxSizing = 'border-box';
+        inner.style.paddingLeft = 'env(safe-area-inset-top, 0px)';
+        inner.style.paddingRight = 'env(safe-area-inset-bottom, 0px)';
         inner.style.transform = 'translate(-50%, -50%) rotate(90deg)';
         if (lbl) lbl.innerText = 'Normalansicht';
     } else {
@@ -6349,6 +6615,9 @@ function applyIntradayFullscreenRotationStyle() {
         inner.style.left = '';
         inner.style.width = '100%';
         inner.style.height = '100%';
+        inner.style.boxSizing = '';
+        inner.style.paddingLeft = '';
+        inner.style.paddingRight = '';
         inner.style.transform = '';
         if (lbl) lbl.innerText = '90° Querformat';
     }
@@ -7174,12 +7443,15 @@ function getAnalyseBarExplorerPeriodWindow() {
         return { start: d, end, label, key, wsPeriod: 'hour', bucketCount: 24, isToday: off === 0 };
     }
     if (h === 'week') {
-        const endDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (off * 7), 23, 59, 59, 999);
-        const startDay = new Date(endDay.getFullYear(), endDay.getMonth(), endDay.getDate() - 6, 0, 0, 0, 0);
+        // Calendar-aligned ISO week: always Monday 00:00 through Sunday 23:59
+        const monday = getIsoMondayStart(now);
+        monday.setDate(monday.getDate() + (off * 7));
+        const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 23, 59, 59, 999);
         const fmt = (dt) => dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-        const label = `${fmt(startDay)} – ${fmt(endDay)}.${endDay.getFullYear()}`;
-        const key = `week_${startDay.toISOString().slice(0, 10)}_${endDay.toISOString().slice(0, 10)}`;
-        return { start: startDay, end: endDay, label, key, wsPeriod: 'day', bucketCount: 7, isCurrent: off === 0 };
+        const kw = getIsoWeekNumber(monday);
+        const label = `KW ${kw} · ${fmt(monday)} – ${fmt(sunday)}`;
+        const key = `week_${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+        return { start: monday, end: sunday, label, key, wsPeriod: 'day', bucketCount: 7, isCurrent: off === 0 };
     }
     if (h === 'month') {
         const mDate = new Date(now.getFullYear(), now.getMonth() + off, 1, 0, 0, 0, 0);

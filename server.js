@@ -16,7 +16,7 @@ const nginxPort = Number(process.env.NGINX_PORT);
 const defaultAppPort = Number(process.env.DEFAULT_APP_PORT) || 3000;
 const PORT = (!rawPort || (nginxPort && rawPort === nginxPort)) ? defaultAppPort : rawPort;
 const HOST = '0.0.0.0';
-const APP_VERSION = '13.7';
+const APP_VERSION = '13.8';
 
 // Ensure data directory exists for persistent shares
 const DATA_DIR = path.join(__dirname, 'data');
@@ -1493,29 +1493,33 @@ app.all('/api/ha/history', async (req, res) => {
 
     const now = new Date();
     const range = (req.body?.range || req.query?.range || 'day').toLowerCase();
-    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-
-    const trackRaw = String(cfg.trackingStartDate || '2026-11-01').trim();
-    const trackMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trackRaw);
-    const trackMs = trackMatch
-      ? new Date(Number(trackMatch[1]), Number(trackMatch[2]) - 1, Number(trackMatch[3]), 0, 0, 0).getTime()
-      : new Date(2026, 10, 1, 0, 0, 0).getTime();
+    const rawOffset = Number(req.body?.periodOffset ?? req.query?.periodOffset ?? 0);
+    const periodOffset = Number.isFinite(rawOffset) ? Math.min(0, Math.trunc(rawOffset)) : 0;
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
 
     let startTime;
+    let endTime;
     let stepMs;
     if (range === 'month') {
-      const rawStart = now.getTime() - 30 * 24 * 3600 * 1000;
-      const effStart = Math.min(startOfDay.getTime(), (trackMs <= now.getTime() && trackMs > rawStart) ? trackMs : rawStart);
-      startTime = new Date(effStart);
-      stepMs = (now.getTime() - effStart <= 14 * 24 * 3600 * 1000) ? 3600 * 1000 : 3 * 3600 * 1000;
+      // Calendar-aligned month: always starts on 1st of the month at 00:00
+      startTime = new Date(now.getFullYear(), now.getMonth() + periodOffset, 1, 0, 0, 0, 0);
+      const monthEnd = new Date(startTime.getFullYear(), startTime.getMonth() + 1, 0, 23, 59, 59, 999);
+      endTime = periodOffset === 0 ? now : monthEnd;
+      const spanDays = Math.max(1, (endTime.getTime() - startTime.getTime()) / (24 * 3600 * 1000));
+      stepMs = spanDays <= 14 ? 3600 * 1000 : 3 * 3600 * 1000;
     } else if (range === 'week') {
-      const rawStart = now.getTime() - 7 * 24 * 3600 * 1000;
-      const effStart = Math.min(startOfDay.getTime(), (trackMs <= now.getTime() && trackMs > rawStart) ? trackMs : rawStart);
-      startTime = new Date(effStart);
-      stepMs = 60 * 60 * 1000; // 1-hour steps for 7 days
+      // Calendar-aligned ISO week: always starts on Monday 00:00
+      const dow = startOfDay.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+      const diffToMonday = dow === 0 ? -6 : (1 - dow);
+      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMonday + (periodOffset * 7), 0, 0, 0, 0);
+      const sundayEnd = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate() + 6, 23, 59, 59, 999);
+      endTime = periodOffset === 0 ? now : sundayEnd;
+      stepMs = 60 * 60 * 1000; // 1-hour steps for calendar week
     } else {
-      startTime = startOfDay;
-      stepMs = 5 * 60 * 1000; // 5-minute steps for today
+      startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() + periodOffset, 0, 0, 0, 0);
+      const dayEnd = new Date(startTime.getFullYear(), startTime.getMonth(), startTime.getDate(), 23, 59, 59, 999);
+      endTime = periodOffset === 0 ? now : dayEnd;
+      stepMs = 5 * 60 * 1000; // 5-minute steps for day
     }
 
     // If in webhook mode or missing credentials, return buffered intraday snapshots
@@ -1524,9 +1528,11 @@ app.all('/api/ha/history', async (req, res) => {
         success: true,
         source: 'buffer',
         range,
-        startOfDay: startOfDay.toISOString(),
+        periodOffset,
+        startOfDay: startTime.toISOString(),
         startTime: startTime.toISOString(),
-        now: now.toISOString(),
+        endTime: endTime.toISOString(),
+        now: endTime.toISOString(),
         snapshots: intradaySnapshots
       });
     }
@@ -1565,14 +1571,16 @@ app.all('/api/ha/history', async (req, res) => {
         success: true,
         source: 'empty',
         range,
-        startOfDay: startOfDay.toISOString(),
+        periodOffset,
+        startOfDay: startTime.toISOString(),
         startTime: startTime.toISOString(),
-        now: now.toISOString(),
+        endTime: endTime.toISOString(),
+        now: endTime.toISOString(),
         snapshots: intradaySnapshots
       });
     }
 
-    const historyApiPath = `/api/history/period/${encodeURIComponent(startTime.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(now.toISOString())}&minimal_response`;
+    const historyApiPath = `/api/history/period/${encodeURIComponent(startTime.toISOString())}?filter_entity_id=${encodeURIComponent(uniqueEntityIds.join(','))}&end_time=${encodeURIComponent(endTime.toISOString())}&minimal_response`;
 
     const response = await requestHomeAssistant(baseUrlRaw, token, historyApiPath, 8500);
 
@@ -1581,21 +1589,23 @@ app.all('/api/ha/history', async (req, res) => {
         success: true,
         source: 'buffer-fallback',
         range,
-        startOfDay: startOfDay.toISOString(),
+        periodOffset,
+        startOfDay: startTime.toISOString(),
         startTime: startTime.toISOString(),
-        now: now.toISOString(),
+        endTime: endTime.toISOString(),
+        now: endTime.toISOString(),
         snapshots: intradaySnapshots
       });
     }
 
     const rawHistoryArrays = response.json;
-    // Build time buckets from startTime to now
+    // Build time buckets from startTime to endTime
     const bucketTimes = [];
-    for (let t = startTime.getTime(); t <= now.getTime(); t += stepMs) {
+    for (let t = startTime.getTime(); t <= endTime.getTime(); t += stepMs) {
       bucketTimes.push(t);
     }
-    if (bucketTimes.length === 0 || bucketTimes[bucketTimes.length - 1] < now.getTime()) {
-      bucketTimes.push(now.getTime());
+    if (bucketTimes.length === 0 || bucketTimes[bucketTimes.length - 1] < endTime.getTime()) {
+      bucketTimes.push(endTime.getTime());
     }
 
     // Parse each entity's timeline (Power Outage Guard: unavailable/unknown = 0 W for power sensors!)
@@ -1654,7 +1664,7 @@ app.all('/api/ha/history', async (req, res) => {
           }
           if (type === 'power') {
             const nextPt = pIdx < pts.length ? pts[pIdx] : null;
-            const gapToNextMs = nextPt ? (nextPt.ts - lastTs) : (now.getTime() - lastTs);
+            const gapToNextMs = nextPt ? (nextPt.ts - lastTs) : (endTime.getTime() - lastTs);
             if (lastWasOutage || ((bt - lastTs) > silenceMaxMs && gapToNextMs > silenceMaxMs)) {
               sampled[i] = 0;
             } else {
@@ -1735,8 +1745,12 @@ app.all('/api/ha/history', async (req, res) => {
     res.json({
       success: true,
       source: 'ha-history',
-      startOfDay: startOfDay.toISOString(),
-      now: now.toISOString(),
+      range,
+      periodOffset,
+      startOfDay: startTime.toISOString(),
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      now: endTime.toISOString(),
       bucketTimes,
       series,
       integratedKwh,
